@@ -50,25 +50,20 @@ void Maze::generate() {
         }
     }
 
-    // Raccogli tutte le celle vuote
     std::vector<Vec2> emptyCells;
     for (int c = 1; c < MAZE_COLS - 1; ++c) {
         for (int r = 1; r < MAZE_ROWS - 1; ++r) {
-            if (grid[c][r].type == CELL_EMPTY) {
-                emptyCells.push_back({c, r});
-            }
+            if (grid[c][r].type == CELL_EMPTY) emptyCells.push_back({c, r});
         }
     }
     std::random_shuffle(emptyCells.begin(), emptyCells.end());
 
-    // Posiziona esattamente 6 Tesori
     for(int i=0; i<6 && !emptyCells.empty(); i++) {
         Vec2 pos = emptyCells.back(); emptyCells.pop_back();
         grid[pos.x][pos.y].type = CELL_TREASURE;
         grid[pos.x][pos.y].treasure = static_cast<TreasureType>(rand() % 5);
     }
 
-    // Posiziona esattamente 3 Armi
     for(int i=0; i<3 && !emptyCells.empty(); i++) {
         Vec2 pos = emptyCells.back(); emptyCells.pop_back();
         grid[pos.x][pos.y].type = CELL_WEAPON;
@@ -122,7 +117,6 @@ void Maze::render(SDL_Renderer* renderer) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             SDL_Rect rect = {c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT, TILE_SIZE, TILE_SIZE};
             if (grid[c][r].type == CELL_WALL) {
-                // Effetto 3D
                 SDL_SetRenderDrawColor(renderer, wallColor.r + 30, wallColor.g + 30, wallColor.b + 30, 255);
                 SDL_Rect top = {rect.x, rect.y, TILE_SIZE, TILE_SIZE - 6};
                 SDL_RenderFillRect(renderer, &top);
@@ -132,34 +126,51 @@ void Maze::render(SDL_Renderer* renderer) {
             } else if (grid[c][r].type == CELL_TREASURE) {
                 int cx = c * TILE_SIZE + TILE_SIZE/2;
                 int cy = r * TILE_SIZE + TILE_SIZE/2 + UI_HEIGHT;
+                
+                // Sfondo scuro per evidenziare il tesoro
+                drawFilledCircle(renderer, cx, cy, 12, {50, 50, 50, 150});
+
                 if (grid[c][r].treasure == TRES_CROWN) {
-                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-                    SDL_Rect base = {cx-8, cy+2, 16, 4}; SDL_RenderFillRect(renderer, &base);
-                    SDL_Rect l1 = {cx-8, cy-2, 4, 6}; SDL_RenderFillRect(renderer, &l1);
-                    SDL_Rect l2 = {cx-2, cy-4, 4, 8}; SDL_RenderFillRect(renderer, &l2);
-                    SDL_Rect l3 = {cx+4, cy-2, 4, 6}; SDL_RenderFillRect(renderer, &l3);
-                    drawFilledCircle(renderer, cx-6, cy-2, 2, {255, 0, 0, 255});
-                    drawFilledCircle(renderer, cx+6, cy-2, 2, {0, 255, 0, 255});
-                } else if (grid[c][r].treasure == TRES_GOLD) {
-                    drawFilledCircle(renderer, cx-4, cy+2, 4, {255, 215, 0, 255});
-                    drawFilledCircle(renderer, cx+4, cy+2, 4, {255, 215, 0, 255});
-                    drawFilledCircle(renderer, cx, cy-4, 5, {255, 235, 50, 255});
-                } else if (grid[c][r].treasure == TRES_CHEST) {
-                    SDL_SetRenderDrawColor(renderer, 139, 69, 19, 255);
-                    SDL_Rect body = {cx-8, cy-4, 16, 12}; SDL_RenderFillRect(renderer, &body);
-                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-                    SDL_Rect lock = {cx-2, cy-2, 4, 4}; SDL_RenderFillRect(renderer, &lock);
-                    SDL_RenderDrawLine(renderer, cx-8, cy-4, cx+8, cy-4);
-                } else if (grid[c][r].treasure == TRES_GEM) {
-                    SDL_Point pts[5] = {{cx, cy-8}, {cx+6, cy}, {cx, cy+8}, {cx-6, cy}, {cx, cy-8}};
-                    SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
+                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255); // Oro
+                    SDL_Rect base = {cx-10, cy+4, 20, 6}; SDL_RenderFillRect(renderer, &base);
+                    SDL_Point pts[5] = {{cx-10, cy+4}, {cx-8, cy-6}, {cx, cy+2}, {cx+8, cy-6}, {cx+10, cy+4}};
                     SDL_RenderDrawLines(renderer, pts, 5);
-                    drawFilledCircle(renderer, cx, cy, 4, {100, 255, 255, 255});
-                } else if (grid[c][r].treasure == TRES_CUP) {
+                    SDL_Rect l1 = {cx-10, cy-4, 4, 8}; SDL_RenderFillRect(renderer, &l1);
+                    SDL_Rect l2 = {cx-2, cy-8, 4, 12}; SDL_RenderFillRect(renderer, &l2);
+                    SDL_Rect l3 = {cx+6, cy-4, 4, 8}; SDL_RenderFillRect(renderer, &l3);
+                    drawFilledCircle(renderer, cx-6, cy+7, 2, {255, 0, 0, 255}); // Rubino
+                    drawFilledCircle(renderer, cx+6, cy+7, 2, {0, 255, 0, 255}); // Smeraldo
+                } 
+                else if (grid[c][r].treasure == TRES_GOLD) {
+                    drawFilledCircle(renderer, cx-6, cy+4, 6, {255, 215, 0, 255});
+                    drawFilledCircle(renderer, cx+6, cy+4, 6, {255, 215, 0, 255});
+                    drawFilledCircle(renderer, cx, cy-2, 7, {255, 235, 50, 255});
+                    drawFilledCircle(renderer, cx-2, cy-4, 2, {255, 255, 255, 255}); // Riflesso
+                } 
+                else if (grid[c][r].treasure == TRES_CHEST) {
+                    SDL_SetRenderDrawColor(renderer, 139, 69, 19, 255); // Legno
+                    SDL_Rect body = {cx-10, cy-4, 20, 14}; SDL_RenderFillRect(renderer, &body);
+                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255); // Bordo oro
+                    SDL_Rect top = {cx-10, cy-4, 20, 4}; SDL_RenderFillRect(renderer, &top);
+                    SDL_Rect lock = {cx-3, cy-1, 6, 6}; SDL_RenderFillRect(renderer, &lock);
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Serratura
+                    SDL_Rect hole = {cx-1, cy+1, 2, 3}; SDL_RenderFillRect(renderer, &hole);
+                } 
+                else if (grid[c][r].treasure == TRES_GEM) {
+                    SDL_Point pts[5] = {{cx, cy-10}, {cx+8, cy}, {cx, cy+10}, {cx-8, cy}, {cx, cy-10}};
+                    SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255); // Ciano
+                    SDL_RenderDrawLines(renderer, pts, 5);
+                    drawFilledCircle(renderer, cx, cy, 6, {100, 255, 255, 255});
+                    // Facette
+                    SDL_RenderDrawLine(renderer, cx, cy-10, cx-4, cy-2);
+                    SDL_RenderDrawLine(renderer, cx, cy-10, cx+4, cy-2);
+                } 
+                else if (grid[c][r].treasure == TRES_CUP) {
                     SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-                    SDL_Rect cup = {cx-6, cy-8, 12, 8}; SDL_RenderFillRect(renderer, &cup);
+                    SDL_Rect cup = {cx-8, cy-10, 16, 10}; SDL_RenderFillRect(renderer, &cup);
                     SDL_Rect stand = {cx-4, cy, 8, 4}; SDL_RenderFillRect(renderer, &stand);
-                    SDL_Rect base = {cx-8, cy+4, 16, 4}; SDL_RenderFillRect(renderer, &base);
+                    SDL_Rect base = {cx-10, cy+4, 20, 4}; SDL_RenderFillRect(renderer, &base);
+                    drawFilledCircle(renderer, cx, cy-5, 3, {255, 0, 0, 255}); // Rubino sulla coppa
                 }
             } else if (grid[c][r].type == CELL_WEAPON) {
                 grid[c][r].weapon.render(renderer, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);

@@ -52,8 +52,9 @@ bool Player::tryMove(int tDx, int tDy, Maze& maze) {
 }
 
 void Player::update(Maze& maze, bool freeMovement) {
-    if (jumpTimer > 0) jumpTimer -= 16;
-    if (damageTimer > 0) damageTimer -= 16;
+    // FIX CRITICO: Previene l'overflow di Uint32
+    if (jumpTimer > 16) jumpTimer -= 16; else jumpTimer = 0;
+    if (damageTimer > 16) damageTimer -= 16; else damageTimer = 0;
 
     if (freeMovement) {
         if (nextDx != 0 || nextDy != 0) {
@@ -62,10 +63,10 @@ void Player::update(Maze& maze, bool freeMovement) {
             nextDx = 0; nextDy = 0;
         }
         x += dx * speed; y += dy * speed;
-        if (x < 10) x = 10;
-        if (x > WINDOW_WIDTH - 10) x = WINDOW_WIDTH - 10;
-        if (y < UI_HEIGHT + 10) y = UI_HEIGHT + 10;
-        if (y > WINDOW_HEIGHT - 10) y = WINDOW_HEIGHT - 10;
+        if (x < 12) x = 12;
+        if (x > WINDOW_WIDTH - 12) x = WINDOW_WIDTH - 12;
+        if (y < UI_HEIGHT + 12) y = UI_HEIGHT + 12;
+        if (y > WINDOW_HEIGHT - 12) y = WINDOW_HEIGHT - 12;
     } else {
         int col = (int)(x / TILE_SIZE);
         int row = (int)((y - UI_HEIGHT) / TILE_SIZE);
@@ -116,7 +117,7 @@ void Player::shoot() {
 void Player::takeDamage() {
     if (!isJumping() && damageTimer == 0) {
         energy--;
-        damageTimer = 1500; // 1.5s invulnerabilita'
+        damageTimer = 1000; // 1 secondo di invulnerabilità
         if (energy <= 0) {
             lives--;
             energy = maxEnergy;
@@ -139,7 +140,8 @@ void Player::render(SDL_Renderer* renderer) {
     int px = (int)x;
     int py = (int)y;
 
-    drawFilledCircle(renderer, px, py + 14, 10, {0, 0, 0, 100});
+    // Ombra più larga
+    drawFilledCircle(renderer, px, py + 16, 12, {0, 0, 0, 100});
 
     SDL_Color skin = {255, 220, 177, 255};
     // Lampeggio quando invulnerabile
@@ -148,54 +150,63 @@ void Player::render(SDL_Renderer* renderer) {
     SDL_Color hat = {110, 70, 40, 255};
     SDL_Color backpack = {40, 80, 40, 255};
 
+    // Gambe più grandi
     SDL_SetRenderDrawColor(renderer, pants.r, pants.g, pants.b, 255);
-    SDL_Rect leg1 = {px - 6, py + 2, 5, 12};
-    SDL_Rect leg2 = {px + 1, py + 2, 5, 12};
+    SDL_Rect leg1 = {px - 8, py + 2, 6, 14};
+    SDL_Rect leg2 = {px + 2, py + 2, 6, 14};
     SDL_RenderFillRect(renderer, &leg1);
     SDL_RenderFillRect(renderer, &leg2);
 
-    drawFilledCircle(renderer, px - (lastDx * 8), py + 2, 6, backpack);
+    // Zaino grosso
+    drawFilledCircle(renderer, px - (lastDx * 10), py + 4, 8, backpack);
 
+    // Corpo torso
     SDL_SetRenderDrawColor(renderer, clothes.r, clothes.g, clothes.b, 255);
-    SDL_Rect body = {px - 8, py - 4, 16, 12};
+    SDL_Rect body = {px - 10, py - 6, 20, 14};
     SDL_RenderFillRect(renderer, &body);
 
-    SDL_Rect arm1 = {px - 11, py - 2, 4, 10};
-    SDL_Rect arm2 = {px + 7, py - 2, 4, 10};
+    // Braccia
+    SDL_Rect arm1 = {px - 14, py - 4, 5, 12};
+    SDL_Rect arm2 = {px + 9, py - 4, 5, 12};
     SDL_RenderFillRect(renderer, &arm1);
     SDL_RenderFillRect(renderer, &arm2);
 
-    drawFilledCircle(renderer, px, py - 10, 8, skin);
+    // Testa grande
+    drawFilledCircle(renderer, px, py - 12, 10, skin);
 
+    // Occhi
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    int eyeOffsetX = lastDx * 2;
-    SDL_Rect eye1 = {px - 4 + eyeOffsetX, py - 12, 2, 3};
-    SDL_Rect eye2 = {px + 2 + eyeOffsetX, py - 12, 2, 3};
+    int eyeOffsetX = lastDx * 3;
+    SDL_Rect eye1 = {px - 5 + eyeOffsetX, py - 14, 3, 4};
+    SDL_Rect eye2 = {px + 2 + eyeOffsetX, py - 14, 3, 4};
     SDL_RenderFillRect(renderer, &eye1);
     SDL_RenderFillRect(renderer, &eye2);
 
+    // Cappello da esploratore largo
     SDL_SetRenderDrawColor(renderer, hat.r, hat.g, hat.b, 255);
-    drawFilledCircle(renderer, px, py - 14, 6, hat);
-    SDL_Rect brim = {px - 12, py - 14, 24, 4};
+    drawFilledCircle(renderer, px, py - 18, 8, hat);
+    SDL_Rect brim = {px - 16, py - 18, 32, 5};
     SDL_RenderFillRect(renderer, &brim);
 
+    // Disegna Arma in mano (più grande)
     currentWeapon.render(renderer, px - TILE_SIZE/2, py - TILE_SIZE/2);
 
+    // Proiettili dettagliati e più grandi
     for (const auto& p : projectiles) {
         if (p.active) {
             if (p.type == WPN_PISTOL) {
-                drawFilledCircle(renderer, (int)p.x, (int)p.y, 3, {255, 255, 100, 255});
+                drawFilledCircle(renderer, (int)p.x, (int)p.y, 4, {255, 255, 100, 255});
             } else if (p.type == WPN_SHOTGUN) {
-                drawFilledCircle(renderer, (int)p.x, (int)p.y, 5, {255, 150, 50, 255});
+                drawFilledCircle(renderer, (int)p.x, (int)p.y, 6, {255, 150, 50, 255});
             } else if (p.type == WPN_ROCKET) {
                 SDL_SetRenderDrawColor(renderer, 100, 200, 100, 255);
-                SDL_Rect r = {(int)p.x - 4, (int)p.y - 3, 8, 6};
+                SDL_Rect r = {(int)p.x - 6, (int)p.y - 4, 12, 8};
                 SDL_RenderFillRect(renderer, &r);
-                drawFilledCircle(renderer, (int)p.x, (int)p.y, 4, {200, 50, 50, 255});
+                drawFilledCircle(renderer, (int)p.x, (int)p.y, 5, {200, 50, 50, 255});
             } else if (p.type == WPN_LASER) {
                 SDL_SetRenderDrawColor(renderer, 50, 200, 255, 255);
-                for(int i=0; i<5; i++) SDL_RenderDrawLine(renderer, (int)p.x - p.dx*i*2, (int)p.y - p.dy*i*2, (int)p.x, (int)p.y);
-                drawFilledCircle(renderer, (int)p.x, (int)p.y, 4, {200, 255, 255, 255});
+                for(int i=0; i<8; i++) SDL_RenderDrawLine(renderer, (int)p.x - p.dx*i*2, (int)p.y - p.dy*i*2, (int)p.x, (int)p.y);
+                drawFilledCircle(renderer, (int)p.x, (int)p.y, 5, {200, 255, 255, 255});
             }
         }
     }

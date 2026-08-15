@@ -75,7 +75,7 @@ void Game::startBossFight() {
     if(boss) delete boss;
     boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
     player.resetPosition();
-    player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 50.0f);
+    player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 80.0f);
     bossProjectiles.clear();
     spawnBossRoomWeapons();
 }
@@ -85,7 +85,7 @@ void Game::spawnBossRoomWeapons() {
     for(int i=0; i<3; i++) {
         Weapon w = Weapon::generateRandom();
         w.ammo = 5;
-        // Posizionate in alto, lontane dal giocatore che spawnano in basso
+        // Spawnale in alto, distanziate
         float wx = 150.0f + i * 250.0f;
         float wy = 150.0f;
         bossRoomWeapons.push_back({w, wx, wy});
@@ -153,7 +153,7 @@ void Game::update() {
                 if (enemy.isDead()) continue;
                 int dx = proj.x - enemy.getPixelPos().x;
                 int dy = proj.y - enemy.getPixelPos().y;
-                if (dx*dx + dy*dy < 500) { // Raggio collisione aumentato
+                if (dx*dx + dy*dy < 500) { 
                     enemy.takeDamage(proj.power);
                     proj.active = false;
                     if (enemy.isDead()) {
@@ -170,7 +170,7 @@ void Game::update() {
                 if (enemy.isDead()) continue;
                 int dx = pPos.x - enemy.getPixelPos().x;
                 int dy = pPos.y - enemy.getPixelPos().y;
-                if (dx*dx + dy*dy < 900) { // Raggio collisione aumentato (era 600)
+                if (dx*dx + dy*dy < 800) { 
                     int livesBefore = player.getLives();
                     player.takeDamage();
                     if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) {
@@ -204,7 +204,7 @@ void Game::update() {
                 if (!proj.active) continue;
                 int dx = proj.x - player.getPixelPos().x;
                 int dy = proj.y - player.getPixelPos().y;
-                if (dx*dx + dy*dy < 500) { // Raggio collisione proiettili boss
+                if (dx*dx + dy*dy < 500) { 
                     proj.active = false;
                     int livesBefore = player.getLives();
                     player.takeDamage();
@@ -216,10 +216,11 @@ void Game::update() {
             bossProjectiles.erase(std::remove_if(bossProjectiles.begin(), bossProjectiles.end(), [](const Projectile& p) { return !p.active; }), bossProjectiles.end());
         }
         
+        // Raccogli armi nella boss room con raggio più ampio
         for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
             int dx = it->x - player.getPixelPos().x;
             int dy = it->y - player.getPixelPos().y;
-            if (dx*dx + dy*dy < 400) {
+            if (dx*dx + dy*dy < 1000) { 
                 player.collectWeapon(it->w);
                 it = bossRoomWeapons.erase(it);
             } else {
@@ -227,7 +228,10 @@ void Game::update() {
             }
         }
         
-        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) spawnBossRoomWeapons();
+        // Se finisci le munizioni, spawniamo nuove armi immediatamente
+        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) {
+            spawnBossRoomWeapons();
+        }
         
         if (player.getLives() <= 0) state = STATE_LOSE;
         if (boss->isDead()) {
@@ -286,7 +290,7 @@ void Game::render() {
         boss->render(renderer);
         SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255);
         for (const auto& p : bossProjectiles) {
-            if (p.active) drawFilledCircle(renderer, (int)p.x, (int)p.y, 6, {255, 50, 50, 255});
+            if (p.active) drawFilledCircle(renderer, (int)p.x, (int)p.y, 8, {255, 50, 50, 255});
         }
         std::string lvlText = "BOSS LEVEL " + std::to_string(currentLevel);
         drawText(renderer, lvlText, 300, 100, 3, {255, 0, 0, 255});
