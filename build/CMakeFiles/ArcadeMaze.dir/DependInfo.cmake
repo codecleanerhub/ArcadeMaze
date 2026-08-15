@@ -9,6 +9,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/luca/Scrivania/Sviluppo/ArcadeMaze/src/AudioManager.cpp" "CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.o" "gcc" "CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.o.d"
+  "/home/luca/Scrivania/Sviluppo/ArcadeMaze/src/Boss.cpp" "CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.o" "gcc" "CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.o.d"
   "/home/luca/Scrivania/Sviluppo/ArcadeMaze/src/Enemy.cpp" "CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.o" "gcc" "CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.o.d"
   "/home/luca/Scrivania/Sviluppo/ArcadeMaze/src/Game.cpp" "CMakeFiles/ArcadeMaze.dir/src/Game.cpp.o" "gcc" "CMakeFiles/ArcadeMaze.dir/src/Game.cpp.o.d"
   "/home/luca/Scrivania/Sviluppo/ArcadeMaze/src/Maze.cpp" "CMakeFiles/ArcadeMaze.dir/src/Maze.cpp.o" "gcc" "CMakeFiles/ArcadeMaze.dir/src/Maze.cpp.o.d"

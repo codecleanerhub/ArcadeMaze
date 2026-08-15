@@ -153,6 +153,30 @@ src/AudioManager.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.s
 .PHONY : src/AudioManager.cpp.s
 
+src/Boss.o: src/Boss.cpp.o
+.PHONY : src/Boss.o
+
+# target to build an object file
+src/Boss.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.o
+.PHONY : src/Boss.cpp.o
+
+src/Boss.i: src/Boss.cpp.i
+.PHONY : src/Boss.i
+
+# target to preprocess a source file
+src/Boss.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.i
+.PHONY : src/Boss.cpp.i
+
+src/Boss.s: src/Boss.cpp.s
+.PHONY : src/Boss.s
+
+# target to generate assembly for a file
+src/Boss.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.s
+.PHONY : src/Boss.cpp.s
+
 src/Enemy.o: src/Enemy.cpp.o
 .PHONY : src/Enemy.o
 
@@ -357,6 +381,9 @@ help:
 	@echo "... src/AudioManager.o"
 	@echo "... src/AudioManager.i"
 	@echo "... src/AudioManager.s"
+	@echo "... src/Boss.o"
+	@echo "... src/Boss.i"
+	@echo "... src/Boss.s"
 	@echo "... src/Enemy.o"
 	@echo "... src/Enemy.i"
 	@echo "... src/Enemy.s"

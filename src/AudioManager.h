@@ -4,11 +4,17 @@
 #include <SDL2/SDL.h>
 
 enum SoundType {
-    SOUND_SHOOT,
+    SOUND_PISTOL,
+    SOUND_SHOTGUN,
+    SOUND_ROCKET,
+    SOUND_LASER,
     SOUND_DOT,
     SOUND_ENEMY_DEATH,
     SOUND_LOSE_LIFE,
-    SOUND_WIN
+    SOUND_WIN,
+    SOUND_BOSS_SHOOT,
+    SOUND_BOSS_HIT,
+    SOUND_BOSS_DEATH
 };
 
 class AudioManager {

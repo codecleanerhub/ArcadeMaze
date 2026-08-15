@@ -3,6 +3,8 @@ file(REMOVE_RECURSE
   "ArcadeMaze.pdb"
   "CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.o"
   "CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.o.d"
+  "CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.o"
+  "CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.o.d"
   "CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.o"
   "CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.o.d"
   "CMakeFiles/ArcadeMaze.dir/src/Game.cpp.o"

@@ -18,8 +18,10 @@ public:
     Player();
     
     void reset();
+    void resetPosition();
+    void setPosition(float newX, float newY); // <-- AGGIUNTO METODO
     void handleInput(SDL_Scancode key, const Config& config, Maze& maze);
-    void update(Maze& maze);
+    void update(Maze& maze, bool freeMovement);
     void render(SDL_Renderer* renderer);
     
     void takeDamage();

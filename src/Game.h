@@ -9,9 +9,12 @@
 #include "UI.h"
 #include "Utils.h"
 #include "AudioManager.h"
+#include "Boss.h"
 
 enum GameState {
+    STATE_MENU,
     STATE_PLAYING,
+    STATE_BOSS,
     STATE_WIN,
     STATE_LOSE
 };
@@ -34,17 +37,27 @@ private:
     UI ui;
     AudioManager audio;
     std::vector<Enemy> enemies;
+    Boss* boss;
+    std::vector<Projectile> bossProjectiles;
+    std::vector<Weapon> bossRoomWeapons;
     
     Config config;
     GameState state;
     bool isRunning;
+    int currentLevel;
+    
+    std::vector<SDL_DisplayMode> displayModes;
+    int selectedModeIndex;
     
     void handleEvents();
     void update();
     void render();
     
     void spawnEnemies();
-    void resetGame();
+    void startLevel(int lvl);
+    void startBossFight();
+    void spawnBossRoomWeapons();
+    SoundType getWeaponSound(WeaponType wt);
 };
 
 #endif

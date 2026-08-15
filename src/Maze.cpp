@@ -1,10 +1,12 @@
 #include "Maze.h"
 #include <cstdlib>
 #include <algorithm>
+
 Maze::Maze() {
     grid.resize(MAZE_COLS, std::vector<Cell>(MAZE_ROWS));
     generate();
 }
+
 void Maze::generate() {
     for (int c = 0; c < MAZE_COLS; ++c)
         for (int r = 0; r < MAZE_ROWS; ++r)
@@ -63,6 +65,7 @@ void Maze::generate() {
     wallColor = { (Uint8)(rand() % 100 + 50), (Uint8)(rand() % 100 + 50), (Uint8)(rand() % 100 + 50), 255 };
     bgColor = { (Uint8)(rand() % 20), (Uint8)(rand() % 20), (Uint8)(rand() % 20), 255 };
 }
+
 int Maze::countNeighboringWalls(int c, int r) {
     int count = 0;
     if (grid[c-1][r].type == CELL_WALL) count++;
@@ -71,20 +74,25 @@ int Maze::countNeighboringWalls(int c, int r) {
     if (grid[c][r+1].type == CELL_WALL) count++;
     return count;
 }
+
 bool Maze::isWall(int col, int row) {
     if (col < 0 || col >= MAZE_COLS || row < 0 || row >= MAZE_ROWS) return true;
     return grid[col][row].type == CELL_WALL;
 }
+
 CellType Maze::getCellType(int col, int row) {
     if (col < 0 || col >= MAZE_COLS || row < 0 || row >= MAZE_ROWS) return CELL_WALL;
     return grid[col][row].type;
 }
+
 Weapon Maze::collectWeapon(int col, int row) {
     Weapon w = grid[col][row].weapon;
     grid[col][row].type = CELL_EMPTY;
     return w;
 }
+
 void Maze::collectDot(int col, int row) { grid[col][row].type = CELL_EMPTY; }
+
 int Maze::getRemainingDots() {
     int count = 0;
     for (int c = 0; c < MAZE_COLS; ++c)
@@ -92,9 +100,11 @@ int Maze::getRemainingDots() {
             if (grid[c][r].type == CELL_DOT) count++;
     return count;
 }
+
 void Maze::render(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, bgColor.r, bgColor.g, bgColor.b, 255);
     SDL_RenderClear(renderer);
+
     for (int c = 0; c < MAZE_COLS; ++c) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             SDL_Rect rect = {c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT, TILE_SIZE, TILE_SIZE};
@@ -106,12 +116,7 @@ void Maze::render(SDL_Renderer* renderer) {
                 SDL_Rect dot = {c * TILE_SIZE + TILE_SIZE/2 - 2, r * TILE_SIZE + TILE_SIZE/2 - 2 + UI_HEIGHT, 4, 4};
                 SDL_RenderFillRect(renderer, &dot);
             } else if (grid[c][r].type == CELL_WEAPON) {
-                SDL_Color wc = grid[c][r].weapon.getColor();
-                SDL_SetRenderDrawColor(renderer, wc.r, wc.g, wc.b, 255);
-                SDL_Rect w1 = {c * TILE_SIZE + 8, r * TILE_SIZE + 14 + UI_HEIGHT, 16, 4};
-                SDL_Rect w2 = {c * TILE_SIZE + 14, r * TILE_SIZE + 8 + UI_HEIGHT, 4, 16};
-                SDL_RenderFillRect(renderer, &w1);
-                SDL_RenderFillRect(renderer, &w2);
+                grid[c][r].weapon.render(renderer, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             }
         }
     }
