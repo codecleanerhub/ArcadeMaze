@@ -3,49 +3,16 @@
 #include <cstdlib>
 #include <algorithm>
 
-Game::Game() {
-    window = nullptr;
-    renderer = nullptr;
-    isRunning = false;
-    state = STATE_MENU;
-    boss = nullptr;
-    currentLevel = 1;
+Game::Game() : window(sf::VideoMode(1024, 1024), "Arcade Maze Fantasy"), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true) {
+    displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
 
-Game::~Game() { cleanup(); }
-
 bool Game::init() {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) return false;
-    
-    int numModes = SDL_GetNumDisplayModes(0);
-    for (int i = 0; i < numModes; ++i) {
-        SDL_DisplayMode mode;
-        SDL_GetDisplayMode(0, i, &mode);
-        if (mode.refresh_rate == 60 && mode.w >= 800 && mode.h >= 600) {
-            bool found = false;
-            for(const auto& m : displayModes) {
-                if(m.w == mode.w && m.h == mode.h) { found = true; break; }
-            }
-            if(!found) displayModes.push_back(mode);
-        }
-    }
-    if (displayModes.empty()) {
-        displayModes.push_back({SDL_PIXELFORMAT_UNKNOWN, 800, 800, 60, nullptr});
-    }
-    
-    SDL_DisplayMode initialMode = displayModes[0];
-    window = SDL_CreateWindow("Arcade Maze Shooter", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, initialMode.w, initialMode.h, SDL_WINDOW_SHOWN);
-    if (!window) return false;
-    
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!renderer) return false;
-    
-    SDL_RenderSetLogicalSize(renderer, WINDOW_WIDTH, WINDOW_HEIGHT);
+    window.setFramerateLimit(60);
+    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+    window.setView(view);
     config = loadConfig("config.ini");
-    
-    state = STATE_MENU; 
-    isRunning = true;
     return true;
 }
 
@@ -59,14 +26,20 @@ void Game::startLevel(int lvl) {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    EnemyType types[] = {ENEMY_ALIEN, ENEMY_GHOST, ENEMY_ROBOT, ENEMY_FANTASY, ENEMY_ZOMBIE};
+    EnemyType pool1[] = {ENEMY_ZOMBIE, ENEMY_GOBLIN, ENEMY_SKELETON, ENEMY_BAT, ENEMY_SPIDER};
+    EnemyType pool2[] = {ENEMY_GHOUL, ENEMY_ORC, ENEMY_SLIME, ENEMY_SKELETON, ENEMY_BAT};
+    EnemyType pool3[] = {ENEMY_WRAITH, ENEMY_DEMON, ENEMY_ORC, ENEMY_GHOST, ENEMY_SPIDER};
+    EnemyType pool4[] = {ENEMY_ROBOT, ENEMY_DEMON, ENEMY_WRAITH, ENEMY_GHOUL, ENEMY_ORC};
+    
+    EnemyType* currentPool = (currentLevel % 4 == 0) ? pool4 : (currentLevel % 3 == 0 ? pool3 : (currentLevel % 2 == 0 ? pool2 : pool1));
+    
     for (int i = 0; i < 5; ++i) {
         int c, r;
         do {
             c = 1 + rand() % (MAZE_COLS - 2);
             r = 1 + rand() % (MAZE_ROWS - 2);
         } while (maze.isWall(c, r) || (c < 5 && r < 5));
-        enemies.push_back(Enemy(types[i], c, r));
+        enemies.push_back(Enemy(currentPool[i], c, r));
     }
 }
 
@@ -75,7 +48,7 @@ void Game::startBossFight() {
     if(boss) delete boss;
     boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
     player.resetPosition();
-    player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 80.0f);
+    player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
     bossProjectiles.clear();
     spawnBossRoomWeapons();
 }
@@ -85,10 +58,7 @@ void Game::spawnBossRoomWeapons() {
     for(int i=0; i<3; i++) {
         Weapon w = Weapon::generateRandom();
         w.ammo = 5;
-        // Spawnale in alto, distanziate
-        float wx = 150.0f + i * 250.0f;
-        float wy = 150.0f;
-        bossRoomWeapons.push_back({w, wx, wy});
+        bossRoomWeapons.push_back({w, sf::Vector2f(200.0f + i * 300.0f, 200.0f)});
     }
 }
 
@@ -103,29 +73,43 @@ SoundType Game::getWeaponSound(WeaponType wt) {
 }
 
 void Game::handleEvents() {
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_QUIT) {
-            isRunning = false;
-        } else if (e.type == SDL_KEYDOWN) {
-            SDL_Scancode scancode = e.key.keysym.scancode;
-            if (scancode == SDL_SCANCODE_ESCAPE) isRunning = false;
+    sf::Event event;
+    while (window.pollEvent(event)) {
+        if (event.type == sf::Event::Closed) isRunning = false;
+        else if (event.type == sf::Event::Resized) {
+            float windowRatio = (float)event.size.width / (float)event.size.height;
+            float viewRatio = (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT;
+            sf::FloatRect viewport(0.f, 0.f, 1.f, 1.f);
+            if (windowRatio > viewRatio) {
+                viewport.width = viewRatio / windowRatio;
+                viewport.left = (1.f - viewport.width) / 2.f;
+            } else {
+                viewport.height = windowRatio / viewRatio;
+                viewport.top = (1.f - viewport.height) / 2.f;
+            }
+            sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+            view.setViewport(viewport);
+            window.setView(view);
+        }
+        else if (event.type == sf::Event::KeyPressed) {
+            int key = event.key.code;
+            if (key == sf::Keyboard::Escape) isRunning = false;
             
             if (state == STATE_MENU) {
-                if (scancode == SDL_SCANCODE_UP) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
-                else if (scancode == SDL_SCANCODE_DOWN) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
-                else if (scancode == SDL_SCANCODE_RETURN) {
-                    SDL_DisplayMode mode = displayModes[selectedModeIndex];
-                    SDL_SetWindowSize(window, mode.w, mode.h);
-                    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+                if (key == sf::Keyboard::Up) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
+                else if (key == sf::Keyboard::Down) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
+                else if (key == sf::Keyboard::Return) {
+                    sf::VideoMode mode = displayModes[selectedModeIndex];
+                    window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
+                    window.setFramerateLimit(60);
+                    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                    window.setView(view);
                     startLevel(1);
                 }
             } else if (state == STATE_PLAYING || state == STATE_BOSS) {
-                int ammoBefore = player.getCurrentWeapon().ammo;
-                player.handleInput(scancode, config, maze);
-                if (player.getCurrentWeapon().ammo < ammoBefore) audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
+                player.handleInput(key, config);
             } else if (state == STATE_WIN || state == STATE_LOSE) {
-                if (scancode == SDL_SCANCODE_RETURN) {
+                if (key == sf::Keyboard::Return) {
                     currentLevel = 1;
                     player.reset();
                     startLevel(1);
@@ -136,13 +120,30 @@ void Game::handleEvents() {
 }
 
 void Game::update() {
+    // TASTI SPARO E SALTO HARDCODATI PER MASSIMA AFFIDABILITÀ
+    if (state == STATE_PLAYING || state == STATE_BOSS) {
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+            if (player.getShootCooldown() == 0) {
+                int ammoBefore = player.getCurrentWeapon().ammo;
+                player.shoot();
+                if (player.getCurrentWeapon().ammo < ammoBefore) {
+                    audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
+                }
+                player.setShootCooldown(150); // Sparo più rapido
+            }
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt)) {
+            player.activateJump();
+        }
+    }
+
     if (state == STATE_PLAYING) {
         int treasuresBefore = maze.getRemainingTreasures();
-        player.update(maze, false);
+        player.update(maze, false, particles);
+        
         if (maze.getRemainingTreasures() < treasuresBefore) audio.playSound(SOUND_TREASURE);
         
-        Vec2 pPos = player.getPixelPos();
-        
+        sf::Vector2f pPos = player.getPixelPos();
         for (auto& enemy : enemies) {
             if (!enemy.isDead()) enemy.update(maze, player.getGridPos());
         }
@@ -151,14 +152,17 @@ void Game::update() {
             if (!proj.active) continue;
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
-                int dx = proj.x - enemy.getPixelPos().x;
-                int dy = proj.y - enemy.getPixelPos().y;
-                if (dx*dx + dy*dy < 500) { 
+                float dx = proj.pos.x - enemy.getPixelPos().x;
+                float dy = proj.pos.y - enemy.getPixelPos().y;
+                if (dx*dx + dy*dy < 600) { 
                     enemy.takeDamage(proj.power);
                     proj.active = false;
                     if (enemy.isDead()) {
                         player.addScore(5000);
                         audio.playSound(SOUND_ENEMY_DEATH);
+                        for(int i=0; i<20; i++) {
+                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(150, 0, 0), 40, 40});
+                        }
                     }
                     break;
                 }
@@ -168,30 +172,27 @@ void Game::update() {
         if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
-                int dx = pPos.x - enemy.getPixelPos().x;
-                int dy = pPos.y - enemy.getPixelPos().y;
+                float dx = pPos.x - enemy.getPixelPos().x;
+                float dy = pPos.y - enemy.getPixelPos().y;
                 if (dx*dx + dy*dy < 800) { 
                     int livesBefore = player.getLives();
                     player.takeDamage();
-                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) {
-                        audio.playSound(SOUND_LOSE_LIFE);
-                    }
+                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
                     break;
                 }
             }
         }
-        
         if (player.getLives() <= 0) state = STATE_LOSE;
         if (maze.getRemainingTreasures() == 0) startBossFight();
     } 
     else if (state == STATE_BOSS) {
-        player.update(maze, true);
+        player.update(maze, true, particles);
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
         
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
-            int dx = proj.x - boss->getPos().x;
-            int dy = proj.y - boss->getPos().y;
+            float dx = proj.pos.x - boss->getPos().x;
+            float dy = proj.pos.y - boss->getPos().y;
             if (dx*dx + dy*dy < (boss->getSize()/2)*(boss->getSize()/2)) {
                 boss->takeDamage(proj.power);
                 proj.active = false;
@@ -202,37 +203,28 @@ void Game::update() {
         if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& proj : bossProjectiles) {
                 if (!proj.active) continue;
-                int dx = proj.x - player.getPixelPos().x;
-                int dy = proj.y - player.getPixelPos().y;
-                if (dx*dx + dy*dy < 500) { 
+                float dx = proj.pos.x - player.getPixelPos().x;
+                float dy = proj.pos.y - player.getPixelPos().y;
+                if (dx*dx + dy*dy < 600) { 
                     proj.active = false;
                     int livesBefore = player.getLives();
                     player.takeDamage();
-                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) {
-                        audio.playSound(SOUND_LOSE_LIFE);
-                    }
+                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
                 }
             }
             bossProjectiles.erase(std::remove_if(bossProjectiles.begin(), bossProjectiles.end(), [](const Projectile& p) { return !p.active; }), bossProjectiles.end());
         }
         
-        // Raccogli armi nella boss room con raggio più ampio
         for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
-            int dx = it->x - player.getPixelPos().x;
-            int dy = it->y - player.getPixelPos().y;
+            float dx = it->pos.x - player.getPixelPos().x;
+            float dy = it->pos.y - player.getPixelPos().y;
             if (dx*dx + dy*dy < 1000) { 
                 player.collectWeapon(it->w);
                 it = bossRoomWeapons.erase(it);
-            } else {
-                ++it;
-            }
+            } else ++it;
         }
         
-        // Se finisci le munizioni, spawniamo nuove armi immediatamente
-        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) {
-            spawnBossRoomWeapons();
-        }
-        
+        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) spawnBossRoomWeapons();
         if (player.getLives() <= 0) state = STATE_LOSE;
         if (boss->isDead()) {
             audio.playSound(SOUND_BOSS_DEATH);
@@ -240,62 +232,67 @@ void Game::update() {
             startLevel(currentLevel);
         }
     }
+
+    for (auto& p : particles) {
+        p.pos += p.vel;
+        p.life--;
+    }
+    particles.erase(std::remove_if(particles.begin(), particles.end(), [](const Particle& p) { return p.life <= 0; }), particles.end());
 }
 
 void Game::render() {
-    if (state == STATE_MENU) {
-        SDL_SetRenderDrawColor(renderer, 20, 20, 40, 255);
-        SDL_RenderClear(renderer);
-        drawText(renderer, "SELECT RESOLUTION", 250, 100, 3, {255, 255, 255, 255});
-        for (size_t i = 0; i < displayModes.size(); ++i) {
-            std::string res = std::to_string(displayModes[i].w) + "x" + std::to_string(displayModes[i].h);
-            SDL_Color color = (i == selectedModeIndex) ? SDL_Color{255, 255, 0, 255} : SDL_Color{200, 200, 200, 255};
-            drawText(renderer, res, 300, 200 + i * 40, 2, color);
-        }
-        drawText(renderer, "UP/DOWN TO SELECT", 220, 600, 2, {255, 255, 255, 255});
-        drawText(renderer, "ENTER TO START", 250, 650, 2, {255, 255, 255, 255});
-        SDL_RenderPresent(renderer);
-        return;
-    }
+    window.clear(sf::Color(10, 10, 10));
     
-    if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {
-        maze.render(renderer);
-        ui.render(renderer, player, maze.getRemainingTreasures());
-        player.render(renderer);
-        for (const auto& enemy : enemies) {
-            if (!enemy.isDead()) enemy.render(renderer);
+    if (state == STATE_MENU) {
+        drawText(window, "SELECT RESOLUTION", 250, 100, 3, sf::Color::White);
+        for (size_t i = 0; i < displayModes.size() && i < 10; ++i) {
+            std::string res = std::to_string(displayModes[i].width) + "x" + std::to_string(displayModes[i].height);
+            sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(200, 200, 200);
+            drawText(window, res, 300, 200 + i * 40, 2, color);
         }
+        drawText(window, "UP/DOWN TO SELECT", 220, 600, 2, sf::Color::White);
+        drawText(window, "ENTER TO START", 250, 650, 2, sf::Color::White);
+    } 
+    else if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {
+        maze.render(window);
+        ui.render(window, player, maze.getRemainingTreasures());
+        player.render(window);
+        for (const auto& enemy : enemies) if (!enemy.isDead()) enemy.render(window);
+        
+        for (const auto& p : particles) {
+            sf::CircleShape c(4.f);
+            c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, 255 * p.life / p.maxLife));
+            c.setPosition(p.pos.x - 4.f, p.pos.y - 4.f);
+            window.draw(c);
+        }
+
         if (state == STATE_WIN) {
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-            SDL_Rect overlay = {0, 0, WINDOW_WIDTH, WINDOW_HEIGHT};
-            SDL_RenderFillRect(renderer, &overlay);
-            drawText(renderer, "YOU WIN", 300, 350, 4, {0, 255, 0, 255});
-            drawText(renderer, "PRESS ENTER", 250, 450, 2, {255, 255, 255, 255});
+            sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+            overlay.setFillColor(sf::Color(0, 0, 0, 200));
+            window.draw(overlay);
+            drawText(window, "YOU WIN", 300, 350, 4, sf::Color::Green);
         } else if (state == STATE_LOSE) {
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
-            SDL_Rect overlay = {0, 0, WINDOW_WIDTH, WINDOW_HEIGHT};
-            SDL_RenderFillRect(renderer, &overlay);
-            drawText(renderer, "GAME OVER", 280, 350, 4, {255, 0, 0, 255});
-            drawText(renderer, "PRESS ENTER", 250, 450, 2, {255, 255, 255, 255});
+            sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+            overlay.setFillColor(sf::Color(0, 0, 0, 200));
+            window.draw(overlay);
+            drawText(window, "GAME OVER", 280, 350, 4, sf::Color::Red);
         }
     } 
     else if (state == STATE_BOSS) {
-        SDL_SetRenderDrawColor(renderer, 10, 10, 10, 255);
-        SDL_RenderClear(renderer);
-        ui.render(renderer, player, 0);
-        for (const auto& brw : bossRoomWeapons) {
-            brw.w.render(renderer, (int)brw.x - TILE_SIZE/2, (int)brw.y - TILE_SIZE/2);
-        }
-        player.render(renderer);
-        boss->render(renderer);
-        SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255);
+        ui.render(window, player, 0);
+        for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
+        player.render(window);
+        boss->render(window);
         for (const auto& p : bossProjectiles) {
-            if (p.active) drawFilledCircle(renderer, (int)p.x, (int)p.y, 8, {255, 50, 50, 255});
+            if (p.active) {
+                sf::CircleShape proj(10.f); proj.setFillColor(sf::Color(255, 50, 50));
+                proj.setPosition(p.pos.x - 10.f, p.pos.y - 10.f); window.draw(proj);
+            }
         }
-        std::string lvlText = "BOSS LEVEL " + std::to_string(currentLevel);
-        drawText(renderer, lvlText, 300, 100, 3, {255, 0, 0, 255});
+        drawText(window, "BOSS LEVEL " + std::to_string(currentLevel), 300, 100, 3, sf::Color::Red);
     }
-    SDL_RenderPresent(renderer);
+    
+    window.display();
 }
 
 void Game::run() {
@@ -303,13 +300,5 @@ void Game::run() {
         handleEvents();
         update();
         render();
-        SDL_Delay(16);
     }
-}
-
-void Game::cleanup() {
-    if (boss) delete boss;
-    if (renderer) SDL_DestroyRenderer(renderer);
-    if (window) SDL_DestroyWindow(window);
-    SDL_Quit();
 }

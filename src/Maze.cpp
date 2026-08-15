@@ -1,6 +1,7 @@
 #include "Maze.h"
 #include <cstdlib>
 #include <algorithm>
+#include <random>
 
 Maze::Maze() {
     grid.resize(MAZE_COLS, std::vector<Cell>(MAZE_ROWS));
@@ -13,65 +14,52 @@ void Maze::generate() {
             grid[c][r].type = CELL_WALL;
 
     std::vector<Vec2> stack;
-    int startC = 1, startR = 1;
-    grid[startC][startR].type = CELL_EMPTY;
-    stack.push_back({startC, startR});
-
-    int dc[] = {0, 2, 0, -2};
-    int dr[] = {-2, 0, 2, 0};
+    grid[1][1].type = CELL_EMPTY;
+    stack.push_back({1, 1});
+    int dc[] = {0, 2, 0, -2}, dr[] = {-2, 0, 2, 0};
 
     while (!stack.empty()) {
-        Vec2 current = stack.back();
+        Vec2 curr = stack.back();
         std::vector<int> neighbors;
         for (int i = 0; i < 4; ++i) {
-            int nc = current.x + dc[i];
-            int nr = current.y + dr[i];
-            if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1 && grid[nc][nr].type == CELL_WALL) {
-                neighbors.push_back(i);
-            }
+            int nc = curr.x + dc[i], nr = curr.y + dr[i];
+            if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1 && grid[nc][nr].type == CELL_WALL) neighbors.push_back(i);
         }
         if (!neighbors.empty()) {
             int dir = neighbors[rand() % neighbors.size()];
-            int nc = current.x + dc[dir];
-            int nr = current.y + dr[dir];
-            grid[current.x + dc[dir]/2][current.y + dr[dir]/2].type = CELL_EMPTY;
-            grid[nc][nr].type = CELL_EMPTY;
-            stack.push_back({nc, nr});
-        } else {
-            stack.pop_back();
-        }
+            grid[curr.x + dc[dir]/2][curr.y + dr[dir]/2].type = CELL_EMPTY;
+            grid[curr.x + dc[dir]][curr.y + dr[dir]].type = CELL_EMPTY;
+            stack.push_back({curr.x + dc[dir], curr.y + dr[dir]});
+        } else stack.pop_back();
     }
 
-    for (int i = 0; i < 10; ++i) {
-        int c = 1 + rand() % (MAZE_COLS - 2);
-        int r = 1 + rand() % (MAZE_ROWS - 2);
-        if (grid[c][r].type == CELL_WALL && countNeighboringWalls(c, r) == 2) {
-            grid[c][r].type = CELL_EMPTY;
-        }
+    for (int i = 0; i < 15; ++i) {
+        int c = 1 + rand() % (MAZE_COLS - 2), r = 1 + rand() % (MAZE_ROWS - 2);
+        if (grid[c][r].type == CELL_WALL && countNeighboringWalls(c, r) == 2) grid[c][r].type = CELL_EMPTY;
     }
 
     std::vector<Vec2> emptyCells;
-    for (int c = 1; c < MAZE_COLS - 1; ++c) {
-        for (int r = 1; r < MAZE_ROWS - 1; ++r) {
+    for (int c = 1; c < MAZE_COLS - 1; ++c)
+        for (int r = 1; r < MAZE_ROWS - 1; ++r)
             if (grid[c][r].type == CELL_EMPTY) emptyCells.push_back({c, r});
-        }
-    }
-    std::random_shuffle(emptyCells.begin(), emptyCells.end());
+    
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(emptyCells.begin(), emptyCells.end(), g);
 
-    for(int i=0; i<6 && !emptyCells.empty(); i++) {
-        Vec2 pos = emptyCells.back(); emptyCells.pop_back();
-        grid[pos.x][pos.y].type = CELL_TREASURE;
-        grid[pos.x][pos.y].treasure = static_cast<TreasureType>(rand() % 5);
+    for(int i=0; i<8 && !emptyCells.empty(); i++) {
+        Vec2 p = emptyCells.back(); emptyCells.pop_back();
+        grid[p.x][p.y].type = CELL_TREASURE;
+        grid[p.x][p.y].treasure = static_cast<TreasureType>(rand() % 5);
+    }
+    for(int i=0; i<5 && !emptyCells.empty(); i++) {
+        Vec2 p = emptyCells.back(); emptyCells.pop_back();
+        grid[p.x][p.y].type = CELL_WEAPON;
+        grid[p.x][p.y].weapon = Weapon::generateRandom();
     }
 
-    for(int i=0; i<3 && !emptyCells.empty(); i++) {
-        Vec2 pos = emptyCells.back(); emptyCells.pop_back();
-        grid[pos.x][pos.y].type = CELL_WEAPON;
-        grid[pos.x][pos.y].weapon = Weapon::generateRandom();
-    }
-
-    wallColor = { (Uint8)(rand() % 100 + 50), (Uint8)(rand() % 100 + 50), (Uint8)(rand() % 100 + 50), 255 };
-    bgColor = { (Uint8)(rand() % 20), (Uint8)(rand() % 20), (Uint8)(rand() % 20), 255 };
+    wallColor = sf::Color(rand() % 50 + 40, rand() % 50 + 40, rand() % 50 + 40);
+    bgColor = sf::Color(15, 15, 15);
 }
 
 int Maze::countNeighboringWalls(int c, int r) {
@@ -109,71 +97,99 @@ int Maze::getRemainingTreasures() {
     return count;
 }
 
-void Maze::render(SDL_Renderer* renderer) {
-    SDL_SetRenderDrawColor(renderer, bgColor.r, bgColor.g, bgColor.b, 255);
-    SDL_RenderClear(renderer);
-
+void Maze::render(sf::RenderTarget& target) {
+    sf::RectangleShape rect(sf::Vector2f(TILE_SIZE, TILE_SIZE));
+    sf::Color outline(10, 10, 10);
+    
     for (int c = 0; c < MAZE_COLS; ++c) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
-            SDL_Rect rect = {c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT, TILE_SIZE, TILE_SIZE};
+            rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             if (grid[c][r].type == CELL_WALL) {
-                SDL_SetRenderDrawColor(renderer, wallColor.r + 30, wallColor.g + 30, wallColor.b + 30, 255);
-                SDL_Rect top = {rect.x, rect.y, TILE_SIZE, TILE_SIZE - 6};
-                SDL_RenderFillRect(renderer, &top);
-                SDL_SetRenderDrawColor(renderer, wallColor.r - 30, wallColor.g - 30, wallColor.b - 30, 255);
-                SDL_Rect bottom = {rect.x, rect.y + TILE_SIZE - 6, TILE_SIZE, 6};
-                SDL_RenderFillRect(renderer, &bottom);
-            } else if (grid[c][r].type == CELL_TREASURE) {
-                int cx = c * TILE_SIZE + TILE_SIZE/2;
-                int cy = r * TILE_SIZE + TILE_SIZE/2 + UI_HEIGHT;
+                // Muro 3D pietra
+                rect.setFillColor(wallColor);
+                target.draw(rect);
+                rect.setSize(sf::Vector2f(TILE_SIZE, 8.f));
+                rect.setFillColor(sf::Color(wallColor.r + 30, wallColor.g + 30, wallColor.b + 30));
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+                target.draw(rect);
+                rect.setSize(sf::Vector2f(TILE_SIZE, 8.f));
+                rect.setFillColor(sf::Color(wallColor.r - 20, wallColor.g - 20, wallColor.b - 20));
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 8);
+                target.draw(rect);
+                rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE));
+            } else {
+                rect.setFillColor(bgColor);
+                target.draw(rect);
                 
-                // Sfondo scuro per evidenziare il tesoro
-                drawFilledCircle(renderer, cx, cy, 12, {50, 50, 50, 150});
+                float cx = c * TILE_SIZE + TILE_SIZE/2.f;
+                float cy = r * TILE_SIZE + TILE_SIZE/2.f + UI_HEIGHT;
 
-                if (grid[c][r].treasure == TRES_CROWN) {
-                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255); // Oro
-                    SDL_Rect base = {cx-10, cy+4, 20, 6}; SDL_RenderFillRect(renderer, &base);
-                    SDL_Point pts[5] = {{cx-10, cy+4}, {cx-8, cy-6}, {cx, cy+2}, {cx+8, cy-6}, {cx+10, cy+4}};
-                    SDL_RenderDrawLines(renderer, pts, 5);
-                    SDL_Rect l1 = {cx-10, cy-4, 4, 8}; SDL_RenderFillRect(renderer, &l1);
-                    SDL_Rect l2 = {cx-2, cy-8, 4, 12}; SDL_RenderFillRect(renderer, &l2);
-                    SDL_Rect l3 = {cx+6, cy-4, 4, 8}; SDL_RenderFillRect(renderer, &l3);
-                    drawFilledCircle(renderer, cx-6, cy+7, 2, {255, 0, 0, 255}); // Rubino
-                    drawFilledCircle(renderer, cx+6, cy+7, 2, {0, 255, 0, 255}); // Smeraldo
-                } 
-                else if (grid[c][r].treasure == TRES_GOLD) {
-                    drawFilledCircle(renderer, cx-6, cy+4, 6, {255, 215, 0, 255});
-                    drawFilledCircle(renderer, cx+6, cy+4, 6, {255, 215, 0, 255});
-                    drawFilledCircle(renderer, cx, cy-2, 7, {255, 235, 50, 255});
-                    drawFilledCircle(renderer, cx-2, cy-4, 2, {255, 255, 255, 255}); // Riflesso
-                } 
-                else if (grid[c][r].treasure == TRES_CHEST) {
-                    SDL_SetRenderDrawColor(renderer, 139, 69, 19, 255); // Legno
-                    SDL_Rect body = {cx-10, cy-4, 20, 14}; SDL_RenderFillRect(renderer, &body);
-                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255); // Bordo oro
-                    SDL_Rect top = {cx-10, cy-4, 20, 4}; SDL_RenderFillRect(renderer, &top);
-                    SDL_Rect lock = {cx-3, cy-1, 6, 6}; SDL_RenderFillRect(renderer, &lock);
-                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Serratura
-                    SDL_Rect hole = {cx-1, cy+1, 2, 3}; SDL_RenderFillRect(renderer, &hole);
-                } 
-                else if (grid[c][r].treasure == TRES_GEM) {
-                    SDL_Point pts[5] = {{cx, cy-10}, {cx+8, cy}, {cx, cy+10}, {cx-8, cy}, {cx, cy-10}};
-                    SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255); // Ciano
-                    SDL_RenderDrawLines(renderer, pts, 5);
-                    drawFilledCircle(renderer, cx, cy, 6, {100, 255, 255, 255});
-                    // Facette
-                    SDL_RenderDrawLine(renderer, cx, cy-10, cx-4, cy-2);
-                    SDL_RenderDrawLine(renderer, cx, cy-10, cx+4, cy-2);
-                } 
-                else if (grid[c][r].treasure == TRES_CUP) {
-                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-                    SDL_Rect cup = {cx-8, cy-10, 16, 10}; SDL_RenderFillRect(renderer, &cup);
-                    SDL_Rect stand = {cx-4, cy, 8, 4}; SDL_RenderFillRect(renderer, &stand);
-                    SDL_Rect base = {cx-10, cy+4, 20, 4}; SDL_RenderFillRect(renderer, &base);
-                    drawFilledCircle(renderer, cx, cy-5, 3, {255, 0, 0, 255}); // Rubino sulla coppa
+                if (grid[c][r].type == CELL_TREASURE) {
+                    // Pedistallo
+                    sf::CircleShape ped(20.f); ped.setFillColor(sf::Color(30, 30, 30, 150));
+                    ped.setPosition(cx-20.f, cy-12.f); target.draw(ped);
+
+                    if (grid[c][r].treasure == TRES_CROWN) {
+                        sf::RectangleShape base(sf::Vector2f(28.f, 8.f)); base.setFillColor(sf::Color(255, 215, 0)); base.setOutlineThickness(1.5f); base.setOutlineColor(outline);
+                        base.setPosition(cx-14.f, cy+4.f); target.draw(base);
+                        sf::RectangleShape s1(sf::Vector2f(6.f, 8.f)); s1.setFillColor(sf::Color(255, 215, 0)); s1.setOutlineThickness(1.f); s1.setOutlineColor(outline);
+                        s1.setPosition(cx-14.f, cy-2.f); target.draw(s1);
+                        s1.setSize(sf::Vector2f(6.f, 14.f)); s1.setPosition(cx-3.f, cy-8.f); target.draw(s1);
+                        s1.setSize(sf::Vector2f(6.f, 8.f)); s1.setPosition(cx+8.f, cy-2.f); target.draw(s1);
+                        // Gemme
+                        sf::CircleShape gem(2.f); gem.setFillColor(sf::Color::Red);
+                        gem.setPosition(cx-12.f, cy+4.f); target.draw(gem);
+                        gem.setFillColor(sf::Color::Blue);
+                        gem.setPosition(cx+10.f, cy+4.f); target.draw(gem);
+                    } 
+                    else if (grid[c][r].treasure == TRES_GEM) {
+                        // Glow
+                        sf::CircleShape glow(16.f); glow.setFillColor(sf::Color(0, 255, 255, 50));
+                        glow.setPosition(cx-16.f, cy-16.f); target.draw(glow);
+                        
+                        sf::ConvexShape gem; gem.setPointCount(4);
+                        gem.setFillColor(sf::Color(0, 255, 255)); gem.setOutlineThickness(1.5f); gem.setOutlineColor(outline);
+                        gem.setPoint(0, sf::Vector2f(cx, cy-16)); gem.setPoint(1, sf::Vector2f(cx+12, cy));
+                        gem.setPoint(2, sf::Vector2f(cx, cy+16)); gem.setPoint(3, sf::Vector2f(cx-12, cy));
+                        target.draw(gem);
+                        // Riflesso
+                        sf::ConvexShape gleam; gleam.setPointCount(3);
+                        gleam.setFillColor(sf::Color(255, 255, 255));
+                        gleam.setPoint(0, sf::Vector2f(cx-4, cy-8)); gleam.setPoint(1, sf::Vector2f(cx, cy-12)); gleam.setPoint(2, sf::Vector2f(cx-8, cy));
+                        target.draw(gleam);
+                    }
+                    else if (grid[c][r].treasure == TRES_CHEST) {
+                        sf::RectangleShape body(sf::Vector2f(28.f, 18.f)); body.setFillColor(sf::Color(139, 69, 19)); body.setOutlineThickness(1.5f); body.setOutlineColor(outline);
+                        body.setPosition(cx-14.f, cy-4.f); target.draw(body);
+                        sf::RectangleShape top(sf::Vector2f(28.f, 6.f)); top.setFillColor(sf::Color(100, 50, 10)); top.setOutlineThickness(1.f); top.setOutlineColor(outline);
+                        top.setPosition(cx-14.f, cy-10.f); target.draw(top);
+                        sf::RectangleShape band1(sf::Vector2f(2.f, 18.f)); band1.setFillColor(sf::Color(200, 200, 200));
+                        band1.setPosition(cx-8.f, cy-4.f); target.draw(band1);
+                        band1.setPosition(cx+6.f, cy-4.f); target.draw(band1);
+                        sf::RectangleShape lock(sf::Vector2f(6.f, 6.f)); lock.setFillColor(sf::Color(255, 215, 0));
+                        lock.setPosition(cx-3.f, cy-2.f); target.draw(lock);
+                    }
+                    else if (grid[c][r].treasure == TRES_CUP) {
+                        sf::RectangleShape cup(sf::Vector2f(16.f, 12.f)); cup.setFillColor(sf::Color(255, 215, 0)); cup.setOutlineThickness(1.5f); cup.setOutlineColor(outline);
+                        cup.setPosition(cx-8.f, cy-8.f); target.draw(cup);
+                        sf::RectangleShape stand(sf::Vector2f(6.f, 4.f)); stand.setFillColor(sf::Color(200, 180, 0));
+                        stand.setPosition(cx-3.f, cy+4.f); target.draw(stand);
+                        sf::RectangleShape base(sf::Vector2f(16.f, 4.f)); base.setFillColor(sf::Color(255, 215, 0)); base.setOutlineThickness(1.f); base.setOutlineColor(outline);
+                        base.setPosition(cx-8.f, cy+8.f); target.draw(base);
+                        sf::CircleShape gem(3.f); gem.setFillColor(sf::Color::Red);
+                        gem.setPosition(cx-3.f, cy-4.f); target.draw(gem);
+                    }
+                    else if (grid[c][r].treasure == TRES_GOLD) {
+                        sf::CircleShape coin1(8.f); coin1.setFillColor(sf::Color(255, 215, 0)); coin1.setOutlineThickness(1.f); coin1.setOutlineColor(outline);
+                        coin1.setPosition(cx-12.f, cy+4.f); target.draw(coin1);
+                        sf::CircleShape coin2(8.f); coin2.setFillColor(sf::Color(255, 235, 50)); coin2.setOutlineThickness(1.f); coin2.setOutlineColor(outline);
+                        coin2.setPosition(cx+2.f, cy+4.f); target.draw(coin2);
+                        sf::CircleShape coin3(10.f); coin3.setFillColor(sf::Color(255, 255, 100)); coin3.setOutlineThickness(1.f); coin3.setOutlineColor(outline);
+                        coin3.setPosition(cx-5.f, cy-6.f); target.draw(coin3);
+                    }
+                } else if (grid[c][r].type == CELL_WEAPON) {
+                    grid[c][r].weapon.render(target, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 }
-            } else if (grid[c][r].type == CELL_WEAPON) {
-                grid[c][r].weapon.render(renderer, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             }
         }
     }

@@ -117,24 +117,24 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named ArcadeMaze
+# Target rules for targets named ArcadeMazeFantasy
 
 # Build rule for target.
-ArcadeMaze: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ArcadeMaze
-.PHONY : ArcadeMaze
+ArcadeMazeFantasy: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ArcadeMazeFantasy
+.PHONY : ArcadeMazeFantasy
 
 # fast build rule for target.
-ArcadeMaze/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/build
-.PHONY : ArcadeMaze/fast
+ArcadeMazeFantasy/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/build
+.PHONY : ArcadeMazeFantasy/fast
 
 src/AudioManager.o: src/AudioManager.cpp.o
 .PHONY : src/AudioManager.o
 
 # target to build an object file
 src/AudioManager.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/AudioManager.cpp.o
 .PHONY : src/AudioManager.cpp.o
 
 src/AudioManager.i: src/AudioManager.cpp.i
@@ -142,7 +142,7 @@ src/AudioManager.i: src/AudioManager.cpp.i
 
 # target to preprocess a source file
 src/AudioManager.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/AudioManager.cpp.i
 .PHONY : src/AudioManager.cpp.i
 
 src/AudioManager.s: src/AudioManager.cpp.s
@@ -150,7 +150,7 @@ src/AudioManager.s: src/AudioManager.cpp.s
 
 # target to generate assembly for a file
 src/AudioManager.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/AudioManager.cpp.s
 .PHONY : src/AudioManager.cpp.s
 
 src/Boss.o: src/Boss.cpp.o
@@ -158,7 +158,7 @@ src/Boss.o: src/Boss.cpp.o
 
 # target to build an object file
 src/Boss.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Boss.cpp.o
 .PHONY : src/Boss.cpp.o
 
 src/Boss.i: src/Boss.cpp.i
@@ -166,7 +166,7 @@ src/Boss.i: src/Boss.cpp.i
 
 # target to preprocess a source file
 src/Boss.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Boss.cpp.i
 .PHONY : src/Boss.cpp.i
 
 src/Boss.s: src/Boss.cpp.s
@@ -174,7 +174,7 @@ src/Boss.s: src/Boss.cpp.s
 
 # target to generate assembly for a file
 src/Boss.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Boss.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Boss.cpp.s
 .PHONY : src/Boss.cpp.s
 
 src/Enemy.o: src/Enemy.cpp.o
@@ -182,7 +182,7 @@ src/Enemy.o: src/Enemy.cpp.o
 
 # target to build an object file
 src/Enemy.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Enemy.cpp.o
 .PHONY : src/Enemy.cpp.o
 
 src/Enemy.i: src/Enemy.cpp.i
@@ -190,7 +190,7 @@ src/Enemy.i: src/Enemy.cpp.i
 
 # target to preprocess a source file
 src/Enemy.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Enemy.cpp.i
 .PHONY : src/Enemy.cpp.i
 
 src/Enemy.s: src/Enemy.cpp.s
@@ -198,7 +198,7 @@ src/Enemy.s: src/Enemy.cpp.s
 
 # target to generate assembly for a file
 src/Enemy.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Enemy.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Enemy.cpp.s
 .PHONY : src/Enemy.cpp.s
 
 src/Game.o: src/Game.cpp.o
@@ -206,7 +206,7 @@ src/Game.o: src/Game.cpp.o
 
 # target to build an object file
 src/Game.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Game.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Game.cpp.o
 .PHONY : src/Game.cpp.o
 
 src/Game.i: src/Game.cpp.i
@@ -214,7 +214,7 @@ src/Game.i: src/Game.cpp.i
 
 # target to preprocess a source file
 src/Game.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Game.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Game.cpp.i
 .PHONY : src/Game.cpp.i
 
 src/Game.s: src/Game.cpp.s
@@ -222,7 +222,7 @@ src/Game.s: src/Game.cpp.s
 
 # target to generate assembly for a file
 src/Game.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Game.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Game.cpp.s
 .PHONY : src/Game.cpp.s
 
 src/Maze.o: src/Maze.cpp.o
@@ -230,7 +230,7 @@ src/Maze.o: src/Maze.cpp.o
 
 # target to build an object file
 src/Maze.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Maze.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Maze.cpp.o
 .PHONY : src/Maze.cpp.o
 
 src/Maze.i: src/Maze.cpp.i
@@ -238,7 +238,7 @@ src/Maze.i: src/Maze.cpp.i
 
 # target to preprocess a source file
 src/Maze.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Maze.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Maze.cpp.i
 .PHONY : src/Maze.cpp.i
 
 src/Maze.s: src/Maze.cpp.s
@@ -246,7 +246,7 @@ src/Maze.s: src/Maze.cpp.s
 
 # target to generate assembly for a file
 src/Maze.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Maze.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Maze.cpp.s
 .PHONY : src/Maze.cpp.s
 
 src/Player.o: src/Player.cpp.o
@@ -254,7 +254,7 @@ src/Player.o: src/Player.cpp.o
 
 # target to build an object file
 src/Player.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Player.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Player.cpp.o
 .PHONY : src/Player.cpp.o
 
 src/Player.i: src/Player.cpp.i
@@ -262,7 +262,7 @@ src/Player.i: src/Player.cpp.i
 
 # target to preprocess a source file
 src/Player.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Player.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Player.cpp.i
 .PHONY : src/Player.cpp.i
 
 src/Player.s: src/Player.cpp.s
@@ -270,7 +270,7 @@ src/Player.s: src/Player.cpp.s
 
 # target to generate assembly for a file
 src/Player.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Player.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Player.cpp.s
 .PHONY : src/Player.cpp.s
 
 src/UI.o: src/UI.cpp.o
@@ -278,7 +278,7 @@ src/UI.o: src/UI.cpp.o
 
 # target to build an object file
 src/UI.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/UI.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/UI.cpp.o
 .PHONY : src/UI.cpp.o
 
 src/UI.i: src/UI.cpp.i
@@ -286,7 +286,7 @@ src/UI.i: src/UI.cpp.i
 
 # target to preprocess a source file
 src/UI.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/UI.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/UI.cpp.i
 .PHONY : src/UI.cpp.i
 
 src/UI.s: src/UI.cpp.s
@@ -294,7 +294,7 @@ src/UI.s: src/UI.cpp.s
 
 # target to generate assembly for a file
 src/UI.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/UI.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/UI.cpp.s
 .PHONY : src/UI.cpp.s
 
 src/Utils.o: src/Utils.cpp.o
@@ -302,7 +302,7 @@ src/Utils.o: src/Utils.cpp.o
 
 # target to build an object file
 src/Utils.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Utils.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Utils.cpp.o
 .PHONY : src/Utils.cpp.o
 
 src/Utils.i: src/Utils.cpp.i
@@ -310,7 +310,7 @@ src/Utils.i: src/Utils.cpp.i
 
 # target to preprocess a source file
 src/Utils.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Utils.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Utils.cpp.i
 .PHONY : src/Utils.cpp.i
 
 src/Utils.s: src/Utils.cpp.s
@@ -318,7 +318,7 @@ src/Utils.s: src/Utils.cpp.s
 
 # target to generate assembly for a file
 src/Utils.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Utils.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Utils.cpp.s
 .PHONY : src/Utils.cpp.s
 
 src/Weapon.o: src/Weapon.cpp.o
@@ -326,7 +326,7 @@ src/Weapon.o: src/Weapon.cpp.o
 
 # target to build an object file
 src/Weapon.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Weapon.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Weapon.cpp.o
 .PHONY : src/Weapon.cpp.o
 
 src/Weapon.i: src/Weapon.cpp.i
@@ -334,7 +334,7 @@ src/Weapon.i: src/Weapon.cpp.i
 
 # target to preprocess a source file
 src/Weapon.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Weapon.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Weapon.cpp.i
 .PHONY : src/Weapon.cpp.i
 
 src/Weapon.s: src/Weapon.cpp.s
@@ -342,7 +342,7 @@ src/Weapon.s: src/Weapon.cpp.s
 
 # target to generate assembly for a file
 src/Weapon.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/Weapon.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/Weapon.cpp.s
 .PHONY : src/Weapon.cpp.s
 
 src/main.o: src/main.cpp.o
@@ -350,7 +350,7 @@ src/main.o: src/main.cpp.o
 
 # target to build an object file
 src/main.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/main.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/main.cpp.o
 .PHONY : src/main.cpp.o
 
 src/main.i: src/main.cpp.i
@@ -358,7 +358,7 @@ src/main.i: src/main.cpp.i
 
 # target to preprocess a source file
 src/main.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/main.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/main.cpp.i
 .PHONY : src/main.cpp.i
 
 src/main.s: src/main.cpp.s
@@ -366,7 +366,7 @@ src/main.s: src/main.cpp.s
 
 # target to generate assembly for a file
 src/main.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/main.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/src/main.cpp.s
 .PHONY : src/main.cpp.s
 
 # Help Target
@@ -377,7 +377,7 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... ArcadeMaze"
+	@echo "... ArcadeMazeFantasy"
 	@echo "... src/AudioManager.o"
 	@echo "... src/AudioManager.i"
 	@echo "... src/AudioManager.s"

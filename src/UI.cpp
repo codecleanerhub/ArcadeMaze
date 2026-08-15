@@ -1,47 +1,34 @@
 #include "UI.h"
+void UI::render(sf::RenderTarget& target, Player& player, int remainingTreasures) {
+    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, UI_HEIGHT));
+    bg.setFillColor(sf::Color(20, 20, 20));
+    target.draw(bg);
 
-void UI::render(SDL_Renderer* renderer, Player& player, int remainingDots) {
-    SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);
-    SDL_Rect uiBg = {0, 0, WINDOW_WIDTH, UI_HEIGHT};
-    SDL_RenderFillRect(renderer, &uiBg);
+    drawText(target, "SCORE", 10, 10, 2, sf::Color::White);
+    drawText(target, std::to_string(player.getScore()), 10, 30, 2, sf::Color::Yellow);
     
-    SDL_Color white = {255, 255, 255, 255};
-    SDL_Color yellow = {255, 255, 0, 255};
-    SDL_Color magenta = {255, 0, 255, 255};
-    
-    // Score
-    drawText(renderer, "SCORE", 10, 10, 2, white);
-    drawText(renderer, std::to_string(player.getScore()), 10, 30, 2, yellow);
-    
-    // Vite
-    drawText(renderer, "LIVES", 150, 10, 2, white);
+    drawText(target, "LIVES", 150, 10, 2, sf::Color::White);
     for(int i = 0; i < player.getLives(); ++i) {
-        SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
-        SDL_Rect head = {160 + i * 20, 35, 8, 8}; SDL_RenderFillRect(renderer, &head);
-        SDL_Rect body = {163 + i * 20, 44, 2, 8}; SDL_RenderFillRect(renderer, &body);
+        sf::CircleShape head(4.f); head.setFillColor(sf::Color(0, 255, 255));
+        head.setPosition(160 + i * 20, 39); target.draw(head);
     }
     
-    // Energia (Scudo)
-    drawText(renderer, "ENERGY", 280, 10, 2, white);
-    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-    SDL_Rect enBg = {280, 35, 100, 10}; SDL_RenderFillRect(renderer, &enBg);
-    int enWidth = (100 * player.getEnergy()) / player.getMaxEnergy();
-    SDL_SetRenderDrawColor(renderer, magenta.r, magenta.g, magenta.b, 255);
-    SDL_Rect enFg = {280, 35, enWidth, 10}; SDL_RenderFillRect(renderer, &enFg);
-    
-    // Arma e munizioni
+    drawText(target, "ENERGY", 280, 10, 2, sf::Color::White);
+    sf::RectangleShape enBg(sf::Vector2f(100.f, 10.f)); enBg.setFillColor(sf::Color(100, 100, 100));
+    enBg.setPosition(280, 35); target.draw(enBg);
+    sf::RectangleShape enFg(sf::Vector2f(100.f * player.getEnergy() / player.getMaxEnergy(), 10.f)); enFg.setFillColor(sf::Color(255, 0, 255));
+    enFg.setPosition(280, 35); target.draw(enFg);
+
     Weapon w = player.getCurrentWeapon();
-    drawText(renderer, "WPN", 420, 10, 2, white);
-    drawText(renderer, w.getName(), 420, 30, 2, w.getColor());
+    drawText(target, "WPN", 420, 10, 2, sf::Color::White);
+    drawText(target, w.getName(), 420, 30, 2, w.getColor());
     
-    drawText(renderer, "AMMO", 570, 10, 2, white);
-    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-    SDL_Rect ammoBg = {570, 35, 100, 10}; SDL_RenderFillRect(renderer, &ammoBg);
-    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-    int ammoWidth = (100 * w.ammo) / 15;
-    SDL_Rect ammoFg = {570, 35, ammoWidth, 10}; SDL_RenderFillRect(renderer, &ammoFg);
+    drawText(target, "AMMO", 570, 10, 2, sf::Color::White);
+    sf::RectangleShape ammoBg(sf::Vector2f(100.f, 10.f)); ammoBg.setFillColor(sf::Color(100, 100, 100));
+    ammoBg.setPosition(570, 35); target.draw(ammoBg);
+    sf::RectangleShape ammoFg(sf::Vector2f(100.f * w.ammo / 15.f, 10.f)); ammoFg.setFillColor(sf::Color::Yellow);
+    ammoFg.setPosition(570, 35); target.draw(ammoFg);
     
-    // Dots rimanenti
-    drawText(renderer, "DOTS", 700, 10, 2, white);
-    drawText(renderer, std::to_string(remainingDots), 700, 30, 2, yellow);
+    drawText(target, "TRES", 700, 10, 2, sf::Color::White);
+    drawText(target, std::to_string(remainingTreasures), 700, 30, 2, sf::Color::Yellow);
 }

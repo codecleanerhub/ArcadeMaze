@@ -1,7 +1,6 @@
 #ifndef GAME_H
 #define GAME_H
-
-#include <SDL2/SDL.h>
+#include <SFML/Graphics.hpp>
 #include <vector>
 #include "Maze.h"
 #include "Player.h"
@@ -15,19 +14,16 @@ enum GameState { STATE_MENU, STATE_PLAYING, STATE_BOSS, STATE_WIN, STATE_LOSE };
 
 struct BossRoomWeapon {
     Weapon w;
-    float x, y;
+    sf::Vector2f pos;
 };
 
 class Game {
 public:
     Game();
-    ~Game();
     bool init();
     void run();
-    void cleanup();
 private:
-    SDL_Window* window;
-    SDL_Renderer* renderer;
+    sf::RenderWindow window;
     Maze maze;
     Player player;
     UI ui;
@@ -36,12 +32,15 @@ private:
     Boss* boss;
     std::vector<Projectile> bossProjectiles;
     std::vector<BossRoomWeapon> bossRoomWeapons;
+    std::vector<Particle> particles;
+    
     Config config;
     GameState state;
     bool isRunning;
     int currentLevel;
-    std::vector<SDL_DisplayMode> displayModes;
+    std::vector<sf::VideoMode> displayModes;
     int selectedModeIndex;
+    
     void handleEvents();
     void update();
     void render();

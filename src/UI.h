@@ -1,9 +1,9 @@
 #ifndef UI_H
 #define UI_H
-#include <SDL2/SDL.h>
+#include <SFML/Graphics.hpp>
 #include "Player.h"
 class UI {
 public:
-    void render(SDL_Renderer* renderer, Player& player, int remainingDots);
+    void render(sf::RenderTarget& target, Player& player, int remainingTreasures);
 };
 #endif

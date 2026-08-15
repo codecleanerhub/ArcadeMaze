@@ -1,9 +1,9 @@
 #include "Game.h"
-int main(int argc, char* argv[]) {
+
+int main() {
     Game game;
     if (game.init()) {
         game.run();
     }
-    game.cleanup();
     return 0;
 }

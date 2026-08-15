@@ -1,40 +1,38 @@
 #ifndef ENEMY_H
 #define ENEMY_H
 
-#include <SDL2/SDL.h>
+#include <SFML/Graphics.hpp>
 #include "Utils.h"
 #include "Maze.h"
 #include <queue>
+#include <string>
+#include <cstdint>
 
 enum EnemyType {
-    ENEMY_ALIEN,
-    ENEMY_GHOST,
-    ENEMY_ROBOT,
-    ENEMY_FANTASY,
-    ENEMY_ZOMBIE
+    ENEMY_ZOMBIE, ENEMY_SKELETON, ENEMY_GHOST, ENEMY_BAT, 
+    ENEMY_SPIDER, ENEMY_SLIME, ENEMY_DEMON, ENEMY_ROBOT,
+    ENEMY_GOBLIN, ENEMY_ORC, ENEMY_WRAITH, ENEMY_GHOUL // NUOVI NEMICI
 };
 
 class Enemy {
 public:
     Enemy(EnemyType type, int startCol, int startRow);
-    
     void update(Maze& maze, const Vec2& playerGridPos);
-    void render(SDL_Renderer* renderer) const;
+    void render(sf::RenderTarget& target) const;
     void takeDamage(int dmg);
-    
     bool isDead() const { return health <= 0; }
     Vec2 getGridPos() const;
-    Vec2 getPixelPos() const; // <-- AGGIUNTO
+    sf::Vector2f getPixelPos() const { return pos; }
     EnemyType getType() const { return type; }
 
 private:
-    float x, y;
+    sf::Vector2f pos;
     int dx, dy;
     int speed;
     int health;
+    int maxHealth;
     EnemyType type;
-    Uint32 pathUpdateTimer;
-    
+    uint32_t pathUpdateTimer;
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
 };

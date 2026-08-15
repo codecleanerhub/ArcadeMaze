@@ -63,7 +63,7 @@ CMAKE_BINARY_DIR = /home/luca/Scrivania/Sviluppo/ArcadeMaze/build
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: CMakeFiles/ArcadeMaze.dir/all
+all: CMakeFiles/ArcadeMazeFantasy.dir/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
@@ -71,34 +71,34 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/ArcadeMaze.dir/clean
+clean: CMakeFiles/ArcadeMazeFantasy.dir/clean
 .PHONY : clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/ArcadeMaze.dir
+# Target rules for target CMakeFiles/ArcadeMazeFantasy.dir
 
 # All Build rule for target.
-CMakeFiles/ArcadeMaze.dir/all:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/depend
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11 "Built target ArcadeMaze"
-.PHONY : CMakeFiles/ArcadeMaze.dir/all
+CMakeFiles/ArcadeMazeFantasy.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11 "Built target ArcadeMazeFantasy"
+.PHONY : CMakeFiles/ArcadeMazeFantasy.dir/all
 
 # Build rule for subdir invocation for target.
-CMakeFiles/ArcadeMaze.dir/rule: cmake_check_build_system
+CMakeFiles/ArcadeMazeFantasy.dir/rule: cmake_check_build_system
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles 11
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/ArcadeMaze.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/ArcadeMazeFantasy.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles 0
-.PHONY : CMakeFiles/ArcadeMaze.dir/rule
+.PHONY : CMakeFiles/ArcadeMazeFantasy.dir/rule
 
 # Convenience name for target.
-ArcadeMaze: CMakeFiles/ArcadeMaze.dir/rule
-.PHONY : ArcadeMaze
+ArcadeMazeFantasy: CMakeFiles/ArcadeMazeFantasy.dir/rule
+.PHONY : ArcadeMazeFantasy
 
 # clean rule for target.
-CMakeFiles/ArcadeMaze.dir/clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/clean
-.PHONY : CMakeFiles/ArcadeMaze.dir/clean
+CMakeFiles/ArcadeMazeFantasy.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMazeFantasy.dir/build.make CMakeFiles/ArcadeMazeFantasy.dir/clean
+.PHONY : CMakeFiles/ArcadeMazeFantasy.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

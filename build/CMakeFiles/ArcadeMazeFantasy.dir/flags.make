@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/luca/Scrivania/Sviluppo/ArcadeMaze/src -isystem /usr/include/SDL2
+CXX_INCLUDES = -I/home/luca/Scrivania/Sviluppo/ArcadeMaze/src
 
 CXX_FLAGS = -std=gnu++17
 

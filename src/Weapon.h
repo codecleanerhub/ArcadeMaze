@@ -1,22 +1,17 @@
 #ifndef WEAPON_H
 #define WEAPON_H
 
+#include <SFML/Graphics.hpp>
 #include <string>
-#include <SDL2/SDL.h>
 
-enum WeaponType {
-    WPN_PISTOL,
-    WPN_SHOTGUN,
-    WPN_ROCKET,
-    WPN_LASER
-};
+enum WeaponType { WPN_PISTOL, WPN_SHOTGUN, WPN_ROCKET, WPN_LASER };
 
 struct Projectile {
-    float x, y;
-    int dx, dy;
+    sf::Vector2f pos;
+    sf::Vector2f dir;
     int power;
     bool active;
-    WeaponType type; // Aggiunto per disegnare il proiettile corretto
+    WeaponType type;
 };
 
 struct Weapon {
@@ -28,8 +23,9 @@ struct Weapon {
     static Weapon generate(WeaponType t);
     
     std::string getName() const;
-    SDL_Color getColor() const;
-    void render(SDL_Renderer* renderer, int x, int y) const;
+    sf::Color getColor() const;
+    void render(sf::RenderTarget& target, float x, float y) const; // A terra
+    void renderEquipped(sf::RenderTarget& target, float x, float y) const; // In mano (più piccola)
 };
 
 #endif
