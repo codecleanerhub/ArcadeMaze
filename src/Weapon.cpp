@@ -42,56 +42,44 @@ void Weapon::render(SDL_Renderer* renderer, int x, int y) const {
     int cy = y + TILE_SIZE / 2;
     
     if (type == WPN_PISTOL) {
-        // Impugnatura
-        SDL_SetRenderDrawColor(renderer, 60, 40, 20, 255);
-        SDL_Rect grip = {cx - 4, cy, 6, 10};
+        SDL_SetRenderDrawColor(renderer, 50, 30, 10, 255); // Impugnatura scura
+        SDL_Rect grip = {cx - 6, cy, 8, 14};
         SDL_RenderFillRect(renderer, &grip);
-        // Corpo
-        SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
-        SDL_Rect body = {cx - 4, cy - 4, 10, 6};
+        SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); // Corpo
+        SDL_Rect body = {cx - 6, cy - 6, 14, 8};
         SDL_RenderFillRect(renderer, &body);
-        // Canna
-        SDL_Rect barrel = {cx + 6, cy - 3, 8, 3};
+        SDL_SetRenderDrawColor(renderer, 120, 120, 120, 255); // Canna
+        SDL_Rect barrel = {cx + 8, cy - 4, 10, 4};
         SDL_RenderFillRect(renderer, &barrel);
     } else if (type == WPN_SHOTGUN) {
-        // Legno
-        SDL_SetRenderDrawColor(renderer, 150, 100, 50, 255);
-        SDL_Rect body = {cx - 8, cy, 12, 8};
+        SDL_SetRenderDrawColor(renderer, 120, 80, 40, 255); // Legno
+        SDL_Rect body = {cx - 12, cy + 2, 16, 12};
         SDL_RenderFillRect(renderer, &body);
-        // Metallo
-        SDL_SetRenderDrawColor(renderer, 70, 70, 70, 255);
-        SDL_Rect barrel = {cx - 6, cy - 4, 16, 6};
+        SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255); // Metallo
+        SDL_Rect barrel = {cx - 8, cy - 6, 20, 8};
         SDL_RenderFillRect(renderer, &barrel);
-        SDL_Rect pump = {cx + 2, cy + 4, 6, 4};
+        SDL_Rect pump = {cx + 2, cy + 6, 8, 6};
         SDL_RenderFillRect(renderer, &pump);
     } else if (type == WPN_ROCKET) {
-        // Corpo
-        SDL_SetRenderDrawColor(renderer, 80, 160, 80, 255);
-        SDL_Rect body = {cx - 8, cy - 4, 14, 8};
+        SDL_SetRenderDrawColor(renderer, 80, 160, 80, 255); // Corpo
+        SDL_Rect body = {cx - 10, cy - 6, 18, 12};
         SDL_RenderFillRect(renderer, &body);
-        // Punta
-        SDL_SetRenderDrawColor(renderer, 200, 50, 50, 255);
-        drawFilledCircle(renderer, cx + 6, cy, 4, {200, 50, 50, 255});
-        // Alette
-        SDL_SetRenderDrawColor(renderer, 60, 120, 60, 255);
-        SDL_Rect fin1 = {cx - 10, cy - 6, 4, 4};
-        SDL_Rect fin2 = {cx - 10, cy + 2, 4, 4};
+        drawFilledCircle(renderer, cx + 8, cy, 6, {200, 50, 50, 255}); // Punta
+        SDL_SetRenderDrawColor(renderer, 60, 120, 60, 255); // Alette
+        SDL_Rect fin1 = {cx - 12, cy - 10, 4, 6};
+        SDL_Rect fin2 = {cx - 12, cy + 4, 4, 6};
         SDL_RenderFillRect(renderer, &fin1);
         SDL_RenderFillRect(renderer, &fin2);
     } else if (type == WPN_LASER) {
-        // Impugnatura
-        SDL_SetRenderDrawColor(renderer, 40, 40, 60, 255);
-        SDL_Rect grip = {cx - 2, cy, 5, 9};
+        SDL_SetRenderDrawColor(renderer, 30, 30, 50, 255); // Impugnatura
+        SDL_Rect grip = {cx - 4, cy + 2, 8, 12};
         SDL_RenderFillRect(renderer, &grip);
-        // Corpo
-        SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255);
-        SDL_Rect body = {cx - 4, cy - 4, 10, 6};
+        SDL_SetRenderDrawColor(renderer, 100, 100, 150, 255); // Corpo
+        SDL_Rect body = {cx - 6, cy - 6, 14, 8};
         SDL_RenderFillRect(renderer, &body);
-        // Nucleo luminoso
-        drawFilledCircle(renderer, cx, cy - 1, 3, {50, 200, 255, 255});
-        // Canna
-        SDL_SetRenderDrawColor(renderer, 150, 150, 200, 255);
-        SDL_Rect barrel = {cx + 6, cy - 2, 8, 3};
+        drawFilledCircle(renderer, cx, cy - 2, 4, {50, 200, 255, 255}); // Nucleo
+        SDL_SetRenderDrawColor(renderer, 150, 150, 200, 255); // Canna
+        SDL_Rect barrel = {cx + 8, cy - 4, 10, 4};
         SDL_RenderFillRect(renderer, &barrel);
     }
 }

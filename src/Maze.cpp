@@ -50,18 +50,31 @@ void Maze::generate() {
         }
     }
 
+    // Raccogli tutte le celle vuote
+    std::vector<Vec2> emptyCells;
     for (int c = 1; c < MAZE_COLS - 1; ++c) {
         for (int r = 1; r < MAZE_ROWS - 1; ++r) {
             if (grid[c][r].type == CELL_EMPTY) {
-                if (rand() % 100 < 5) {
-                    grid[c][r].type = CELL_WEAPON;
-                    grid[c][r].weapon = Weapon::generateRandom();
-                } else {
-                    grid[c][r].type = CELL_DOT;
-                }
+                emptyCells.push_back({c, r});
             }
         }
     }
+    std::random_shuffle(emptyCells.begin(), emptyCells.end());
+
+    // Posiziona esattamente 6 Tesori
+    for(int i=0; i<6 && !emptyCells.empty(); i++) {
+        Vec2 pos = emptyCells.back(); emptyCells.pop_back();
+        grid[pos.x][pos.y].type = CELL_TREASURE;
+        grid[pos.x][pos.y].treasure = static_cast<TreasureType>(rand() % 5);
+    }
+
+    // Posiziona esattamente 3 Armi
+    for(int i=0; i<3 && !emptyCells.empty(); i++) {
+        Vec2 pos = emptyCells.back(); emptyCells.pop_back();
+        grid[pos.x][pos.y].type = CELL_WEAPON;
+        grid[pos.x][pos.y].weapon = Weapon::generateRandom();
+    }
+
     wallColor = { (Uint8)(rand() % 100 + 50), (Uint8)(rand() % 100 + 50), (Uint8)(rand() % 100 + 50), 255 };
     bgColor = { (Uint8)(rand() % 20), (Uint8)(rand() % 20), (Uint8)(rand() % 20), 255 };
 }
@@ -91,13 +104,13 @@ Weapon Maze::collectWeapon(int col, int row) {
     return w;
 }
 
-void Maze::collectDot(int col, int row) { grid[col][row].type = CELL_EMPTY; }
+void Maze::collectTreasure(int col, int row) { grid[col][row].type = CELL_EMPTY; }
 
-int Maze::getRemainingDots() {
+int Maze::getRemainingTreasures() {
     int count = 0;
     for (int c = 0; c < MAZE_COLS; ++c)
         for (int r = 0; r < MAZE_ROWS; ++r)
-            if (grid[c][r].type == CELL_DOT) count++;
+            if (grid[c][r].type == CELL_TREASURE) count++;
     return count;
 }
 
@@ -109,19 +122,45 @@ void Maze::render(SDL_Renderer* renderer) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             SDL_Rect rect = {c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT, TILE_SIZE, TILE_SIZE};
             if (grid[c][r].type == CELL_WALL) {
-                // Effetto 3D per i muri
+                // Effetto 3D
                 SDL_SetRenderDrawColor(renderer, wallColor.r + 30, wallColor.g + 30, wallColor.b + 30, 255);
-                SDL_Rect top = {rect.x, rect.y, TILE_SIZE, TILE_SIZE - 4};
+                SDL_Rect top = {rect.x, rect.y, TILE_SIZE, TILE_SIZE - 6};
                 SDL_RenderFillRect(renderer, &top);
-                
                 SDL_SetRenderDrawColor(renderer, wallColor.r - 30, wallColor.g - 30, wallColor.b - 30, 255);
-                SDL_Rect right = {rect.x + TILE_SIZE - 4, rect.y, 4, TILE_SIZE};
-                SDL_RenderFillRect(renderer, &right);
-                
-                SDL_Rect bottom = {rect.x, rect.y + TILE_SIZE - 4, TILE_SIZE, 4};
+                SDL_Rect bottom = {rect.x, rect.y + TILE_SIZE - 6, TILE_SIZE, 6};
                 SDL_RenderFillRect(renderer, &bottom);
-            } else if (grid[c][r].type == CELL_DOT) {
-                drawFilledCircle(renderer, c * TILE_SIZE + TILE_SIZE/2, r * TILE_SIZE + TILE_SIZE/2 + UI_HEIGHT, 4, {255, 255, 255, 255});
+            } else if (grid[c][r].type == CELL_TREASURE) {
+                int cx = c * TILE_SIZE + TILE_SIZE/2;
+                int cy = r * TILE_SIZE + TILE_SIZE/2 + UI_HEIGHT;
+                if (grid[c][r].treasure == TRES_CROWN) {
+                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+                    SDL_Rect base = {cx-8, cy+2, 16, 4}; SDL_RenderFillRect(renderer, &base);
+                    SDL_Rect l1 = {cx-8, cy-2, 4, 6}; SDL_RenderFillRect(renderer, &l1);
+                    SDL_Rect l2 = {cx-2, cy-4, 4, 8}; SDL_RenderFillRect(renderer, &l2);
+                    SDL_Rect l3 = {cx+4, cy-2, 4, 6}; SDL_RenderFillRect(renderer, &l3);
+                    drawFilledCircle(renderer, cx-6, cy-2, 2, {255, 0, 0, 255});
+                    drawFilledCircle(renderer, cx+6, cy-2, 2, {0, 255, 0, 255});
+                } else if (grid[c][r].treasure == TRES_GOLD) {
+                    drawFilledCircle(renderer, cx-4, cy+2, 4, {255, 215, 0, 255});
+                    drawFilledCircle(renderer, cx+4, cy+2, 4, {255, 215, 0, 255});
+                    drawFilledCircle(renderer, cx, cy-4, 5, {255, 235, 50, 255});
+                } else if (grid[c][r].treasure == TRES_CHEST) {
+                    SDL_SetRenderDrawColor(renderer, 139, 69, 19, 255);
+                    SDL_Rect body = {cx-8, cy-4, 16, 12}; SDL_RenderFillRect(renderer, &body);
+                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+                    SDL_Rect lock = {cx-2, cy-2, 4, 4}; SDL_RenderFillRect(renderer, &lock);
+                    SDL_RenderDrawLine(renderer, cx-8, cy-4, cx+8, cy-4);
+                } else if (grid[c][r].treasure == TRES_GEM) {
+                    SDL_Point pts[5] = {{cx, cy-8}, {cx+6, cy}, {cx, cy+8}, {cx-6, cy}, {cx, cy-8}};
+                    SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
+                    SDL_RenderDrawLines(renderer, pts, 5);
+                    drawFilledCircle(renderer, cx, cy, 4, {100, 255, 255, 255});
+                } else if (grid[c][r].treasure == TRES_CUP) {
+                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+                    SDL_Rect cup = {cx-6, cy-8, 12, 8}; SDL_RenderFillRect(renderer, &cup);
+                    SDL_Rect stand = {cx-4, cy, 8, 4}; SDL_RenderFillRect(renderer, &stand);
+                    SDL_Rect base = {cx-8, cy+4, 16, 4}; SDL_RenderFillRect(renderer, &base);
+                }
             } else if (grid[c][r].type == CELL_WEAPON) {
                 grid[c][r].weapon.render(renderer, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             }

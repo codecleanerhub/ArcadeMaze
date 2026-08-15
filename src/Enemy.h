@@ -11,7 +11,7 @@ enum EnemyType {
     ENEMY_GHOST,
     ENEMY_ROBOT,
     ENEMY_FANTASY,
-    ENEMY_ZOMBIE // NUOVO NEMICO
+    ENEMY_ZOMBIE
 };
 
 class Enemy {
@@ -24,6 +24,7 @@ public:
     
     bool isDead() const { return health <= 0; }
     Vec2 getGridPos() const;
+    Vec2 getPixelPos() const; // <-- AGGIUNTO
     EnemyType getType() const { return type; }
 
 private:

@@ -2,9 +2,7 @@
 #include <iostream>
 #include <algorithm>
 
-Player::Player() {
-    reset();
-}
+Player::Player() { reset(); }
 
 void Player::reset() {
     resetPosition();
@@ -29,10 +27,8 @@ void Player::resetPosition() {
 }
 
 void Player::setPosition(float newX, float newY) {
-    x = newX;
-    y = newY;
-    dx = 0; dy = 0;
-    nextDx = 0; nextDy = 0;
+    x = newX; y = newY;
+    dx = 0; dy = 0; nextDx = 0; nextDy = 0;
 }
 
 void Player::handleInput(SDL_Scancode key, const Config& config, Maze& maze) {
@@ -40,23 +36,16 @@ void Player::handleInput(SDL_Scancode key, const Config& config, Maze& maze) {
     else if (key == config.key_down) { nextDx = 0; nextDy = 1; }
     else if (key == config.key_left) { nextDx = -1; nextDy = 0; }
     else if (key == config.key_right) { nextDx = 1; nextDy = 0; }
-    else if (key == config.key_jump) {
-        if (jumpTimer == 0) jumpTimer = 500;
-    }
-    else if (key == config.key_shoot) {
-        shoot();
-    }
+    else if (key == config.key_jump) { if (jumpTimer == 0) jumpTimer = 500; }
+    else if (key == config.key_shoot) { shoot(); }
 }
 
 bool Player::tryMove(int tDx, int tDy, Maze& maze) {
     int col = (int)(x / TILE_SIZE);
     int row = (int)((y - UI_HEIGHT) / TILE_SIZE);
-    
     if (!maze.isWall(col + tDx, row + tDy)) {
-        dx = tDx;
-        dy = tDy;
-        lastDx = tDx;
-        lastDy = tDy;
+        dx = tDx; dy = tDy;
+        lastDx = tDx; lastDy = tDy;
         return true;
     }
     return false;
@@ -72,10 +61,7 @@ void Player::update(Maze& maze, bool freeMovement) {
             lastDx = dx; lastDy = dy;
             nextDx = 0; nextDy = 0;
         }
-        
-        x += dx * speed;
-        y += dy * speed;
-        
+        x += dx * speed; y += dy * speed;
         if (x < 10) x = 10;
         if (x > WINDOW_WIDTH - 10) x = WINDOW_WIDTH - 10;
         if (y < UI_HEIGHT + 10) y = UI_HEIGHT + 10;
@@ -83,30 +69,20 @@ void Player::update(Maze& maze, bool freeMovement) {
     } else {
         int col = (int)(x / TILE_SIZE);
         int row = (int)((y - UI_HEIGHT) / TILE_SIZE);
-        
         float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
         float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
-
         if (fabs(x - centerX) < speed && fabs(y - centerY) < speed) {
-            x = centerX;
-            y = centerY;
-            
+            x = centerX; y = centerY;
             if (nextDx != 0 || nextDy != 0) {
                 tryMove(nextDx, nextDy, maze);
                 nextDx = 0; nextDy = 0;
             }
-            
-            if (maze.isWall(col + dx, row + dy)) {
-                dx = 0; dy = 0;
-            }
+            if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
         }
-
-        x += dx * speed;
-        y += dy * speed;
-
-        if (maze.getCellType(col, row) == CELL_DOT) {
-            maze.collectDot(col, row);
-            addScore(1000);
+        x += dx * speed; y += dy * speed;
+        if (maze.getCellType(col, row) == CELL_TREASURE) {
+            maze.collectTreasure(col, row);
+            addScore(10000);
         } else if (maze.getCellType(col, row) == CELL_WEAPON) {
             Weapon w = maze.collectWeapon(col, row);
             collectWeapon(w);
@@ -115,37 +91,21 @@ void Player::update(Maze& maze, bool freeMovement) {
 
     for (auto& p : projectiles) {
         if (!p.active) continue;
-        
         if (!freeMovement) {
             int pCol = (int)(p.x / TILE_SIZE);
             int pRow = (int)((p.y - UI_HEIGHT) / TILE_SIZE);
-            if (maze.isWall(pCol, pRow)) {
-                p.active = false;
-                continue;
-            }
+            if (maze.isWall(pCol, pRow)) { p.active = false; continue; }
         }
-        
-        p.x += p.dx * 6;
-        p.y += p.dy * 6;
-        
-        if (p.x < 0 || p.x > WINDOW_WIDTH || p.y < UI_HEIGHT || p.y > WINDOW_HEIGHT) {
-            p.active = false;
-        }
+        p.x += p.dx * 6; p.y += p.dy * 6;
+        if (p.x < 0 || p.x > WINDOW_WIDTH || p.y < UI_HEIGHT || p.y > WINDOW_HEIGHT) p.active = false;
     }
-    
     projectiles.erase(std::remove_if(projectiles.begin(), projectiles.end(), [](const Projectile& p) { return !p.active; }), projectiles.end());
 }
 
 void Player::shoot() {
     if (currentWeapon.ammo > 0) {
-        int shootDx = dx;
-        int shootDy = dy;
-        
-        if (shootDx == 0 && shootDy == 0) {
-            shootDx = lastDx;
-            shootDy = lastDy;
-        }
-        
+        int shootDx = dx, shootDy = dy;
+        if (shootDx == 0 && shootDy == 0) { shootDx = lastDx; shootDy = lastDy; }
         if (shootDx != 0 || shootDy != 0) {
             projectiles.push_back({x, y, shootDx, shootDy, currentWeapon.power, true, currentWeapon.type});
             currentWeapon.ammo--;
@@ -157,7 +117,6 @@ void Player::takeDamage() {
     if (!isJumping() && damageTimer == 0) {
         energy--;
         damageTimer = 1500;
-        
         if (energy <= 0) {
             lives--;
             energy = maxEnergy;
@@ -166,31 +125,20 @@ void Player::takeDamage() {
     }
 }
 
-void Player::collectWeapon(Weapon w) {
-    currentWeapon = w;
-}
+void Player::collectWeapon(Weapon w) { currentWeapon = w; }
 
 void Player::addScore(int points) {
     score += points;
-    if (score >= nextLifeThreshold) {
-        lives++;
-        nextLifeThreshold += 100000;
-    }
+    if (score >= nextLifeThreshold) { lives++; nextLifeThreshold += 100000; }
 }
 
-Vec2 Player::getGridPos() const {
-    return { (int)(x / TILE_SIZE), (int)((y - UI_HEIGHT) / TILE_SIZE) };
-}
-
-Vec2 Player::getPixelPos() const {
-    return { (int)x, (int)y };
-}
+Vec2 Player::getGridPos() const { return { (int)(x / TILE_SIZE), (int)((y - UI_HEIGHT) / TILE_SIZE) }; }
+Vec2 Player::getPixelPos() const { return { (int)x, (int)y }; }
 
 void Player::render(SDL_Renderer* renderer) {
     int px = (int)x;
     int py = (int)y;
 
-    // Ombra
     drawFilledCircle(renderer, px, py + 14, 10, {0, 0, 0, 100});
 
     SDL_Color skin = {255, 220, 177, 255};
@@ -199,31 +147,25 @@ void Player::render(SDL_Renderer* renderer) {
     SDL_Color hat = {110, 70, 40, 255};
     SDL_Color backpack = {40, 80, 40, 255};
 
-    // Gambe
     SDL_SetRenderDrawColor(renderer, pants.r, pants.g, pants.b, 255);
     SDL_Rect leg1 = {px - 6, py + 2, 5, 12};
     SDL_Rect leg2 = {px + 1, py + 2, 5, 12};
     SDL_RenderFillRect(renderer, &leg1);
     SDL_RenderFillRect(renderer, &leg2);
 
-    // Zaino
     drawFilledCircle(renderer, px - (lastDx * 8), py + 2, 6, backpack);
 
-    // Corpo
     SDL_SetRenderDrawColor(renderer, clothes.r, clothes.g, clothes.b, 255);
     SDL_Rect body = {px - 8, py - 4, 16, 12};
     SDL_RenderFillRect(renderer, &body);
 
-    // Braccia
     SDL_Rect arm1 = {px - 11, py - 2, 4, 10};
     SDL_Rect arm2 = {px + 7, py - 2, 4, 10};
     SDL_RenderFillRect(renderer, &arm1);
     SDL_RenderFillRect(renderer, &arm2);
 
-    // Testa
     drawFilledCircle(renderer, px, py - 10, 8, skin);
 
-    // Occhi
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     int eyeOffsetX = lastDx * 2;
     SDL_Rect eye1 = {px - 4 + eyeOffsetX, py - 12, 2, 3};
@@ -231,16 +173,13 @@ void Player::render(SDL_Renderer* renderer) {
     SDL_RenderFillRect(renderer, &eye1);
     SDL_RenderFillRect(renderer, &eye2);
 
-    // Cappello
     SDL_SetRenderDrawColor(renderer, hat.r, hat.g, hat.b, 255);
     drawFilledCircle(renderer, px, py - 14, 6, hat);
     SDL_Rect brim = {px - 12, py - 14, 24, 4};
     SDL_RenderFillRect(renderer, &brim);
 
-    // Disegna Arma in mano
     currentWeapon.render(renderer, px - TILE_SIZE/2, py - TILE_SIZE/2);
 
-    // Disegna Proiettili dettagliati
     for (const auto& p : projectiles) {
         if (p.active) {
             if (p.type == WPN_PISTOL) {
@@ -254,9 +193,7 @@ void Player::render(SDL_Renderer* renderer) {
                 drawFilledCircle(renderer, (int)p.x, (int)p.y, 4, {200, 50, 50, 255});
             } else if (p.type == WPN_LASER) {
                 SDL_SetRenderDrawColor(renderer, 50, 200, 255, 255);
-                for(int i=0; i<5; i++) {
-                    SDL_RenderDrawLine(renderer, (int)p.x - p.dx*i*2, (int)p.y - p.dy*i*2, (int)p.x, (int)p.y);
-                }
+                for(int i=0; i<5; i++) SDL_RenderDrawLine(renderer, (int)p.x - p.dx*i*2, (int)p.y - p.dy*i*2, (int)p.x, (int)p.y);
                 drawFilledCircle(renderer, (int)p.x, (int)p.y, 4, {200, 255, 255, 255});
             }
         }

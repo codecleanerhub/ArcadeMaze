@@ -8,7 +8,7 @@ enum SoundType {
     SOUND_SHOTGUN,
     SOUND_ROCKET,
     SOUND_LASER,
-    SOUND_DOT,
+    SOUND_TREASURE,
     SOUND_ENEMY_DEATH,
     SOUND_LOSE_LIFE,
     SOUND_WIN,
@@ -21,9 +21,7 @@ class AudioManager {
 public:
     AudioManager();
     ~AudioManager();
-    
     void playSound(SoundType type);
-
 private:
     SDL_AudioDeviceID device;
     SDL_AudioSpec spec;

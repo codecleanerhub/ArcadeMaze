@@ -13,9 +13,7 @@ Game::Game() {
     selectedModeIndex = 0;
 }
 
-Game::~Game() {
-    cleanup();
-}
+Game::~Game() { cleanup(); }
 
 bool Game::init() {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) return false;
@@ -44,10 +42,9 @@ bool Game::init() {
     if (!renderer) return false;
     
     SDL_RenderSetLogicalSize(renderer, WINDOW_WIDTH, WINDOW_HEIGHT);
-    
     config = loadConfig("config.ini");
-    startLevel(1);
     
+    state = STATE_MENU; // Avvia dal menu
     isRunning = true;
     return true;
 }
@@ -63,7 +60,7 @@ void Game::startLevel(int lvl) {
 void Game::spawnEnemies() {
     enemies.clear();
     EnemyType types[] = {ENEMY_ALIEN, ENEMY_GHOST, ENEMY_ROBOT, ENEMY_FANTASY, ENEMY_ZOMBIE};
-    for (int i = 0; i < 5; ++i) { // Ora spawniamo 5 nemici
+    for (int i = 0; i < 5; ++i) {
         int c, r;
         do {
             c = 1 + rand() % (MAZE_COLS - 2);
@@ -88,7 +85,6 @@ void Game::spawnBossRoomWeapons() {
     for(int i=0; i<3; i++) {
         Weapon w = Weapon::generateRandom();
         w.ammo = 5;
-        // Posizionate in fondo allo schermo, distanziate
         float wx = 100.0f + i * (WINDOW_WIDTH - 200.0f) / 2.0f;
         float wy = WINDOW_HEIGHT - 40.0f;
         bossRoomWeapons.push_back({w, wx, wy});
@@ -112,32 +108,21 @@ void Game::handleEvents() {
             isRunning = false;
         } else if (e.type == SDL_KEYDOWN) {
             SDL_Scancode scancode = e.key.keysym.scancode;
-            
             if (scancode == SDL_SCANCODE_ESCAPE) isRunning = false;
             
             if (state == STATE_MENU) {
-                if (scancode == SDL_SCANCODE_UP) {
-                    selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
-                } else if (scancode == SDL_SCANCODE_DOWN) {
-                    selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
-                } else if (scancode == SDL_SCANCODE_RETURN) {
+                if (scancode == SDL_SCANCODE_UP) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
+                else if (scancode == SDL_SCANCODE_DOWN) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
+                else if (scancode == SDL_SCANCODE_RETURN) {
                     SDL_DisplayMode mode = displayModes[selectedModeIndex];
                     SDL_SetWindowSize(window, mode.w, mode.h);
                     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
                     startLevel(1);
                 }
-            } else if (state == STATE_PLAYING) {
+            } else if (state == STATE_PLAYING || state == STATE_BOSS) {
                 int ammoBefore = player.getCurrentWeapon().ammo;
                 player.handleInput(scancode, config, maze);
-                if (player.getCurrentWeapon().ammo < ammoBefore) {
-                    audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
-                }
-            } else if (state == STATE_BOSS) {
-                int ammoBefore = player.getCurrentWeapon().ammo;
-                player.handleInput(scancode, config, maze);
-                if (player.getCurrentWeapon().ammo < ammoBefore) {
-                    audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
-                }
+                if (player.getCurrentWeapon().ammo < ammoBefore) audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
             } else if (state == STATE_WIN || state == STATE_LOSE) {
                 if (scancode == SDL_SCANCODE_RETURN) {
                     currentLevel = 1;
@@ -151,24 +136,23 @@ void Game::handleEvents() {
 
 void Game::update() {
     if (state == STATE_PLAYING) {
-        int dotsBefore = maze.getRemainingDots();
+        int treasuresBefore = maze.getRemainingTreasures();
         player.update(maze, false);
+        if (maze.getRemainingTreasures() < treasuresBefore) audio.playSound(SOUND_TREASURE);
         
-        if (maze.getRemainingDots() < dotsBefore) audio.playSound(SOUND_DOT);
-        
-        Vec2 playerGridPos = player.getGridPos();
+        Vec2 pPos = player.getPixelPos();
         
         for (auto& enemy : enemies) {
-            if (!enemy.isDead()) enemy.update(maze, playerGridPos);
+            if (!enemy.isDead()) enemy.update(maze, player.getGridPos());
         }
         
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
-            Vec2 projGrid = { (int)(proj.x / TILE_SIZE), (int)((proj.y - UI_HEIGHT) / TILE_SIZE) };
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
-                Vec2 enGrid = enemy.getGridPos();
-                if (projGrid.x == enGrid.x && projGrid.y == enGrid.y) {
+                int dx = proj.x - enemy.getPixelPos().x;
+                int dy = proj.y - enemy.getPixelPos().y;
+                if (dx*dx + dy*dy < 400) {
                     enemy.takeDamage(proj.power);
                     proj.active = false;
                     if (enemy.isDead()) {
@@ -180,15 +164,16 @@ void Game::update() {
             }
         }
         
-        if (!player.isInvulnerable()) {
+        if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
-                Vec2 enGrid = enemy.getGridPos();
-                if (playerGridPos.x == enGrid.x && playerGridPos.y == enGrid.y) {
-                    if (!player.isJumping()) {
-                        int livesBefore = player.getLives();
-                        player.takeDamage();
-                        if (player.getLives() < livesBefore) audio.playSound(SOUND_LOSE_LIFE);
+                int dx = pPos.x - enemy.getPixelPos().x;
+                int dy = pPos.y - enemy.getPixelPos().y;
+                if (dx*dx + dy*dy < 600) { // Collisione circolare precisa
+                    int livesBefore = player.getLives();
+                    player.takeDamage();
+                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) {
+                        audio.playSound(SOUND_LOSE_LIFE);
                     }
                     break;
                 }
@@ -196,7 +181,7 @@ void Game::update() {
         }
         
         if (player.getLives() <= 0) state = STATE_LOSE;
-        if (maze.getRemainingDots() == 0) startBossFight();
+        if (maze.getRemainingTreasures() == 0) startBossFight();
     } 
     else if (state == STATE_BOSS) {
         player.update(maze, true);
@@ -213,22 +198,23 @@ void Game::update() {
             }
         }
         
-        if (!player.isInvulnerable()) {
+        if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& proj : bossProjectiles) {
                 if (!proj.active) continue;
                 int dx = proj.x - player.getPixelPos().x;
                 int dy = proj.y - player.getPixelPos().y;
-                if (dx*dx + dy*dy < 100) {
+                if (dx*dx + dy*dy < 400) { // Collisione boss
                     proj.active = false;
                     int livesBefore = player.getLives();
                     player.takeDamage();
-                    if (player.getLives() < livesBefore) audio.playSound(SOUND_LOSE_LIFE);
+                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) {
+                        audio.playSound(SOUND_LOSE_LIFE);
+                    }
                 }
             }
             bossProjectiles.erase(std::remove_if(bossProjectiles.begin(), bossProjectiles.end(), [](const Projectile& p) { return !p.active; }), bossProjectiles.end());
         }
         
-        // Raccogli armi nella boss room
         for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
             int dx = it->x - player.getPixelPos().x;
             int dy = it->y - player.getPixelPos().y;
@@ -240,9 +226,7 @@ void Game::update() {
             }
         }
         
-        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) {
-            spawnBossRoomWeapons();
-        }
+        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) spawnBossRoomWeapons();
         
         if (player.getLives() <= 0) state = STATE_LOSE;
         if (boss->isDead()) {
@@ -257,32 +241,25 @@ void Game::render() {
     if (state == STATE_MENU) {
         SDL_SetRenderDrawColor(renderer, 20, 20, 40, 255);
         SDL_RenderClear(renderer);
-        
         drawText(renderer, "SELECT RESOLUTION", 250, 100, 3, {255, 255, 255, 255});
-        
         for (size_t i = 0; i < displayModes.size(); ++i) {
             std::string res = std::to_string(displayModes[i].w) + "x" + std::to_string(displayModes[i].h);
             SDL_Color color = (i == selectedModeIndex) ? SDL_Color{255, 255, 0, 255} : SDL_Color{200, 200, 200, 255};
             drawText(renderer, res, 300, 200 + i * 40, 2, color);
         }
-        
         drawText(renderer, "UP/DOWN TO SELECT", 220, 600, 2, {255, 255, 255, 255});
         drawText(renderer, "ENTER TO START", 250, 650, 2, {255, 255, 255, 255});
-        
         SDL_RenderPresent(renderer);
         return;
     }
     
     if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {
         maze.render(renderer);
-        ui.render(renderer, player, maze.getRemainingDots());
-        
+        ui.render(renderer, player, maze.getRemainingTreasures());
         player.render(renderer);
-        
         for (const auto& enemy : enemies) {
             if (!enemy.isDead()) enemy.render(renderer);
         }
-        
         if (state == STATE_WIN) {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200);
             SDL_Rect overlay = {0, 0, WINDOW_WIDTH, WINDOW_HEIGHT};
@@ -300,29 +277,19 @@ void Game::render() {
     else if (state == STATE_BOSS) {
         SDL_SetRenderDrawColor(renderer, 10, 10, 10, 255);
         SDL_RenderClear(renderer);
-        
         ui.render(renderer, player, 0);
-        
-        // Disegna armi a terra nella boss room
         for (const auto& brw : bossRoomWeapons) {
             brw.w.render(renderer, (int)brw.x - TILE_SIZE/2, (int)brw.y - TILE_SIZE/2);
         }
-        
         player.render(renderer);
         boss->render(renderer);
-        
-        // Disegna proiettili boss
         SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255);
         for (const auto& p : bossProjectiles) {
-            if (p.active) {
-                drawFilledCircle(renderer, (int)p.x, (int)p.y, 6, {255, 50, 50, 255});
-            }
+            if (p.active) drawFilledCircle(renderer, (int)p.x, (int)p.y, 6, {255, 50, 50, 255});
         }
-        
         std::string lvlText = "BOSS LEVEL " + std::to_string(currentLevel);
         drawText(renderer, lvlText, 300, 100, 3, {255, 0, 0, 255});
     }
-    
     SDL_RenderPresent(renderer);
 }
 
