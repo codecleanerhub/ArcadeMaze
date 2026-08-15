@@ -44,7 +44,7 @@ bool Game::init() {
     SDL_RenderSetLogicalSize(renderer, WINDOW_WIDTH, WINDOW_HEIGHT);
     config = loadConfig("config.ini");
     
-    state = STATE_MENU; // Avvia dal menu
+    state = STATE_MENU; 
     isRunning = true;
     return true;
 }
@@ -85,8 +85,9 @@ void Game::spawnBossRoomWeapons() {
     for(int i=0; i<3; i++) {
         Weapon w = Weapon::generateRandom();
         w.ammo = 5;
-        float wx = 100.0f + i * (WINDOW_WIDTH - 200.0f) / 2.0f;
-        float wy = WINDOW_HEIGHT - 40.0f;
+        // Posizionate in alto, lontane dal giocatore che spawnano in basso
+        float wx = 150.0f + i * 250.0f;
+        float wy = 150.0f;
         bossRoomWeapons.push_back({w, wx, wy});
     }
 }
@@ -152,7 +153,7 @@ void Game::update() {
                 if (enemy.isDead()) continue;
                 int dx = proj.x - enemy.getPixelPos().x;
                 int dy = proj.y - enemy.getPixelPos().y;
-                if (dx*dx + dy*dy < 400) {
+                if (dx*dx + dy*dy < 500) { // Raggio collisione aumentato
                     enemy.takeDamage(proj.power);
                     proj.active = false;
                     if (enemy.isDead()) {
@@ -169,7 +170,7 @@ void Game::update() {
                 if (enemy.isDead()) continue;
                 int dx = pPos.x - enemy.getPixelPos().x;
                 int dy = pPos.y - enemy.getPixelPos().y;
-                if (dx*dx + dy*dy < 600) { // Collisione circolare precisa
+                if (dx*dx + dy*dy < 900) { // Raggio collisione aumentato (era 600)
                     int livesBefore = player.getLives();
                     player.takeDamage();
                     if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) {
@@ -203,7 +204,7 @@ void Game::update() {
                 if (!proj.active) continue;
                 int dx = proj.x - player.getPixelPos().x;
                 int dy = proj.y - player.getPixelPos().y;
-                if (dx*dx + dy*dy < 400) { // Collisione boss
+                if (dx*dx + dy*dy < 500) { // Raggio collisione proiettili boss
                     proj.active = false;
                     int livesBefore = player.getLives();
                     player.takeDamage();

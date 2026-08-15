@@ -116,7 +116,7 @@ void Player::shoot() {
 void Player::takeDamage() {
     if (!isJumping() && damageTimer == 0) {
         energy--;
-        damageTimer = 1500;
+        damageTimer = 1500; // 1.5s invulnerabilita'
         if (energy <= 0) {
             lives--;
             energy = maxEnergy;
@@ -142,7 +142,8 @@ void Player::render(SDL_Renderer* renderer) {
     drawFilledCircle(renderer, px, py + 14, 10, {0, 0, 0, 100});
 
     SDL_Color skin = {255, 220, 177, 255};
-    SDL_Color clothes = isInvulnerable() ? SDL_Color{100, 100, 255, 255} : (isJumping() ? SDL_Color{255, 255, 0, 255} : SDL_Color{70, 130, 180, 255});
+    // Lampeggio quando invulnerabile
+    SDL_Color clothes = isInvulnerable() ? (SDL_GetTicks() % 200 < 100 ? SDL_Color{100, 100, 255, 255} : SDL_Color{200, 200, 200, 255}) : (isJumping() ? SDL_Color{255, 255, 0, 255} : SDL_Color{70, 130, 180, 255});
     SDL_Color pants = {50, 50, 150, 255};
     SDL_Color hat = {110, 70, 40, 255};
     SDL_Color backpack = {40, 80, 40, 255};
