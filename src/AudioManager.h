@@ -14,17 +14,17 @@ public:
     void playSound(SoundType type);
     void startMusic();
     void stopMusic();
+    void playLevelMusic(int level, bool isBoss); // NUOVO METODO
     bool isMusicPlaying() { return music.getStatus() == sf::Sound::Playing; }
 private:
     std::vector<sf::SoundBuffer> buffers;
     std::vector<sf::Sound> sounds;
     
-    sf::SoundBuffer musicBuffer;
+    sf::SoundBuffer musicBuffers[5]; // 4 livelli + 1 boss
     sf::Sound music;
-    std::vector<sf::Int16> musicSamples;
     
     int findFreeSound();
-    void generateMusic();
+    void generateTrack(int trackIdx);
 };
 
 #endif

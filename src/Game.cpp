@@ -22,6 +22,7 @@ void Game::startLevel(int lvl) {
     player.resetPosition();
     spawnEnemies();
     state = STATE_PLAYING;
+    if (musicEnabled) audio.playLevelMusic(currentLevel, false);
 }
 
 void Game::spawnEnemies() {
@@ -51,6 +52,7 @@ void Game::startBossFight() {
     player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
     bossProjectiles.clear();
     spawnBossRoomWeapons();
+    if (musicEnabled) audio.playLevelMusic(currentLevel, true);
 }
 
 void Game::spawnBossRoomWeapons() {
@@ -100,7 +102,8 @@ void Game::handleEvents() {
                 else if (key == sf::Keyboard::Down) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
                 else if (key == sf::Keyboard::M) {
                     musicEnabled = !musicEnabled;
-                    if(musicEnabled) audio.startMusic(); else audio.stopMusic();
+                    if(musicEnabled) audio.playLevelMusic(1, false);
+                    else audio.stopMusic();
                 }
                 else if (key == sf::Keyboard::Return) {
                     sf::VideoMode mode = displayModes[selectedModeIndex];
@@ -124,7 +127,6 @@ void Game::handleEvents() {
 }
 
 void Game::update() {
-    // TASTI SPARO E SALTO HARDCODATI
     if (state == STATE_PLAYING || state == STATE_BOSS) {
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
             if (player.getShootCooldown() == 0) {
@@ -248,15 +250,66 @@ void Game::render() {
     window.clear(sf::Color(10, 10, 10));
     
     if (state == STATE_MENU) {
-        drawText(window, "SELECT RESOLUTION", 250, 100, 3, sf::Color::White);
-        for (size_t i = 0; i < displayModes.size() && i < 10; ++i) {
-            std::string res = std::to_string(displayModes[i].width) + "x" + std::to_string(displayModes[i].height);
-            sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(200, 200, 200);
-            drawText(window, res, 300, 200 + i * 40, 2, color);
+        // Sfondo dark fantasy
+        sf::RectangleShape bgGrad(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+        bgGrad.setFillColor(sf::Color(15, 15, 25));
+        window.draw(bgGrad);
+        
+        // Stelle pseudo-casuali ma statiche
+        srand(42); // Seed fisso per non farle muovere
+        for(int i=0; i<60; i++) {
+            sf::CircleShape star(1 + rand()%2);
+            star.setFillColor(sf::Color(200, 200, 255, 100 + rand()%155));
+            star.setPosition(rand()%WINDOW_WIDTH, rand()%WINDOW_HEIGHT);
+            window.draw(star);
         }
-        drawText(window, "PRESS 'M' TO TOGGLE MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"), 180, 550, 2, musicEnabled ? sf::Color::Green : sf::Color::Red);
-        drawText(window, "UP/DOWN TO SELECT RESOLUTION", 200, 600, 2, sf::Color::White);
-        drawText(window, "ENTER TO START", 250, 650, 2, sf::Color::White);
+        srand(time(NULL)); // Reset del seed per il gioco
+        
+        // Bordo pergamena/tabella
+        sf::RectangleShape border(sf::Vector2f(WINDOW_WIDTH - 120, WINDOW_HEIGHT - 120));
+        border.setPosition(60, 60);
+        border.setFillColor(sf::Color(0, 0, 0, 150));
+        border.setOutlineThickness(6.f);
+        border.setOutlineColor(sf::Color(100, 80, 50)); // Bordo legno/oro
+        window.draw(border);
+        
+        // Titolo "ARCADE MAZE" effetto 3D e Glow
+        // Ombra
+        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2 + 4, 160 + 4, 6, sf::Color(0, 0, 0));
+        // Base oro
+        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2, 160, 6, sf::Color(180, 120, 40));
+        // Colore principale
+        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 2, 160 - 2, 6, sf::Color(255, 215, 0));
+        // Riflesso bianco
+        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 3, 160 - 3, 6, sf::Color(255, 255, 255));
+        
+        // Sottotitolo "By Luca A. Greco"
+        drawTextCentered(window, "By Luca A. Greco", WINDOW_WIDTH/2, 260, 2, sf::Color(200, 200, 200));
+        
+        // Separatore
+        sf::RectangleShape line(sf::Vector2f(400, 2));
+        line.setFillColor(sf::Color(100, 80, 50));
+        line.setPosition(WINDOW_WIDTH/2 - 200, 300);
+        window.draw(line);
+        
+        // Selezione Risoluzione
+        drawTextCentered(window, "SELECT RESOLUTION", WINDOW_WIDTH/2, 350, 3, sf::Color::White);
+        for (size_t i = 0; i < displayModes.size() && i < 8; ++i) {
+            std::string res = std::to_string(displayModes[i].width) + "x" + std::to_string(displayModes[i].height);
+            // Aggiungi freccette per la selezione
+            std::string text = (i == selectedModeIndex) ? ("> " + res + " <") : res;
+            sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
+            drawTextCentered(window, text, WINDOW_WIDTH/2, 420 + i * 40, 2, color);
+        }
+        
+        // Opzione Musica
+        drawTextCentered(window, "PRESS 'M' TO TOGGLE MUSIC:", WINDOW_WIDTH/2, 780, 2, sf::Color::White);
+        drawTextCentered(window, musicEnabled ? "[ ON ]" : "[ OFF ]", WINDOW_WIDTH/2, 810, 2, musicEnabled ? sf::Color::Green : sf::Color::Red);
+        
+        // Comandi per avviare
+        drawTextCentered(window, "UP/DOWN TO SELECT", WINDOW_WIDTH/2, 880, 2, sf::Color(150, 150, 150));
+        drawTextCentered(window, "PRESS ENTER TO START", WINDOW_WIDTH/2, 920, 3, sf::Color(255, 255, 0));
+        
     } 
     else if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {
         maze.render(window);
@@ -275,15 +328,21 @@ void Game::render() {
             sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
             overlay.setFillColor(sf::Color(0, 0, 0, 200));
             window.draw(overlay);
-            drawText(window, "YOU WIN", 300, 350, 4, sf::Color::Green);
+            drawTextCentered(window, "YOU WIN", WINDOW_WIDTH/2, 350, 4, sf::Color::Green);
+            drawTextCentered(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
         } else if (state == STATE_LOSE) {
             sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
             overlay.setFillColor(sf::Color(0, 0, 0, 200));
             window.draw(overlay);
-            drawText(window, "GAME OVER", 280, 350, 4, sf::Color::Red);
+            drawTextCentered(window, "GAME OVER", WINDOW_WIDTH/2, 350, 4, sf::Color::Red);
+            drawTextCentered(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
         }
     } 
     else if (state == STATE_BOSS) {
+        sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+        bg.setFillColor(sf::Color(5, 5, 5));
+        window.draw(bg);
+        
         ui.render(window, player, 0);
         for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
         player.render(window);
@@ -294,7 +353,7 @@ void Game::render() {
                 proj.setPosition(p.pos.x - 10.f, p.pos.y - 10.f); window.draw(proj);
             }
         }
-        drawText(window, "BOSS LEVEL " + std::to_string(currentLevel), 300, 100, 3, sf::Color::Red);
+        drawTextCentered(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
     }
     
     window.display();
