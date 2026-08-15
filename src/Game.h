@@ -19,6 +19,12 @@ enum GameState {
     STATE_LOSE
 };
 
+// Struttura per le armi nella boss room
+struct BossRoomWeapon {
+    Weapon w;
+    float x, y;
+};
+
 class Game {
 public:
     Game();
@@ -39,7 +45,7 @@ private:
     std::vector<Enemy> enemies;
     Boss* boss;
     std::vector<Projectile> bossProjectiles;
-    std::vector<Weapon> bossRoomWeapons;
+    std::vector<BossRoomWeapon> bossRoomWeapons;
     
     Config config;
     GameState state;

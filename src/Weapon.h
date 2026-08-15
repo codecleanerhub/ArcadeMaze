@@ -11,6 +11,14 @@ enum WeaponType {
     WPN_LASER
 };
 
+struct Projectile {
+    float x, y;
+    int dx, dy;
+    int power;
+    bool active;
+    WeaponType type; // Aggiunto per disegnare il proiettile corretto
+};
+
 struct Weapon {
     WeaponType type;
     int power;      
@@ -21,7 +29,7 @@ struct Weapon {
     
     std::string getName() const;
     SDL_Color getColor() const;
-    void render(SDL_Renderer* renderer, int x, int y) const; // Disegna l'arma a terra
+    void render(SDL_Renderer* renderer, int x, int y) const;
 };
 
 #endif

@@ -6,20 +6,13 @@
 #include "Maze.h"
 #include "Utils.h"
 
-struct Projectile {
-    float x, y;
-    int dx, dy;
-    int power;
-    bool active;
-};
-
 class Player {
 public:
     Player();
     
     void reset();
     void resetPosition();
-    void setPosition(float newX, float newY); // <-- AGGIUNTO METODO
+    void setPosition(float newX, float newY);
     void handleInput(SDL_Scancode key, const Config& config, Maze& maze);
     void update(Maze& maze, bool freeMovement);
     void render(SDL_Renderer* renderer);

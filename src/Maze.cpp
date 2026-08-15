@@ -109,12 +109,19 @@ void Maze::render(SDL_Renderer* renderer) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             SDL_Rect rect = {c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT, TILE_SIZE, TILE_SIZE};
             if (grid[c][r].type == CELL_WALL) {
-                SDL_SetRenderDrawColor(renderer, wallColor.r, wallColor.g, wallColor.b, 255);
-                SDL_RenderFillRect(renderer, &rect);
+                // Effetto 3D per i muri
+                SDL_SetRenderDrawColor(renderer, wallColor.r + 30, wallColor.g + 30, wallColor.b + 30, 255);
+                SDL_Rect top = {rect.x, rect.y, TILE_SIZE, TILE_SIZE - 4};
+                SDL_RenderFillRect(renderer, &top);
+                
+                SDL_SetRenderDrawColor(renderer, wallColor.r - 30, wallColor.g - 30, wallColor.b - 30, 255);
+                SDL_Rect right = {rect.x + TILE_SIZE - 4, rect.y, 4, TILE_SIZE};
+                SDL_RenderFillRect(renderer, &right);
+                
+                SDL_Rect bottom = {rect.x, rect.y + TILE_SIZE - 4, TILE_SIZE, 4};
+                SDL_RenderFillRect(renderer, &bottom);
             } else if (grid[c][r].type == CELL_DOT) {
-                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                SDL_Rect dot = {c * TILE_SIZE + TILE_SIZE/2 - 2, r * TILE_SIZE + TILE_SIZE/2 - 2 + UI_HEIGHT, 4, 4};
-                SDL_RenderFillRect(renderer, &dot);
+                drawFilledCircle(renderer, c * TILE_SIZE + TILE_SIZE/2, r * TILE_SIZE + TILE_SIZE/2 + UI_HEIGHT, 4, {255, 255, 255, 255});
             } else if (grid[c][r].type == CELL_WEAPON) {
                 grid[c][r].weapon.render(renderer, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             }

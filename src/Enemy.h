@@ -10,7 +10,8 @@ enum EnemyType {
     ENEMY_ALIEN,
     ENEMY_GHOST,
     ENEMY_ROBOT,
-    ENEMY_FANTASY
+    ENEMY_FANTASY,
+    ENEMY_ZOMBIE // NUOVO NEMICO
 };
 
 class Enemy {
@@ -18,7 +19,7 @@ public:
     Enemy(EnemyType type, int startCol, int startRow);
     
     void update(Maze& maze, const Vec2& playerGridPos);
-    void render(SDL_Renderer* renderer) const; // <-- AGGIUNTO 'const' QUI
+    void render(SDL_Renderer* renderer) const;
     void takeDamage(int dmg);
     
     bool isDead() const { return health <= 0; }
@@ -33,7 +34,6 @@ private:
     EnemyType type;
     Uint32 pathUpdateTimer;
     
-    // Pathfinding BFS
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
 };

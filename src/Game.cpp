@@ -1,7 +1,7 @@
 #include "Game.h"
 #include <iostream>
 #include <cstdlib>
-#include <algorithm> // <-- AGGIUNTO PER std::remove_if
+#include <algorithm>
 
 Game::Game() {
     window = nullptr;
@@ -20,7 +20,6 @@ Game::~Game() {
 bool Game::init() {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) return false;
     
-    // Enumera risoluzioni a 60Hz
     int numModes = SDL_GetNumDisplayModes(0);
     for (int i = 0; i < numModes; ++i) {
         SDL_DisplayMode mode;
@@ -37,7 +36,6 @@ bool Game::init() {
         displayModes.push_back({SDL_PIXELFORMAT_UNKNOWN, 800, 800, 60, nullptr});
     }
     
-    // Crea finestra iniziale
     SDL_DisplayMode initialMode = displayModes[0];
     window = SDL_CreateWindow("Arcade Maze Shooter", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, initialMode.w, initialMode.h, SDL_WINDOW_SHOWN);
     if (!window) return false;
@@ -64,8 +62,8 @@ void Game::startLevel(int lvl) {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    EnemyType types[] = {ENEMY_ALIEN, ENEMY_GHOST, ENEMY_ROBOT, ENEMY_FANTASY};
-    for (int i = 0; i < 4; ++i) {
+    EnemyType types[] = {ENEMY_ALIEN, ENEMY_GHOST, ENEMY_ROBOT, ENEMY_FANTASY, ENEMY_ZOMBIE};
+    for (int i = 0; i < 5; ++i) { // Ora spawniamo 5 nemici
         int c, r;
         do {
             c = 1 + rand() % (MAZE_COLS - 2);
@@ -80,7 +78,7 @@ void Game::startBossFight() {
     if(boss) delete boss;
     boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
     player.resetPosition();
-    player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 50.0f); // <-- USATO METODO PUBBLICO
+    player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 50.0f);
     bossProjectiles.clear();
     spawnBossRoomWeapons();
 }
@@ -89,8 +87,11 @@ void Game::spawnBossRoomWeapons() {
     bossRoomWeapons.clear();
     for(int i=0; i<3; i++) {
         Weapon w = Weapon::generateRandom();
-        w.ammo = 5; // Poche munizioni, costringe a raccoglierne di più
-        bossRoomWeapons.push_back(w);
+        w.ammo = 5;
+        // Posizionate in fondo allo schermo, distanziate
+        float wx = 100.0f + i * (WINDOW_WIDTH - 200.0f) / 2.0f;
+        float wy = WINDOW_HEIGHT - 40.0f;
+        bossRoomWeapons.push_back({w, wx, wy});
     }
 }
 
@@ -201,7 +202,6 @@ void Game::update() {
         player.update(maze, true);
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
         
-        // Collisioni proiettili giocatore -> boss
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
             int dx = proj.x - boss->getPos().x;
@@ -213,13 +213,12 @@ void Game::update() {
             }
         }
         
-        // Collisioni proiettili boss -> giocatore
         if (!player.isInvulnerable()) {
             for (auto& proj : bossProjectiles) {
                 if (!proj.active) continue;
                 int dx = proj.x - player.getPixelPos().x;
                 int dy = proj.y - player.getPixelPos().y;
-                if (dx*dx + dy*dy < 100) { // Raggio 10
+                if (dx*dx + dy*dy < 100) {
                     proj.active = false;
                     int livesBefore = player.getLives();
                     player.takeDamage();
@@ -231,17 +230,16 @@ void Game::update() {
         
         // Raccogli armi nella boss room
         for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
-            int dx = WINDOW_WIDTH / 2 + (it - bossRoomWeapons.begin()) * 100 - player.getPixelPos().x;
-            int dy = WINDOW_HEIGHT - 30 - player.getPixelPos().y;
+            int dx = it->x - player.getPixelPos().x;
+            int dy = it->y - player.getPixelPos().y;
             if (dx*dx + dy*dy < 400) {
-                player.collectWeapon(*it);
+                player.collectWeapon(it->w);
                 it = bossRoomWeapons.erase(it);
             } else {
                 ++it;
             }
         }
         
-        // Se le munizioni scendono sotto 1, spawniamo nuove armi
         if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) {
             spawnBossRoomWeapons();
         }
@@ -305,9 +303,9 @@ void Game::render() {
         
         ui.render(renderer, player, 0);
         
-        // Disegna armi a terra
-        for (size_t i = 0; i < bossRoomWeapons.size(); ++i) {
-            bossRoomWeapons[i].render(renderer, WINDOW_WIDTH / 2 + i * 100 - TILE_SIZE/2, WINDOW_HEIGHT - 30 - TILE_SIZE/2);
+        // Disegna armi a terra nella boss room
+        for (const auto& brw : bossRoomWeapons) {
+            brw.w.render(renderer, (int)brw.x - TILE_SIZE/2, (int)brw.y - TILE_SIZE/2);
         }
         
         player.render(renderer);

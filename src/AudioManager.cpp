@@ -24,6 +24,11 @@ AudioManager::~AudioManager() {
     if (device > 0) SDL_CloseAudioDevice(device);
 }
 
+// Generatore di rumore bianco per suoni più realistici
+Sint16 noise(double amplitude) {
+    return (Sint16)((rand() % 4000 - 2000) * amplitude);
+}
+
 void AudioManager::playSound(SoundType type) {
     if (device == 0) return;
     
@@ -31,28 +36,62 @@ void AudioManager::playSound(SoundType type) {
     int sr = spec.freq;
     
     if (type == SOUND_PISTOL) {
-        for(int i=0; i<sr*0.08; i++) buffer.push_back((Sint16)(2000 * sin(2 * M_PI * (800 - i*40) * i / sr)));
+        for(int i=0; i<sr*0.08; i++) {
+            double env = exp(-i * 60.0 / sr);
+            buffer.push_back((Sint16)(2000 * sin(2 * M_PI * 900 * i / sr) * env + noise(0.5) * env));
+        }
     } else if (type == SOUND_SHOTGUN) {
-        for(int i=0; i<sr*0.15; i++) buffer.push_back((Sint16)(3000 * (sin(2 * M_PI * (150 - i*2) * i / sr) > 0 ? 1 : -1)));
+        for(int i=0; i<sr*0.2; i++) {
+            double env = exp(-i * 25.0 / sr);
+            buffer.push_back((Sint16)(500 * sin(2 * M_PI * 120 * i / sr) * env + noise(1.0) * env));
+        }
     } else if (type == SOUND_ROCKET) {
-        for(int i=0; i<sr*0.3; i++) buffer.push_back((Sint16)(2500 * sin(2 * M_PI * (100 - i*0.3) * i / sr)));
+        for(int i=0; i<sr*0.4; i++) {
+            double env = exp(-i * 8.0 / sr);
+            buffer.push_back((Sint16)(noise(0.8) * env + 800 * sin(2 * M_PI * 200 * i / sr) * env));
+        }
     } else if (type == SOUND_LASER) {
-        for(int i=0; i<sr*0.2; i++) buffer.push_back((Sint16)(1500 * sin(2 * M_PI * (1200 - i*10) * i / sr)));
+        for(int i=0; i<sr*0.15; i++) {
+            double freq = 1200 - i * 15;
+            double env = exp(-i * 35.0 / sr);
+            buffer.push_back((Sint16)(2500 * sin(2 * M_PI * freq * i / sr) * env));
+        }
     } else if (type == SOUND_DOT) {
-        for(int i=0; i<sr*0.04; i++) buffer.push_back((Sint16)(3000 * sin(2 * M_PI * 1200 * i / sr)));
+        for(int i=0; i<sr*0.04; i++) {
+            buffer.push_back((Sint16)(3000 * sin(2 * M_PI * 1200 * i / sr)));
+        }
     } else if (type == SOUND_ENEMY_DEATH) {
-        for(int i=0; i<sr*0.3; i++) buffer.push_back((Sint16)(1500 * sin(2 * M_PI * (400 - i*50) * i / sr)));
+        for(int i=0; i<sr*0.3; i++) {
+            double env = exp(-i * 15.0 / sr);
+            buffer.push_back((Sint16)(1500 * sin(2 * M_PI * (400 - i*50) * i / sr) * env + noise(0.3) * env));
+        }
     } else if (type == SOUND_LOSE_LIFE) {
-        for(int i=0; i<sr*0.5; i++) buffer.push_back((Sint16)(3000 * (sin(2 * M_PI * 100 * i / sr) > 0 ? 1 : -1)));
+        for(int i=0; i<sr*0.6; i++) {
+            double freq = 150 - i * 0.1;
+            buffer.push_back((Sint16)(3000 * (sin(2 * M_PI * freq * i / sr) > 0 ? 1 : -1)));
+        }
     } else if (type == SOUND_WIN) {
         int notes[] = {523, 659, 784, 1046};
-        for(int n=0; n<4; n++) for(int i=0; i<sr*0.2; i++) buffer.push_back((Sint16)(2000 * sin(2 * M_PI * notes[n] * i / sr)));
+        for(int n=0; n<4; n++) {
+            for(int i=0; i<sr*0.2; i++) {
+                buffer.push_back((Sint16)(2000 * sin(2 * M_PI * notes[n] * i / sr)));
+            }
+        }
     } else if (type == SOUND_BOSS_SHOOT) {
-        for(int i=0; i<sr*0.15; i++) buffer.push_back((Sint16)(2000 * sin(2 * M_PI * (300 - i*10) * i / sr)));
+        for(int i=0; i<sr*0.2; i++) {
+            double freq = 300 - i*10;
+            double env = exp(-i * 20.0 / sr);
+            buffer.push_back((Sint16)(2000 * sin(2 * M_PI * freq * i / sr) * env));
+        }
     } else if (type == SOUND_BOSS_HIT) {
-        for(int i=0; i<sr*0.1; i++) buffer.push_back((Sint16)(1000 * (rand()%2 == 0 ? 1 : -1)));
+        for(int i=0; i<sr*0.1; i++) {
+            buffer.push_back(noise(1.0));
+        }
     } else if (type == SOUND_BOSS_DEATH) {
-        for(int i=0; i<sr*1.0; i++) buffer.push_back((Sint16)(3000 * sin(2 * M_PI * (200 - i*0.2) * i / sr)));
+        for(int i=0; i<sr*1.5; i++) {
+            double env = exp(-i * 3.0 / sr);
+            buffer.push_back((Sint16)(3000 * sin(2 * M_PI * (200 - i*0.1) * i / sr) * env + noise(0.5) * env));
+        }
     }
     
     if (!buffer.empty()) {
