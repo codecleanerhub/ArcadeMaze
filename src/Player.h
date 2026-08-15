@@ -31,11 +31,10 @@ public:
     bool isInvulnerable() const { return damageTimer > 0; }
     
     void shoot();
-    void activateJump() { if (jumpTimer == 0) jumpTimer = 500; }
+    void activateJump() { if (jumpTimer == 0) { maxJumpTime = 40; jumpTimer = maxJumpTime; } } // Salto di 40 frame
     uint32_t getShootCooldown() const { return shootCooldown; }
     void setShootCooldown(uint32_t cd) { shootCooldown = cd; }
 
-    // NUOVO: Metodo unificato per impostare la direzione
     void setDirection(int tDx, int tDy) {
         nextDx = tDx;
         nextDy = tDy;
@@ -47,7 +46,8 @@ private:
     int speed, lives, energy, maxEnergy, score, nextLifeThreshold;
     Weapon currentWeapon;
     std::vector<Projectile> projectiles;
-    uint32_t jumpTimer, damageTimer, shootCooldown;
+    uint32_t jumpTimer, maxJumpTime, damageTimer, shootCooldown;
+    float jumpOffset;
     bool tryMove(int tDx, int tDy, Maze& maze);
 };
 

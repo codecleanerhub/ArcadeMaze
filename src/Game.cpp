@@ -7,9 +7,6 @@
 Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false), lightningTimer(0), menuItemIndex(0), gameMode(MODE_STORY), configJoyStep(0) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
-    for(int i=0; i<8; i++) {
-        menuBats.push_back({sf::Vector2f(rand()%WINDOW_WIDTH, rand()%400), 2.0f + rand()%2, (float)(rand()%360)});
-    }
 }
 
 bool Game::init() {
@@ -25,6 +22,7 @@ void Game::startLevel(int lvl) {
     maze.generate();
     player.resetPosition();
     spawnEnemies();
+    enemyProjectiles.clear();
     state = STATE_PLAYING;
     if (musicEnabled) audio.playLevelMusic(currentLevel, false);
 }
@@ -54,6 +52,7 @@ void Game::startBossFight() {
     player.resetPosition();
     player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
     bossProjectiles.clear();
+    enemyProjectiles.clear();
     spawnBossRoomWeapons();
     if (musicEnabled) audio.playLevelMusic(currentLevel, true);
 }
@@ -129,8 +128,6 @@ void Game::handleEvents() {
                         startLevel(1);
                     }
                 }
-            } else if (state == STATE_CONFIG_JOY) {
-                // Solo tastiera per uscire
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
                 if (key == sf::Keyboard::Return) {
                     state = STATE_MENU;
@@ -181,12 +178,6 @@ void Game::update() {
             } else if (fabs(y) < 20) joyMoved = false;
         }
 
-        for (auto& bat : menuBats) {
-            bat.pos.x += bat.speed;
-            if (bat.pos.x > WINDOW_WIDTH + 40) bat.pos.x = -40;
-            bat.pos.y += sin(bat.phase) * 0.8f;
-            bat.phase += 0.1f;
-        }
         if (rand() % 600 < 5) lightningTimer = 10;
         if (lightningTimer > 0) lightningTimer--;
     }
@@ -237,8 +228,11 @@ void Game::update() {
         if (maze.getRemainingTreasures() < treasuresBefore) audio.playSound(SOUND_TREASURE);
         
         sf::Vector2f pPos = player.getPixelPos();
-        for (auto& enemy : enemies) if (!enemy.isDead()) enemy.update(maze, player.getGridPos());
+        for (auto& enemy : enemies) {
+            if (!enemy.isDead()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
+        }
         
+        // Collisioni proiettili giocatore
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
             for (auto& enemy : enemies) {
@@ -258,6 +252,24 @@ void Game::update() {
             }
         }
         
+        // Collisioni proiettili nemici
+        if (!player.isInvulnerable() && !player.isJumping()) {
+            for (auto& proj : enemyProjectiles) {
+                if (!proj.active) continue;
+                float dx = proj.pos.x - player.getPixelPos().x;
+                float dy = proj.pos.y - player.getPixelPos().y;
+                if (dx*dx + dy*dy < 600) { 
+                    proj.active = false;
+                    int livesBefore = player.getLives();
+                    player.takeDamage();
+                    if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
+                    break;
+                }
+            }
+            enemyProjectiles.erase(std::remove_if(enemyProjectiles.begin(), enemyProjectiles.end(), [](const Projectile& p) { return !p.active; }), enemyProjectiles.end());
+        }
+
+        // Collisioni corpo a corpo
         if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
@@ -375,19 +387,6 @@ void Game::drawMenu() {
     crater1.setPosition(WINDOW_WIDTH - 160.f, 140.f); window.draw(crater1);
     crater1.setPosition(WINDOW_WIDTH - 180.f, 180.f); window.draw(crater1);
 
-    for (const auto& bat : menuBats) {
-        sf::ConvexShape wing; wing.setPointCount(4);
-        wing.setFillColor(sf::Color::Black); // Neri e visibili
-        wing.setPoint(0, sf::Vector2f(bat.pos.x, bat.pos.y));
-        wing.setPoint(1, sf::Vector2f(bat.pos.x - 30, bat.pos.y - 12));
-        wing.setPoint(2, sf::Vector2f(bat.pos.x - 24, bat.pos.y + 6));
-        wing.setPoint(3, sf::Vector2f(bat.pos.x - 6, bat.pos.y + 6));
-        window.draw(wing);
-        wing.scale(-1.f, 1.f); wing.setPosition(bat.pos.x, bat.pos.y); window.draw(wing);
-        sf::CircleShape body(12.f); body.setFillColor(sf::Color::Black);
-        body.setPosition(bat.pos.x - 12.f, bat.pos.y - 12.f); window.draw(body);
-    }
-
     if (lightningTimer > 0) {
         sf::RectangleShape flash(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
         flash.setFillColor(sf::Color(255, 255, 255, 150 * (lightningTimer / 10.f)));
@@ -474,6 +473,14 @@ void Game::render() {
         player.render(window);
         for (const auto& enemy : enemies) if (!enemy.isDead()) enemy.render(window);
         
+        // Disegna proiettili nemici
+        for (const auto& p : enemyProjectiles) {
+            if (p.active) {
+                sf::CircleShape proj(4.f); proj.setFillColor(sf::Color(255, 100, 0)); // Arancione
+                proj.setPosition(p.pos.x - 4.f, p.pos.y - 4.f); window.draw(proj);
+            }
+        }
+        
         for (const auto& p : particles) {
             sf::CircleShape c(4.f);
             c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, 255 * p.life / p.maxLife));
@@ -498,10 +505,17 @@ void Game::render() {
         for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
         player.render(window);
         boss->render(window);
+        
+        // Disegna proiettili boss
         for (const auto& p : bossProjectiles) {
             if (p.active) {
-                sf::CircleShape proj(10.f); proj.setFillColor(sf::Color(255, 50, 50));
-                proj.setPosition(p.pos.x - 10.f, p.pos.y - 10.f); window.draw(proj);
+                if (p.type == WPN_ROCKET) { // Bombe
+                    sf::CircleShape proj(12.f); proj.setFillColor(sf::Color(150, 0, 150));
+                    proj.setPosition(p.pos.x - 12.f, p.pos.y - 12.f); window.draw(proj);
+                } else { // Spari
+                    sf::CircleShape proj(8.f); proj.setFillColor(sf::Color(255, 50, 50));
+                    proj.setPosition(p.pos.x - 8.f, p.pos.y - 8.f); window.draw(proj);
+                }
             }
         }
         drawTextCenteredOutlined(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
@@ -521,7 +535,7 @@ void Game::render() {
         drawTextCenteredOutlined(window, "CONGRATULATIONS!", WINDOW_WIDTH/2, 200, 5, sf::Color::Green);
         drawTextCenteredOutlined(window, "YOU FINISHED THE STORY MODE", WINDOW_WIDTH/2, 300, 3, sf::Color::Yellow);
         drawTextCenteredOutlined(window, "COMPLIMENTI PER LA TENACIA", WINDOW_WIDTH/2, 500, 3, sf::Color::White);
-        drawTextCenteredOutlined(window, "E GRAZIE PER AVER GIOCATTO!", WINDOW_WIDTH/2, 580, 3, sf::Color::White);
+        drawTextCenteredOutlined(window, "E GRAZIE PER AVER GIOCATO!", WINDOW_WIDTH/2, 580, 3, sf::Color::White);
         drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 800, 2, sf::Color::Red);
     }
     

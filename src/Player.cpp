@@ -17,7 +17,8 @@ void Player::resetPosition() {
     pos.x = 1 * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = 1 * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
     dx = 0; dy = 0; nextDx = 0; nextDy = 0; lastDx = 1; lastDy = 0;
-    speed = 2; jumpTimer = 0; damageTimer = 0; shootCooldown = 0;
+    speed = 2; jumpTimer = 0; maxJumpTime = 0; damageTimer = 0; shootCooldown = 0;
+    jumpOffset = 0.0f;
 }
 
 void Player::setPosition(float newX, float newY) {
@@ -35,7 +36,14 @@ bool Player::tryMove(int tDx, int tDy, Maze& maze) {
 }
 
 void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& particles) {
-    if (jumpTimer > 16) jumpTimer -= 16; else jumpTimer = 0;
+    if (jumpTimer > 0) {
+        jumpTimer--;
+        float progress = 1.0f - (float)jumpTimer / (float)maxJumpTime;
+        jumpOffset = sin(progress * M_PI) * 25.0f; // Altezza salto
+    } else {
+        jumpOffset = 0.0f;
+    }
+    
     if (damageTimer > 16) damageTimer -= 16; else damageTimer = 0;
     if (shootCooldown > 16) shootCooldown -= 16; else shootCooldown = 0;
 
@@ -118,47 +126,63 @@ Vec2 Player::getGridPos() const { return { (int)(pos.x / TILE_SIZE), (int)((pos.
 
 void Player::render(sf::RenderTarget& target) {
     float px = pos.x;
-    float py = pos.y;
+    float py = pos.y - jumpOffset; // Applica offset visivo del salto
 
-    drawTextCentered(target, currentWeapon.getName(), px, py - 45, 2, sf::Color(255, 255, 0));
+    drawTextCentered(target, currentWeapon.getName(), px, pos.y - 45, 2, sf::Color(255, 255, 0));
 
-    sf::Color skin(255, 220, 177);
-    sf::Color clothes = isInvulnerable() ? (clock() % 200 < 100 ? sf::Color(100, 100, 255) : sf::Color(200, 200, 200)) : (isJumping() ? sf::Color(255, 255, 0) : sf::Color(70, 130, 180));
-    sf::Color pants(50, 50, 150);
-    sf::Color hat(110, 70, 40);
-    sf::Color backpack(40, 80, 40);
+    sf::Color skin(210, 180, 140);
+    sf::Color shirt(200, 200, 200);
+    sf::Color jacket(139, 69, 19);
+    sf::Color pants(50, 50, 50);
+    sf::Color hat(80, 50, 20);
+    sf::Color outline(10, 10, 10);
 
-    sf::RectangleShape leg1(sf::Vector2f(8.f, 20.f)); leg1.setFillColor(pants); leg1.setOutlineThickness(1.f); leg1.setOutlineColor(sf::Color::Black);
-    leg1.setPosition(px - 10.f, py + 4.f); target.draw(leg1);
-    sf::RectangleShape leg2(sf::Vector2f(8.f, 20.f)); leg2.setFillColor(pants); leg2.setOutlineThickness(1.f); leg2.setOutlineColor(sf::Color::Black);
-    leg2.setPosition(px + 2.f, py + 4.f); target.draw(leg2);
+    // Gambe (stile Super Mario se salta)
+    if (isJumping()) {
+        sf::RectangleShape leg1(sf::Vector2f(8.f, 16.f)); leg1.setFillColor(pants); leg1.setOutlineThickness(1.f); leg1.setOutlineColor(outline);
+        leg1.setPosition(px - 12.f, py + 4.f); target.draw(leg1);
+        sf::RectangleShape leg2(sf::Vector2f(8.f, 16.f)); leg2.setFillColor(pants); leg2.setOutlineThickness(1.f); leg2.setOutlineColor(outline);
+        leg2.setPosition(px + 4.f, py + 4.f); target.draw(leg2);
+    } else {
+        sf::RectangleShape leg1(sf::Vector2f(8.f, 20.f)); leg1.setFillColor(pants); leg1.setOutlineThickness(1.f); leg1.setOutlineColor(outline);
+        leg1.setPosition(px - 6.f, py + 4.f); target.draw(leg1);
+        sf::RectangleShape leg2(sf::Vector2f(8.f, 20.f)); leg2.setFillColor(pants); leg2.setOutlineThickness(1.f); leg2.setOutlineColor(outline);
+        leg2.setPosition(px + 2.f, py + 4.f); target.draw(leg2);
+    }
 
-    sf::CircleShape bpk(12.f); bpk.setFillColor(backpack); bpk.setOutlineThickness(1.f); bpk.setOutlineColor(sf::Color::Black);
-    bpk.setPosition(px - (lastDx * 14) - 12.f, py - 6.f); target.draw(bpk);
+    // Corpo (Camicia)
+    sf::RectangleShape body(sf::Vector2f(24.f, 20.f)); body.setFillColor(shirt); body.setOutlineThickness(1.f); body.setOutlineColor(outline);
+    body.setPosition(px - 12.f, py - 8.f); target.draw(body);
+    // Giubbotto di pelle (ai lati)
+    sf::RectangleShape jacket1(sf::Vector2f(6.f, 20.f)); jacket1.setFillColor(jacket); jacket1.setOutlineThickness(1.f); jacket1.setOutlineColor(outline);
+    jacket1.setPosition(px - 12.f, py - 8.f); target.draw(jacket1);
+    sf::RectangleShape jacket2(sf::Vector2f(6.f, 20.f)); jacket2.setFillColor(jacket); jacket2.setOutlineThickness(1.f); jacket2.setOutlineColor(outline);
+    jacket2.setPosition(px + 6.f, py - 8.f); target.draw(jacket2);
 
-    sf::RectangleShape body(sf::Vector2f(28.f, 20.f)); body.setFillColor(clothes); body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color::Black);
-    body.setPosition(px - 14.f, py - 8.f); target.draw(body);
+    // Braccia
+    sf::RectangleShape arm1(sf::Vector2f(6.f, 16.f)); arm1.setFillColor(shirt); arm1.setOutlineThickness(1.f); arm1.setOutlineColor(outline);
+    arm1.setPosition(px - 14.f, py - 6.f); target.draw(arm1);
+    sf::RectangleShape arm2(sf::Vector2f(6.f, 16.f)); arm2.setFillColor(shirt); arm2.setOutlineThickness(1.f); arm2.setOutlineColor(outline);
+    arm2.setPosition(px + 8.f, py - 6.f); target.draw(arm2);
 
-    sf::RectangleShape arm1(sf::Vector2f(7.f, 16.f)); arm1.setFillColor(clothes); arm1.setOutlineThickness(1.f); arm1.setOutlineColor(sf::Color::Black);
-    arm1.setPosition(px - 16.f, py - 6.f); target.draw(arm1);
-    sf::RectangleShape arm2(sf::Vector2f(7.f, 16.f)); arm2.setFillColor(clothes); arm2.setOutlineThickness(1.f); arm2.setOutlineColor(sf::Color::Black);
-    arm2.setPosition(px + 12.f, py - 6.f); target.draw(arm2);
+    // Testa
+    sf::CircleShape head(8.f); head.setFillColor(skin); head.setOutlineThickness(1.f); head.setOutlineColor(outline);
+    head.setPosition(px - 8.f, py - 22.f); target.draw(head);
 
-    sf::CircleShape head(14.f); head.setFillColor(skin); head.setOutlineThickness(1.f); head.setOutlineColor(sf::Color::Black);
-    head.setPosition(px - 14.f, py - 32.f); target.draw(head);
+    // Cappello Fedora
+    sf::RectangleShape top(sf::Vector2f(14.f, 6.f)); top.setFillColor(hat); top.setOutlineThickness(1.f); top.setOutlineColor(outline);
+    top.setPosition(px - 7.f, py - 28.f); target.draw(top);
+    sf::RectangleShape brim(sf::Vector2f(24.f, 4.f)); brim.setFillColor(hat); brim.setOutlineThickness(1.f); brim.setOutlineColor(outline);
+    brim.setPosition(px - 12.f, py - 24.f); target.draw(brim);
 
-    sf::RectangleShape eye1(sf::Vector2f(4.f, 6.f)); eye1.setFillColor(sf::Color::Black);
-    eye1.setPosition(px - 8.f + lastDx * 4, py - 22.f); target.draw(eye1);
-    sf::RectangleShape eye2(sf::Vector2f(4.f, 6.f)); eye2.setFillColor(sf::Color::Black);
-    eye2.setPosition(px + 2.f + lastDx * 4, py - 22.f); target.draw(eye2);
+    // Frusta sul fianco
+    sf::RectangleShape whip(sf::Vector2f(2.f, 12.f)); whip.setFillColor(sf::Color(100, 50, 10));
+    whip.setPosition(px + 10.f, py - 4.f); target.draw(whip);
 
-    sf::CircleShape hatTop(12.f); hatTop.setFillColor(hat); hatTop.setOutlineThickness(1.f); hatTop.setOutlineColor(sf::Color::Black);
-    hatTop.setPosition(px - 12.f, py - 38.f); target.draw(hatTop);
-    sf::RectangleShape brim(sf::Vector2f(44.f, 8.f)); brim.setFillColor(hat); brim.setOutlineThickness(1.f); brim.setOutlineColor(sf::Color::Black);
-    brim.setPosition(px - 22.f, py - 28.f); target.draw(brim);
-
+    // Arma in mano
     currentWeapon.renderEquipped(target, px + (lastDx * 16), py);
 
+    // Proiettili
     for (const auto& p : projectiles) {
         if (p.active) {
             if (p.type == WPN_PISTOL) {

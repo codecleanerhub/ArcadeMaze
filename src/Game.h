@@ -27,12 +27,6 @@ struct BossRoomWeapon {
     sf::Vector2f pos;
 };
 
-struct MenuBat {
-    sf::Vector2f pos;
-    float speed;
-    float phase;
-};
-
 struct Firework {
     sf::Vector2f pos;
     sf::Vector2f vel;
@@ -54,9 +48,9 @@ private:
     std::vector<Enemy> enemies;
     Boss* boss;
     std::vector<Projectile> bossProjectiles;
+    std::vector<Projectile> enemyProjectiles;
     std::vector<BossRoomWeapon> bossRoomWeapons;
     std::vector<Particle> particles;
-    std::vector<MenuBat> menuBats;
     std::vector<Firework> fireworks;
     
     Config config;
