@@ -10,9 +10,18 @@
 #include "AudioManager.h"
 #include "Boss.h"
 
-enum GameState { STATE_MENU, STATE_PLAYING, STATE_BOSS, STATE_WIN, STATE_LOSE };
+enum GameState { 
+    STATE_MENU, 
+    STATE_CONFIG_JOY, 
+    STATE_PLAYING, 
+    STATE_BOSS, 
+    STATE_LOSE, 
+    STATE_WIN_STORY, 
+    STATE_WIN_INFINITE 
+};
 
-// <-- AGGIUNTA LA STRUTTURA MANCANTE
+enum GameMode { MODE_STORY, MODE_INFINITE };
+
 struct BossRoomWeapon {
     Weapon w;
     sf::Vector2f pos;
@@ -22,6 +31,13 @@ struct MenuBat {
     sf::Vector2f pos;
     float speed;
     float phase;
+};
+
+struct Firework {
+    sf::Vector2f pos;
+    sf::Vector2f vel;
+    sf::Color color;
+    int life;
 };
 
 class Game {
@@ -41,15 +57,19 @@ private:
     std::vector<BossRoomWeapon> bossRoomWeapons;
     std::vector<Particle> particles;
     std::vector<MenuBat> menuBats;
+    std::vector<Firework> fireworks;
     
     Config config;
     GameState state;
+    GameMode gameMode;
     bool isRunning;
     int currentLevel;
     std::vector<sf::VideoMode> displayModes;
     int selectedModeIndex;
+    int menuItemIndex;
     bool musicEnabled;
     int lightningTimer;
+    int configJoyStep;
     
     void handleEvents();
     void update();
@@ -60,6 +80,8 @@ private:
     void spawnBossRoomWeapons();
     SoundType getWeaponSound(WeaponType wt);
     void drawMenu();
+    void drawConfigJoy();
+    void spawnFirework();
 };
 
 #endif

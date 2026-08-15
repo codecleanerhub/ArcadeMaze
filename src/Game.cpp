@@ -2,14 +2,13 @@
 #include <iostream>
 #include <cstdlib>
 #include <algorithm>
-#include <cmath> // <-- AGGIUNTO PER sin()
+#include <cmath>
 
-Game::Game() : window(sf::VideoMode(1024, 1024), "Arcade Maze Fantasy"), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false), lightningTimer(0) {
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false), lightningTimer(0), menuItemIndex(0), gameMode(MODE_STORY), configJoyStep(0) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
-    for(int i=0; i<5; i++) {
-        // Corretto narrowing conversion con (float)
-        menuBats.push_back({sf::Vector2f(rand()%WINDOW_WIDTH, rand()%400), (float)(1 + rand()%2), (float)(rand()%360)});
+    for(int i=0; i<8; i++) {
+        menuBats.push_back({sf::Vector2f(rand()%WINDOW_WIDTH, rand()%400), 2.0f + rand()%2, (float)(rand()%360)});
     }
 }
 
@@ -32,10 +31,9 @@ void Game::startLevel(int lvl) {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    // 3 pool di 5 nemici per tema Horror/Fantasy
-    EnemyType pool1[] = {ENEMY_ZOMBIE, ENEMY_GHOUL, ENEMY_RAT, ENEMY_BAT, ENEMY_SKELETON}; // Cripta
-    EnemyType pool2[] = {ENEMY_CULTIST, ENEMY_SPIDER, ENEMY_SLIME, ENEMY_GOBLIN, ENEMY_ORC}; // Dungeon
-    EnemyType pool3[] = {ENEMY_IMP, ENEMY_DEMON, ENEMY_WRAITH, ENEMY_GHOST, ENEMY_ROBOT};    // Inferno/Dimensione
+    EnemyType pool1[] = {ENEMY_ZOMBIE, ENEMY_GHOUL, ENEMY_RAT, ENEMY_BAT, ENEMY_SKELETON}; 
+    EnemyType pool2[] = {ENEMY_CULTIST, ENEMY_SPIDER, ENEMY_SLIME, ENEMY_GOBLIN, ENEMY_ORC}; 
+    EnemyType pool3[] = {ENEMY_IMP, ENEMY_DEMON, ENEMY_WRAITH, ENEMY_GHOST, ENEMY_ROBOT};    
     
     EnemyType* currentPool = (currentLevel % 3 == 0) ? pool3 : (currentLevel % 2 == 0 ? pool2 : pool1);
     
@@ -100,31 +98,69 @@ void Game::handleEvents() {
         }
         else if (event.type == sf::Event::KeyPressed) {
             int key = event.key.code;
-            if (key == sf::Keyboard::Escape) isRunning = false;
+            if (key == sf::Keyboard::Escape) {
+                if (state == STATE_CONFIG_JOY) state = STATE_MENU;
+                else if (state == STATE_MENU) isRunning = false;
+                else { state = STATE_MENU; currentLevel = 1; }
+            }
             
             if (state == STATE_MENU) {
-                if (key == sf::Keyboard::Up) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
-                else if (key == sf::Keyboard::Down) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
-                else if (key == sf::Keyboard::M) {
-                    musicEnabled = !musicEnabled;
-                    if(musicEnabled) audio.playLevelMusic(1, false);
-                    else audio.stopMusic();
+                if (key == sf::Keyboard::Up) menuItemIndex = (menuItemIndex - 1 + 5) % 5;
+                else if (key == sf::Keyboard::Down) menuItemIndex = (menuItemIndex + 1) % 5;
+                else if (key == sf::Keyboard::Left) {
+                    if (menuItemIndex == 0) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
+                    if (menuItemIndex == 1) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
+                    if (menuItemIndex == 2) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+                }
+                else if (key == sf::Keyboard::Right) {
+                    if (menuItemIndex == 0) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
+                    if (menuItemIndex == 1) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
+                    if (menuItemIndex == 2) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
                 }
                 else if (key == sf::Keyboard::Return) {
-                    sf::VideoMode mode = displayModes[selectedModeIndex];
-                    window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
-                    window.setFramerateLimit(60);
-                    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                    window.setView(view);
-                    startLevel(1);
+                    if (menuItemIndex == 3) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 4) {
+                        sf::VideoMode mode = displayModes[selectedModeIndex];
+                        window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
+                        window.setFramerateLimit(60);
+                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                        window.setView(view);
+                        currentLevel = 1;
+                        startLevel(1);
+                    }
                 }
-            } else if (state == STATE_PLAYING || state == STATE_BOSS) {
-                player.handleInput(key, config);
-            } else if (state == STATE_WIN || state == STATE_LOSE) {
+            } else if (state == STATE_CONFIG_JOY) {
+                // Solo tastiera per uscire
+            } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
                 if (key == sf::Keyboard::Return) {
+                    state = STATE_MENU;
                     currentLevel = 1;
-                    player.reset();
-                    startLevel(1);
+                }
+            }
+        }
+        else if (event.type == sf::Event::JoystickButtonPressed) {
+            if (state == STATE_MENU) {
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == config.joy_jump) {
+                    if (menuItemIndex == 3) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 4) {
+                        sf::VideoMode mode = displayModes[selectedModeIndex];
+                        window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
+                        window.setFramerateLimit(60);
+                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                        window.setView(view);
+                        currentLevel = 1;
+                        startLevel(1);
+                    }
+                }
+            } else if (state == STATE_CONFIG_JOY) {
+                if (event.joystickButton.joystickId == 0) {
+                    if (configJoyStep == 0) { config.joy_jump = event.joystickButton.button; configJoyStep = 1; }
+                    else if (configJoyStep == 1) { config.joy_shoot = event.joystickButton.button; state = STATE_MENU; }
+                }
+            } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == config.joy_jump) {
+                    state = STATE_MENU;
+                    currentLevel = 1;
                 }
             }
         }
@@ -132,43 +168,76 @@ void Game::handleEvents() {
 }
 
 void Game::update() {
+    sf::Joystick::update();
+
     if (state == STATE_MENU) {
+        if (sf::Joystick::isConnected(0)) {
+            float y = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+            static bool joyMoved = false;
+            if (fabs(y) > 50 && !joyMoved) {
+                joyMoved = true;
+                if (y < 0) menuItemIndex = (menuItemIndex - 1 + 5) % 5;
+                else menuItemIndex = (menuItemIndex + 1) % 5;
+            } else if (fabs(y) < 20) joyMoved = false;
+        }
+
         for (auto& bat : menuBats) {
             bat.pos.x += bat.speed;
-            if (bat.pos.x > WINDOW_WIDTH + 20) bat.pos.x = -20;
-            bat.pos.y += sin(bat.phase) * 0.5f;
+            if (bat.pos.x > WINDOW_WIDTH + 40) bat.pos.x = -40;
+            bat.pos.y += sin(bat.phase) * 0.8f;
             bat.phase += 0.1f;
         }
-        if (rand() % 1000 < 5) lightningTimer = 8;
+        if (rand() % 600 < 5) lightningTimer = 10;
         if (lightningTimer > 0) lightningTimer--;
     }
 
     if (state == STATE_PLAYING || state == STATE_BOSS) {
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+        bool moved = false;
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up)) { player.setDirection(0, -1); moved = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down)) { player.setDirection(0, 1); moved = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left)) { player.setDirection(-1, 0); moved = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0); moved = true; }
+        
+        if (sf::Joystick::isConnected(0)) {
+            float x = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+            float y = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+            if (fabs(x) > 30 || fabs(y) > 30) {
+                if (fabs(x) > fabs(y)) {
+                    if (x > 30) { player.setDirection(1, 0); moved = true; }
+                    else if (x < -30) { player.setDirection(-1, 0); moved = true; }
+                } else {
+                    if (y > 30) { player.setDirection(0, 1); moved = true; }
+                    else if (y < -30) { player.setDirection(0, -1); moved = true; }
+                }
+            }
+            if (sf::Joystick::isButtonPressed(0, config.joy_shoot)) {
+                if (player.getShootCooldown() == 0) {
+                    int ammoBefore = player.getCurrentWeapon().ammo;
+                    player.shoot();
+                    if (player.getCurrentWeapon().ammo < ammoBefore) audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
+                    player.setShootCooldown(150);
+                }
+            }
+            if (sf::Joystick::isButtonPressed(0, config.joy_jump)) player.activateJump();
+        }
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_shoot)) {
             if (player.getShootCooldown() == 0) {
                 int ammoBefore = player.getCurrentWeapon().ammo;
                 player.shoot();
-                if (player.getCurrentWeapon().ammo < ammoBefore) {
-                    audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
-                }
+                if (player.getCurrentWeapon().ammo < ammoBefore) audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
                 player.setShootCooldown(150);
             }
         }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt)) {
-            player.activateJump();
-        }
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_jump)) player.activateJump();
     }
 
     if (state == STATE_PLAYING) {
         int treasuresBefore = maze.getRemainingTreasures();
         player.update(maze, false, particles);
-        
         if (maze.getRemainingTreasures() < treasuresBefore) audio.playSound(SOUND_TREASURE);
         
         sf::Vector2f pPos = player.getPixelPos();
-        for (auto& enemy : enemies) {
-            if (!enemy.isDead()) enemy.update(maze, player.getGridPos());
-        }
+        for (auto& enemy : enemies) if (!enemy.isDead()) enemy.update(maze, player.getGridPos());
         
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
@@ -182,9 +251,7 @@ void Game::update() {
                     if (enemy.isDead()) {
                         player.addScore(5000);
                         audio.playSound(SOUND_ENEMY_DEATH);
-                        for(int i=0; i<20; i++) {
-                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(150, 0, 0), 40, 40});
-                        }
+                        for(int i=0; i<20; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(150, 0, 0), 40, 40});
                     }
                     break;
                 }
@@ -240,10 +307,7 @@ void Game::update() {
         for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
             float dx = it->pos.x - player.getPixelPos().x;
             float dy = it->pos.y - player.getPixelPos().y;
-            if (dx*dx + dy*dy < 1000) { 
-                player.collectWeapon(it->w);
-                it = bossRoomWeapons.erase(it);
-            } else ++it;
+            if (dx*dx + dy*dy < 1000) { player.collectWeapon(it->w); it = bossRoomWeapons.erase(it); } else ++it;
         }
         
         if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) spawnBossRoomWeapons();
@@ -251,8 +315,22 @@ void Game::update() {
         if (boss->isDead()) {
             audio.playSound(SOUND_BOSS_DEATH);
             currentLevel++;
-            startLevel(currentLevel);
+            
+            if (gameMode == MODE_STORY && currentLevel > 10) {
+                state = STATE_WIN_STORY;
+                audio.stopMusic();
+            } else {
+                startLevel(currentLevel);
+            }
         }
+    } else if (state == STATE_WIN_STORY) {
+        if (rand() % 10 == 0) spawnFirework();
+        for (auto& fw : fireworks) {
+            fw.pos += fw.vel;
+            fw.vel.y += 0.1f; // Gravità
+            fw.life--;
+        }
+        fireworks.erase(std::remove_if(fireworks.begin(), fireworks.end(), [](const Firework& fw) { return fw.life <= 0; }), fireworks.end());
     }
 
     for (auto& p : particles) {
@@ -262,15 +340,26 @@ void Game::update() {
     particles.erase(std::remove_if(particles.begin(), particles.end(), [](const Particle& p) { return p.life <= 0; }), particles.end());
 }
 
+void Game::spawnFirework() {
+    float x = 100 + rand() % (WINDOW_WIDTH - 200);
+    float y = 100 + rand() % (WINDOW_HEIGHT / 2);
+    sf::Color colors[] = {sf::Color::Red, sf::Color::Green, sf::Color::Blue, sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan};
+    sf::Color col = colors[rand() % 6];
+    for(int i=0; i<30; i++) {
+        float angle = i * (M_PI * 2 / 30);
+        fireworks.push_back({sf::Vector2f(x, y), sf::Vector2f(cos(angle)*4, sin(angle)*4), col, 60});
+    }
+}
+
 void Game::drawMenu() {
     sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-    bg.setFillColor(sf::Color(10, 10, 30));
+    bg.setFillColor(sf::Color(30, 30, 60)); // Blu scuro più chiaro
     window.draw(bg);
     
     srand(42);
-    for(int i=0; i<80; i++) {
+    for(int i=0; i<100; i++) {
         sf::CircleShape star(1 + rand()%2);
-        star.setFillColor(sf::Color(200, 200, 255, 100 + rand()%155));
+        star.setFillColor(sf::Color(200, 200, 255, 150 + rand()%105));
         star.setPosition(rand()%WINDOW_WIDTH, rand()%WINDOW_HEIGHT);
         window.draw(star);
     }
@@ -288,66 +377,86 @@ void Game::drawMenu() {
 
     for (const auto& bat : menuBats) {
         sf::ConvexShape wing; wing.setPointCount(4);
-        wing.setFillColor(sf::Color::Black);
+        wing.setFillColor(sf::Color::Black); // Neri e visibili
         wing.setPoint(0, sf::Vector2f(bat.pos.x, bat.pos.y));
-        wing.setPoint(1, sf::Vector2f(bat.pos.x - 20, bat.pos.y - 8));
-        wing.setPoint(2, sf::Vector2f(bat.pos.x - 16, bat.pos.y + 4));
-        wing.setPoint(3, sf::Vector2f(bat.pos.x - 4, bat.pos.y + 4));
+        wing.setPoint(1, sf::Vector2f(bat.pos.x - 30, bat.pos.y - 12));
+        wing.setPoint(2, sf::Vector2f(bat.pos.x - 24, bat.pos.y + 6));
+        wing.setPoint(3, sf::Vector2f(bat.pos.x - 6, bat.pos.y + 6));
         window.draw(wing);
         wing.scale(-1.f, 1.f); wing.setPosition(bat.pos.x, bat.pos.y); window.draw(wing);
-        sf::CircleShape body(8.f); body.setFillColor(sf::Color::Black);
-        body.setPosition(bat.pos.x - 8.f, bat.pos.y - 8.f); window.draw(body);
+        sf::CircleShape body(12.f); body.setFillColor(sf::Color::Black);
+        body.setPosition(bat.pos.x - 12.f, bat.pos.y - 12.f); window.draw(body);
     }
 
     if (lightningTimer > 0) {
         sf::RectangleShape flash(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-        flash.setFillColor(sf::Color(255, 255, 255, 100 * (lightningTimer / 8.f)));
+        flash.setFillColor(sf::Color(255, 255, 255, 150 * (lightningTimer / 10.f)));
         window.draw(flash);
-        if (lightningTimer > 4) {
+        if (lightningTimer > 5) {
             sf::Color lightningCol(255, 255, 200);
             float lx = WINDOW_WIDTH / 2.0f + (rand()%400 - 200);
-            for (int i = 0; i < 5; i++) {
-                sf::Vertex line[] = {
-                    sf::Vertex(sf::Vector2f(lx, i * 100.f), lightningCol),
-                    sf::Vertex(sf::Vector2f(lx + (rand()%100 - 50), (i+1) * 100.f), lightningCol)
-                };
-                window.draw(line, 2, sf::Lines);
+            for (int i = 0; i < 6; i++) {
+                // Lampi più spessi
+                sf::RectangleShape line(sf::Vector2f(6.f, 100.f));
+                line.setFillColor(lightningCol);
+                line.setPosition(lx, i * 100.f);
+                line.rotate(rand()%30 - 15);
+                window.draw(line);
+                lx += (rand()%100 - 50);
             }
         }
     }
 
-    drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2, 220, 8, sf::Color(255, 215, 0));
-    drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 4, 220 - 4, 8, sf::Color(180, 120, 40));
+    drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2, 120, 10, sf::Color(255, 215, 0));
+    drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 4, 120 - 4, 10, sf::Color(180, 120, 40));
     
     std::string lordStr = "Lord ";
     std::string nameStr = "Luca A. Greco";
-    float lordW = lordStr.length() * 4 * 3;
-    float nameW = nameStr.length() * 4 * 3;
+    float lordW = lordStr.length() * 4 * 4;
+    float nameW = nameStr.length() * 4 * 4;
     float totalW = lordW + nameW;
     float startX = WINDOW_WIDTH/2 - totalW/2.f;
-    drawTextOutlined(window, lordStr, startX, 340, 3, sf::Color(220, 20, 20));
-    drawTextOutlined(window, nameStr, startX + lordW, 340, 3, sf::Color::White);
+    drawTextOutlined(window, lordStr, startX, 260, 4, sf::Color(220, 20, 20));
+    drawTextOutlined(window, nameStr, startX + lordW, 260, 4, sf::Color::White);
 
-    sf::RectangleShape border(sf::Vector2f(WINDOW_WIDTH - 120, WINDOW_HEIGHT - 480));
-    border.setPosition(60, 420);
+    sf::RectangleShape border(sf::Vector2f(WINDOW_WIDTH - 240, 500));
+    border.setPosition(120, 360);
     border.setFillColor(sf::Color(0, 0, 0, 150));
     border.setOutlineThickness(6.f);
     border.setOutlineColor(sf::Color(100, 80, 50));
     window.draw(border);
 
-    drawTextCenteredOutlined(window, "SELECT RESOLUTION", WINDOW_WIDTH/2, 450, 3, sf::Color::White);
-    for (size_t i = 0; i < displayModes.size() && i < 8; ++i) {
-        std::string res = std::to_string(displayModes[i].width) + "x" + std::to_string(displayModes[i].height);
-        std::string text = (i == selectedModeIndex) ? ("> " + res + " <") : res;
-        sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, 520 + i * 40, 2, color);
-    }
+    std::string items[] = {
+        "GAME MODE: " + std::string(gameMode == MODE_STORY ? "STORY" : "INFINITE"),
+        "RESOLUTION: " + std::to_string(displayModes[selectedModeIndex].width) + "x" + std::to_string(displayModes[selectedModeIndex].height),
+        "MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"),
+        "CONFIGURE JOYSTICK",
+        "START GAME"
+    };
 
-    drawTextCenteredOutlined(window, "PRESS 'M' TO TOGGLE MUSIC:", WINDOW_WIDTH/2, 850, 2, sf::Color::White);
-    drawTextCenteredOutlined(window, musicEnabled ? "[ ON ]" : "[ OFF ]", WINDOW_WIDTH/2, 890, 2, musicEnabled ? sf::Color::Green : sf::Color::Red);
+    for(int i=0; i<5; i++) {
+        std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
+        sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
+        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, 400 + i * 80, 3, color);
+    }
     
-    drawTextCenteredOutlined(window, "UP/DOWN TO SELECT", WINDOW_WIDTH/2, 940, 2, sf::Color(150, 150, 150));
-    drawTextCenteredOutlined(window, "PRESS ENTER TO START", WINDOW_WIDTH/2, 980, 3, sf::Color(255, 255, 0));
+    drawTextCenteredOutlined(window, "UP/DOWN TO SELECT - LEFT/RIGHT TO CHANGE", WINDOW_WIDTH/2, 900, 2, sf::Color(150, 150, 150));
+}
+
+void Game::drawConfigJoy() {
+    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+    bg.setFillColor(sf::Color(10, 10, 30));
+    window.draw(bg);
+
+    drawTextCenteredOutlined(window, "JOYSTICK CONFIGURATION", WINDOW_WIDTH/2, 200, 4, sf::Color::White);
+    
+    if (configJoyStep == 0) {
+        drawTextCenteredOutlined(window, "PRESS BUTTON FOR JUMP", WINDOW_WIDTH/2, 450, 3, sf::Color::Yellow);
+    } else if (configJoyStep == 1) {
+        drawTextCenteredOutlined(window, "PRESS BUTTON FOR SHOOT", WINDOW_WIDTH/2, 450, 3, sf::Color::Yellow);
+    }
+    
+    drawTextCenteredOutlined(window, "PRESS ESC TO CANCEL", WINDOW_WIDTH/2, 800, 2, sf::Color::Red);
 }
 
 void Game::render() {
@@ -356,7 +465,10 @@ void Game::render() {
     if (state == STATE_MENU) {
         drawMenu();
     } 
-    else if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {
+    else if (state == STATE_CONFIG_JOY) {
+        drawConfigJoy();
+    }
+    else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE) {
         maze.render(window);
         ui.render(window, player, maze.getRemainingTreasures());
         player.render(window);
@@ -369,17 +481,11 @@ void Game::render() {
             window.draw(c);
         }
 
-        if (state == STATE_WIN) {
+        if (state == STATE_LOSE) {
             sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
             overlay.setFillColor(sf::Color(0, 0, 0, 200));
             window.draw(overlay);
-            drawTextCenteredOutlined(window, "YOU WIN", WINDOW_WIDTH/2, 350, 4, sf::Color::Green);
-            drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
-        } else if (state == STATE_LOSE) {
-            sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-            overlay.setFillColor(sf::Color(0, 0, 0, 200));
-            window.draw(overlay);
-            drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 4, sf::Color::Red);
+            drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 5, sf::Color::Red);
             drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
         }
     } 
@@ -399,6 +505,24 @@ void Game::render() {
             }
         }
         drawTextCenteredOutlined(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
+    }
+    else if (state == STATE_WIN_STORY) {
+        sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+        bg.setFillColor(sf::Color(10, 10, 30));
+        window.draw(bg);
+        
+        for (const auto& fw : fireworks) {
+            sf::CircleShape c(6.f);
+            c.setFillColor(sf::Color(fw.color.r, fw.color.g, fw.color.b, 255 * fw.life / 60));
+            c.setPosition(fw.pos.x - 6.f, fw.pos.y - 6.f);
+            window.draw(c);
+        }
+        
+        drawTextCenteredOutlined(window, "CONGRATULATIONS!", WINDOW_WIDTH/2, 200, 5, sf::Color::Green);
+        drawTextCenteredOutlined(window, "YOU FINISHED THE STORY MODE", WINDOW_WIDTH/2, 300, 3, sf::Color::Yellow);
+        drawTextCenteredOutlined(window, "COMPLIMENTI PER LA TENACIA", WINDOW_WIDTH/2, 500, 3, sf::Color::White);
+        drawTextCenteredOutlined(window, "E GRAZIE PER AVER GIOCATTO!", WINDOW_WIDTH/2, 580, 3, sf::Color::White);
+        drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 800, 2, sf::Color::Red);
     }
     
     window.display();

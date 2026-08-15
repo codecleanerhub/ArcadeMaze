@@ -21,6 +21,12 @@ struct Config {
     int key_right = sf::Keyboard::Right;
     int key_jump = sf::Keyboard::Space;
     int key_shoot = sf::Keyboard::LAlt;
+    
+    // Joystick
+    int joy_axis_x = 0;
+    int joy_axis_y = 1;
+    int joy_jump = 0;
+    int joy_shoot = 2;
 };
 
 struct Particle {

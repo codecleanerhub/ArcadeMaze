@@ -9,16 +9,23 @@
 
 AudioManager::AudioManager() {
     buffers.resize(11);
-    sounds.resize(15);
-    for(auto& s : sounds) s.setVolume(60);
+    sounds.resize(20);
+    for(auto& s : sounds) s.setVolume(70);
     
-    // Pre-genera 5 tracce (4 livelli + 1 boss)
     for(int i=0; i<5; ++i) generateTrack(i);
 }
 
+// Generatore di rumore bianco per percussioni
+double noise() { return (rand() % 2000 - 1000) / 1000.0; }
+
 void AudioManager::generateTrack(int trackIdx) {
     int sr = 44100;
-    int tempo = (trackIdx == 4) ? 100 : 120; // Boss più lento
+    int tempo = (trackIdx == 4) ? 100 : 120;
+    double beatDur = 60.0 / tempo;
+    double eighthDur = beatDur / 2.0;
+    int samplesPerEighth = sr * eighthDur;
+
+    // Struttura Accordi (Root, Third, Fifth)
     int chords[4][3];
     int bass[4];
     int prog[4] = {0, 1, 2, 3};
@@ -26,41 +33,38 @@ void AudioManager::generateTrack(int trackIdx) {
     bool isBoss = (trackIdx == 4);
     
     if (isBoss) {
-        // BOSS: Re Minore Melodica, potente
-        int c[4][3] = {{147, 220, 294}, {131, 196, 262}, {117, 175, 233}, {110, 165, 220}};
+        int c[4][3] = {{147, 175, 220}, {131, 165, 196}, {117, 147, 175}, {110, 139, 175}};
         int b[4] = {73, 65, 58, 55};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 0) {
-        // LIV 1: Do Maggiore (Eroico)
-        int c[4][3] = {{261,329,392}, {174,220,261}, {220,261,329}, {196,246,293}};
+        int c[4][3] = {{261, 329, 392}, {174, 220, 261}, {220, 261, 329}, {196, 246, 293}};
         int b[4] = {130, 87, 110, 98};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 1) {
-        // LIV 2: La Minore (Misterioso)
-        int c[4][3] = {{220,261,329}, {174,220,261}, {261,329,392}, {196,246,293}};
+        int c[4][3] = {{220, 261, 329}, {174, 220, 261}, {261, 329, 392}, {196, 246, 293}};
         int b[4] = {110, 87, 130, 98};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 2) {
-        // LIV 3: Mi Minore (Teso)
-        int c[4][3] = {{164,196,246}, {261,329,392}, {196,246,294}, {293,369,440}};
+        int c[4][3] = {{164, 196, 246}, {261, 329, 392}, {196, 246, 294}, {293, 369, 440}};
         int b[4] = {82, 130, 98, 146};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 3) {
-        // LIV 4: Re Minore (Oscura)
-        int c[4][3] = {{147,174,220}, {117,147,175}, {175,220,262}, {196,246,294}};
+        int c[4][3] = {{147, 174, 220}, {117, 147, 175}, {175, 220, 262}, {196, 246, 294}};
         int b[4] = {73, 58, 87, 98};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     }
 
     std::vector<sf::Int16> trackSamples;
-    double beatDur = 60.0 / tempo;
-    double eighthDur = beatDur / 2.0;
-    int samplesPerEighth = sr * eighthDur;
+
+    // Pattern Batteria (8 step per battuta)
+    bool kick[8]  = {1, 0, 0, 0, 1, 0, 0, 1};
+    bool snare[8] = {0, 0, 1, 0, 0, 0, 1, 0};
+    bool hihat[8] = {1, 1, 1, 1, 1, 1, 1, 1};
 
     for(int bar = 0; bar < numBars; ++bar) {
         int chordIdx = prog[bar % 4];
@@ -73,38 +77,59 @@ void AudioManager::generateTrack(int trackIdx) {
         int octaveShift = isChorus ? 2 : 1; 
         
         for(int i = 0; i < 8; ++i) {
+            // Melodia pseudo-casuale
             int noteChoice = rand() % 3;
-            double freq;
+            double freq = root * octaveShift;
             if(i == 0) freq = root * octaveShift;
             else if(noteChoice == 0) freq = root * octaveShift;
             else if(noteChoice == 1) freq = third * octaveShift;
             else freq = fifth * octaveShift;
-            
-            if(rand() % 8 == 0) freq *= 2;
+            if(rand() % 6 == 0) freq *= 2;
             
             for(int s = 0; s < samplesPerEighth; ++s) {
                 double t = (double)s / sr;
-                double env = exp(-t * 3.0) * (1.0 - (double)i/8.0); 
-                
-                double wave;
+                double sample = 0.0;
+
+                // 1. Batteria
+                if (kick[i] && s < samplesPerEighth * 0.3) {
+                    double env = exp(-t * 30.0);
+                    sample += 3000 * sin(2*M_PI*60*t) * env; // Kick
+                }
+                if (snare[i] && s > samplesPerEighth * 0.2) {
+                    double env = exp(-t * 15.0);
+                    sample += 1500 * noise() * env; // Snare
+                }
+                if (hihat[i] && s % 2 == 0) {
+                    double env = exp(-t * 50.0);
+                    sample += 500 * noise() * env * 0.5; // Hihat
+                }
+
+                // 2. Basso (Dente di sega)
+                if (i % 4 == 0 || i % 4 == 1) { // Suona sul 1 e 2
+                    double bPhase = t * bassFreq;
+                    double bWave = 2.0 * (bPhase - floor(0.5 + bPhase));
+                    double bEnv = exp(-t * 2.0) * 0.8;
+                    sample += 2000 * bWave * bEnv;
+                }
+
+                // 3. Melodia
+                double mWave;
                 if(isBoss) {
                     double phase = t * freq;
-                    wave = 0.6 * (2.0 * (phase - floor(0.5 + phase))) + 0.4 * (sin(2*M_PI*phase) > 0 ? 1 : -1);
+                    mWave = 0.6 * (2.0 * (phase - floor(0.5 + phase))) + 0.4 * (sin(2*M_PI*phase) > 0 ? 1 : -1);
                 } else {
-                    wave = 0.4 * sin(2*M_PI*freq*t) + 0.3 * sin(2*M_PI*freq*2*t) + 0.2 * (sin(2*M_PI*freq*4*t) > 0 ? 1 : -1);
+                    mWave = 0.5 * sin(2*M_PI*freq*t) + 0.3 * sin(2*M_PI*freq*2*t) + 0.2 * sin(2*M_PI*freq*3*t);
                 }
-                
-                double bassWave;
-                if(isBoss) {
-                    double bPhase = t * bassFreq;
-                    bassWave = 0.9 * (2.0 * (bPhase - floor(0.5 + bPhase)));
-                } else {
-                    bassWave = 0.8 * sin(2*M_PI*bassFreq*t) + 0.5 * sin(2*M_PI*bassFreq*0.5*t);
+                double mEnv = exp(-t * 3.0) * (1.0 - (double)i/8.0);
+                sample += 1500 * mWave * mEnv;
+
+                // 4. Pad Armonico (solo nel ritornello)
+                if(isChorus) {
+                    double pWave = 0.3 * sin(2*M_PI*root*t) + 0.3 * sin(2*M_PI*third*t) + 0.3 * sin(2*M_PI*fifth*t);
+                    sample += 800 * pWave * 0.5;
                 }
-                
-                double bassEnv = (i % 4 == 0) ? 1.0 : 0.5;
-                
-                trackSamples.push_back((sf::Int16)(1500 * wave * env + 2000 * bassWave * bassEnv));
+
+                trackSamples.push_back((sf::Int16)sample);
             }
         }
     }
@@ -119,7 +144,7 @@ void AudioManager::playLevelMusic(int level, bool isBoss) {
     music.stop();
     music.setBuffer(musicBuffers[trackIdx]);
     music.setLoop(true);
-    music.setVolume(40);
+    music.setVolume(45);
     music.play();
 }
 

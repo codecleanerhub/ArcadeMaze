@@ -13,7 +13,6 @@ public:
     void reset();
     void resetPosition();
     void setPosition(float newX, float newY);
-    void handleInput(int key, const Config& config);
     void update(Maze& maze, bool freeMovement, std::vector<Particle>& particles);
     void render(sf::RenderTarget& target);
     void takeDamage();
@@ -35,6 +34,12 @@ public:
     void activateJump() { if (jumpTimer == 0) jumpTimer = 500; }
     uint32_t getShootCooldown() const { return shootCooldown; }
     void setShootCooldown(uint32_t cd) { shootCooldown = cd; }
+
+    // NUOVO: Metodo unificato per impostare la direzione
+    void setDirection(int tDx, int tDy) {
+        nextDx = tDx;
+        nextDy = tDy;
+    }
 
 private:
     sf::Vector2f pos;

@@ -24,13 +24,6 @@ void Player::setPosition(float newX, float newY) {
     pos.x = newX; pos.y = newY; dx = 0; dy = 0; nextDx = 0; nextDy = 0;
 }
 
-void Player::handleInput(int key, const Config& config) {
-    if (key == config.key_up) { nextDx = 0; nextDy = -1; }
-    else if (key == config.key_down) { nextDx = 0; nextDy = 1; }
-    else if (key == config.key_left) { nextDx = -1; nextDy = 0; }
-    else if (key == config.key_right) { nextDx = 1; nextDy = 0; }
-}
-
 bool Player::tryMove(int tDx, int tDy, Maze& maze) {
     int col = (int)(pos.x / TILE_SIZE);
     int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);

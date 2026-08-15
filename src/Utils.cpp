@@ -19,6 +19,10 @@ Config loadConfig(const std::string& filename) {
             else if (key == "KEY_RIGHT") config.key_right = value;
             else if (key == "KEY_JUMP") config.key_jump = value;
             else if (key == "KEY_SHOOT") config.key_shoot = value;
+            else if (key == "JOY_AXIS_X") config.joy_axis_x = value;
+            else if (key == "JOY_AXIS_Y") config.joy_axis_y = value;
+            else if (key == "JOY_JUMP") config.joy_jump = value;
+            else if (key == "JOY_SHOOT") config.joy_shoot = value;
         }
     }
     return config;
