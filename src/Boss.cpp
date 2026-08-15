@@ -30,14 +30,17 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
         float dist = sqrt(dxp*dxp + dyp*dyp);
         if (dist > 0) {
             float baseAngle = atan2(dyp, dxp);
-            // Sparo ventaglio
+            // Sparo ventaglio di missili
             for(int i = -1; i <= 1; i++) {
                 float angle = baseAngle + i * 0.3f; // Spread di 0.6 radianti
+                // Velocità 5.0f per i missili
                 bossProjectiles.push_back({pos, sf::Vector2f(cos(angle)*5.f, sin(angle)*5.f), 1, true, WPN_PISTOL});
             }
-            // Bomba (più lenta e grande)
+            // Bomba (più lenta e grande, cade verso il basso)
             if (rand() % 3 == 0) {
-                bossProjectiles.push_back({pos, sf::Vector2f(cos(baseAngle)*2.f, sin(baseAngle)*2.f), 2, true, WPN_ROCKET});
+                // Velocità 2.0f e direzione casuale per le bombe
+                float bombAngle = baseAngle + (rand()%60 - 30) * (M_PI/180.0f);
+                bossProjectiles.push_back({pos, sf::Vector2f(cos(bombAngle)*2.f, sin(bombAngle)*2.f), 2, true, WPN_ROCKET});
             }
         }
     }

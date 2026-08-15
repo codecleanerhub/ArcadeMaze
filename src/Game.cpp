@@ -29,19 +29,23 @@ void Game::startLevel(int lvl) {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    EnemyType pool1[] = {ENEMY_ZOMBIE, ENEMY_GHOUL, ENEMY_RAT, ENEMY_BAT, ENEMY_SKELETON}; 
-    EnemyType pool2[] = {ENEMY_CULTIST, ENEMY_SPIDER, ENEMY_SLIME, ENEMY_GOBLIN, ENEMY_ORC}; 
-    EnemyType pool3[] = {ENEMY_IMP, ENEMY_DEMON, ENEMY_WRAITH, ENEMY_GHOST, ENEMY_ROBOT};    
+    // 15 tipi di nemici possibili
+    EnemyType allTypes[] = {
+        ENEMY_ZOMBIE, ENEMY_SKELETON, ENEMY_GHOST, ENEMY_BAT, 
+        ENEMY_SPIDER, ENEMY_SLIME, ENEMY_DEMON, ENEMY_ROBOT,
+        ENEMY_GOBLIN, ENEMY_ORC, ENEMY_WRAITH, ENEMY_GHOUL,
+        ENEMY_IMP, ENEMY_RAT, ENEMY_CULTIST
+    };
     
-    EnemyType* currentPool = (currentLevel % 3 == 0) ? pool3 : (currentLevel % 2 == 0 ? pool2 : pool1);
-    
+    // Sceglie 5 nemici completamente a caso ad ogni livello
     for (int i = 0; i < 5; ++i) {
+        EnemyType t = allTypes[rand() % 15];
         int c, r;
         do {
             c = 1 + rand() % (MAZE_COLS - 2);
             r = 1 + rand() % (MAZE_ROWS - 2);
         } while (maze.isWall(c, r) || (c < 5 && r < 5));
-        enemies.push_back(Enemy(currentPool[i], c, r));
+        enemies.push_back(Enemy(t, c, r));
     }
 }
 
@@ -290,6 +294,16 @@ void Game::update() {
         player.update(maze, true, particles);
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
         
+        // --- FIX CRITICO: AGGIORNAMENTO PROIETTILI BOSS ---
+        for (auto& proj : bossProjectiles) {
+            if (!proj.active) continue;
+            proj.pos += proj.dir; // Muove il proiettile/bomba
+            // Disattiva se esce dallo schermo
+            if (proj.pos.x < 0 || proj.pos.x > WINDOW_WIDTH || proj.pos.y < UI_HEIGHT || proj.pos.y > WINDOW_HEIGHT) {
+                proj.active = false;
+            }
+        }
+        
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
             float dx = proj.pos.x - boss->getPos().x;
@@ -395,7 +409,6 @@ void Game::drawMenu() {
             sf::Color lightningCol(255, 255, 200);
             float lx = WINDOW_WIDTH / 2.0f + (rand()%400 - 200);
             for (int i = 0; i < 6; i++) {
-                // Lampi più spessi
                 sf::RectangleShape line(sf::Vector2f(6.f, 100.f));
                 line.setFillColor(lightningCol);
                 line.setPosition(lx, i * 100.f);
