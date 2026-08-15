@@ -3,7 +3,7 @@
 
 #include <SFML/Graphics.hpp>
 #include "Utils.h"
-#include <cstdint> // <-- AGGIUNTO PER uint32_t
+#include <cstdint>
 
 enum BossType { 
     BOSS_GOLEM, BOSS_LICH, BOSS_DEMON, BOSS_SPIDER, 
@@ -26,9 +26,10 @@ private:
     sf::Vector2f pos;
     int dx, dy, size, health, maxHealth, speed;
     BossType type;
-    uint32_t shootTimer; // <-- CORRETTO IN uint32_t
+    uint32_t shootTimer;
     int level;
     int screenWidth, screenHeight;
+    float animTime; // <-- AGGIUNTO PER ANIMAZIONI
 };
 
 #endif

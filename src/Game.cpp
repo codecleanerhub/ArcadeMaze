@@ -29,7 +29,6 @@ void Game::startLevel(int lvl) {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    // 15 tipi di nemici possibili
     EnemyType allTypes[] = {
         ENEMY_ZOMBIE, ENEMY_SKELETON, ENEMY_GHOST, ENEMY_BAT, 
         ENEMY_SPIDER, ENEMY_SLIME, ENEMY_DEMON, ENEMY_ROBOT,
@@ -37,7 +36,6 @@ void Game::spawnEnemies() {
         ENEMY_IMP, ENEMY_RAT, ENEMY_CULTIST
     };
     
-    // Sceglie 5 nemici completamente a caso ad ogni livello
     for (int i = 0; i < 5; ++i) {
         EnemyType t = allTypes[rand() % 15];
         int c, r;
@@ -236,6 +234,16 @@ void Game::update() {
             if (!enemy.isDead()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
         }
         
+        // --- FIX CRITICO: AGGIORNAMENTO PROIETTILI NEMICI ---
+        for (auto& proj : enemyProjectiles) {
+            if (!proj.active) continue;
+            proj.pos += proj.dir; // Muove il proiettile nemico!
+            if (proj.pos.x < 0 || proj.pos.x > WINDOW_WIDTH || proj.pos.y < UI_HEIGHT || proj.pos.y > WINDOW_HEIGHT) {
+                proj.active = false;
+            }
+        }
+        // ----------------------------------------------------
+
         // Collisioni proiettili giocatore
         for (auto& proj : player.getProjectiles()) {
             if (!proj.active) continue;
@@ -294,11 +302,10 @@ void Game::update() {
         player.update(maze, true, particles);
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
         
-        // --- FIX CRITICO: AGGIORNAMENTO PROIETTILI BOSS ---
+        // --- AGGIORNAMENTO PROIETTILI BOSS ---
         for (auto& proj : bossProjectiles) {
             if (!proj.active) continue;
             proj.pos += proj.dir; // Muove il proiettile/bomba
-            // Disattiva se esce dallo schermo
             if (proj.pos.x < 0 || proj.pos.x > WINDOW_WIDTH || proj.pos.y < UI_HEIGHT || proj.pos.y > WINDOW_HEIGHT) {
                 proj.active = false;
             }
@@ -340,6 +347,7 @@ void Game::update() {
         if (player.getLives() <= 0) state = STATE_LOSE;
         if (boss->isDead()) {
             audio.playSound(SOUND_BOSS_DEATH);
+            player.addLife(); // Guadagni una vita dopo aver sconfitto il boss
             currentLevel++;
             
             if (gameMode == MODE_STORY && currentLevel > 10) {
@@ -353,7 +361,7 @@ void Game::update() {
         if (rand() % 10 == 0) spawnFirework();
         for (auto& fw : fireworks) {
             fw.pos += fw.vel;
-            fw.vel.y += 0.1f; // Gravità
+            fw.vel.y += 0.1f;
             fw.life--;
         }
         fireworks.erase(std::remove_if(fireworks.begin(), fireworks.end(), [](const Firework& fw) { return fw.life <= 0; }), fireworks.end());
@@ -379,7 +387,7 @@ void Game::spawnFirework() {
 
 void Game::drawMenu() {
     sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-    bg.setFillColor(sf::Color(30, 30, 60)); // Blu scuro più chiaro
+    bg.setFillColor(sf::Color(30, 30, 60));
     window.draw(bg);
     
     srand(42);
@@ -486,10 +494,9 @@ void Game::render() {
         player.render(window);
         for (const auto& enemy : enemies) if (!enemy.isDead()) enemy.render(window);
         
-        // Disegna proiettili nemici
         for (const auto& p : enemyProjectiles) {
             if (p.active) {
-                sf::CircleShape proj(4.f); proj.setFillColor(sf::Color(255, 100, 0)); // Arancione
+                sf::CircleShape proj(4.f); proj.setFillColor(sf::Color(255, 100, 0));
                 proj.setPosition(p.pos.x - 4.f, p.pos.y - 4.f); window.draw(proj);
             }
         }
@@ -519,13 +526,12 @@ void Game::render() {
         player.render(window);
         boss->render(window);
         
-        // Disegna proiettili boss
         for (const auto& p : bossProjectiles) {
             if (p.active) {
-                if (p.type == WPN_ROCKET) { // Bombe
+                if (p.type == WPN_ROCKET) {
                     sf::CircleShape proj(12.f); proj.setFillColor(sf::Color(150, 0, 150));
                     proj.setPosition(p.pos.x - 12.f, p.pos.y - 12.f); window.draw(proj);
-                } else { // Spari
+                } else {
                     sf::CircleShape proj(8.f); proj.setFillColor(sf::Color(255, 50, 50));
                     proj.setPosition(p.pos.x - 8.f, p.pos.y - 8.f); window.draw(proj);
                 }

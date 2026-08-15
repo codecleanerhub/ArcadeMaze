@@ -31,7 +31,7 @@ public:
     bool isInvulnerable() const { return damageTimer > 0; }
     
     void shoot();
-    void activateJump() { if (jumpTimer == 0) { maxJumpTime = 40; jumpTimer = maxJumpTime; } } // Salto di 40 frame
+    void activateJump() { if (jumpTimer == 0) { maxJumpTime = 40; jumpTimer = maxJumpTime; } }
     uint32_t getShootCooldown() const { return shootCooldown; }
     void setShootCooldown(uint32_t cd) { shootCooldown = cd; }
 
@@ -39,6 +39,9 @@ public:
         nextDx = tDx;
         nextDy = tDy;
     }
+    
+    // <-- AGGIUNTO METODO PER GUADAGNARE VITA
+    void addLife() { lives++; }
 
 private:
     sf::Vector2f pos;
