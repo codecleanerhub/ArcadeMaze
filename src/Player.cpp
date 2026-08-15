@@ -123,11 +123,11 @@ void Player::shoot() {
 void Player::takeDamage() {
     if (!isJumping() && damageTimer == 0) {
         energy--;
-        damageTimer = 1500; // 1.5 secondi di invulnerabilità
+        damageTimer = 1500;
         
         if (energy <= 0) {
             lives--;
-            energy = maxEnergy; // Resetta l'energia solo quando perdi una vita
+            energy = maxEnergy;
             x = 1 * TILE_SIZE + TILE_SIZE / 2.0f;
             y = 1 * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
             dx = 0; dy = 0;
@@ -156,30 +156,73 @@ Vec2 Player::getPixelPos() const {
 }
 
 void Player::render(SDL_Renderer* renderer) {
-    SDL_Color bodyColor = isInvulnerable() ? SDL_Color{100, 100, 255, 255} : (isJumping() ? SDL_Color{255, 255, 0, 255} : SDL_Color{0, 255, 255, 255});
-    SDL_SetRenderDrawColor(renderer, bodyColor.r, bodyColor.g, bodyColor.b, 255);
-    
-    SDL_Rect head = {(int)x - 6, (int)y - 10, 12, 12};
-    SDL_RenderFillRect(renderer, &head);
-    
-    SDL_Rect body = {(int)x - 2, (int)y + 2, 4, 8};
-    SDL_RenderFillRect(renderer, &body);
-    
-    SDL_Rect arm1 = {(int)x - 8, (int)y + 4, 6, 2};
-    SDL_Rect arm2 = {(int)x + 2, (int)y + 4, 6, 2};
-    SDL_RenderFillRect(renderer, &arm1);
-    SDL_RenderFillRect(renderer, &arm2);
-    
-    SDL_Rect leg1 = {(int)x - 4, (int)y + 10, 3, 6};
-    SDL_Rect leg2 = {(int)x + 1, (int)y + 10, 3, 6};
+    int px = (int)x;
+    int py = (int)y;
+
+    // Ombra
+    drawFilledCircle(renderer, px, py + 12, 8, {0, 0, 0, 100});
+
+    // Stato (colore base)
+    SDL_Color skin = {255, 220, 177, 255};
+    SDL_Color clothes = isInvulnerable() ? SDL_Color{100, 100, 255, 255} : (isJumping() ? SDL_Color{255, 255, 0, 255} : SDL_Color{70, 130, 180, 255}); // Blu (Esploratore)
+    SDL_Color pants = {50, 50, 150, 255};
+    SDL_Color hat = {90, 60, 30, 255}; // Marrone cappello
+    SDL_Color backpack = {30, 80, 30, 255};
+
+    // Disegna Gambe
+    SDL_SetRenderDrawColor(renderer, pants.r, pants.g, pants.b, 255);
+    SDL_Rect leg1 = {px - 5, py + 2, 4, 10};
+    SDL_Rect leg2 = {px + 1, py + 2, 4, 10};
     SDL_RenderFillRect(renderer, &leg1);
     SDL_RenderFillRect(renderer, &leg2);
 
+    // Disegna Zaino (dietro)
+    SDL_SetRenderDrawColor(renderer, backpack.r, backpack.g, backpack.b, 255);
+    SDL_Rect bpk = {px - 7, py - 3, 4, 9};
+    SDL_RenderFillRect(renderer, &bpk);
+
+    // Disegna Corpo
+    SDL_SetRenderDrawColor(renderer, clothes.r, clothes.g, clothes.b, 255);
+    SDL_Rect body = {px - 6, py - 4, 12, 8};
+    SDL_RenderFillRect(renderer, &body);
+
+    // Disegna Braccia
+    SDL_Rect arm1 = {px - 8, py - 3, 3, 7};
+    SDL_Rect arm2 = {px + 5, py - 3, 3, 7};
+    SDL_RenderFillRect(renderer, &arm1);
+    SDL_RenderFillRect(renderer, &arm2);
+
+    // Disegna Testa
+    drawFilledCircle(renderer, px, py - 8, 5, skin);
+
+    // Disegna Cappello
+    SDL_SetRenderDrawColor(renderer, hat.r, hat.g, hat.b, 255);
+    SDL_Rect hat_base = {px - 7, py - 11, 14, 2};
+    SDL_Rect hat_top = {px - 3, py - 15, 6, 4};
+    SDL_RenderFillRect(renderer, &hat_base);
+    SDL_RenderFillRect(renderer, &hat_top);
+
+    // Disegna Arma
+    SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+    if (lastDx == 1) { // Destra
+        SDL_Rect gun = {px + 7, py - 1, 6, 3};
+        SDL_RenderFillRect(renderer, &gun);
+    } else if (lastDx == -1) { // Sinistra
+        SDL_Rect gun = {px - 13, py - 1, 6, 3};
+        SDL_RenderFillRect(renderer, &gun);
+    } else if (lastDy == 1) { // Giù
+        SDL_Rect gun = {px - 1, py + 7, 3, 6};
+        SDL_RenderFillRect(renderer, &gun);
+    } else if (lastDy == -1) { // Su
+        SDL_Rect gun = {px - 1, py - 13, 3, 6};
+        SDL_RenderFillRect(renderer, &gun);
+    }
+
+    // Disegna Proiettili
     SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
     for (const auto& p : projectiles) {
         if (p.active) {
-            SDL_Rect proj = {(int)p.x - 3, (int)p.y - 3, 6, 6};
-            SDL_RenderFillRect(renderer, &proj);
+            drawFilledCircle(renderer, (int)p.x, (int)p.y, 3, {255, 200, 0, 255});
         }
     }
 }

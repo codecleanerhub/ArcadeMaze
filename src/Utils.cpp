@@ -1,6 +1,7 @@
 #include "Utils.h"
 #include <fstream>
 #include <iostream>
+#include <cmath>
 
 Config loadConfig(const std::string& filename) {
     Config config;
@@ -67,5 +68,14 @@ void drawText(SDL_Renderer* renderer, const std::string& text, int x, int y, int
             }
         }
         currentX += 4 * scale;
+    }
+}
+
+// Disegna un cerchio pieno pixel per pixel
+void drawFilledCircle(SDL_Renderer* renderer, int cx, int cy, int radius, SDL_Color color) {
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    for (int dy = -radius; dy <= radius; dy++) {
+        int dx = (int)(sqrt(radius * radius - dy * dy) + 0.5);
+        SDL_RenderDrawLine(renderer, cx - dx, cy + dy, cx + dx, cy + dy);
     }
 }

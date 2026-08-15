@@ -30,5 +30,6 @@ struct Config {
 // Funzioni di utilità
 Config loadConfig(const std::string& filename);
 void drawText(SDL_Renderer* renderer, const std::string& text, int x, int y, int scale, SDL_Color color);
+void drawFilledCircle(SDL_Renderer* renderer, int cx, int cy, int radius, SDL_Color color); // NUOVA FUNZIONE
 
 #endif

@@ -8,7 +8,6 @@ Enemy::Enemy(EnemyType t, int startCol, int startRow) {
     dx = 0; dy = 0;
     pathUpdateTimer = 0;
     
-    // Imposta energia massima 5
     if (type == ENEMY_ALIEN) {
         speed = 1; health = 2;
     } else if (type == ENEMY_GHOST) {
@@ -16,7 +15,7 @@ Enemy::Enemy(EnemyType t, int startCol, int startRow) {
     } else if (type == ENEMY_ROBOT) {
         speed = 1; health = 4;
     } else if (type == ENEMY_FANTASY) {
-        speed = 1; health = 5; // Massimo 5 colpi
+        speed = 1; health = 5;
     }
 }
 
@@ -139,29 +138,74 @@ Vec2 Enemy::getGridPos() const {
 void Enemy::render(SDL_Renderer* renderer) const {
     int px = (int)x;
     int py = (int)y;
-    int s = TILE_SIZE / 2 - 4;
     
+    // Ombra per tutti
+    drawFilledCircle(renderer, px, py + 12, 8, {0, 0, 0, 100});
+
     if (type == ENEMY_ALIEN) {
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-        SDL_Rect body = {px - s, py - s, s * 2, s * 2};
+        // Corpo
+        SDL_SetRenderDrawColor(renderer, 0, 100, 0, 255);
+        SDL_Rect body = {px - 4, py + 2, 8, 6};
         SDL_RenderFillRect(renderer, &body);
-    } else if (type == ENEMY_GHOST) {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_Rect body = {px - s, py - s, s * 2, s * 2};
+        // Testa
+        drawFilledCircle(renderer, px, py - 4, 7, {50, 205, 50, 255});
+        // Occhi neri
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_Rect e1 = {px - 5, py - 5, 4, 2};
+        SDL_Rect e2 = {px + 1, py - 5, 4, 2};
+        SDL_RenderFillRect(renderer, &e1);
+        SDL_RenderFillRect(renderer, &e2);
+    } 
+    else if (type == ENEMY_GHOST) {
+        // CorpoFantasma
+        SDL_SetRenderDrawColor(renderer, 240, 240, 240, 255);
+        drawFilledCircle(renderer, px, py - 2, 8, {240, 240, 240, 255});
+        SDL_Rect body = {px - 8, py - 2, 16, 8};
         SDL_RenderFillRect(renderer, &body);
-    } else if (type == ENEMY_ROBOT) {
+        // Onde inferiori
+        SDL_Rect wave1 = {px - 8, py + 6, 4, 3};
+        SDL_Rect wave2 = {px - 2, py + 6, 4, 3};
+        SDL_Rect wave3 = {px + 4, py + 6, 4, 3};
+        SDL_RenderFillRect(renderer, &wave1);
+        SDL_RenderFillRect(renderer, &wave2);
+        SDL_RenderFillRect(renderer, &wave3);
+        // Occhi
+        drawFilledCircle(renderer, px - 3, py - 3, 2, {0, 0, 0, 255});
+        drawFilledCircle(renderer, px + 3, py - 3, 2, {0, 0, 0, 255});
+    } 
+    else if (type == ENEMY_ROBOT) {
+        // Cingoli
+        SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
+        SDL_Rect tracks = {px - 8, py + 4, 16, 6};
+        SDL_RenderFillRect(renderer, &tracks);
+        // Corpo
         SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255);
-        SDL_Rect body = {px - s, py - s + 2, s * 2, s * 2 - 4};
+        SDL_Rect body = {px - 6, py - 4, 12, 10};
         SDL_RenderFillRect(renderer, &body);
-        SDL_Rect head = {px - 4, py - s - 2, 8, 6};
+        // Testa
+        SDL_Rect head = {px - 4, py - 10, 8, 7};
         SDL_RenderFillRect(renderer, &head);
-    } else if (type == ENEMY_FANTASY) {
+        // Antenna
+        SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+        SDL_Rect ant = {px - 1, py - 14, 2, 4};
+        SDL_RenderFillRect(renderer, &ant);
+        drawFilledCircle(renderer, px, py - 15, 2, {255, 50, 50, 255});
+        // Occhio
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        SDL_Rect eye = {px - 2, py - 8, 4, 2};
+        SDL_RenderFillRect(renderer, &eye);
+    } 
+    else if (type == ENEMY_FANTASY) {
+        // Melma
+        drawFilledCircle(renderer, px, py + 4, 8, {150, 0, 255, 255});
         SDL_SetRenderDrawColor(renderer, 150, 0, 255, 255);
-        SDL_Point points[5] = {
-            {px, py - s}, {px + s, py}, {px, py + s}, {px - s, py}, {px, py - s}
-        };
-        SDL_RenderDrawLines(renderer, points, 5);
-        SDL_Rect inner = {px - 4, py - 8, 8, 16};
-        SDL_RenderFillRect(renderer, &inner);
+        SDL_Rect body = {px - 8, py + 4, 16, 6};
+        SDL_RenderFillRect(renderer, &body);
+        drawFilledCircle(renderer, px, py + 4, 5, {200, 50, 255, 255});
+        // Occhi
+        drawFilledCircle(renderer, px - 3, py + 2, 2, {255, 255, 255, 255});
+        drawFilledCircle(renderer, px + 3, py + 2, 2, {255, 255, 255, 255});
+        drawFilledCircle(renderer, px - 3, py + 2, 1, {0, 0, 0, 255});
+        drawFilledCircle(renderer, px + 3, py + 2, 1, {0, 0, 0, 255});
     }
 }
