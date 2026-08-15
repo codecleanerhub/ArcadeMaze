@@ -15,6 +15,7 @@ add_executable(${PROJECT_NAME}
     src/Weapon.cpp
     src/UI.cpp
     src/Utils.cpp
+    src/AudioManager.cpp
 )
 
 if(TARGET SDL2::SDL2)

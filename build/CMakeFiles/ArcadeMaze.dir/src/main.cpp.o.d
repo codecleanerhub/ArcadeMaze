@@ -282,4 +282,5 @@ CMakeFiles/ArcadeMaze.dir/src/main.cpp.o: \
  /usr/include/c++/13/queue /usr/include/c++/13/deque \
  /usr/include/c++/13/bits/stl_deque.h /usr/include/c++/13/bits/deque.tcc \
  /usr/include/c++/13/bits/stl_heap.h /usr/include/c++/13/bits/stl_queue.h \
- /home/luca/Scrivania/Sviluppo/ArcadeMaze/src/UI.h
+ /home/luca/Scrivania/Sviluppo/ArcadeMaze/src/UI.h \
+ /home/luca/Scrivania/Sviluppo/ArcadeMaze/src/AudioManager.h

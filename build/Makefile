@@ -129,6 +129,30 @@ ArcadeMaze/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/build
 .PHONY : ArcadeMaze/fast
 
+src/AudioManager.o: src/AudioManager.cpp.o
+.PHONY : src/AudioManager.o
+
+# target to build an object file
+src/AudioManager.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.o
+.PHONY : src/AudioManager.cpp.o
+
+src/AudioManager.i: src/AudioManager.cpp.i
+.PHONY : src/AudioManager.i
+
+# target to preprocess a source file
+src/AudioManager.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.i
+.PHONY : src/AudioManager.cpp.i
+
+src/AudioManager.s: src/AudioManager.cpp.s
+.PHONY : src/AudioManager.s
+
+# target to generate assembly for a file
+src/AudioManager.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ArcadeMaze.dir/build.make CMakeFiles/ArcadeMaze.dir/src/AudioManager.cpp.s
+.PHONY : src/AudioManager.cpp.s
+
 src/Enemy.o: src/Enemy.cpp.o
 .PHONY : src/Enemy.o
 
@@ -330,6 +354,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... ArcadeMaze"
+	@echo "... src/AudioManager.o"
+	@echo "... src/AudioManager.i"
+	@echo "... src/AudioManager.s"
 	@echo "... src/Enemy.o"
 	@echo "... src/Enemy.i"
 	@echo "... src/Enemy.s"

@@ -4,23 +4,22 @@
 Enemy::Enemy(EnemyType t, int startCol, int startRow) {
     type = t;
     x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
-    y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT; // Aggiunto offset UI
+    y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
     dx = 0; dy = 0;
     pathUpdateTimer = 0;
     
-    // Setup statistiche in base al tipo
+    // Imposta energia massima 5
     if (type == ENEMY_ALIEN) {
-        speed = 1; health = 1; // Veloce, fragile
+        speed = 1; health = 2;
     } else if (type == ENEMY_GHOST) {
-        speed = 2; health = 1; // Molto veloce, fragile
+        speed = 2; health = 1;
     } else if (type == ENEMY_ROBOT) {
-        speed = 1; health = 2; // Lento, corazzato
+        speed = 1; health = 4;
     } else if (type == ENEMY_FANTASY) {
-        speed = 1; health = 3; // Lento, molto corazzato
+        speed = 1; health = 5; // Massimo 5 colpi
     }
 }
 
-// Algoritmo BFS per pathfinding su griglia
 bool Enemy::bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep) {
     if (start.x == target.x && start.y == target.y) return false;
     
@@ -67,10 +66,9 @@ bool Enemy::bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep) {
     return false;
 }
 
-// Movimento greedy: va nella direzione che minimizza la distanza dal player
 void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
     int col = (int)(x / TILE_SIZE);
-    int row = (int)((y - UI_HEIGHT) / TILE_SIZE); // Offset UI
+    int row = (int)((y - UI_HEIGHT) / TILE_SIZE);
     
     int bestDx = 0, bestDy = 0;
     float minDist = 999999.0f;
@@ -83,7 +81,6 @@ void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
         int nr = row + dr[i];
         if (!maze.isWall(nc, nr)) {
             float dist = (nc - target.x) * (nc - target.x) + (nr - target.y) * (nr - target.y);
-            // Evita di fare retromarcia se possibile
             if (dc[i] == -dx && dr[i] == -dy) dist += 10; 
             if (dist < minDist) {
                 minDist = dist;
@@ -99,21 +96,18 @@ void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
 
 void Enemy::update(Maze& maze, const Vec2& playerGridPos) {
     int col = (int)(x / TILE_SIZE);
-    int row = (int)((y - UI_HEIGHT) / TILE_SIZE); // Offset UI
+    int row = (int)((y - UI_HEIGHT) / TILE_SIZE);
     float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
-    float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT; // Offset UI
+    float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
     
-    // Aumenta il timer del pathfinding
     pathUpdateTimer += 16;
     
-    // Se centrato nella cella, decide la prossima direzione
     if (fabs(x - centerX) < speed && fabs(y - centerY) < speed) {
         x = centerX;
         y = centerY;
         
-        // Robot e Fantasy usano BFS, Alien e Ghost usano Greedy
         if (type == ENEMY_ROBOT || type == ENEMY_FANTASY) {
-            if (pathUpdateTimer > 250) { // Aggiorna il percorso ogni 250ms
+            if (pathUpdateTimer > 250) {
                 pathUpdateTimer = 0;
                 Vec2 nextStep;
                 if (bfsPath(maze, {col, row}, playerGridPos, nextStep)) {
@@ -139,42 +133,34 @@ void Enemy::takeDamage(int dmg) {
 }
 
 Vec2 Enemy::getGridPos() const {
-    return { (int)(x / TILE_SIZE), (int)((y - UI_HEIGHT) / TILE_SIZE) }; // Offset UI
+    return { (int)(x / TILE_SIZE), (int)((y - UI_HEIGHT) / TILE_SIZE) };
 }
 
 void Enemy::render(SDL_Renderer* renderer) const {
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Default rosso
-    
     int px = (int)x;
     int py = (int)y;
     int s = TILE_SIZE / 2 - 4;
     
     if (type == ENEMY_ALIEN) {
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Verde
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
         SDL_Rect body = {px - s, py - s, s * 2, s * 2};
-        SDL_RenderFillRect(renderer, &body); // Quadrato verde
+        SDL_RenderFillRect(renderer, &body);
     } else if (type == ENEMY_GHOST) {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // Bianco
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_Rect body = {px - s, py - s, s * 2, s * 2};
-        SDL_RenderFillRect(renderer, &body); // Quadrato bianco
+        SDL_RenderFillRect(renderer, &body);
     } else if (type == ENEMY_ROBOT) {
-        SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255); // Grigio
+        SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255);
         SDL_Rect body = {px - s, py - s + 2, s * 2, s * 2 - 4};
         SDL_RenderFillRect(renderer, &body);
         SDL_Rect head = {px - 4, py - s - 2, 8, 6};
         SDL_RenderFillRect(renderer, &head);
     } else if (type == ENEMY_FANTASY) {
-        SDL_SetRenderDrawColor(renderer, 150, 0, 255, 255); // Viola
-        // Disegna un rombo
+        SDL_SetRenderDrawColor(renderer, 150, 0, 255, 255);
         SDL_Point points[5] = {
-            {px, py - s},
-            {px + s, py},
-            {px, py + s},
-            {px - s, py},
-            {px, py - s}
+            {px, py - s}, {px + s, py}, {px, py + s}, {px - s, py}, {px, py - s}
         };
         SDL_RenderDrawLines(renderer, points, 5);
-        // Riempimento approssimato
         SDL_Rect inner = {px - 4, py - 8, 8, 16};
         SDL_RenderFillRect(renderer, &inner);
     }

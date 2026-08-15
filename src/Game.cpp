@@ -14,7 +14,7 @@ Game::~Game() {
 }
 
 bool Game::init() {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         std::cerr << "SDL non inizializzato! Errore: " << SDL_GetError() << std::endl;
         return false;
     }
@@ -34,7 +34,6 @@ bool Game::init() {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    // Genera 4 nemici di tipi diversi in posizioni casuali lontane dal giocatore
     EnemyType types[] = {ENEMY_ALIEN, ENEMY_GHOST, ENEMY_ROBOT, ENEMY_FANTASY};
     
     for (int i = 0; i < 4; ++i) {
@@ -42,7 +41,7 @@ void Game::spawnEnemies() {
         do {
             c = 1 + rand() % (MAZE_COLS - 2);
             r = 1 + rand() % (MAZE_ROWS - 2);
-        } while (maze.isWall(c, r) || (c < 5 && r < 5)); // Non spawnare vicino al player
+        } while (maze.isWall(c, r) || (c < 5 && r < 5));
         
         enemies.push_back(Enemy(types[i], c, r));
     }
@@ -61,7 +60,6 @@ void Game::handleEvents() {
         if (e.type == SDL_QUIT) {
             isRunning = false;
         } else if (e.type == SDL_KEYDOWN) {
-            // Utilizziamo SDL_Scancode per robustezza
             SDL_Scancode scancode = e.key.keysym.scancode;
             
             if (scancode == SDL_SCANCODE_ESCAPE) {
@@ -69,7 +67,11 @@ void Game::handleEvents() {
             }
             
             if (state == STATE_PLAYING) {
+                int ammoBefore = player.getCurrentWeapon().ammo;
                 player.handleInput(scancode, config, maze);
+                if (player.getCurrentWeapon().ammo < ammoBefore) {
+                    audio.playSound(SOUND_SHOOT);
+                }
             } else if (scancode == SDL_SCANCODE_RETURN) {
                 resetGame();
             }
@@ -80,22 +82,27 @@ void Game::handleEvents() {
 void Game::update() {
     if (state != STATE_PLAYING) return;
     
+    int dotsBefore = maze.getRemainingDots();
     player.update(maze);
+    
+    // Effetto audio raccolta puntini
+    if (maze.getRemainingDots() < dotsBefore) {
+        audio.playSound(SOUND_DOT);
+    }
     
     Vec2 playerGridPos = player.getGridPos();
     
-    // Aggiorna nemici
     for (auto& enemy : enemies) {
         if (!enemy.isDead()) {
             enemy.update(maze, playerGridPos);
         }
     }
     
-    // Collisioni Proiettili - Nemici
+    // Collisioni e suoni per i nemici
     for (auto& proj : player.getProjectiles()) {
         if (!proj.active) continue;
         
-        Vec2 projGrid = { (int)(proj.x / TILE_SIZE), (int)(proj.y / TILE_SIZE) };
+        Vec2 projGrid = { (int)(proj.x / TILE_SIZE), (int)((proj.y - UI_HEIGHT) / TILE_SIZE) };
         
         for (auto& enemy : enemies) {
             if (enemy.isDead()) continue;
@@ -106,13 +113,14 @@ void Game::update() {
                 proj.active = false;
                 if (enemy.isDead()) {
                     player.addScore(5000);
+                    audio.playSound(SOUND_ENEMY_DEATH);
                 }
                 break;
             }
         }
     }
     
-    // Collisioni Nemici - Giocatore
+    // Gestione danno giocatore
     if (!player.isInvulnerable()) {
         for (auto& enemy : enemies) {
             if (enemy.isDead()) continue;
@@ -120,9 +128,10 @@ void Game::update() {
             Vec2 enGrid = enemy.getGridPos();
             if (playerGridPos.x == enGrid.x && playerGridPos.y == enGrid.y) {
                 if (!player.isJumping()) {
+                    int livesBefore = player.getLives();
                     player.takeDamage();
-                    if (player.getLives() <= 0) {
-                        state = STATE_LOSE;
+                    if (player.getLives() < livesBefore) {
+                        audio.playSound(SOUND_LOSE_LIFE);
                     }
                 }
                 break;
@@ -130,9 +139,13 @@ void Game::update() {
         }
     }
     
-    // Controllo vittoria
-    if (maze.getRemainingDots() == 0) {
+    if (player.getLives() <= 0) {
+        state = STATE_LOSE;
+    }
+    
+    if (maze.getRemainingDots() == 0 && state != STATE_WIN) {
         state = STATE_WIN;
+        audio.playSound(SOUND_WIN);
     }
 }
 
@@ -170,7 +183,7 @@ void Game::run() {
         handleEvents();
         update();
         render();
-        SDL_Delay(16); // Cap a ~60 FPS
+        SDL_Delay(16);
     }
 }
 
