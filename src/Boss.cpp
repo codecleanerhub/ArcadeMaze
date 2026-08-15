@@ -1,7 +1,7 @@
 #include "Boss.h"
 #include "Weapon.h"
 #include <cstdlib>
-#include <cmath> // <-- AGGIUNTO PER sqrt, sin, cos, M_PI
+#include <cmath>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -9,16 +9,16 @@
 
 Boss::Boss(int lvl, int w, int h) : shootTimer(0) {
     level = lvl; screenWidth = w; screenHeight = h;
-    size = 100 + lvl * 10; 
-    pos.x = w / 2.0f; pos.y = UI_HEIGHT + 100.0f + size;
+    size = 180 + lvl * 20; // Molto più grande
+    pos.x = w / 2.0f; pos.y = UI_HEIGHT + 150.0f + size;
     dx = (lvl % 2 == 0) ? 2 : -2; dy = (lvl % 3 == 0) ? 1 : -1;
     speed = 1 + lvl / 2;
-    health = 30 + lvl * 15; maxHealth = health;
+    health = 50 + lvl * 20; maxHealth = health;
     switch(lvl % 4) {
-        case 0: color = sf::Color(255, 50, 50); break;
-        case 1: color = sf::Color(50, 255, 50); break;
-        case 2: color = sf::Color(50, 50, 255); break;
-        case 3: color = sf::Color(255, 255, 50); break;
+        case 0: color = sf::Color(255, 50, 50); break;  // Rosso
+        case 1: color = sf::Color(50, 255, 50); break;  // Verde
+        case 2: color = sf::Color(50, 50, 255); break;  // Blu
+        case 3: color = sf::Color(255, 255, 50); break; // Giallo
     }
 }
 
@@ -38,34 +38,63 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
 void Boss::takeDamage(int dmg) { health -= dmg; }
 
 void Boss::render(sf::RenderTarget& target) const {
+    float px = pos.x;
+    float py = pos.y;
+    sf::Color outline(10, 10, 10);
+
+    // Ombra
     sf::CircleShape shadow(size/2.f);
-    shadow.setFillColor(sf::Color(0, 0, 0, 100));
-    shadow.setPosition(pos.x - size/2.f, pos.y + size/3.f); target.draw(shadow);
+    shadow.setFillColor(sf::Color(0, 0, 0, 150));
+    shadow.setPosition(px - size/2.f, py + size/4.f); target.draw(shadow);
 
-    sf::CircleShape body(size/2.f);
-    body.setFillColor(color);
-    body.setPosition(pos.x - size/2.f, pos.y - size/2.f); target.draw(body);
-
+    // Tentacoli
     sf::Color tc(color.r/2, color.g/2, color.b/2);
-    for(int i=0; i<8; i++) {
-        float angle = i * (M_PI / 4);
-        sf::CircleShape tentacle(size/6.f);
-        tentacle.setFillColor(tc);
-        tentacle.setPosition(pos.x + cos(angle) * size/2.f - size/6.f, pos.y + sin(angle) * size/2.f - size/6.f);
+    for(int i=0; i<10; i++) {
+        float angle = i * (M_PI / 5) + (shootTimer/1000.0f); // Tentacoli ondeggianti
+        sf::CircleShape tentacle(size/5.f);
+        tentacle.setFillColor(tc); tentacle.setOutlineThickness(3.f); tentacle.setOutlineColor(outline);
+        tentacle.setPosition(px + cos(angle) * size/2.f - size/5.f, py + sin(angle) * size/2.f - size/5.f);
         target.draw(tentacle);
     }
 
-    sf::CircleShape eye1(size/8.f); eye1.setFillColor(sf::Color::White);
-    eye1.setPosition(pos.x - size/4.f - size/8.f, pos.y - size/6.f - size/8.f); target.draw(eye1);
-    sf::CircleShape eye2(size/8.f); eye2.setFillColor(sf::Color::White);
-    eye2.setPosition(pos.x + size/4.f - size/8.f, pos.y - size/6.f - size/8.f); target.draw(eye2);
-    sf::CircleShape p1(size/16.f); p1.setFillColor(sf::Color::Black);
-    p1.setPosition(pos.x - size/4.f - size/16.f, pos.y - size/6.f - size/16.f); target.draw(p1);
-    sf::CircleShape p2(size/16.f); p2.setFillColor(sf::Color::Black);
-    p2.setPosition(pos.x + size/4.f - size/16.f, pos.y - size/6.f - size/16.f); target.draw(p2);
+    // Corpo centrale
+    sf::CircleShape body(size/2.f);
+    body.setFillColor(color); body.setOutlineThickness(4.f); body.setOutlineColor(outline);
+    body.setPosition(px - size/2.f, py - size/2.f); target.draw(body);
 
-    sf::RectangleShape hbBg(sf::Vector2f(size, 10.f)); hbBg.setFillColor(sf::Color::Red);
-    hbBg.setPosition(pos.x - size/2.f, pos.y - size/2.f - 20.f); target.draw(hbBg);
-    sf::RectangleShape hbFg(sf::Vector2f(size * health / maxHealth, 10.f)); hbFg.setFillColor(sf::Color::Green);
-    hbFg.setPosition(pos.x - size/2.f, pos.y - size/2.f - 20.f); target.draw(hbFg);
+    // Occhi multipli
+    for(int i=0; i<3; i++) {
+        for(int j=0; j<3; j++) {
+            if((i+j)%2==0) {
+                float ex = px - size/3.f + i * size/3.f;
+                float ey = py - size/4.f + j * size/4.f;
+                sf::CircleShape eye(size/10.f); eye.setFillColor(sf::Color::White);
+                eye.setPosition(ex - size/10.f, ey - size/10.f); target.draw(eye);
+                sf::CircleShape pupil(size/20.f); pupil.setFillColor(sf::Color::Black);
+                pupil.setPosition(ex - size/20.f, ey - size/20.f); target.draw(pupil);
+            }
+        }
+    }
+
+    // Bocca dentata
+    sf::RectangleShape mouth(sf::Vector2f(size*0.8f, size/4.f));
+    mouth.setFillColor(sf::Color::Black);
+    mouth.setPosition(px - size*0.4f, py + size/8.f);
+    target.draw(mouth);
+    
+    // Denti
+    for(int i=0; i<6; i++) {
+        sf::ConvexShape tooth; tooth.setPointCount(3);
+        tooth.setFillColor(sf::Color::White); tooth.setOutlineThickness(2.f); tooth.setOutlineColor(outline);
+        tooth.setPoint(0, sf::Vector2f(px - size*0.4f + i * (size*0.8f)/6, py + size/8.f));
+        tooth.setPoint(1, sf::Vector2f(px - size*0.4f + (i+1) * (size*0.8f)/6, py + size/8.f));
+        tooth.setPoint(2, sf::Vector2f(px - size*0.4f + i * (size*0.8f)/6 + (size*0.8f)/12, py + size/4.f));
+        target.draw(tooth);
+    }
+
+    // Barra vita
+    sf::RectangleShape hbBg(sf::Vector2f(size, 15.f)); hbBg.setFillColor(sf::Color(50, 0, 0));
+    hbBg.setPosition(px - size/2.f, py - size/2.f - 30.f); target.draw(hbBg);
+    sf::RectangleShape hbFg(sf::Vector2f(size * health / maxHealth, 15.f)); hbFg.setFillColor(sf::Color(255, 50, 50));
+    hbFg.setPosition(px - size/2.f, py - size/2.f - 30.f); target.draw(hbFg);
 }

@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <algorithm>
 
-Game::Game() : window(sf::VideoMode(1024, 1024), "Arcade Maze Fantasy"), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true) {
+Game::Game() : window(sf::VideoMode(1024, 1024), "Arcade Maze Fantasy"), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -98,6 +98,10 @@ void Game::handleEvents() {
             if (state == STATE_MENU) {
                 if (key == sf::Keyboard::Up) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
                 else if (key == sf::Keyboard::Down) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
+                else if (key == sf::Keyboard::M) {
+                    musicEnabled = !musicEnabled;
+                    if(musicEnabled) audio.startMusic(); else audio.stopMusic();
+                }
                 else if (key == sf::Keyboard::Return) {
                     sf::VideoMode mode = displayModes[selectedModeIndex];
                     window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
@@ -120,7 +124,7 @@ void Game::handleEvents() {
 }
 
 void Game::update() {
-    // TASTI SPARO E SALTO HARDCODATI PER MASSIMA AFFIDABILITÀ
+    // TASTI SPARO E SALTO HARDCODATI
     if (state == STATE_PLAYING || state == STATE_BOSS) {
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
             if (player.getShootCooldown() == 0) {
@@ -129,7 +133,7 @@ void Game::update() {
                 if (player.getCurrentWeapon().ammo < ammoBefore) {
                     audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
                 }
-                player.setShootCooldown(150); // Sparo più rapido
+                player.setShootCooldown(150);
             }
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt)) {
@@ -250,7 +254,8 @@ void Game::render() {
             sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(200, 200, 200);
             drawText(window, res, 300, 200 + i * 40, 2, color);
         }
-        drawText(window, "UP/DOWN TO SELECT", 220, 600, 2, sf::Color::White);
+        drawText(window, "PRESS 'M' TO TOGGLE MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"), 180, 550, 2, musicEnabled ? sf::Color::Green : sf::Color::Red);
+        drawText(window, "UP/DOWN TO SELECT RESOLUTION", 200, 600, 2, sf::Color::White);
         drawText(window, "ENTER TO START", 250, 650, 2, sf::Color::White);
     } 
     else if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {

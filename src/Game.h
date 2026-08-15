@@ -40,6 +40,7 @@ private:
     int currentLevel;
     std::vector<sf::VideoMode> displayModes;
     int selectedModeIndex;
+    bool musicEnabled; // <-- AGGIUNTO FLAG MUSICA
     
     void handleEvents();
     void update();
