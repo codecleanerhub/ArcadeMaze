@@ -1,6 +1,7 @@
 #include "Utils.h"
 #include <fstream>
 #include <iostream>
+#include <cmath>
 
 Config loadConfig(const std::string& filename) {
     Config config;
@@ -70,4 +71,17 @@ void drawText(sf::RenderTarget& target, const std::string& text, float x, float 
 void drawTextCentered(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color) {
     float width = text.length() * 4 * scale;
     drawText(target, text, cx - width / 2.f, y, scale, color);
+}
+
+void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color) {
+    drawText(target, text, x - scale, y, scale, sf::Color::Black);
+    drawText(target, text, x + scale, y, scale, sf::Color::Black);
+    drawText(target, text, x, y - scale, scale, sf::Color::Black);
+    drawText(target, text, x, y + scale, scale, sf::Color::Black);
+    drawText(target, text, x, y, scale, color);
+}
+
+void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color) {
+    float width = text.length() * 4 * scale;
+    drawTextOutlined(target, text, cx - width / 2.f, y, scale, color);
 }

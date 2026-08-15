@@ -12,9 +12,16 @@
 
 enum GameState { STATE_MENU, STATE_PLAYING, STATE_BOSS, STATE_WIN, STATE_LOSE };
 
+// <-- AGGIUNTA LA STRUTTURA MANCANTE
 struct BossRoomWeapon {
     Weapon w;
     sf::Vector2f pos;
+};
+
+struct MenuBat {
+    sf::Vector2f pos;
+    float speed;
+    float phase;
 };
 
 class Game {
@@ -33,6 +40,7 @@ private:
     std::vector<Projectile> bossProjectiles;
     std::vector<BossRoomWeapon> bossRoomWeapons;
     std::vector<Particle> particles;
+    std::vector<MenuBat> menuBats;
     
     Config config;
     GameState state;
@@ -40,7 +48,8 @@ private:
     int currentLevel;
     std::vector<sf::VideoMode> displayModes;
     int selectedModeIndex;
-    bool musicEnabled; // <-- AGGIUNTO FLAG MUSICA
+    bool musicEnabled;
+    int lightningTimer;
     
     void handleEvents();
     void update();
@@ -50,6 +59,7 @@ private:
     void startBossFight();
     void spawnBossRoomWeapons();
     SoundType getWeaponSound(WeaponType wt);
+    void drawMenu();
 };
 
 #endif

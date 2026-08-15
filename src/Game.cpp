@@ -2,10 +2,15 @@
 #include <iostream>
 #include <cstdlib>
 #include <algorithm>
+#include <cmath> // <-- AGGIUNTO PER sin()
 
-Game::Game() : window(sf::VideoMode(1024, 1024), "Arcade Maze Fantasy"), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false) {
+Game::Game() : window(sf::VideoMode(1024, 1024), "Arcade Maze Fantasy"), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false), lightningTimer(0) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
+    for(int i=0; i<5; i++) {
+        // Corretto narrowing conversion con (float)
+        menuBats.push_back({sf::Vector2f(rand()%WINDOW_WIDTH, rand()%400), (float)(1 + rand()%2), (float)(rand()%360)});
+    }
 }
 
 bool Game::init() {
@@ -27,12 +32,12 @@ void Game::startLevel(int lvl) {
 
 void Game::spawnEnemies() {
     enemies.clear();
-    EnemyType pool1[] = {ENEMY_ZOMBIE, ENEMY_GOBLIN, ENEMY_SKELETON, ENEMY_BAT, ENEMY_SPIDER};
-    EnemyType pool2[] = {ENEMY_GHOUL, ENEMY_ORC, ENEMY_SLIME, ENEMY_SKELETON, ENEMY_BAT};
-    EnemyType pool3[] = {ENEMY_WRAITH, ENEMY_DEMON, ENEMY_ORC, ENEMY_GHOST, ENEMY_SPIDER};
-    EnemyType pool4[] = {ENEMY_ROBOT, ENEMY_DEMON, ENEMY_WRAITH, ENEMY_GHOUL, ENEMY_ORC};
+    // 3 pool di 5 nemici per tema Horror/Fantasy
+    EnemyType pool1[] = {ENEMY_ZOMBIE, ENEMY_GHOUL, ENEMY_RAT, ENEMY_BAT, ENEMY_SKELETON}; // Cripta
+    EnemyType pool2[] = {ENEMY_CULTIST, ENEMY_SPIDER, ENEMY_SLIME, ENEMY_GOBLIN, ENEMY_ORC}; // Dungeon
+    EnemyType pool3[] = {ENEMY_IMP, ENEMY_DEMON, ENEMY_WRAITH, ENEMY_GHOST, ENEMY_ROBOT};    // Inferno/Dimensione
     
-    EnemyType* currentPool = (currentLevel % 4 == 0) ? pool4 : (currentLevel % 3 == 0 ? pool3 : (currentLevel % 2 == 0 ? pool2 : pool1));
+    EnemyType* currentPool = (currentLevel % 3 == 0) ? pool3 : (currentLevel % 2 == 0 ? pool2 : pool1);
     
     for (int i = 0; i < 5; ++i) {
         int c, r;
@@ -127,6 +132,17 @@ void Game::handleEvents() {
 }
 
 void Game::update() {
+    if (state == STATE_MENU) {
+        for (auto& bat : menuBats) {
+            bat.pos.x += bat.speed;
+            if (bat.pos.x > WINDOW_WIDTH + 20) bat.pos.x = -20;
+            bat.pos.y += sin(bat.phase) * 0.5f;
+            bat.phase += 0.1f;
+        }
+        if (rand() % 1000 < 5) lightningTimer = 8;
+        if (lightningTimer > 0) lightningTimer--;
+    }
+
     if (state == STATE_PLAYING || state == STATE_BOSS) {
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
             if (player.getShootCooldown() == 0) {
@@ -246,70 +262,99 @@ void Game::update() {
     particles.erase(std::remove_if(particles.begin(), particles.end(), [](const Particle& p) { return p.life <= 0; }), particles.end());
 }
 
+void Game::drawMenu() {
+    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+    bg.setFillColor(sf::Color(10, 10, 30));
+    window.draw(bg);
+    
+    srand(42);
+    for(int i=0; i<80; i++) {
+        sf::CircleShape star(1 + rand()%2);
+        star.setFillColor(sf::Color(200, 200, 255, 100 + rand()%155));
+        star.setPosition(rand()%WINDOW_WIDTH, rand()%WINDOW_HEIGHT);
+        window.draw(star);
+    }
+    srand(time(NULL));
+
+    sf::CircleShape moon(80.f);
+    moon.setFillColor(sf::Color(230, 230, 180));
+    moon.setOutlineThickness(4.f);
+    moon.setOutlineColor(sf::Color(180, 180, 130));
+    moon.setPosition(WINDOW_WIDTH - 200.f, 100.f);
+    window.draw(moon);
+    sf::CircleShape crater1(10.f); crater1.setFillColor(sf::Color(200, 200, 150));
+    crater1.setPosition(WINDOW_WIDTH - 160.f, 140.f); window.draw(crater1);
+    crater1.setPosition(WINDOW_WIDTH - 180.f, 180.f); window.draw(crater1);
+
+    for (const auto& bat : menuBats) {
+        sf::ConvexShape wing; wing.setPointCount(4);
+        wing.setFillColor(sf::Color::Black);
+        wing.setPoint(0, sf::Vector2f(bat.pos.x, bat.pos.y));
+        wing.setPoint(1, sf::Vector2f(bat.pos.x - 20, bat.pos.y - 8));
+        wing.setPoint(2, sf::Vector2f(bat.pos.x - 16, bat.pos.y + 4));
+        wing.setPoint(3, sf::Vector2f(bat.pos.x - 4, bat.pos.y + 4));
+        window.draw(wing);
+        wing.scale(-1.f, 1.f); wing.setPosition(bat.pos.x, bat.pos.y); window.draw(wing);
+        sf::CircleShape body(8.f); body.setFillColor(sf::Color::Black);
+        body.setPosition(bat.pos.x - 8.f, bat.pos.y - 8.f); window.draw(body);
+    }
+
+    if (lightningTimer > 0) {
+        sf::RectangleShape flash(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+        flash.setFillColor(sf::Color(255, 255, 255, 100 * (lightningTimer / 8.f)));
+        window.draw(flash);
+        if (lightningTimer > 4) {
+            sf::Color lightningCol(255, 255, 200);
+            float lx = WINDOW_WIDTH / 2.0f + (rand()%400 - 200);
+            for (int i = 0; i < 5; i++) {
+                sf::Vertex line[] = {
+                    sf::Vertex(sf::Vector2f(lx, i * 100.f), lightningCol),
+                    sf::Vertex(sf::Vector2f(lx + (rand()%100 - 50), (i+1) * 100.f), lightningCol)
+                };
+                window.draw(line, 2, sf::Lines);
+            }
+        }
+    }
+
+    drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2, 220, 8, sf::Color(255, 215, 0));
+    drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 4, 220 - 4, 8, sf::Color(180, 120, 40));
+    
+    std::string lordStr = "Lord ";
+    std::string nameStr = "Luca A. Greco";
+    float lordW = lordStr.length() * 4 * 3;
+    float nameW = nameStr.length() * 4 * 3;
+    float totalW = lordW + nameW;
+    float startX = WINDOW_WIDTH/2 - totalW/2.f;
+    drawTextOutlined(window, lordStr, startX, 340, 3, sf::Color(220, 20, 20));
+    drawTextOutlined(window, nameStr, startX + lordW, 340, 3, sf::Color::White);
+
+    sf::RectangleShape border(sf::Vector2f(WINDOW_WIDTH - 120, WINDOW_HEIGHT - 480));
+    border.setPosition(60, 420);
+    border.setFillColor(sf::Color(0, 0, 0, 150));
+    border.setOutlineThickness(6.f);
+    border.setOutlineColor(sf::Color(100, 80, 50));
+    window.draw(border);
+
+    drawTextCenteredOutlined(window, "SELECT RESOLUTION", WINDOW_WIDTH/2, 450, 3, sf::Color::White);
+    for (size_t i = 0; i < displayModes.size() && i < 8; ++i) {
+        std::string res = std::to_string(displayModes[i].width) + "x" + std::to_string(displayModes[i].height);
+        std::string text = (i == selectedModeIndex) ? ("> " + res + " <") : res;
+        sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
+        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, 520 + i * 40, 2, color);
+    }
+
+    drawTextCenteredOutlined(window, "PRESS 'M' TO TOGGLE MUSIC:", WINDOW_WIDTH/2, 850, 2, sf::Color::White);
+    drawTextCenteredOutlined(window, musicEnabled ? "[ ON ]" : "[ OFF ]", WINDOW_WIDTH/2, 890, 2, musicEnabled ? sf::Color::Green : sf::Color::Red);
+    
+    drawTextCenteredOutlined(window, "UP/DOWN TO SELECT", WINDOW_WIDTH/2, 940, 2, sf::Color(150, 150, 150));
+    drawTextCenteredOutlined(window, "PRESS ENTER TO START", WINDOW_WIDTH/2, 980, 3, sf::Color(255, 255, 0));
+}
+
 void Game::render() {
     window.clear(sf::Color(10, 10, 10));
     
     if (state == STATE_MENU) {
-        // Sfondo dark fantasy
-        sf::RectangleShape bgGrad(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-        bgGrad.setFillColor(sf::Color(15, 15, 25));
-        window.draw(bgGrad);
-        
-        // Stelle pseudo-casuali ma statiche
-        srand(42); // Seed fisso per non farle muovere
-        for(int i=0; i<60; i++) {
-            sf::CircleShape star(1 + rand()%2);
-            star.setFillColor(sf::Color(200, 200, 255, 100 + rand()%155));
-            star.setPosition(rand()%WINDOW_WIDTH, rand()%WINDOW_HEIGHT);
-            window.draw(star);
-        }
-        srand(time(NULL)); // Reset del seed per il gioco
-        
-        // Bordo pergamena/tabella
-        sf::RectangleShape border(sf::Vector2f(WINDOW_WIDTH - 120, WINDOW_HEIGHT - 120));
-        border.setPosition(60, 60);
-        border.setFillColor(sf::Color(0, 0, 0, 150));
-        border.setOutlineThickness(6.f);
-        border.setOutlineColor(sf::Color(100, 80, 50)); // Bordo legno/oro
-        window.draw(border);
-        
-        // Titolo "ARCADE MAZE" effetto 3D e Glow
-        // Ombra
-        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2 + 4, 160 + 4, 6, sf::Color(0, 0, 0));
-        // Base oro
-        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2, 160, 6, sf::Color(180, 120, 40));
-        // Colore principale
-        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 2, 160 - 2, 6, sf::Color(255, 215, 0));
-        // Riflesso bianco
-        drawTextCentered(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 3, 160 - 3, 6, sf::Color(255, 255, 255));
-        
-        // Sottotitolo "By Luca A. Greco"
-        drawTextCentered(window, "By Luca A. Greco", WINDOW_WIDTH/2, 260, 2, sf::Color(200, 200, 200));
-        
-        // Separatore
-        sf::RectangleShape line(sf::Vector2f(400, 2));
-        line.setFillColor(sf::Color(100, 80, 50));
-        line.setPosition(WINDOW_WIDTH/2 - 200, 300);
-        window.draw(line);
-        
-        // Selezione Risoluzione
-        drawTextCentered(window, "SELECT RESOLUTION", WINDOW_WIDTH/2, 350, 3, sf::Color::White);
-        for (size_t i = 0; i < displayModes.size() && i < 8; ++i) {
-            std::string res = std::to_string(displayModes[i].width) + "x" + std::to_string(displayModes[i].height);
-            // Aggiungi freccette per la selezione
-            std::string text = (i == selectedModeIndex) ? ("> " + res + " <") : res;
-            sf::Color color = (i == selectedModeIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-            drawTextCentered(window, text, WINDOW_WIDTH/2, 420 + i * 40, 2, color);
-        }
-        
-        // Opzione Musica
-        drawTextCentered(window, "PRESS 'M' TO TOGGLE MUSIC:", WINDOW_WIDTH/2, 780, 2, sf::Color::White);
-        drawTextCentered(window, musicEnabled ? "[ ON ]" : "[ OFF ]", WINDOW_WIDTH/2, 810, 2, musicEnabled ? sf::Color::Green : sf::Color::Red);
-        
-        // Comandi per avviare
-        drawTextCentered(window, "UP/DOWN TO SELECT", WINDOW_WIDTH/2, 880, 2, sf::Color(150, 150, 150));
-        drawTextCentered(window, "PRESS ENTER TO START", WINDOW_WIDTH/2, 920, 3, sf::Color(255, 255, 0));
-        
+        drawMenu();
     } 
     else if (state == STATE_PLAYING || state == STATE_WIN || state == STATE_LOSE) {
         maze.render(window);
@@ -328,14 +373,14 @@ void Game::render() {
             sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
             overlay.setFillColor(sf::Color(0, 0, 0, 200));
             window.draw(overlay);
-            drawTextCentered(window, "YOU WIN", WINDOW_WIDTH/2, 350, 4, sf::Color::Green);
-            drawTextCentered(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
+            drawTextCenteredOutlined(window, "YOU WIN", WINDOW_WIDTH/2, 350, 4, sf::Color::Green);
+            drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
         } else if (state == STATE_LOSE) {
             sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
             overlay.setFillColor(sf::Color(0, 0, 0, 200));
             window.draw(overlay);
-            drawTextCentered(window, "GAME OVER", WINDOW_WIDTH/2, 350, 4, sf::Color::Red);
-            drawTextCentered(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
+            drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 4, sf::Color::Red);
+            drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
         }
     } 
     else if (state == STATE_BOSS) {
@@ -353,7 +398,7 @@ void Game::render() {
                 proj.setPosition(p.pos.x - 10.f, p.pos.y - 10.f); window.draw(proj);
             }
         }
-        drawTextCentered(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
+        drawTextCenteredOutlined(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
     }
     
     window.display();

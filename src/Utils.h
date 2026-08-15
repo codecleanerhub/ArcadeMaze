@@ -5,10 +5,9 @@
 #include <string>
 #include <vector>
 
-// Dimensioni logiche del gioco aumentate per strade più larghe
 const int WINDOW_WIDTH = 1024;
 const int WINDOW_HEIGHT = 1024;
-const int TILE_SIZE = 48; // Prima era 32, ora le strade sono molto più larghe
+const int TILE_SIZE = 48;
 const int MAZE_COLS = 21;
 const int MAZE_ROWS = 19;
 const int UI_HEIGHT = 80;
@@ -35,5 +34,7 @@ struct Particle {
 Config loadConfig(const std::string& filename);
 void drawText(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color);
 void drawTextCentered(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color);
+void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color);
+void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color);
 
 #endif

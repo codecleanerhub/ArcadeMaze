@@ -12,46 +12,45 @@ AudioManager::AudioManager() {
     sounds.resize(15);
     for(auto& s : sounds) s.setVolume(60);
     
-    // Pre-genera tutte le 5 tracce (circa 1 minuto ciascuna)
+    // Pre-genera 5 tracce (4 livelli + 1 boss)
     for(int i=0; i<5; ++i) generateTrack(i);
 }
 
 void AudioManager::generateTrack(int trackIdx) {
     int sr = 44100;
-    int tempo = 120;
+    int tempo = (trackIdx == 4) ? 100 : 120; // Boss più lento
     int chords[4][3];
     int bass[4];
-    int prog[4] = {0, 1, 2, 3}; // Progressione standard
-    int numBars = 32; // 32 battute a 120 BPM = 64 secondi
+    int prog[4] = {0, 1, 2, 3};
+    int numBars = 32; 
     bool isBoss = (trackIdx == 4);
     
     if (isBoss) {
-        // BOSS: Re Minore Melodica (Re, Do, Sib, La) - Power Chords
-        tempo = 100; // Più lento ed epico
+        // BOSS: Re Minore Melodica, potente
         int c[4][3] = {{147, 220, 294}, {131, 196, 262}, {117, 175, 233}, {110, 165, 220}};
         int b[4] = {73, 65, 58, 55};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 0) {
-        // LIVELLO 1: Do Maggiore (Innocente, classico fantasy)
+        // LIV 1: Do Maggiore (Eroico)
         int c[4][3] = {{261,329,392}, {174,220,261}, {220,261,329}, {196,246,293}};
         int b[4] = {130, 87, 110, 98};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 1) {
-        // LIVELLO 2: La Minore (Più esplorativo e misterioso)
+        // LIV 2: La Minore (Misterioso)
         int c[4][3] = {{220,261,329}, {174,220,261}, {261,329,392}, {196,246,293}};
         int b[4] = {110, 87, 130, 98};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 2) {
-        // LIVELLO 3: Mi Minore (Teso, pericoloso)
+        // LIV 3: Mi Minore (Teso)
         int c[4][3] = {{164,196,246}, {261,329,392}, {196,246,294}, {293,369,440}};
         int b[4] = {82, 130, 98, 146};
         std::memcpy(chords, c, sizeof(c));
         std::memcpy(bass, b, sizeof(b));
     } else if (trackIdx == 3) {
-        // LIVELLO 4: Re Minore (Oscura, inquietante)
+        // LIV 4: Re Minore (Oscura)
         int c[4][3] = {{147,174,220}, {117,147,175}, {175,220,262}, {196,246,294}};
         int b[4] = {73, 58, 87, 98};
         std::memcpy(chords, c, sizeof(c));
@@ -89,18 +88,16 @@ void AudioManager::generateTrack(int trackIdx) {
                 
                 double wave;
                 if(isBoss) {
-                    // Onda segata + quadra per simulare strumenti ad arco pesanti o chitarre distorte
                     double phase = t * freq;
                     wave = 0.6 * (2.0 * (phase - floor(0.5 + phase))) + 0.4 * (sin(2*M_PI*phase) > 0 ? 1 : -1);
                 } else {
-                    // Onda complessa armonica per musica fantasy
                     wave = 0.4 * sin(2*M_PI*freq*t) + 0.3 * sin(2*M_PI*freq*2*t) + 0.2 * (sin(2*M_PI*freq*4*t) > 0 ? 1 : -1);
                 }
                 
                 double bassWave;
                 if(isBoss) {
                     double bPhase = t * bassFreq;
-                    bassWave = 0.9 * (2.0 * (bPhase - floor(0.5 + bPhase))); // Basso dente di sega
+                    bassWave = 0.9 * (2.0 * (bPhase - floor(0.5 + bPhase)));
                 } else {
                     bassWave = 0.8 * sin(2*M_PI*bassFreq*t) + 0.5 * sin(2*M_PI*bassFreq*0.5*t);
                 }

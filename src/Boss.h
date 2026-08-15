@@ -3,7 +3,13 @@
 
 #include <SFML/Graphics.hpp>
 #include "Utils.h"
-#include <cstdint>
+#include <cstdint> // <-- AGGIUNTO PER uint32_t
+
+enum BossType { 
+    BOSS_GOLEM, BOSS_LICH, BOSS_DEMON, BOSS_SPIDER, 
+    BOSS_ABOMINATION, BOSS_KRAKEN, BOSS_DRAGON, 
+    BOSS_WRAITH_LORD, BOSS_VAMPIRE, BOSS_BEHOLDER 
+};
 
 struct Projectile;
 
@@ -19,7 +25,7 @@ public:
 private:
     sf::Vector2f pos;
     int dx, dy, size, health, maxHealth, speed;
-    sf::Color color;
+    BossType type;
     uint32_t shootTimer; // <-- CORRETTO IN uint32_t
     int level;
     int screenWidth, screenHeight;
