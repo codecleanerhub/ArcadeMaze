@@ -6,9 +6,9 @@
 //
 // Esistono 17 tipi di boss (10 originali + 7 aggiunti per allineamento
 // totale col bestiary fantasy horror). Il livello 1 corrisponde al tipo
-// 0 (GOLEM), il livello 17 al tipo 16 (DEPTH_GUARDIAN). In modalita'
-// story i livelli sono 10 -> si cicla sui tipi; in modalita' infinite
-// si continua oltre il livello 10 e si usano anche i nuovi tipi.
+// 0 (GOLEM), il livello 17 al tipo 16 (TWILIGHT_KNIGHT). In modalita'
+// story i livelli sono STORY_LEVELS_COUNT (30) -> si cicla sui 17 tipi;
+// in modalita' infinite si continua oltre e si riutilizzano i tipi.
 //
 // Comportamento:
 //   * Il boss si muove diagonalmente nella stanza rimbalzando sui bordi.

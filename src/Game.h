@@ -10,7 +10,7 @@
 // che pilota sia il rendering sia la logica di update.
 //
 // Modalita' di gioco:
-//   * MODE_STORY: 10 livelli con boss crescenti, poi vittoria.
+//   * MODE_STORY: STORY_LEVELS_COUNT (30) livelli con boss crescenti, poi vittoria.
 //   * MODE_INFINITE: continua senza fine (il contatore currentLevel cresce).
 // ===========================================================================
 
@@ -39,6 +39,13 @@ enum GameState {
 };
 
 enum GameMode { MODE_STORY, MODE_INFINITE };
+
+// Numero di livelli della modalita' STORY. Quando currentLevel supera
+// questo valore (dopo aver sconfitto il boss dell'ultimo livello), si
+// passa a STATE_WIN_STORY. I tipi di boss (17) e le palette labirinto (8)
+// ciclano tramite modulo, quindi e' sicuro aumentare questo numero senza
+// altre modifiche: il gioco continuera' a generare livelli coerenti.
+constexpr int STORY_LEVELS_COUNT = 30;
 
 // Arma casuale da posizionare nella stanza del boss: il giocatore puo'
 // raccoglierla per rimpiazzare la sua (le munizioni del boss sono 5).
@@ -96,10 +103,8 @@ private:
     GameState state;
     GameMode gameMode;
     bool isRunning;
-    int currentLevel;                          // 1..10 (story) o illimitato (infinite)
-    std::vector<sf::VideoMode> displayModes;   // modalita' video disponibili
-    int selectedModeIndex;                     // indice modalita' selezionata nel menu'
-    int menuItemIndex;                         // voce menu' selezionata (0..6)
+    int currentLevel;                          // 1..STORY_LEVELS_COUNT (story) o illimitato (infinite)
+    int menuItemIndex;                         // voce menu' selezionata (0..5)
     bool musicEnabled;
     int lightningTimer;                        // durata residua del fulmine nel menu'
     int configJoyStep;                         // step configurazione joystick (0/1)
