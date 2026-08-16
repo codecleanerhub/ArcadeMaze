@@ -391,7 +391,7 @@ void AudioManager::generateTrack(int trackIdx) {
                     sample += 2000 * triangleWave(bPhase) * bEnv;
                 }
 
-                // --- Lead (pulse wave) ---
+                // --- Lead (pulse wave, melodia principale) ---
                 if (leadFreq > 0) {
                     double lPhase = t * leadFreq;
                     double duty = (trackIdx == 4) ? 0.25 : 0.5;
@@ -402,6 +402,30 @@ void AudioManager::generateTrack(int trackIdx) {
                     }
                     double lEnv = exp(-t * 4.0);
                     sample += (trackIdx == 4 ? 1500 : 1000) * lWave * lEnv;
+                }
+
+                // --- Armonia (secondo lead, terza sopra, solo nei chorus) ---
+                if (isChorus && leadFreq > 0) {
+                    double harmFreq = leadFreq * pow(2, 3.0/12);  // 3a maggiore sopra
+                    double hPhase = t * harmFreq;
+                    double hWave = pulseWave(hPhase, 0.5);
+                    double hEnv = exp(-t * 5.0);
+                    sample += 500 * hWave * hEnv;
+                }
+
+                // --- Arpeggio veloce (solo nei livelli 3+, aggiunge movimento) ---
+                if (trackIdx >= 2 && !isChorus) {
+                    int arpNote = (s + bar) % 4;
+                    double arpFreqs[] = {
+                        (double)(chordRoot * 2),
+                        chordRoot * pow(2, 5.0/12) * 2,  // 4th
+                        chordRoot * pow(2, 7.0/12) * 2,  // 5th
+                        chordRoot * pow(2, 10.0/12) * 2  // 7th
+                    };
+                    double aPhase = t * arpFreqs[arpNote];
+                    double aWave = pulseWave(aPhase, 0.125);  // duty 12.5% (piu' sottile)
+                    double aEnv = exp(-t * 8.0);
+                    sample += 400 * aWave * aEnv;
                 }
 
                 // --- Pad (sawtooth, solo chorus) ---

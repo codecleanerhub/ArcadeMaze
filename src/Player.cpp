@@ -261,7 +261,7 @@ void Player::render(sf::RenderTarget& target) {
             int frameCount = sprite.getFrameCount("idle");
             frame = (animTime / (uint32_t)frameDuration) % frameCount;
         }
-        // Disegna lo sprite con bob effect (oscillazione verticale)
+        // Disegna lo sprite con bob effect + leg movement simulato
         // Scale 1.0: sprite 64x64 nativo (cella labirinto 48x48)
         float bobY = 0.f;
         if (animName == "walk" && (dx != 0 || dy != 0)) {
@@ -269,7 +269,11 @@ void Player::render(sf::RenderTarget& target) {
         } else if (animName == "idle") {
             bobY = sin(animTime * 0.004f) * 1.f;
         }
-        sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
+        // Leg movement simulato: piccolo offset orizzontale alternato
+        // (simula il peso che si sposta da una gamba all'altra)
+        float offsetX = (animName == "walk" && (dx != 0 || dy != 0)) ?
+                        sin(animTime * 0.024f) * 1.f : 0.f;  // +/- 1px
+        sprite.render(target, animName, frame, px + offsetX, pos.y + 8.f + bobY, 1.0f, flipped);
         drawProjectiles(target);
         return;
     }

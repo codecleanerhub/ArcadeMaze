@@ -239,11 +239,22 @@ void Boss::render(sf::RenderTarget& target) const {
             float drawX = px;
             float drawY = py - size * 0.25f;
             it->second.render(target, animName, frame, drawX, drawY, scale, false);
-            // Barra HP sopra la testa
-            sf::RectangleShape hbBg(sf::Vector2f(size, 15.0f)); hbBg.setFillColor(sf::Color(50, 0, 0));
-            hbBg.setPosition(px - size/2, py - size/2 - 30); target.draw(hbBg);
-            sf::RectangleShape hbFg(sf::Vector2f(size * health / maxHealth, 15.0f)); hbFg.setFillColor(sf::Color(255, 50, 50));
-            hbFg.setPosition(px - size/2, py - size/2 - 30); target.draw(hbFg);
+            // Barra HP sopra la testa, ben distante dallo sprite (size/2 + 20)
+            float barY = py - size/2 - 20;
+            // Sfondo barra (scuro con bordo)
+            sf::RectangleShape hbBg(sf::Vector2f(size, 12.0f));
+            hbBg.setFillColor(sf::Color(30, 0, 0));
+            hbBg.setOutlineThickness(2.f);
+            hbBg.setOutlineColor(sf::Color(100, 0, 0));
+            hbBg.setPosition(px - size/2, barY); target.draw(hbBg);
+            // Barra HP (rossa, sfumata gialla ad alta vita)
+            float hpPct = (float)health / maxHealth;
+            sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
+                                (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
+                                sf::Color(220, 40, 40);
+            sf::RectangleShape hbFg(sf::Vector2f(size * hpPct, 12.0f));
+            hbFg.setFillColor(hpColor);
+            hbFg.setPosition(px - size/2, barY); target.draw(hbFg);
             return;
         }
     }

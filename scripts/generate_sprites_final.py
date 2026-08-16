@@ -74,8 +74,8 @@ CREATURES = [
     ("boss_029", "vampire bishop, ornate vestments, draining aura, pale face"),
     ("boss_030", "depths guardian, many tentacles, water shockwave, barnacle armor"),
     # 2 player
-    ("player1", "brave adventurer hero, brown fedora hat, leather jacket, whip, pistol, determined expression"),
-    ("player2", "brave female adventurer heroine, long blonde ponytail hair, green leather vest, holding crossbow, determined expression, fantasy explorer woman"),
+    ("player1", "small full body character sprite, adventurer hero with brown fedora hat, brown leather jacket, dark pants, brown boots, holding pistol, entire body from head to feet visible, small proportions, standing full body pose, NOT a portrait, NOT bust only"),
+    ("player2", "small full body character sprite, female adventurer heroine with long blonde ponytail, green leather vest, dark pants, brown boots, holding crossbow, entire body from head to feet visible, small proportions, standing full body pose, NOT a portrait, NOT bust only"),
 ]
 
 def build_prompt(desc):
@@ -88,7 +88,8 @@ def build_prompt(desc):
         f"NO anti-aliasing, NO soft gradients, NO blur, NO modern effects. "
         f"Every pixel must be sharp and square. "
         f"Character: {desc}. "
-        f"Single character, centered, full body visible, facing right. "
+        f"Full body visible from head to feet, including legs. "
+        f"Single character, centered, facing right, full body visible. "
         f"Clear silhouette, readable pose, simple proportions. "
         f"Completely transparent background (RGBA alpha=0), no background color. "
         f"Fantasy horror atmosphere, dark mood, gothic. "
