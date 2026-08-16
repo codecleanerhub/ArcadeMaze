@@ -61,7 +61,7 @@ CREATURES = [
     ("monster_017", "watchful gargoyle, gray stone texture, broken wings, perched stance"),
     ("monster_018", "well spirit, watery blue face, bubble effects, translucent"),
     ("monster_019", "cursed boar, mud-caked brown fur, encrusted tusks, low stance"),
-    ("monster_020", "predator fungus, glowing purple cap, spore puffs, stalky legs"),
+    ("monster_020", "predator fungus creature, dark purple and dark brown cap, glowing red eyes, dark green stalky legs, dark muted colors only, no light or bright colors"),
     # 10 boss
     ("boss_021", "ghoul lord king, bone crown, necromancer aura, commanding pose"),
     ("boss_022", "queen spider, enormous abdomen, web banners, many glowing eyes"),
@@ -75,7 +75,7 @@ CREATURES = [
     ("boss_030", "depths guardian, many tentacles, water shockwave, barnacle armor"),
     # 2 player
     ("player1", "brave adventurer hero, brown fedora hat, leather jacket, whip, pistol, determined expression"),
-    ("player2", "brave female adventurer, ponytail, leather vest, crossbow, fantasy heroine"),
+    ("player2", "brave female adventurer heroine, long blonde ponytail hair, green leather vest, holding crossbow, determined expression, fantasy explorer woman"),
 ]
 
 def build_prompt(desc):
