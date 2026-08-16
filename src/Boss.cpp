@@ -234,9 +234,8 @@ void Boss::render(sf::RenderTarget& target) const {
             int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
             if (frame < 0) frame += frameCount;
             // Scale: size/64 per far coincidere l'hitbox con lo sprite.
-            // Minimo 4.0 (256x256) per visibilita' del pixel art.
-            float baseScale = (float)size / 64.0f;
-            float scale = (baseScale > 4.0f) ? baseScale : 4.0f;
+            // Il boss ha size 160-260px, sprite 64px -> scale 2.5-4.0 naturale.
+            float scale = (float)size / 64.0f;
             float drawX = px;
             float drawY = py - size * 0.25f;
             it->second.render(target, animName, frame, drawX, drawY, scale, false);

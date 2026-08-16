@@ -262,14 +262,14 @@ void Player::render(sf::RenderTarget& target) {
             frame = (animTime / (uint32_t)frameDuration) % frameCount;
         }
         // Disegna lo sprite con bob effect (oscillazione verticale)
-        // Scale x4: 64x64 -> 256x256 (pixel art con smoothing off)
+        // Scale 1.0: sprite 64x64 nativo (cella labirinto 48x48)
         float bobY = 0.f;
         if (animName == "walk" && (dx != 0 || dy != 0)) {
             bobY = sin(animTime * 0.012f) * 2.f;
         } else if (animName == "idle") {
             bobY = sin(animTime * 0.004f) * 1.f;
         }
-        sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 4.0f, flipped);
+        sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
         drawProjectiles(target);
         return;
     }

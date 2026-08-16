@@ -371,8 +371,8 @@ void Enemy::render(sf::RenderTarget& target) const {
             int frame = elapsed / frameDuration;
             if (frame >= frameCount) frame = frameCount - 1;
             bool flipped = (dx < 0);
-            // Scale x4: 64x64 -> 256x256 (pixel art con smoothing off)
-            it->second.render(target, animName, frame, px, py + 8.f, 4.0f, flipped);
+            // Scale 1.0: sprite 64x64 nativo (cosella labirinto 48x48)
+            it->second.render(target, animName, frame, px, py + 8.f, 1.0f, flipped);
             return;
         }
         if (attackingTimer > 0 && it->second.getFrameCount("attack") > 0) {
@@ -383,7 +383,7 @@ void Enemy::render(sf::RenderTarget& target) const {
             int frame = elapsed / frameDuration;
             if (frame >= frameCount) frame = frameCount - 1;
             bool flipped = (dx < 0);
-            it->second.render(target, animName, frame, px, py + 8.f, 4.0f, flipped);
+            it->second.render(target, animName, frame, px, py + 8.f, 1.0f, flipped);
             return;
         }
         if ((dx != 0 || dy != 0) && it->second.getFrameCount("walk") > 0) {
@@ -406,7 +406,7 @@ void Enemy::render(sf::RenderTarget& target) const {
             } else if (animName == "idle") {
                 bobY = sin(pathUpdateTimer * 0.004f) * 1.f;
             }
-            it->second.render(target, animName, frame, px, py + 8.f + bobY, 4.0f, flipped);
+            it->second.render(target, animName, frame, px, py + 8.f + bobY, 1.0f, flipped);
             return;
         }
     }
