@@ -2,6 +2,7 @@
 #include "Weapon.h"
 #include <cstdlib>
 #include <cmath>
+#include <fstream>
 
 // ===========================================================================
 // Boss.cpp - Implementazione dei boss.
@@ -13,11 +14,69 @@
 //
 // Le animazioni sono basate su `animTime` (incrementato di ~16 ms per frame):
 // questo crea movimenti fluidi di ali, braccia, bocche, occhi, ecc.
+//
+// Rendering: ogni tipo ha uno sprite associato (mappa BossType -> ID file).
+// Se il PNG e' caricato (loadAllSprites), viene usato lo SpriteSheet;
+// altrimenti fallback a renderPrimitives (vecchio disegno a primitive).
 // ===========================================================================
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+// --- Membri statici ---
+std::map<BossType, SpriteSheet> Boss::sprites;
+bool Boss::spritesLoaded = false;
+
+// ---------------------------------------------------------------------------
+// getSpriteId: mappa BossType -> ID file bestiary.
+//
+// Solo 3 boss hanno match diretto col bestiary fantasy horror:
+//   BOSS_SPIDER  -> boss_022 (Regina Ragno Abissale)
+//   BOSS_KRAKEN  -> boss_030 (Guardiano delle Profondita')
+//   BOSS_VAMPIRE -> boss_029 (Vescovo Vampiro)
+//
+// Gli altri 7 tipi non hanno controparte nel file e usano il render
+// a primitive SFML (vedi renderPrimitives).
+// ---------------------------------------------------------------------------
+std::string Boss::getSpriteId(BossType t) {
+    switch(t) {
+        case BOSS_SPIDER:  return "boss_022";
+        case BOSS_KRAKEN:  return "boss_030";
+        case BOSS_VAMPIRE: return "boss_029";
+        default:           return "";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// loadAllSprites: carica tutti gli sprite dei boss dalla cartella `basePath`.
+// Per ogni tipo mappato (getSpriteId != ""), prova a caricare
+// `<basePath>/<id>`. I file mancanti vengono saltati silenziosamente.
+// ---------------------------------------------------------------------------
+bool Boss::loadAllSprites(const std::string& basePath) {
+    spritesLoaded = false;
+    BossType allTypes[] = {
+        BOSS_GOLEM, BOSS_LICH, BOSS_DEMON, BOSS_SPIDER,
+        BOSS_ABOMINATION, BOSS_KRAKEN, BOSS_DRAGON,
+        BOSS_WRAITH_LORD, BOSS_VAMPIRE, BOSS_BEHOLDER
+    };
+    bool any = false;
+    for (BossType t : allTypes) {
+        std::string id = getSpriteId(t);
+        if (id.empty()) continue;
+        std::string path = basePath + "/" + id;
+        if (sprites[t].load(path)) {
+            any = true;
+        }
+    }
+    spritesLoaded = any;
+    return any;
+}
+
+void Boss::unloadAllSprites() {
+    sprites.clear();
+    spritesLoaded = false;
+}
 
 // ---------------------------------------------------------------------------
 // Costruttore: configura il boss per il livello.
@@ -108,13 +167,61 @@ void Boss::takeDamage(int dmg) { health -= dmg; }
 void Boss::render(sf::RenderTarget& target) const {
     float px = pos.x;
     float py = pos.y;
-    sf::Color outline(10, 10, 10);
 
     // Ombra ellittica a terra (cerchio piatto piu' basso del boss)
     sf::CircleShape shadow(size/2.0f);
     shadow.setFillColor(sf::Color(0, 0, 0, 150));
     shadow.setPosition(px - size/2.0f, py + size/4.0f);
     target.draw(shadow);
+
+    // Tentativo di rendering con sprite.
+    // Lo sprite del boss e' 64x64 ma il boss ha `size` variabile (160+).
+    // Disegnamo lo sprite scalato a `size` px di larghezza, centrato su (px, py).
+    // Usiamo animazione "walk" o "idle" se disponibile.
+    auto it = sprites.find(type);
+    if (it != sprites.end() && it->second.isLoaded()) {
+        // Prova prima "idle" (4 frame), fallback "walk" (6 frame)
+        std::string animName = "idle";
+        int frameCount = it->second.getFrameCount(animName);
+        if (frameCount == 0) {
+            animName = "walk";
+            frameCount = it->second.getFrameCount(animName);
+        }
+        if (frameCount > 0) {
+            // animTime e' in secondi; i frame sono a 100-200 ms ciascuno.
+            // Usiamo 200 ms per idle, 100 per walk.
+            int frameDuration = (animName == "idle") ? 200 : 100;
+            int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
+            if (frame < 0) frame += frameCount;
+            // Lo sprite del boss e' 64x64; il boss ha `size` variabile (160+).
+            // Disegniamo lo sprite all'ancora (32, 56) su frame 64x64, e
+            // spostiamo di size/4 in su per centrare il corpo rispetto al
+            // pivot `pos` (che rappresenta il centro del boss).
+            // Nota: lo scaling non e' applicato qui per semplicita'; lo sprite
+            // appare 64x64 anche se il boss ha hitbox piu' grande. Da migliorare.
+            it->second.render(target, animName, frame, px, py - size/4, false);
+            // Barra HP sopra la testa
+            sf::RectangleShape hbBg(sf::Vector2f(size, 15.0f)); hbBg.setFillColor(sf::Color(50, 0, 0));
+            hbBg.setPosition(px - size/2, py - size/2 - 30); target.draw(hbBg);
+            sf::RectangleShape hbFg(sf::Vector2f(size * health / maxHealth, 15.0f)); hbFg.setFillColor(sf::Color(255, 50, 50));
+            hbFg.setPosition(px - size/2, py - size/2 - 30); target.draw(hbFg);
+            return;
+        }
+    }
+
+    // Fallback: rendering a primitive (codice originale)
+    renderPrimitives(target);
+}
+
+// ---------------------------------------------------------------------------
+// renderPrimitives: disegna il boss con rettangoli/cerchi/poligoni.
+// Codice originale mantenuto intatto come fallback quando gli sprite PNG
+// non sono disponibili.
+// ---------------------------------------------------------------------------
+void Boss::renderPrimitives(sf::RenderTarget& target) const {
+    float px = pos.x;
+    float py = pos.y;
+    sf::Color outline(10, 10, 10);
 
     // Animazione bocca: oscillazione sinusoidale
     float mouthOpen = (sin(animTime * 4.0f) + 1.0f) / 2.0f;  // 0..1

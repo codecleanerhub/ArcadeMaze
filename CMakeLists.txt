@@ -18,6 +18,7 @@ add_executable(${PROJECT_NAME}
     src/Utils.cpp
     src/AudioManager.cpp
     src/Boss.cpp
+    src/SpriteSheet.cpp
 )
 
 # Collega le librerie SFML

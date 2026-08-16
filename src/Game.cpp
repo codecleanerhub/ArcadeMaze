@@ -46,11 +46,18 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
+// Inoltre tenta di caricare gli sprite PNG dei nemici e dei boss dalla
+// cartella "assets/sprites". Se i file non esistono (primo avvio o asset
+// non ancora generati), il gioco resta giocabile con i disegni a primitive.
 bool Game::init() {
     window.setFramerateLimit(60);
     sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
     window.setView(view);
     config = loadConfig("config.ini");
+    // Carica gli sprite dei nemici e dei boss (bestiary fantasy horror).
+    // I file mancanti vengono saltati: il render fara' fallback alle primitive.
+    Enemy::loadAllSprites("assets/sprites");
+    Boss::loadAllSprites("assets/sprites");
     return true;
 }
 
@@ -90,16 +97,23 @@ void Game::startLevel(int lvl) {
 // ---------------------------------------------------------------------------
 void Game::spawnEnemies() {
     enemies.clear();
-    // Tutti i tipi disponibili (15)
+    // Tutti i 28 tipi disponibili (15 originali + 13 nuovi del bestiary).
+    // ENEMY_TYPE_COUNT e' definito in Enemy.h.
     EnemyType allTypes[] = {
+        // 15 tipi originali
         ENEMY_ZOMBIE, ENEMY_SKELETON, ENEMY_GHOST, ENEMY_BAT,
         ENEMY_SPIDER, ENEMY_SLIME, ENEMY_DEMON, ENEMY_ROBOT,
         ENEMY_GOBLIN, ENEMY_ORC, ENEMY_WRAITH, ENEMY_GHOUL,
-        ENEMY_IMP, ENEMY_RAT, ENEMY_CULTIST
+        ENEMY_IMP, ENEMY_RAT, ENEMY_CULTIST,
+        // 13 nuovi tipi dal bestiary fantasy horror
+        ENEMY_MIMIC, ENEMY_WOLF, ENEMY_WITCH, ENEMY_BONE_GOLEM,
+        ENEMY_ASH_SERPENT, ENEMY_DAMNED_KNIGHT, ENEMY_MAD_WIZARD,
+        ENEMY_DEMONIC_CROW, ENEMY_TENTACLE, ENEMY_GARGOYLE,
+        ENEMY_WELL_SPIRIT, ENEMY_CURSED_BOAR, ENEMY_PREDATOR_FUNGUS
     };
 
     for (int i = 0; i < 5; ++i) {
-        EnemyType t = allTypes[rand() % 15];
+        EnemyType t = allTypes[rand() % ENEMY_TYPE_COUNT];
         int c, r;
         // Cerca posizione valida (non muro e non nell'angolo iniziale 5x5)
         do {

@@ -17,7 +17,10 @@
 
 #include <SFML/Graphics.hpp>
 #include "Utils.h"
+#include "SpriteSheet.h"
 #include <cstdint>
+#include <map>
+#include <string>
 
 // Tipo di boss. L'ordine corrisponde al livello (1->GOLEM, 2->LICH, ...).
 // Aggiungere/modificare tipi richiede aggiornare anche il rendering.
@@ -48,6 +51,13 @@ public:
     bool isDead() const { return health <= 0; }
     sf::Vector2f getPos() const { return pos; }
     int getSize() const { return size; }
+
+    // --- SpriteSheet management ---
+    // Carica tutti gli sprite dei boss dalla cartella data. Da chiamare una
+    // volta in Game::init(). I file mancanti vengono saltati: il render
+    // fara' fallback alle primitive.
+    static bool loadAllSprites(const std::string& basePath);
+    static void unloadAllSprites();
 private:
     sf::Vector2f pos;
     int dx, dy;       // direzione di rimbalzo
@@ -59,6 +69,17 @@ private:
     int level;
     int screenWidth, screenHeight;
     float animTime;  // tempo accumulato per le animazioni (in secondi)
+
+    // --- Render fallback a primitive SFML ---
+    void renderPrimitives(sf::RenderTarget& target) const;
+
+    // --- SpriteSheet statici condivisi fra tutte le istanze ---
+    static std::map<BossType, SpriteSheet> sprites;
+    static bool spritesLoaded;
+    // Mappa BossType -> ID del file bestiary. Solo 3 boss hanno match
+    // diretto col bestiary fantasy horror (SPIDER/KRAKEN/VAMPIRE). Gli altri
+    // usano il render a primitive (mantenuto per coerenza col gioco originale).
+    static std::string getSpriteId(BossType t);
 };
 
 #endif
