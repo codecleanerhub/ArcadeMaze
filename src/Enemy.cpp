@@ -354,6 +354,7 @@ void Enemy::render(sf::RenderTarget& target) const {
     // Flag: la barra HP verra' disegnata DOPO lo sprite (cosi' e' sempre
     // visibile, anche se lo sprite oscilla con il bob effect).
     bool drawHpBar = (dyingTimer == 0);
+    bool spriteDrawn = false;
 
     // Tentativo di rendering con sprite.
     // Selezione animazione in base allo stato:
@@ -376,9 +377,9 @@ void Enemy::render(sf::RenderTarget& target) const {
             bool flipped = (dx < 0);
             // Scale 1.0: sprite 64x64 nativo (cosella labirinto 48x48)
             it->second.render(target, animName, frame, px, py + 8.f, 1.0f, flipped);
-            return;
+            spriteDrawn = true;
         }
-        if (attackingTimer > 0 && it->second.getFrameCount("attack") > 0) {
+        else if (attackingTimer > 0 && it->second.getFrameCount("attack") > 0) {
             animName = "attack";
             frameDuration = 100;
             int elapsed = 400 - (int)attackingTimer;
@@ -387,48 +388,51 @@ void Enemy::render(sf::RenderTarget& target) const {
             if (frame >= frameCount) frame = frameCount - 1;
             bool flipped = (dx < 0);
             it->second.render(target, animName, frame, px, py + 8.f, 1.0f, flipped);
-            return;
+            spriteDrawn = true;
         }
-        if ((dx != 0 || dy != 0) && it->second.getFrameCount("walk") > 0) {
-            animName = "walk";
-            frameDuration = 100;
-        } else if (it->second.getFrameCount("idle") > 0) {
-            animName = "idle";
-            frameDuration = 200;
-        } else {
-            animName = "walk";
-            frameDuration = 100;
-        }
-        int frameCount = it->second.getFrameCount(animName);
-        if (frameCount > 0) {
-            int frame = (pathUpdateTimer / (uint32_t)frameDuration) % frameCount;
-            bool flipped = (dx < 0);
-            float bobY = 0.f;
-            if (animName == "walk" && (dx != 0 || dy != 0)) {
-                bobY = sin(pathUpdateTimer * 0.012f) * 2.f;
-            } else if (animName == "idle") {
-                bobY = sin(pathUpdateTimer * 0.004f) * 1.f;
+        else {
+            if ((dx != 0 || dy != 0) && it->second.getFrameCount("walk") > 0) {
+                animName = "walk";
+                frameDuration = 100;
+            } else if (it->second.getFrameCount("idle") > 0) {
+                animName = "idle";
+                frameDuration = 200;
+            } else {
+                animName = "walk";
+                frameDuration = 100;
             }
-            it->second.render(target, animName, frame, px, py + 8.f + bobY, 1.0f, flipped);
-            return;
+            int frameCount = it->second.getFrameCount(animName);
+            if (frameCount > 0) {
+                int frame = (pathUpdateTimer / (uint32_t)frameDuration) % frameCount;
+                bool flipped = (dx < 0);
+                float bobY = 0.f;
+                if (animName == "walk" && (dx != 0 || dy != 0)) {
+                    bobY = sin(pathUpdateTimer * 0.012f) * 2.f;
+                } else if (animName == "idle") {
+                    bobY = sin(pathUpdateTimer * 0.004f) * 1.f;
+                }
+                it->second.render(target, animName, frame, px, py + 8.f + bobY, 1.0f, flipped);
+                spriteDrawn = true;
+            }
         }
     }
 
-    // Fallback: primitive SFML
-    renderPrimitives(target);
+    // Fallback: primitive SFML (solo se lo sprite non e' stato disegnato)
+    if (!spriteDrawn) {
+        renderPrimitives(target);
+    }
 
     // Barra HP disegnata PER ULTIMO (sempre on top rispetto allo sprite).
-    // Posizione: py - 48 (sopra la testa dello sprite 64x64 con anchor a py+8,
-    // il cui top e' a py-24; con bob effect +/-2px resta sotto py-26).
+    // Posizione: py - 40 (sopra lo sprite, sotto il limite UI).
     // Nascosta durante l'animazione di morte.
     if (drawHpBar) {
         sf::RectangleShape hbBg(sf::Vector2f(36.f, 4.f));
         hbBg.setFillColor(sf::Color(50, 0, 0, 200));
-        hbBg.setPosition(px - 18.f, py - 48.f);
+        hbBg.setPosition(px - 18.f, py - 40.f);
         target.draw(hbBg);
         sf::RectangleShape hbFg(sf::Vector2f(36.f * health / maxHealth, 4.f));
         hbFg.setFillColor(sf::Color(255, 50, 50));
-        hbFg.setPosition(px - 18.f, py - 48.f);
+        hbFg.setPosition(px - 18.f, py - 40.f);
         target.draw(hbFg);
     }
 }

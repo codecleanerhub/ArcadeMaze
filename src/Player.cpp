@@ -341,14 +341,31 @@ void Player::drawProjectiles(sf::RenderTarget& target) {
     for (const auto& p : projectiles) {
         if (p.active) {
             if (p.type == WPN_PISTOL) {
-                sf::CircleShape proj(6.f); proj.setFillColor(sf::Color(255, 255, 100));
-                proj.setPosition(p.pos.x - 6.f, p.pos.y - 6.f); target.draw(proj);
+                // Pallottola piccola gialla (3px raggio)
+                sf::CircleShape proj(3.f); proj.setFillColor(sf::Color(255, 220, 80));
+                proj.setOutlineThickness(1.f); proj.setOutlineColor(sf::Color(120, 80, 0));
+                proj.setPosition(p.pos.x - 3.f, p.pos.y - 3.f); target.draw(proj);
             } else if (p.type == WPN_LASER) {
-                sf::RectangleShape beam(sf::Vector2f(24.f, 6.f)); beam.setFillColor(sf::Color(50, 200, 255));
-                beam.setPosition(p.pos.x - 12.f, p.pos.y - 3.f); target.draw(beam);
-            } else {
-                sf::CircleShape proj(8.f); proj.setFillColor(sf::Color(200, 50, 50));
-                proj.setPosition(p.pos.x - 8.f, p.pos.y - 8.f); target.draw(proj);
+                // Raggio laser ciano sottile (12x3)
+                sf::RectangleShape beam(sf::Vector2f(12.f, 3.f)); beam.setFillColor(sf::Color(80, 220, 255));
+                beam.setOutlineThickness(1.f); beam.setOutlineColor(sf::Color(20, 100, 180));
+                beam.setPosition(p.pos.x - 6.f, p.pos.y - 1.5f); target.draw(beam);
+            } else if (p.type == WPN_SHOTGUN) {
+                // ShotGun: 3 pallini rossi piccoli (2px)
+                for(int i = -2; i <= 2; i += 2) {
+                    sf::CircleShape proj(2.f); proj.setFillColor(sf::Color(255, 100, 50));
+                    proj.setPosition(p.pos.x - 2.f + i, p.pos.y - 2.f); target.draw(proj);
+                }
+            } else { // WPN_ROCKET
+                // Razzo: corpo + punta + scia
+                sf::RectangleShape body(sf::Vector2f(8.f, 4.f)); body.setFillColor(sf::Color(120, 120, 130));
+                body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color(40, 40, 50));
+                body.setPosition(p.pos.x - 4.f, p.pos.y - 2.f); target.draw(body);
+                sf::CircleShape tip(2.f); tip.setFillColor(sf::Color(220, 60, 40));
+                tip.setPosition(p.pos.x + 2.f, p.pos.y - 2.f); target.draw(tip);
+                // Scia arancione dietro
+                sf::RectangleShape trail(sf::Vector2f(4.f, 2.f)); trail.setFillColor(sf::Color(255, 150, 0, 180));
+                trail.setPosition(p.pos.x - 8.f, p.pos.y - 1.f); target.draw(trail);
             }
         }
     }

@@ -145,13 +145,27 @@ void AudioManager::playSound(SoundType type) {
         }
     }
     else if (type == SOUND_ENEMY_DEATH) {
-        // 0.3s: pitch discendente + noise burst
-        for(int i = 0; i < SR * 0.3; i++) {
+        // 0.5s: morte drammatica - 3 fasi:
+        // 1) gridolato pitch discendente (pulse wave)
+        // 2) esplosione noise burst
+        // 3) dissolve basso
+        for(int i = 0; i < SR * 0.5; i++) {
             double t = (double)i / SR;
-            double env = exp(-t * 8.0);
-            double freq = 400 * exp(-t * 5.0) + 80;
-            double s = 0.4 * pulseWave(t * freq, 0.25) + 0.4 * noiseGen();
-            samples.push_back((sf::Int16)(2000 * s * env));
+            double env = exp(-t * 5.0);
+            double s = 0;
+            if (t < 0.15) {
+                // Fase 1: gridolato (pitch discendente veloce)
+                double freq = 600 * exp(-t * 12.0) + 100;
+                s = 0.5 * pulseWave(t * freq, 0.25);
+            } else if (t < 0.3) {
+                // Fase 2: esplosione (noise)
+                s = 0.6 * noiseGen();
+            } else {
+                // Fase 3: dissolve (basso discendente)
+                double freq = 150 * exp(-(t-0.3) * 8.0) + 40;
+                s = 0.4 * triangleWave(t * freq);
+            }
+            samples.push_back((sf::Int16)(2500 * s * env));
         }
     }
     else if (type == SOUND_LOSE_LIFE) {

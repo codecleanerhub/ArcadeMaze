@@ -476,7 +476,7 @@ void Game::update() {
         // Aggiornamento nemici (passa pos giocatore per AI + sparo)
         sf::Vector2f pPos = player.getPixelPos();
         for (auto& enemy : enemies) {
-            if (!enemy.isDead()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
+            if (!enemy.isDeathAnimDone()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
         }
 
         // --- Aggiornamento proiettili nemici ---
@@ -963,11 +963,12 @@ void Game::render() {
         // non vengono renderizzati.
         for (const auto& enemy : enemies) if (!enemy.isDeathAnimDone()) enemy.render(window);
 
-        // Proiettili nemici: piccoli cerchi arancioni
+        // Proiettili nemici: piccoli cerchi rossi (3px) con outline
         for (const auto& p : enemyProjectiles) {
             if (p.active) {
-                sf::CircleShape proj(4.f); proj.setFillColor(sf::Color(255, 100, 0));
-                proj.setPosition(p.pos.x - 4.f, p.pos.y - 4.f); window.draw(proj);
+                sf::CircleShape proj(3.f); proj.setFillColor(sf::Color(255, 80, 40));
+                proj.setOutlineThickness(1.f); proj.setOutlineColor(sf::Color(120, 20, 0));
+                proj.setPosition(p.pos.x - 3.f, p.pos.y - 3.f); window.draw(proj);
             }
         }
 
