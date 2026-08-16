@@ -157,6 +157,10 @@ void Game::startBossFight() {
     bossProjectiles.clear();
     enemyProjectiles.clear();
     spawnBossRoomWeapons();
+    // Spawn bonus scarpe alate: posizionato a sinistra della stanza
+    speedBoots.active = true;
+    speedBoots.pos = sf::Vector2f(150.0f, 200.0f);
+    speedBoots.bobOffset = 0.f;
     if (musicEnabled) audio.playLevelMusic(currentLevel, true);
 }
 
@@ -686,6 +690,29 @@ void Game::update() {
             if (dx*dx + dy*dy < 1000) { player.collectWeapon(it->w); it = bossRoomWeapons.erase(it); } else ++it;
         }
 
+        // --- Raccolta bonus scarpe alate (speed boost) ---
+        if (speedBoots.active) {
+            static float bootsAnimTime = 0.f;
+            bootsAnimTime += 16.f;
+            speedBoots.bobOffset = sin(bootsAnimTime * 0.005f) * 5.f;  // fluttua
+            float dx = speedBoots.pos.x - player.getPixelPos().x;
+            float dy = speedBoots.pos.y - player.getPixelPos().y;
+            if (dx*dx + dy*dy < 1000) {
+                player.activateSpeedBoost();
+                speedBoots.active = false;
+                audio.playSound(SOUND_TREASURE);  // suono raccolta
+            }
+            if (numPlayers == 2) {
+                float dx2 = speedBoots.pos.x - player2.getPixelPos().x;
+                float dy2 = speedBoots.pos.y - player2.getPixelPos().y;
+                if (dx2*dx2 + dy2*dy2 < 1000) {
+                    player2.activateSpeedBoost();
+                    speedBoots.active = false;
+                    audio.playSound(SOUND_TREASURE);
+                }
+            }
+        }
+
         // --- Raccolta armi player2 (solo se 2 giocatori) ---
         if (numPlayers == 2) {
             for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
@@ -999,19 +1026,59 @@ void Game::render() {
         ui.render(window, player, 0);
         // Armi a terra (raccoglibili)
         for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
+        // Bonus scarpe alate (se attivo, disegna sprite + aura)
+        if (speedBoots.active) {
+            float bx = speedBoots.pos.x;
+            float by = speedBoots.pos.y + speedBoots.bobOffset;
+            // Carica lo sprite delle scarpe alate se non gia' fatto
+            static SpriteSheet bootsSprite;
+            static bool bootsLoaded = false;
+            if (!bootsLoaded) {
+                bootsLoaded = bootsSprite.load("assets/sprites/bonus_speedboots");
+            }
+            if (bootsSprite.isLoaded()) {
+                bootsSprite.render(window, "idle", 0, bx, by, 1.0f, false);
+            } else {
+                // Fallback: disegna scarpe con ali primitive
+                sf::RectangleShape boot1(sf::Vector2f(8.f, 6.f));
+                boot1.setFillColor(sf::Color(80, 50, 20));
+                boot1.setPosition(bx - 6.f, by); window.draw(boot1);
+                boot1.setPosition(bx + 2.f, by); window.draw(boot1);
+                // Ali bianche
+                sf::ConvexShape wing; wing.setPointCount(4);
+                wing.setFillColor(sf::Color(240, 240, 240));
+                wing.setPoint(0, sf::Vector2f(bx-4, by-2));
+                wing.setPoint(1, sf::Vector2f(bx-12, by-6));
+                wing.setPoint(2, sf::Vector2f(bx-10, by+2));
+                wing.setPoint(3, sf::Vector2f(bx-4, by+2));
+                window.draw(wing);
+            }
+            // Aura gialla pulsante
+            sf::CircleShape aura(20.f + sin(speedBoots.bobOffset * 0.5f) * 3.f);
+            aura.setFillColor(sf::Color(255, 220, 80, 40));
+            aura.setPosition(bx - 20.f, by - 20.f);
+            window.draw(aura);
+        }
         player.render(window);
         if (numPlayers == 2) player2.render(window);
         boss->render(window);
 
-        // Proiettili boss: forma diversa per tipo (razzo = grande viola, altri = rosso)
+        // Proiettili boss: piccoli e diversi per tipo
         for (const auto& p : bossProjectiles) {
             if (p.active) {
                 if (p.type == WPN_ROCKET) {
-                    sf::CircleShape proj(12.f); proj.setFillColor(sf::Color(150, 0, 150));
-                    proj.setPosition(p.pos.x - 12.f, p.pos.y - 12.f); window.draw(proj);
+                    // Razzo: piccolo corpo viola + punta
+                    sf::RectangleShape body(sf::Vector2f(6.f, 4.f));
+                    body.setFillColor(sf::Color(150, 0, 150));
+                    body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color(60, 0, 60));
+                    body.setPosition(p.pos.x - 3.f, p.pos.y - 2.f); window.draw(body);
+                    sf::CircleShape tip(2.f); tip.setFillColor(sf::Color(200, 50, 200));
+                    tip.setPosition(p.pos.x + 1.f, p.pos.y - 2.f); window.draw(tip);
                 } else {
-                    sf::CircleShape proj(8.f); proj.setFillColor(sf::Color(255, 50, 50));
-                    proj.setPosition(p.pos.x - 8.f, p.pos.y - 8.f); window.draw(proj);
+                    // Proiettile normale: piccolo cerchio rosso (4px)
+                    sf::CircleShape proj(4.f); proj.setFillColor(sf::Color(255, 60, 40));
+                    proj.setOutlineThickness(1.f); proj.setOutlineColor(sf::Color(120, 20, 0));
+                    proj.setPosition(p.pos.x - 4.f, p.pos.y - 4.f); window.draw(proj);
                 }
             }
         }

@@ -39,15 +39,17 @@ void Player::resetPosition() {
     speed = 2; jumpTimer = 0; maxJumpTime = 0; damageTimer = 0; shootCooldown = 0;
     shootAnimTimer = 0;
     animTime = 0;
+    speedBoostTimer = 0;
     jumpOffset = 0.0f;
 }
 
-// loadSprite: carica sprite principale + 2 frame di camminata.
+// loadSprite: carica sprite principale + 4 frame camminata + 1 salto.
 bool Player::loadSprite(const std::string& basePath) {
     bool mainOk = sprite.load(basePath);
-    // Carica i 2 frame di camminata (opzionali: se mancano, usa sprite principale)
-    walkSprite0.load(basePath + "_walk0");
-    walkSprite1.load(basePath + "_walk1");
+    for(int i = 0; i < 4; i++) {
+        walkSprites[i].load(basePath + "_walk" + std::to_string(i));
+    }
+    jumpSprite.load(basePath + "_jump");
     return mainOk;
 }
 
@@ -104,13 +106,18 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
     if (shootAnimTimer > 16) shootAnimTimer -= 16; else shootAnimTimer = 0;
     // Incrementa animTime per le animazioni idle/walk
     animTime += 16;
+    // Decrementa speed boost timer
+    if (speedBoostTimer > 16) speedBoostTimer -= 16; else speedBoostTimer = 0;
+
+    // Speed effettivo: base 2, con boost diventa 3
+    int effectiveSpeed = (speedBoostTimer > 0) ? (speed + 1) : speed;
 
     if (freeMovement) {
         // --- Modalita' stanza del boss: movimento libero ---
         if (nextDx != 0 || nextDy != 0) {
             dx = nextDx; dy = nextDy; lastDx = dx; lastDy = dy; nextDx = 0; nextDy = 0;
         }
-        pos.x += dx * speed; pos.y += dy * speed;
+        pos.x += dx * effectiveSpeed; pos.y += dy * effectiveSpeed;
         // Limiti di finestra (margine di 16 px per non uscire con meta' sprite)
         if (pos.x < 16) pos.x = 16;
         if (pos.x > WINDOW_WIDTH - 16) pos.x = WINDOW_WIDTH - 16;
@@ -123,14 +130,14 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
         float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
         // Quando si e' abbastanza vicini al centro si può cambiare direzione.
-        if (fabs(pos.x - centerX) < speed && fabs(pos.y - centerY) < speed) {
+        if (fabs(pos.x - centerX) < effectiveSpeed && fabs(pos.y - centerY) < effectiveSpeed) {
             pos.x = centerX; pos.y = centerY;
             // Applica direzione richiesta (se fattibile).
             if (nextDx != 0 || nextDy != 0) { tryMove(nextDx, nextDy, maze); nextDx = 0; nextDy = 0; }
             // Se davanti c'e' muro, ferma il movimento.
             if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
         }
-        pos.x += dx * speed; pos.y += dy * speed;
+        pos.x += dx * effectiveSpeed; pos.y += dy * effectiveSpeed;
 
         // Raccolta tesori/armi della cella corrente.
         if (maze.getCellType(col, row) == CELL_TREASURE) {
@@ -267,24 +274,44 @@ void Player::render(sf::RenderTarget& target) {
         // Disegna lo sprite con bob effect
         float bobY = 0.f;
         bool isWalking = (animName == "walk" && (dx != 0 || dy != 0));
+        bool isJumping = (jumpTimer > 0);
         if (isWalking) {
             bobY = sin(animTime * 0.012f) * 2.f;
         } else if (animName == "idle") {
             bobY = sin(animTime * 0.004f) * 1.f;
         }
 
-        // Se sta camminando e abbiamo 2 frame di camminata, alternali
-        if (isWalking && walkSprite0.isLoaded() && walkSprite1.isLoaded()) {
-            // Alterna i 2 frame ad ~8 Hz (cambia ogni ~60ms)
-            int stepFrame = (animTime / 60) % 2;
-            if (stepFrame == 0) {
-                walkSprite0.render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped);
-            } else {
-                walkSprite1.render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped);
+        // Se sta saltando, usa sprite salto dedicato
+        if (isJumping && jumpSprite.isLoaded()) {
+            jumpSprite.render(target, "idle", 0, px, pos.y + 8.f, 1.0f, flipped);
+        }
+        // Se sta camminando e abbiamo 4 frame, cicla walk0->walk1->walk2->walk3
+        else if (isWalking && walkSprites[0].isLoaded() && walkSprites[1].isLoaded()) {
+            // 4 frame a ~80ms ciascuno = ciclo completo a ~320ms (~3Hz)
+            int stepFrame = (animTime / 80) % 4;
+            int availableFrames = 0;
+            for (int i = 0; i < 4; i++) {
+                if (walkSprites[i].isLoaded()) availableFrames++;
             }
-        } else {
-            // Usa sprite principale (idle o attack)
+            if (availableFrames >= 2) {
+                stepFrame = stepFrame % availableFrames;
+                walkSprites[stepFrame].render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped);
+            } else {
+                sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
+            }
+        }
+        // Altrimenti usa sprite principale (idle o attack)
+        else {
             sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
+        }
+
+        // Speed boost aura: se attivo, disegna piccole ali scarpe sotto i piedi
+        if (speedBoostTimer > 0) {
+            sf::Color auraColor(255, 220, 80, 150);
+            sf::CircleShape aura(6.f);
+            aura.setFillColor(auraColor);
+            aura.setPosition(px - 6.f, pos.y + 16.f);
+            target.draw(aura);
         }
 
         drawProjectiles(target);

@@ -102,13 +102,13 @@ public:
     void addLife() { lives++; }
 
     // --- SpriteSheet management ---
-    // Carica lo sprite principale del giocatore + 2 frame di camminata.
-    // basePath = percorso senza estensione (es. "assets/sprites/player1")
-    // Cerca: <basePath>_sheet.png (idle/stand)
-    //        <basePath>_walk0_sheet.png (camminata frame 0)
-    //        <basePath>_walk1_sheet.png (camminata frame 1)
+    // Carica sprite principale + 4 frame camminata + 1 salto.
     bool loadSprite(const std::string& basePath);
     bool isSpriteLoaded() const { return sprite.isLoaded(); }
+
+    // --- Speed boost (da bonus scarpe alate) ---
+    void activateSpeedBoost() { speedBoostTimer = 5000; }  // 5 secondi
+    bool hasSpeedBoost() const { return speedBoostTimer > 0; }
 
 private:
     sf::Vector2f pos;       // posizione in pixel (centro personaggio)
@@ -125,13 +125,15 @@ private:
     uint32_t jumpTimer, maxJumpTime, damageTimer, shootCooldown;
     uint32_t shootAnimTimer;  // >0 = animazione attacco in corso
     uint32_t animTime;        // tempo accumulato per animazioni idle/walk
+    uint32_t speedBoostTimer; // >0 = speed boost attivo (ms simulati)
     float jumpOffset;       // altezza visiva del salto (pixel)
 
     // SpriteSheet del giocatore: sprite principale (idle/stand)
     SpriteSheet sprite;
-    // 2 frame di camminata alternati (walk0, walk1)
-    SpriteSheet walkSprite0;
-    SpriteSheet walkSprite1;
+    // 4 frame di camminata alternati (walk0..walk3)
+    SpriteSheet walkSprites[4];
+    // Sprite salto
+    SpriteSheet jumpSprite;
 
     // Tenta di muoversi nella direzione (tDx, tDy). Restituisce true se il
     // movimento e' possibile (la cella destinazione non e' muro).

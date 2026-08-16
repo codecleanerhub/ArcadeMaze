@@ -54,6 +54,14 @@ struct Firework {
     int life;             // vita residua in frame
 };
 
+// Bonus scarpe alate: aumenta la velocità di movimento del giocatore
+// per 5 secondi quando raccolto. Appare nella stanza del boss.
+struct SpeedBootsBonus {
+    sf::Vector2f pos;
+    bool active;
+    float bobOffset;  // oscillazione verticale per effetto fluttuante
+};
+
 class Game {
 public:
     Game();
@@ -79,6 +87,7 @@ private:
     std::vector<Projectile> bossProjectiles;     // proiettili sparati dal boss
     std::vector<Projectile> enemyProjectiles;    // proiettili sparati dai nemici
     std::vector<BossRoomWeapon> bossRoomWeapons; // armi a terra nella stanza del boss
+    SpeedBootsBonus speedBoots;                 // bonus scarpe alate (1 per boss fight)
     std::vector<Particle> particles;             // particelle generiche (sangue, scintille)
     std::vector<Firework> fireworks;             // fuochi d'artificio (solo in WIN_STORY)
 
