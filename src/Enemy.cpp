@@ -423,13 +423,15 @@ void Enemy::render(sf::RenderTarget& target) const {
     }
 
     // Barra HP disegnata PER ULTIMO (sempre on top rispetto allo sprite).
-    // Posizione: py - 44 (sopra lo sprite 64x64).
+    // Posizione: py - 56 (12 px piu' in alto rispetto al vecchio py - 44)
+    // per evitare che si sovrapponga alla parte alta dello sprite 64x64
+    // (che si estende fino a py - 50 circa con l'anchor piedi a (32,56)).
     // Altezza: 8px (ben visibile).
     if (drawHpBar) {
         sf::RectangleShape hbBg(sf::Vector2f(36.f, 8.f));
         hbBg.setFillColor(sf::Color(30, 0, 0));
         hbBg.setOutlineThickness(1.f); hbBg.setOutlineColor(sf::Color(80, 0, 0));
-        hbBg.setPosition(px - 18.f, py - 44.f);
+        hbBg.setPosition(px - 18.f, py - 56.f);
         target.draw(hbBg);
         float hpPct = (float)health / maxHealth;
         sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
@@ -437,7 +439,7 @@ void Enemy::render(sf::RenderTarget& target) const {
                             sf::Color(220, 40, 40);
         sf::RectangleShape hbFg(sf::Vector2f(36.f * hpPct, 8.f));
         hbFg.setFillColor(hpColor);
-        hbFg.setPosition(px - 18.f, py - 44.f);
+        hbFg.setPosition(px - 18.f, py - 56.f);
         target.draw(hbFg);
     }
 }

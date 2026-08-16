@@ -901,49 +901,113 @@ void Game::spawnFirework() {
 }
 
 // ---------------------------------------------------------------------------
-// drawMenu: disegna il menu' principale.
+// drawMenu: disegna il menu' principale (tema fantasy cavernoso).
 //
 // Elementi:
-//   * Sfondo blu scuro
+//   * Sfondo: gradiente notte (viola scuro -> nero in basso) + alone lunare
 //   * 100 stelle generate con seed fisso (srand(42)) per non mutare ad
 //     ogni frame; poi srand(time(NULL)) per ripristinare il random del gioco
-//   * Luna in alto a destra con due crateri
+//   * Nebbia bassa viola/azzurra che si muove lentamente
+//   * Luna in alto a destra con due crateri + alone luminoso
 //   * Fulmine casuale (overlay bianco + linee gialle) quando lightningTimer>0
-//   * Titolo "ARCADE MAZE" dorato con ombra scura sfalsata (effetto 3D)
-//   * Crediti "Lord Luca A. Greco"
-//   * Riquadro con 5 voci di menu'; la voce selezionata e' evidenziata in
-//     giallo e racchiusa fra "> " e " <"
+//   * Titolo "ARCADE MAZE" dorato con ombra scura sfalsata (effetto 3D) +
+//     ornamenti laterali (rune / fiammate) stile fantasy
+//   * Crediti: "By" stilizzato (oro) + "Luca A. Greco" (avorio) in stile
+//     fantasy, con piccoli rombi decorativi ai lati
+//   * Riquadro pergamena con bordo marrone antico + angoli decorati
+//   * 6 voci di menu'; la voce selezionata e' evidenziata in giallo con
+//     "> ... <" e una piccola fiammella laterale
 //   * Istruzioni in basso
 // ---------------------------------------------------------------------------
 void Game::drawMenu() {
-    // Sfondo
-    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-    bg.setFillColor(sf::Color(30, 30, 60));
-    window.draw(bg);
+    // --- Sfondo gradiente notte ---
+    // Disegna 32 bande orizzontali che vanno dal viola scuro (alto) al
+    // nero-bluastro (basso). Costo trascurabile (32 rettangoli).
+    for (int i = 0; i < 32; i++) {
+        float t = (float)i / 31.f;
+        sf::Uint8 r = (sf::Uint8)(30  + (1.f - t) * 25.f);
+        sf::Uint8 g = (sf::Uint8)(20  + (1.f - t) * 10.f);
+        sf::Uint8 b = (sf::Uint8)(60  + (1.f - t) * 30.f);
+        sf::RectangleShape band(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT / 32.f + 1.f));
+        band.setFillColor(sf::Color(r, g, b));
+        band.setPosition(0.f, i * (WINDOW_HEIGHT / 32.f));
+        window.draw(band);
+    }
 
-    // Stelle: seed fisso per layout stabile
+    // --- Stelle: seed fisso per layout stabile ---
     srand(42);
-    for(int i=0; i<100; i++) {
-        sf::CircleShape star(1 + rand()%2);
-        star.setFillColor(sf::Color(200, 200, 255, 150 + rand()%105));
-        star.setPosition(rand()%WINDOW_WIDTH, rand()%WINDOW_HEIGHT);
+    for(int i=0; i<140; i++) {
+        // Stelle leggermente variate: alcune grandi, altre piccole
+        float radius = 0.8f + (rand() % 30) * 0.05f;
+        sf::CircleShape star(radius);
+        // Colore: bianco/giallo/azzurro per dare profondita' al cielo
+        sf::Uint8 br = 150 + (sf::Uint8)(rand() % 105);
+        int tint = rand() % 3;
+        sf::Color col = (tint == 0) ? sf::Color(255, 255, 220, br) :
+                        (tint == 1) ? sf::Color(200, 220, 255, br) :
+                                      sf::Color(255, 240, 200, br);
+        star.setFillColor(col);
+        star.setPosition(rand()%WINDOW_WIDTH, rand()%(WINDOW_HEIGHT - 200));
         window.draw(star);
+        // Aggiungi un piccolo "cross" di luce alle stelle piu' grandi
+        if (radius > 1.8f) {
+            sf::RectangleShape cross1(sf::Vector2f(radius * 5.f, 1.f));
+            cross1.setFillColor(sf::Color(255, 255, 200, br / 3));
+            cross1.setPosition(star.getPosition().x - radius * 2.f, star.getPosition().y + radius * 0.5f);
+            window.draw(cross1);
+            sf::RectangleShape cross2(sf::Vector2f(1.f, radius * 5.f));
+            cross2.setFillColor(sf::Color(255, 255, 200, br / 3));
+            cross2.setPosition(star.getPosition().x + radius * 0.5f, star.getPosition().y - radius * 2.f);
+            window.draw(cross2);
+        }
     }
     // Ripristina il seed randomico per il resto del gioco
     srand(time(NULL));
 
-    // Luna con outline e due crateri
+    // --- Nebbia bassa: onde semitrasparenti viola/azzurre ---
+    // 3 strati di nebbia che fluttuano lentamente con animazione sinusoidale.
+    // L'animazione usa un tempo derivato da lightningTimer? No, sarebbe troppo
+    // instabile: usiamo una static che persiste tra le frame.
+    static float menuTime = 0.f;
+    menuTime += 0.016f;
+    for (int layer = 0; layer < 3; layer++) {
+        sf::Color fogCol = (layer == 0) ? sf::Color(80, 40, 120, 60) :
+                           (layer == 1) ? sf::Color(60, 70, 130, 50) :
+                                          sf::Color(40, 50, 100, 40);
+        float yBase = WINDOW_HEIGHT - 180.f + layer * 30.f;
+        for (int x = 0; x < WINDOW_WIDTH; x += 16) {
+            float y = yBase + sin(menuTime * 0.5f + x * 0.01f + layer) * 15.f;
+            sf::CircleShape fog(40.f);
+            fog.setFillColor(fogCol);
+            fog.setPosition((float)x - 40.f, y - 40.f);
+            window.draw(fog);
+        }
+    }
+
+    // --- Luna con alone luminoso e due crateri ---
+    // Alone esterno: grande cerchio semitrasparente giallo-avorio
+    sf::CircleShape moonGlow(140.f);
+    moonGlow.setFillColor(sf::Color(230, 230, 180, 40));
+    moonGlow.setPosition(WINDOW_WIDTH - 240.f, 40.f);
+    window.draw(moonGlow);
+    sf::CircleShape moonGlow2(110.f);
+    moonGlow2.setFillColor(sf::Color(240, 240, 200, 60));
+    moonGlow2.setPosition(WINDOW_WIDTH - 210.f, 70.f);
+    window.draw(moonGlow2);
+    // Luna piena
     sf::CircleShape moon(80.f);
-    moon.setFillColor(sf::Color(230, 230, 180));
+    moon.setFillColor(sf::Color(240, 240, 200));
     moon.setOutlineThickness(4.f);
-    moon.setOutlineColor(sf::Color(180, 180, 130));
+    moon.setOutlineColor(sf::Color(200, 200, 150));
     moon.setPosition(WINDOW_WIDTH - 200.f, 100.f);
     window.draw(moon);
-    sf::CircleShape crater1(10.f); crater1.setFillColor(sf::Color(200, 200, 150));
+    // Crateri
+    sf::CircleShape crater1(10.f); crater1.setFillColor(sf::Color(210, 210, 160));
     crater1.setPosition(WINDOW_WIDTH - 160.f, 140.f); window.draw(crater1);
     crater1.setPosition(WINDOW_WIDTH - 180.f, 180.f); window.draw(crater1);
+    crater1.setRadius(6.f); crater1.setPosition(WINDOW_WIDTH - 140.f, 170.f); window.draw(crater1);
 
-    // Effetto fulmine: flash bianco che si dissolve + saetta verticale a zigzag
+    // --- Effetto fulmine: flash bianco che si dissolve + saetta verticale a zigzag ---
     if (lightningTimer > 0) {
         sf::RectangleShape flash(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
         // Intensita' proporzionale al tempo residuo (fade out)
@@ -964,27 +1028,126 @@ void Game::drawMenu() {
         }
     }
 
-    // Titolo con effetto ombra: due copie sfalsate di 4 px
+    // --- Ornamenti fantasy ai lati del titolo: torce con fiamma animata ---
+    // Posizionate a meta' altezza del titolo, ai lati esterni.
+    auto drawTorch = [&](float x, float yBase) {
+        // Bastone della torcia (legno scuro)
+        sf::RectangleShape handle(sf::Vector2f(6.f, 36.f));
+        handle.setFillColor(sf::Color(60, 30, 10));
+        handle.setOutlineThickness(1.f); handle.setOutlineColor(sf::Color(20, 10, 0));
+        handle.setPosition(x - 3.f, yBase);
+        window.draw(handle);
+        // Cestello metallico della fiamma
+        sf::RectangleShape bracket(sf::Vector2f(14.f, 8.f));
+        bracket.setFillColor(sf::Color(80, 80, 80));
+        bracket.setOutlineThickness(1.f); bracket.setOutlineColor(sf::Color(40, 40, 40));
+        bracket.setPosition(x - 7.f, yBase - 8.f);
+        window.draw(bracket);
+        // Fiamma animata (3 strati: rosso scuro, arancione, giallo)
+        float flicker = sin(menuTime * 18.f + x) * 2.f;
+        // Strato esterno (rosso)
+        sf::CircleShape flame3(10.f + flicker);
+        flame3.setFillColor(sf::Color(180, 30, 10, 220));
+        flame3.setPosition(x - 10.f - flicker, yBase - 30.f);
+        window.draw(flame3);
+        // Strato medio (arancione)
+        sf::CircleShape flame2(7.f + flicker * 0.5f);
+        flame2.setFillColor(sf::Color(255, 140, 30, 240));
+        flame2.setPosition(x - 7.f - flicker * 0.5f, yBase - 26.f);
+        window.draw(flame2);
+        // Strato interno (giallo-bianco)
+        sf::CircleShape flame1(4.f);
+        flame1.setFillColor(sf::Color(255, 240, 180, 250));
+        flame1.setPosition(x - 4.f, yBase - 22.f);
+        window.draw(flame1);
+        // Aura luminosa attorno alla fiamma
+        sf::CircleShape aura(22.f);
+        aura.setFillColor(sf::Color(255, 180, 60, 30));
+        aura.setPosition(x - 22.f, yBase - 42.f);
+        window.draw(aura);
+    };
+    drawTorch(WINDOW_WIDTH / 2.f - 360.f, 200.f);
+    drawTorch(WINDOW_WIDTH / 2.f + 360.f, 200.f);
+
+    // --- Titolo con effetto ombra: due copie sfalsate di 4 px ---
     drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2, 120, 10, sf::Color(255, 215, 0));
     drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2 - 4, 120 - 4, 10, sf::Color(180, 120, 40));
 
-    // Crediti: "Lord" in rosso + nome in bianco, centrati come un'unica stringa
-    std::string lordStr = "Lord ";
-    std::string nameStr = "Luca A. Greco";
-    float lordW = lordStr.length() * 4 * 4;
-    float nameW = nameStr.length() * 4 * 4;
-    float totalW = lordW + nameW;
-    float startX = WINDOW_WIDTH/2 - totalW/2.f;
-    drawTextOutlined(window, lordStr, startX, 260, 4, sf::Color(220, 20, 20));
-    drawTextOutlined(window, nameStr, startX + lordW, 260, 4, sf::Color::White);
+    // --- Ornamento tra titolo e crediti: linea dorata con rombo centrale ---
+    // Una linea orizzontale spezzata da un rombo al centro, in stile fantasy.
+    float ornY = 220.f;
+    sf::Color ornGold(200, 160, 50);
+    // Rombo centrale
+    sf::ConvexShape diamond; diamond.setPointCount(4);
+    diamond.setFillColor(ornGold); diamond.setOutlineThickness(1.f); diamond.setOutlineColor(sf::Color(120, 80, 20));
+    diamond.setPoint(0, sf::Vector2f(WINDOW_WIDTH/2.f, ornY - 6.f));
+    diamond.setPoint(1, sf::Vector2f(WINDOW_WIDTH/2.f + 8.f, ornY));
+    diamond.setPoint(2, sf::Vector2f(WINDOW_WIDTH/2.f, ornY + 6.f));
+    diamond.setPoint(3, sf::Vector2f(WINDOW_WIDTH/2.f - 8.f, ornY));
+    window.draw(diamond);
+    // Linee laterali
+    sf::RectangleShape ornLineL(sf::Vector2f(180.f, 2.f));
+    ornLineL.setFillColor(ornGold);
+    ornLineL.setPosition(WINDOW_WIDTH/2.f - 200.f, ornY - 1.f);
+    window.draw(ornLineL);
+    sf::RectangleShape ornLineR(sf::Vector2f(180.f, 2.f));
+    ornLineR.setFillColor(ornGold);
+    ornLineR.setPosition(WINDOW_WIDTH/2.f + 20.f, ornY - 1.f);
+    window.draw(ornLineR);
+    // Piccoli rombi alle estremita' delle linee
+    for (int side = 0; side < 2; side++) {
+        float dx = (side == 0) ? -1.f : 1.f;
+        sf::ConvexShape dot; dot.setPointCount(4);
+        dot.setFillColor(ornGold);
+        dot.setPoint(0, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 200.f, ornY - 4.f));
+        dot.setPoint(1, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 204.f, ornY));
+        dot.setPoint(2, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 200.f, ornY + 4.f));
+        dot.setPoint(3, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 196.f, ornY));
+        window.draw(dot);
+    }
 
-    // Riquadro delle opzioni (sfondo semitrasparente con bordo marrone)
+    // --- Crediti: "By" (oro) + "Luca A. Greco" (avorio) in stile fantasy ---
+    // Sostituisce il vecchio "Lord Luca A. Greco".
+    // Le due parti sono centrate come un'unica stringa.
+    std::string byStr   = "By ";
+    std::string nameStr = "Luca A. Greco";
+    float byW   = byStr.length()   * 4 * 5;
+    float nameW = nameStr.length() * 4 * 5;
+    float totalW = byW + nameW;
+    float startX = WINDOW_WIDTH/2 - totalW/2.f;
+    drawTextOutlined(window, byStr,   startX,             260, 5, sf::Color(255, 215, 100));
+    drawTextOutlined(window, nameStr, startX + byW,       260, 5, sf::Color(245, 235, 200));
+
+    // --- Riquadro pergamena con bordo marrone antico + angoli decorati ---
     sf::RectangleShape border(sf::Vector2f(WINDOW_WIDTH - 240, 500));
     border.setPosition(120, 360);
-    border.setFillColor(sf::Color(0, 0, 0, 150));
+    // Sfondo pergamena scura semitrasparente
+    border.setFillColor(sf::Color(20, 12, 8, 200));
     border.setOutlineThickness(6.f);
-    border.setOutlineColor(sf::Color(100, 80, 50));
+    border.setOutlineColor(sf::Color(140, 100, 50));
     window.draw(border);
+    // Bordo interno piu' sottile (effetto doppia cornice)
+    sf::RectangleShape innerBorder(sf::Vector2f(WINDOW_WIDTH - 268, 472));
+    innerBorder.setPosition(134, 374);
+    innerBorder.setFillColor(sf::Color(0, 0, 0, 0));
+    innerBorder.setOutlineThickness(2.f);
+    innerBorder.setOutlineColor(sf::Color(100, 70, 30));
+    window.draw(innerBorder);
+    // Angoli decorati (4 piccoli rombi dorati)
+    auto drawCorner = [&](float cx, float cy) {
+        sf::ConvexShape corner; corner.setPointCount(4);
+        corner.setFillColor(sf::Color(220, 180, 60));
+        corner.setOutlineThickness(1.f); corner.setOutlineColor(sf::Color(120, 80, 20));
+        corner.setPoint(0, sf::Vector2f(cx, cy - 8.f));
+        corner.setPoint(1, sf::Vector2f(cx + 8.f, cy));
+        corner.setPoint(2, sf::Vector2f(cx, cy + 8.f));
+        corner.setPoint(3, sf::Vector2f(cx - 8.f, cy));
+        window.draw(corner);
+    };
+    drawCorner(120.f, 360.f);
+    drawCorner(WINDOW_WIDTH - 120.f, 360.f);
+    drawCorner(120.f, 860.f);
+    drawCorner(WINDOW_WIDTH - 120.f, 860.f);
 
     // Voci di menu': valori dinamici per le prime 4 (giocatori/modalita'/risoluzione/musica)
     std::string items[] = {
@@ -997,10 +1160,33 @@ void Game::drawMenu() {
     };
 
     // Disegna le 6 voci; quella selezionata e' in giallo con "> ... <"
+    // e una piccola fiammella pulsante alla sua sinistra.
     for(int i=0; i<6; i++) {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, 380 + i * 70, 3, color);
+        float itemY = 380 + i * 70;
+        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, itemY, 3, color);
+
+        // Fiammella laterale animata per la voce selezionata
+        if (i == menuItemIndex) {
+            float fx = 150.f;
+            float flicker = sin(menuTime * 15.f) * 1.5f;
+            // Aura
+            sf::CircleShape flameAura(8.f);
+            flameAura.setFillColor(sf::Color(255, 180, 60, 80));
+            flameAura.setPosition(fx - 8.f, itemY - 8.f + flicker * 0.3f);
+            window.draw(flameAura);
+            // Fiamma esterna rossa
+            sf::CircleShape flame3(4.f + flicker);
+            flame3.setFillColor(sf::Color(220, 50, 20, 230));
+            flame3.setPosition(fx - 4.f - flicker, itemY - 4.f + flicker * 0.3f);
+            window.draw(flame3);
+            // Fiamma interna gialla
+            sf::CircleShape flame2(2.5f);
+            flame2.setFillColor(sf::Color(255, 220, 100, 240));
+            flame2.setPosition(fx - 2.5f, itemY - 2.5f + flicker * 0.2f);
+            window.draw(flame2);
+        }
     }
 
     // Istruzioni in basso

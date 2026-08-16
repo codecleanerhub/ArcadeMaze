@@ -153,20 +153,42 @@ int Maze::getRemainingTreasures() {
 }
 
 // ---------------------------------------------------------------------------
-// render: disegna l'intero labirinto.
+// render: disegna l'intero labirinto in stile "dungeon scavato nella roccia".
 //
 // Per ogni cella:
-//   * Muro: disegna un rettangolo colorato con due bande orizzontali
-//     (sopra piu' chiara, sotto piu' scura) per simulare un effetto 3D
-//     "pietra". Questo pattern e' molto economico (3 draw per cella) ma
-//     dà profondita' ai muri senza usare texture.
-//   * Pavimento: rettangolo piatto del colore `bgColor`.
-//   * Tesoro: pedistallo scuro + sprite specifica (corona, gemma, forziere,
-//     coppa, monete). Tutti i tesori sono costruiti con primitive SFML.
+//   * Muro: disegna un blocco di roccia cavernosa composto da:
+//       - Rettangolo base scuro (pietra)
+//       - Banda superiore piu' chiara (illuminazione dall'alto)
+//       - Banda inferiore molto scura (ombra / fessura con il pavimento)
+//       - 3-4 "ciottoli" di roccia piu' chiari in posizioni pseudo-casuali ma
+//         deterministiche (hash della cella) per dare texture varia
+//       - Piccole crepe nere per dare l'effetto "roccia erosa"
+//       - Un paio di muschigli verdi chiari (rarissimi) per profondita'
+//   * Pavimento: terra battuta scura con leggere variazioni di colore
+//     determinate dalla posizione (hash), per evitare l'effetto "piatto".
+//     Aggiunge anche qualche piccola pietra/ciottolo sparso sul pavimento.
+//   * Tesoro: pedistallo di pietra + sprite specifica (corona, gemma,
+//     forziere, coppa, monete). Tutti i tesori sono costruiti con primitive.
 //   * Arma: chiama Weapon::render sul tile (l'arma ha gia' la sua ombra).
 //
 // La posizione y tiene conto dell'offset UI_HEIGHT (la barra in alto).
+//
+// NOTA: tutte le variazioni procedurali sono deterministiche (derivate da
+// una funzione hash delle coordinate della cella), per evitare flickering
+// tra un frame e il successivo.
 // ---------------------------------------------------------------------------
+namespace {
+    // Hash 2D deterministico -> [0, 1). Usato per variazioni procedurali
+    // stabili su ogni cella (niente flicker tra frame).
+    float cellHash(int c, int r) {
+        unsigned int h = (unsigned int)(c * 73856093u) ^ (unsigned int)(r * 19349663u);
+        h ^= h >> 13;
+        h *= 0x5bd1e995u;
+        h ^= h >> 15;
+        return (float)(h & 0xFFFFu) / 65535.f;
+    }
+}
+
 void Maze::render(sf::RenderTarget& target) {
     sf::RectangleShape rect(sf::Vector2f(TILE_SIZE, TILE_SIZE));
     sf::Color outline(10, 10, 10);
@@ -175,35 +197,150 @@ void Maze::render(sf::RenderTarget& target) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             if (grid[c][r].type == CELL_WALL) {
-                // --- Muro 3D pietra ---
-                // Rettangolo base
-                rect.setFillColor(wallColor);
+                // --- Muro 3D roccia cavernosa ---
+                // Colore base piu' scuro del wallColor (effetto ombra profonda).
+                sf::Color baseCol = sf::Color(
+                    (sf::Uint8)std::max(0,   wallColor.r - 25),
+                    (sf::Uint8)std::max(0,   wallColor.g - 25),
+                    (sf::Uint8)std::max(0,   wallColor.b - 25));
+                rect.setFillColor(baseCol);
                 target.draw(rect);
+
                 // Banda superiore piu' chiara (effetto illuminazione)
-                rect.setSize(sf::Vector2f(TILE_SIZE, 8.f));
-                rect.setFillColor(sf::Color(wallColor.r + 30, wallColor.g + 30, wallColor.b + 30));
+                // Colorazione leggermente calda, come luce di torcia.
+                rect.setSize(sf::Vector2f(TILE_SIZE, 10.f));
+                rect.setFillColor(sf::Color(
+                    (sf::Uint8)std::min(255, wallColor.r + 40),
+                    (sf::Uint8)std::min(255, wallColor.g + 35),
+                    (sf::Uint8)std::min(255, wallColor.b + 25)));
                 rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 target.draw(rect);
-                // Banda inferiore piu' scura (ombra)
-                rect.setSize(sf::Vector2f(TILE_SIZE, 8.f));
-                rect.setFillColor(sf::Color(wallColor.r - 20, wallColor.g - 20, wallColor.b - 20));
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 8);
+
+                // Banda inferiore molto scura (ombra / fessura col pavimento)
+                rect.setSize(sf::Vector2f(TILE_SIZE, 6.f));
+                rect.setFillColor(sf::Color(15, 10, 8));
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 6);
                 target.draw(rect);
+
+                // Ciottoli di roccia: 3 macchie chiare in posizioni deterministiche
+                // per dare texture rocciosa. La grandezza varia leggermente.
+                for (int i = 0; i < 3; i++) {
+                    float h1 = cellHash(c * 7 + i, r * 3 + i);
+                    float h2 = cellHash(c * 13 + i, r * 5 + i + 7);
+                    float h3 = cellHash(c * 3 + i + 11, r * 11 + i + 3);
+                    // Posizione dentro la cella (margini di 6 px)
+                    float px = c * TILE_SIZE + 6.f + h1 * (TILE_SIZE - 12.f);
+                    float py = r * TILE_SIZE + UI_HEIGHT + 12.f + h2 * (TILE_SIZE - 20.f);
+                    float radius = 2.5f + h3 * 2.5f;  // 2.5..5
+                    // Colore piu' chiaro del base ma piu' scuro della banda alta
+                    sf::Uint8 cr = (sf::Uint8)std::min(255, wallColor.r + 15);
+                    sf::Uint8 cg = (sf::Uint8)std::min(255, wallColor.g + 12);
+                    sf::Uint8 cb = (sf::Uint8)std::min(255, wallColor.b + 8);
+                    // Aggiunge una leggera variazione per ogni ciottolo
+                    sf::Int8 variation = (sf::Int8)(h3 * 20.f) - 10;
+                    cr = (sf::Uint8)std::max(0, std::min(255, (int)cr + variation));
+                    cg = (sf::Uint8)std::max(0, std::min(255, (int)cg + variation));
+                    cb = (sf::Uint8)std::max(0, std::min(255, (int)cb + variation));
+                    sf::CircleShape pebble(radius);
+                    pebble.setFillColor(sf::Color(cr, cg, cb));
+                    pebble.setPosition(px - radius, py - radius);
+                    target.draw(pebble);
+                    // Piccolo highlight in alto a sinistra (effetto volumetrico)
+                    sf::CircleShape highlight(radius * 0.4f);
+                    highlight.setFillColor(sf::Color(
+                        (sf::Uint8)std::min(255, (int)cr + 25),
+                        (sf::Uint8)std::min(255, (int)cg + 22),
+                        (sf::Uint8)std::min(255, (int)cb + 18)));
+                    highlight.setPosition(px - radius * 0.6f, py - radius * 0.6f);
+                    target.draw(highlight);
+                }
+
+                // Crepe nere sottili (1-2 per cella, posizioni deterministiche)
+                int numCracks = (cellHash(c + 99, r + 17) > 0.6f) ? 2 : 1;
+                for (int i = 0; i < numCracks; i++) {
+                    float h1 = cellHash(c * 5 + i + 31, r * 7 + i + 19);
+                    float h2 = cellHash(c * 11 + i + 41, r * 2 + i + 73);
+                    float cx = c * TILE_SIZE + 4.f + h1 * (TILE_SIZE - 8.f);
+                    float cy = r * TILE_SIZE + UI_HEIGHT + 14.f + h2 * (TILE_SIZE - 24.f);
+                    // Breve segmento verticale o diagonale
+                    float ang = (h1 + h2) * 90.f;
+                    sf::RectangleShape crack(sf::Vector2f(2.f, 8.f + h2 * 8.f));
+                    crack.setFillColor(sf::Color(5, 5, 5, 200));
+                    crack.setOrigin(1.f, crack.getSize().y * 0.5f);
+                    crack.setPosition(cx, cy);
+                    crack.rotate(ang);
+                    target.draw(crack);
+                }
+
+                // Muschio verde raro (5% delle celle muro) per dare colore
+                if (cellHash(c + 555, r + 333) > 0.95f) {
+                    float mx = c * TILE_SIZE + 6.f + cellHash(c, r) * (TILE_SIZE - 12.f);
+                    float my = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 8.f;
+                    sf::CircleShape moss(3.f);
+                    moss.setFillColor(sf::Color(50, 90, 40, 200));
+                    moss.setPosition(mx - 3.f, my - 3.f);
+                    target.draw(moss);
+                    moss.setRadius(2.f);
+                    moss.setPosition(mx + 4.f, my - 1.f);
+                    target.draw(moss);
+                }
+
                 // Ripristina dimensione del rettangolo base per il prossimo tile
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE));
             } else {
-                // Pavimento piatto
-                rect.setFillColor(bgColor);
+                // --- Pavimento terra battuta ---
+                // Colore base (terra scura). Variazione deterministica per
+                // evitare effetto piatto uniforme.
+                float v = cellHash(c + 1, r + 1);
+                sf::Uint8 fr = (sf::Uint8)(bgColor.r + (v - 0.5f) * 12.f);
+                sf::Uint8 fg = (sf::Uint8)(bgColor.g + (v - 0.5f) * 8.f);
+                sf::Uint8 fb = (sf::Uint8)(bgColor.b + (v - 0.5f) * 6.f);
+                rect.setFillColor(sf::Color(fr, fg, fb));
                 target.draw(rect);
+
+                // Piccoli ciottoli sparsi sul pavimento (2-3 per cella)
+                int numFloorPebbles = 2 + (int)(cellHash(c + 200, r + 100) * 2.f);
+                for (int i = 0; i < numFloorPebbles; i++) {
+                    float h1 = cellHash(c * 17 + i + 100, r * 3 + i + 50);
+                    float h2 = cellHash(c * 7 + i + 200, r * 13 + i + 70);
+                    float h3 = cellHash(c * 23 + i + 1,   r * 11 + i + 13);
+                    float px = c * TILE_SIZE + 4.f + h1 * (TILE_SIZE - 8.f);
+                    float py = r * TILE_SIZE + UI_HEIGHT + 4.f + h2 * (TILE_SIZE - 8.f);
+                    float radius = 1.f + h3 * 1.5f;
+                    // Colore grigio-marrone chiaro
+                    sf::Uint8 pr = (sf::Uint8)(60 + h3 * 30);
+                    sf::Uint8 pg = (sf::Uint8)(50 + h3 * 25);
+                    sf::Uint8 pb = (sf::Uint8)(40 + h3 * 18);
+                    sf::CircleShape pebble(radius);
+                    pebble.setFillColor(sf::Color(pr, pg, pb));
+                    pebble.setPosition(px - radius, py - radius);
+                    target.draw(pebble);
+                }
+
+                // Macchie di terra piu' scura (~15% delle celle pavimento)
+                if (cellHash(c + 700, r + 350) > 0.85f) {
+                    float h1 = cellHash(c + 800, r + 400);
+                    float h2 = cellHash(c + 900, r + 500);
+                    float sx = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 24.f);
+                    float sy = r * TILE_SIZE + UI_HEIGHT + 8.f + h2 * (TILE_SIZE - 24.f);
+                    sf::CircleShape stain(4.f + h1 * 3.f);
+                    stain.setFillColor(sf::Color(8, 5, 3, 180));
+                    stain.setPosition(sx - 4.f, sy - 4.f);
+                    target.draw(stain);
+                }
 
                 // Centro del tile (usato per tesori/oggetti)
                 float cx = c * TILE_SIZE + TILE_SIZE/2.f;
                 float cy = r * TILE_SIZE + TILE_SIZE/2.f + UI_HEIGHT;
 
                 if (grid[c][r].type == CELL_TREASURE) {
-                    // Pedistallo ombreggiato che evidenzia il tesoro
+                    // Pedistallo di pietra ombreggiato che evidenzia il tesoro
+                    // Piastrella circolare scura con anello chiaro (effetto altare)
                     sf::CircleShape ped(20.f); ped.setFillColor(sf::Color(30, 30, 30, 150));
                     ped.setPosition(cx-20.f, cy-12.f); target.draw(ped);
+                    sf::CircleShape pedRing(18.f); pedRing.setFillColor(sf::Color(0, 0, 0, 0));
+                    pedRing.setOutlineThickness(2.f); pedRing.setOutlineColor(sf::Color(120, 100, 80, 200));
+                    pedRing.setPosition(cx-18.f, cy-10.f); target.draw(pedRing);
 
                     if (grid[c][r].treasure == TRES_CROWN) {
                         // Corona: base + 3 punte + gemme rosse/blu
