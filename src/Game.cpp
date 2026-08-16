@@ -15,7 +15,8 @@
 //         al boss.
 //      b. STATE_BOSS: scontro nella stanza del boss. Quando il boss muore
 //         si guadagna una vita e si passa al livello successivo; dopo il
-//         livello STORY_LEVELS_COUNT (30) in modalita' story si vince.
+//         livello STORY_LEVELS_COUNT (34, 17 boss x 2 cicli) in modalita'
+//         story si vince.
 //   3. STATE_LOSE: game over (Enter torna al menu').
 //   4. STATE_WIN_STORY: vittoria (con fuochi d'artificio).
 //
@@ -1915,11 +1916,6 @@ void Game::render() {
                 moss2.setPosition(x + 12.f, yBase - 2.f);
                 window.draw(moss2);
             };
-            // 4 colonne negli angoli della stanza (non dove gioca il player)
-            drawRuinColumn(wallThickness + 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
-            drawRuinColumn(WINDOW_WIDTH - wallThickness - 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
-            drawRuinColumn(wallThickness + 60.f, playTop + wallThickness + 60.f, 60.f);
-            drawRuinColumn(WINDOW_WIDTH - wallThickness - 60.f, playTop + wallThickness + 60.f, 60.f);
 
             // --- Tombe scoperchiate sul pavimento (laterali) ---
             // Sarcofagi di pietra aperti con coperchio caduto di lato.
@@ -2037,9 +2033,6 @@ void Game::render() {
                 mossS2.setPosition(cx + 26.f, cy + 14.f);
                 window.draw(mossS2);
             };
-            // 2 sarcofagi sui lati lunghi della stanza
-            drawSarcophagus(wallThickness + 100.f, playTop + playH * 0.5f, false);
-            drawSarcophagus(WINDOW_WIDTH - wallThickness - 100.f, playTop + playH * 0.5f, true);
 
             // --- Lastre di pietra con incisioni (lapidi) ---
             // Piccole lapidi inclinate posizionate vicino ai muri laterali,
@@ -2092,11 +2085,6 @@ void Game::render() {
                 mossT.setPosition(cx - 10.f, cy + 10.f);
                 window.draw(mossT);
             };
-            // 4 lapidi distribuite lungo i muri laterali
-            drawTombstone(wallThickness + 80.f, playTop + playH * 0.3f, -8.f);
-            drawTombstone(wallThickness + 80.f, playTop + playH * 0.7f, 6.f);
-            drawTombstone(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.3f, 8.f);
-            drawTombstone(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.7f, -6.f);
 
             // --- Blocchi di pietra caduti (cumuli di rovine) ---
             // Piccoli blocchi sparsi lungo il perimetro della stanza,
@@ -2141,12 +2129,6 @@ void Game::render() {
                 mossR.setPosition(cx + 8.f, cy + 2.f);
                 window.draw(mossR);
             };
-            // 4 cumuli di rovine ai lati della stanza (non agli angoli,
-            // dove ci sono le colonne)
-            drawRubblePile(wallThickness + 50.f, playTop + playH * 0.5f);
-            drawRubblePile(WINDOW_WIDTH - wallThickness - 50.f, playTop + playH * 0.5f);
-            drawRubblePile(WINDOW_WIDTH / 2.f - 200.f, playTop + wallThickness + 40.f);
-            drawRubblePile(WINDOW_WIDTH / 2.f + 200.f, WINDOW_HEIGHT - wallThickness - 40.f);
 
             // --- Teschi cumulo sul pavimento (decorazione macabra) ---
             // Piccolo cumulo di teschi in un angolo della stanza.
@@ -2289,9 +2271,6 @@ void Game::render() {
                 spark.setPosition(cx - 0.3f, cy - 22.f - flicker);
                 window.draw(spark);
             };
-            // 2 bracieri negli angoli della stanza (opposti)
-            drawBrazier(wallThickness + 30.f, playTop + wallThickness + 30.f);
-            drawBrazier(WINDOW_WIDTH - wallThickness - 30.f, WINDOW_HEIGHT - wallThickness - 30.f);
 
             // --- Catene appese ai muri (decorazione gotica) ---
             // Catene di ferro arrugginito appese al muro superiore e inferiore,
@@ -2326,15 +2305,350 @@ void Game::render() {
                 hook.setPoint(3, sf::Vector2f(x + 2.f, yTop + length + 6.f));
                 window.draw(hook);
             };
-            // 3 catene appese al muro superiore, 3 al muro inferiore
-            drawHangingChain(WINDOW_WIDTH * 0.25f, playTop + wallThickness, 30.f);
-            drawHangingChain(WINDOW_WIDTH * 0.5f,  playTop + wallThickness, 22.f);
-            drawHangingChain(WINDOW_WIDTH * 0.75f, playTop + wallThickness, 28.f);
-            // Catene dal muro inferiore (pendono verso l'alto? no, verso il basso:
-            // in realta' appese alla parte bassa del muro, pendono nel vuoto)
-            drawHangingChain(WINDOW_WIDTH * 0.25f, WINDOW_HEIGHT - wallThickness - 32.f, 22.f);
-            drawHangingChain(WINDOW_WIDTH * 0.5f,  WINDOW_HEIGHT - wallThickness - 28.f, 16.f);
-            drawHangingChain(WINDOW_WIDTH * 0.75f, WINDOW_HEIGHT - wallThickness - 32.f, 24.f);
+
+            // ============ NUOVI TIPI DI DECORAZIONE ============
+            // Per variare le stanze dei boss: ogni tipo ha un subset diverso
+            // di decorazioni, con posizioni e quantita' diverse. Questi nuovi
+            // lambda si aggiungono a quelli esistenti (drawRuinColumn,
+            // drawSarcophagus, drawTombstone, drawRubblePile, drawBrazier,
+            // drawHangingChain).
+
+            // --- Pilastro intatto (colonna snella, non in rovina) ---
+            auto drawPillar = [&](float x, float yBase, float height) {
+                sf::CircleShape pShadow(20.f);
+                pShadow.setFillColor(sf::Color(0, 0, 0, 110));
+                pShadow.setPosition(x - 20.f, yBase + 4.f);
+                window.draw(pShadow);
+                // Base
+                sf::RectangleShape base(sf::Vector2f(28.f, 6.f));
+                base.setFillColor(stoneDark);
+                base.setOutlineThickness(1.f); base.setOutlineColor(stoneBase);
+                base.setPosition(x - 14.f, yBase - 6.f);
+                window.draw(base);
+                // Fusto
+                sf::RectangleShape shaft(sf::Vector2f(18.f, height));
+                shaft.setFillColor(stoneBase);
+                shaft.setOutlineThickness(1.f); shaft.setOutlineColor(stoneDark);
+                shaft.setPosition(x - 9.f, yBase - 6.f - height);
+                window.draw(shaft);
+                // Riflesso laterale
+                sf::RectangleShape shaftRef(sf::Vector2f(4.f, height - 4.f));
+                shaftRef.setFillColor(stoneLight);
+                shaftRef.setPosition(x - 9.f, yBase - 8.f - height);
+                window.draw(shaftRef);
+                // Capitello (in cima, intact)
+                sf::RectangleShape cap(sf::Vector2f(26.f, 5.f));
+                cap.setFillColor(stoneLight);
+                cap.setOutlineThickness(0.8f); cap.setOutlineColor(stoneDark);
+                cap.setPosition(x - 13.f, yBase - 6.f - height - 5.f);
+                window.draw(cap);
+                sf::RectangleShape capTop(sf::Vector2f(30.f, 3.f));
+                capTop.setFillColor(stoneBase);
+                capTop.setPosition(x - 15.f, yBase - 6.f - height - 8.f);
+                window.draw(capTop);
+            };
+
+            // --- Stalagmite (cono di roccia naturale, per caverne) ---
+            auto drawStalagmite = [&](float x, float yBase, float height) {
+                sf::CircleShape sShadow(16.f);
+                sShadow.setFillColor(sf::Color(0, 0, 0, 110));
+                sShadow.setPosition(x - 16.f, yBase + 2.f);
+                window.draw(sShadow);
+                // Cono: ConvexShape triangolare largo in basso, stretto in alto
+                sf::ConvexShape cone; cone.setPointCount(3);
+                cone.setFillColor(stoneDark);
+                cone.setOutlineThickness(1.f); cone.setOutlineColor(stoneBase);
+                cone.setPoint(0, sf::Vector2f(x - 10.f, yBase));
+                cone.setPoint(1, sf::Vector2f(x + 10.f, yBase));
+                cone.setPoint(2, sf::Vector2f(x, yBase - height));
+                window.draw(cone);
+                // Highlight laterale
+                sf::ConvexShape coneRef; coneRef.setPointCount(3);
+                coneRef.setFillColor(stoneLight);
+                coneRef.setPoint(0, sf::Vector2f(x - 8.f, yBase - 2.f));
+                coneRef.setPoint(1, sf::Vector2f(x - 4.f, yBase - 2.f));
+                coneRef.setPoint(2, sf::Vector2f(x - 2.f, yBase - height * 0.8f));
+                window.draw(coneRef);
+            };
+
+            // --- Cassa di legno (per stanze tesoro/mimic) ---
+            auto drawCrate = [&](float x, float yBase) {
+                sf::CircleShape cShadow(14.f);
+                cShadow.setFillColor(sf::Color(0, 0, 0, 110));
+                cShadow.setPosition(x - 14.f, yBase + 4.f);
+                window.draw(cShadow);
+                // Corpo cassa
+                sf::RectangleShape body(sf::Vector2f(20.f, 16.f));
+                body.setFillColor(sf::Color(110, 70, 30));
+                body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color(50, 30, 10));
+                body.setPosition(x - 10.f, yBase - 12.f);
+                window.draw(body);
+                // Strato superiore
+                sf::RectangleShape top(sf::Vector2f(22.f, 3.f));
+                top.setFillColor(sf::Color(140, 90, 40));
+                top.setPosition(x - 11.f, yBase - 12.f);
+                window.draw(top);
+                // Venature
+                sf::RectangleShape vein1(sf::Vector2f(18.f, 0.6f));
+                vein1.setFillColor(sf::Color(60, 35, 15));
+                vein1.setPosition(x - 9.f, yBase - 6.f);
+                window.draw(vein1);
+                vein1.setPosition(x - 9.f, yBase - 1.f);
+                window.draw(vein1);
+                // Rinforzi metallici (angoli)
+                sf::RectangleShape bracket1(sf::Vector2f(2.f, 4.f));
+                bracket1.setFillColor(sf::Color(180, 160, 60));
+                bracket1.setPosition(x - 10.f, yBase - 12.f);
+                window.draw(bracket1);
+                bracket1.setPosition(x + 8.f, yBase - 12.f);
+                window.draw(bracket1);
+            };
+
+            // --- Stendardo appeso al muro (per stanze cavaliere/wraith) ---
+            auto drawBanner = [&](float x, float yTop, float height, sf::Color bannerCol) {
+                // Asta orizzontale in alto
+                sf::RectangleShape rod(sf::Vector2f(28.f, 2.f));
+                rod.setFillColor(sf::Color(100, 80, 50));
+                rod.setOutlineThickness(0.5f); rod.setOutlineColor(sf::Color(40, 30, 15));
+                rod.setPosition(x - 14.f, yTop);
+                window.draw(rod);
+                // Terminali dell'asta (palline)
+                sf::CircleShape cap1(2.f);
+                cap1.setFillColor(sf::Color(180, 160, 60));
+                cap1.setPosition(x - 16.f, yTop - 1.f);
+                window.draw(cap1);
+                cap1.setPosition(x + 12.f, yTop - 1.f);
+                window.draw(cap1);
+                // Drappo (rettangolo con punta triangolare in basso)
+                sf::ConvexShape cloth; cloth.setPointCount(5);
+                cloth.setFillColor(bannerCol);
+                cloth.setOutlineThickness(0.8f); cloth.setOutlineColor(stoneDark);
+                cloth.setPoint(0, sf::Vector2f(x - 10.f, yTop + 2.f));
+                cloth.setPoint(1, sf::Vector2f(x + 10.f, yTop + 2.f));
+                cloth.setPoint(2, sf::Vector2f(x + 10.f, yTop + height - 6.f));
+                cloth.setPoint(3, sf::Vector2f(x, yTop + height));
+                cloth.setPoint(4, sf::Vector2f(x - 10.f, yTop + height - 6.f));
+                window.draw(cloth);
+                // Simbolo centrale (croce/emblema)
+                sf::RectangleShape sym1(sf::Vector2f(1.5f, 10.f));
+                sym1.setFillColor(sf::Color(255, 215, 0));
+                sym1.setPosition(x - 0.75f, yTop + 6.f);
+                window.draw(sym1);
+                sf::RectangleShape sym2(sf::Vector2f(6.f, 1.5f));
+                sym2.setFillColor(sf::Color(255, 215, 0));
+                sym2.setPosition(x - 3.f, yTop + 9.f);
+                window.draw(sym2);
+            };
+
+            // --- Candelabro da parete (braccio + candela) ---
+            auto drawWallCandle = [&](float x, float y) {
+                // Braccio a S
+                sf::RectangleShape arm(sf::Vector2f(10.f, 1.5f));
+                arm.setFillColor(sf::Color(80, 70, 50));
+                arm.setOutlineThickness(0.4f); arm.setOutlineColor(sf::Color(40, 30, 15));
+                arm.setPosition(x, y);
+                window.draw(arm);
+                // Candela
+                sf::RectangleShape candle(sf::Vector2f(3.f, 8.f));
+                candle.setFillColor(sf::Color(230, 220, 200));
+                candle.setOutlineThickness(0.4f); candle.setOutlineColor(sf::Color(120, 110, 90));
+                candle.setPosition(x + 8.f, y - 8.f);
+                window.draw(candle);
+                // Fiamma animata
+                float flick = sin(bossRoomTime * 14.f + x) * 0.8f;
+                sf::CircleShape flame(1.5f + flick);
+                flame.setFillColor(sf::Color(255, 180, 60, 230));
+                flame.setPosition(x + 8.f - flick, y - 12.f);
+                window.draw(flame);
+                // Aura
+                sf::CircleShape cAura(5.f);
+                cAura.setFillColor(sf::Color(255, 180, 60, 50));
+                cAura.setPosition(x + 4.f, y - 16.f);
+                window.draw(cAura);
+            };
+
+            // --- Altare sacrificale (pietra con canali di sangue) ---
+            auto drawAltar = [&](float x, float yBase) {
+                sf::CircleShape aShadow(24.f);
+                aShadow.setFillColor(sf::Color(0, 0, 0, 130));
+                aShadow.setPosition(x - 24.f, yBase + 6.f);
+                window.draw(aShadow);
+                // Base
+                sf::RectangleShape base(sf::Vector2f(40.f, 6.f));
+                base.setFillColor(stoneDark);
+                base.setOutlineThickness(1.f); base.setOutlineColor(stoneBase);
+                base.setPosition(x - 20.f, yBase);
+                window.draw(base);
+                // Topo altare (con canale)
+                sf::RectangleShape top(sf::Vector2f(36.f, 10.f));
+                top.setFillColor(stoneBase);
+                top.setOutlineThickness(0.8f); top.setOutlineColor(stoneDark);
+                top.setPosition(x - 18.f, yBase - 10.f);
+                window.draw(top);
+                // Canale di scolo (solco centrale)
+                sf::RectangleShape groove(sf::Vector2f(2.f, 10.f));
+                groove.setFillColor(stoneMoss);  // rosso sangue o muschio a seconda del tema
+                groove.setPosition(x - 1.f, yBase - 10.f);
+                window.draw(groove);
+                // Macchia sul top (sangue/muschio)
+                sf::CircleShape stain(4.f);
+                stain.setFillColor(stoneMoss);
+                stain.setPosition(x - 4.f, yBase - 6.f);
+                window.draw(stain);
+                // Riflesso
+                sf::RectangleShape topRef(sf::Vector2f(32.f, 1.2f));
+                topRef.setFillColor(stoneLight);
+                topRef.setPosition(x - 16.f, yBase - 10.f);
+                window.draw(topRef);
+            };
+
+            // ============ DECORAZIONI VARIABILI PER TIPO DI BOSS ============
+            // Ogni tipo di boss ha un subset diverso di decorazioni periferiche,
+            // con posizioni e quantita' diverse. Questo rende ogni stanza del
+            // boss immediatamente riconoscibile anche senza guardare il boss.
+            if (boss) {
+                BossType bt = boss->getType();
+                switch (bt) {
+                    case BOSS_GOLEM:
+                    case BOSS_GHOUL_LORD: {
+                        // Cripta antica: 4 colonne in rovina agli angoli + 4 lapidi laterali + 2 bracieri
+                        drawRuinColumn(wallThickness + 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
+                        drawRuinColumn(WINDOW_WIDTH - wallThickness - 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
+                        drawRuinColumn(wallThickness + 60.f, playTop + wallThickness + 60.f, 60.f);
+                        drawRuinColumn(WINDOW_WIDTH - wallThickness - 60.f, playTop + wallThickness + 60.f, 60.f);
+                        drawTombstone(wallThickness + 80.f, playTop + playH * 0.3f, -8.f);
+                        drawTombstone(wallThickness + 80.f, playTop + playH * 0.7f, 6.f);
+                        drawTombstone(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.3f, 8.f);
+                        drawTombstone(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.7f, -6.f);
+                        drawBrazier(wallThickness + 30.f, playTop + wallThickness + 30.f);
+                        drawBrazier(WINDOW_WIDTH - wallThickness - 30.f, WINDOW_HEIGHT - wallThickness - 30.f);
+                        break;
+                    }
+                    case BOSS_LICH:
+                    case BOSS_CULT_HERALD: {
+                        // Cripta necromantica: altari laterali + 2 sarcofagi + catene
+                        drawAltar(wallThickness + 80.f, playTop + playH * 0.3f);
+                        drawAltar(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.7f);
+                        drawSarcophagus(wallThickness + 100.f, playTop + playH * 0.5f, false);
+                        drawSarcophagus(WINDOW_WIDTH - wallThickness - 100.f, playTop + playH * 0.5f, true);
+                        drawHangingChain(WINDOW_WIDTH * 0.25f, playTop + wallThickness, 30.f);
+                        drawHangingChain(WINDOW_WIDTH * 0.75f, playTop + wallThickness, 28.f);
+                        drawHangingChain(WINDOW_WIDTH * 0.5f, WINDOW_HEIGHT - wallThickness - 28.f, 18.f);
+                        break;
+                    }
+                    case BOSS_DEMON: {
+                        // Sala infernale: bracieri multipli + stalagmite neri + catene
+                        drawStalagmite(wallThickness + 60.f, playTop + playH * 0.5f, 60.f);
+                        drawStalagmite(WINDOW_WIDTH - wallThickness - 60.f, playTop + playH * 0.5f, 50.f);
+                        drawStalagmite(wallThickness + 100.f, playTop + playH * 0.3f, 40.f);
+                        drawStalagmite(WINDOW_WIDTH - wallThickness - 100.f, playTop + playH * 0.7f, 45.f);
+                        drawBrazier(wallThickness + 30.f, playTop + wallThickness + 30.f);
+                        drawBrazier(WINDOW_WIDTH - wallThickness - 30.f, playTop + wallThickness + 30.f);
+                        drawBrazier(wallThickness + 30.f, WINDOW_HEIGHT - wallThickness - 30.f);
+                        drawBrazier(WINDOW_WIDTH - wallThickness - 30.f, WINDOW_HEIGHT - wallThickness - 30.f);
+                        drawHangingChain(WINDOW_WIDTH * 0.5f, playTop + wallThickness, 30.f);
+                        drawHangingChain(WINDOW_WIDTH * 0.5f, WINDOW_HEIGHT - wallThickness - 32.f, 24.f);
+                        break;
+                    }
+                    case BOSS_SPIDER: {
+                        // Caverna: stalagmiti naturali + ragnatele (le ragnatele sono gia'
+                        // nella feature centrale, qui aggiungiamo solo stalagmiti + cumuli)
+                        drawStalagmite(wallThickness + 60.f, playTop + playH * 0.5f, 70.f);
+                        drawStalagmite(WINDOW_WIDTH - wallThickness - 60.f, playTop + playH * 0.5f, 65.f);
+                        drawStalagmite(wallThickness + 50.f, WINDOW_HEIGHT - wallThickness - 40.f, 50.f);
+                        drawStalagmite(WINDOW_WIDTH - wallThickness - 50.f, WINDOW_HEIGHT - wallThickness - 40.f, 55.f);
+                        drawRubblePile(wallThickness + 100.f, playTop + playH * 0.3f);
+                        drawRubblePile(WINDOW_WIDTH - wallThickness - 100.f, playTop + playH * 0.7f);
+                        break;
+                    }
+                    case BOSS_ABOMINATION:
+                    case BOSS_RAT_KING: {
+                        // Caverna carnosa: gabbie (feature) + cassse rotte + cumuli
+                        drawCrate(wallThickness + 80.f, playTop + playH * 0.3f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.7f);
+                        drawCrate(wallThickness + 100.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 100.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        drawRubblePile(wallThickness + 50.f, playTop + playH * 0.5f);
+                        drawRubblePile(WINDOW_WIDTH - wallThickness - 50.f, playTop + playH * 0.5f);
+                        break;
+                    }
+                    case BOSS_KRAKEN: {
+                        // Grotta sommersa: stalagmiti + pozze (feature) + alghe (cumuli verdi)
+                        drawStalagmite(wallThickness + 60.f, playTop + playH * 0.3f, 50.f);
+                        drawStalagmite(WINDOW_WIDTH - wallThickness - 60.f, playTop + playH * 0.7f, 55.f);
+                        drawStalagmite(wallThickness + 50.f, WINDOW_HEIGHT - wallThickness - 60.f, 45.f);
+                        drawStalagmite(WINDOW_WIDTH - wallThickness - 50.f, WINDOW_HEIGHT - wallThickness - 60.f, 40.f);
+                        drawRubblePile(WINDOW_WIDTH / 2.f - 200.f, playTop + wallThickness + 40.f);
+                        drawRubblePile(WINDOW_WIDTH / 2.f + 200.f, WINDOW_HEIGHT - wallThickness - 40.f);
+                        break;
+                    }
+                    case BOSS_DRAGON:
+                    case BOSS_SPECTRAL_ALPHA: {
+                        // Sala del tesoro: pilastri intatti + casse + cumuli (feature tesori)
+                        drawPillar(wallThickness + 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 90.f);
+                        drawPillar(WINDOW_WIDTH - wallThickness - 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 90.f);
+                        drawPillar(wallThickness + 60.f, playTop + wallThickness + 50.f, 70.f);
+                        drawPillar(WINDOW_WIDTH - wallThickness - 60.f, playTop + wallThickness + 50.f, 70.f);
+                        drawCrate(wallThickness + 100.f, playTop + playH * 0.5f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 100.f, playTop + playH * 0.5f);
+                        drawCrate(wallThickness + 80.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 80.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        break;
+                    }
+                    case BOSS_WRAITH_LORD:
+                    case BOSS_TWILIGHT_KNIGHT: {
+                        // Cripta spettrale: stendardi appesi + candelabri da parete + catene
+                        drawBanner(wallThickness + 30.f, playTop + wallThickness + 30.f, 60.f, sf::Color(80, 60, 120));
+                        drawBanner(WINDOW_WIDTH - wallThickness - 30.f, playTop + wallThickness + 30.f, 60.f, sf::Color(80, 60, 120));
+                        drawBanner(wallThickness + 30.f, WINDOW_HEIGHT - wallThickness - 80.f, 50.f, sf::Color(60, 80, 120));
+                        drawBanner(WINDOW_WIDTH - wallThickness - 30.f, WINDOW_HEIGHT - wallThickness - 80.f, 50.f, sf::Color(60, 80, 120));
+                        drawWallCandle(wallThickness + 5.f, playTop + playH * 0.3f);
+                        drawWallCandle(WINDOW_WIDTH - wallThickness - 15.f, playTop + playH * 0.7f);
+                        drawWallCandle(wallThickness + 5.f, WINDOW_HEIGHT - wallThickness - 80.f);
+                        drawWallCandle(WINDOW_WIDTH - wallThickness - 15.f, playTop + playH * 0.3f);
+                        drawHangingChain(WINDOW_WIDTH * 0.25f, playTop + wallThickness, 25.f);
+                        drawHangingChain(WINDOW_WIDTH * 0.75f, playTop + wallThickness, 25.f);
+                        break;
+                    }
+                    case BOSS_VAMPIRE: {
+                        // Cripta gotica: bara (feature) + stendardi rossi + candelabri
+                        drawBanner(wallThickness + 30.f, playTop + wallThickness + 40.f, 70.f, sf::Color(120, 20, 30));
+                        drawBanner(WINDOW_WIDTH - wallThickness - 30.f, playTop + wallThickness + 40.f, 70.f, sf::Color(120, 20, 30));
+                        drawWallCandle(wallThickness + 5.f, playTop + playH * 0.25f);
+                        drawWallCandle(WINDOW_WIDTH - wallThickness - 15.f, playTop + playH * 0.25f);
+                        drawWallCandle(wallThickness + 5.f, playTop + playH * 0.75f);
+                        drawWallCandle(WINDOW_WIDTH - wallThickness - 15.f, playTop + playH * 0.75f);
+                        drawHangingChain(WINDOW_WIDTH * 0.5f, playTop + wallThickness, 30.f);
+                        drawHangingChain(WINDOW_WIDTH * 0.5f, WINDOW_HEIGHT - wallThickness - 30.f, 24.f);
+                        break;
+                    }
+                    case BOSS_BEHOLDER:
+                    case BOSS_SUPREME_WITCH: {
+                        // Torre arcana: pilastri + altari + cristalli magici (cumuli)
+                        drawPillar(wallThickness + 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
+                        drawPillar(WINDOW_WIDTH - wallThickness - 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
+                        drawAltar(wallThickness + 80.f, playTop + playH * 0.5f);
+                        drawAltar(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.5f);
+                        drawRubblePile(wallThickness + 50.f, playTop + wallThickness + 50.f);
+                        drawRubblePile(WINDOW_WIDTH - wallThickness - 50.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        drawBrazier(wallThickness + 30.f, playTop + wallThickness + 30.f);
+                        drawBrazier(WINDOW_WIDTH - wallThickness - 30.f, WINDOW_HEIGHT - wallThickness - 30.f);
+                        break;
+                    }
+                    case BOSS_COLOSSAL_MIMIC: {
+                        // Sala del tesoro dorata: casse ovunque + forziere gigante (feature)
+                        drawCrate(wallThickness + 80.f, playTop + playH * 0.3f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.3f);
+                        drawCrate(wallThickness + 80.f, playTop + playH * 0.7f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.7f);
+                        drawCrate(wallThickness + 100.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        drawCrate(WINDOW_WIDTH - wallThickness - 100.f, WINDOW_HEIGHT - wallThickness - 50.f);
+                        drawPillar(wallThickness + 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 60.f);
+                        drawPillar(WINDOW_WIDTH - wallThickness - 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 60.f);
+                        break;
+                    }
+                }
+            }
 
             // --- Elemento "feature" unico per tipo di boss (D&D-style) ---
             // Ogni tipo di boss ha un elemento decorativo caratteristico che

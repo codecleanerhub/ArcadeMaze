@@ -7,8 +7,9 @@
 // Esistono 17 tipi di boss (10 originali + 7 aggiunti per allineamento
 // totale col bestiary fantasy horror). Il livello 1 corrisponde al tipo
 // 0 (GOLEM), il livello 17 al tipo 16 (TWILIGHT_KNIGHT). In modalita'
-// story i livelli sono STORY_LEVELS_COUNT (30) -> si cicla sui 17 tipi;
-// in modalita' infinite si continua oltre e si riutilizzano i tipi.
+// story i livelli sono STORY_LEVELS_COUNT (34 = 17 x 2): ogni boss appare
+// due volte, con difficolta' crescente grazie allo scaling HP/velocita'
+// basato sul livello. In modalita' infinite si continua oltre i 34.
 //
 // Comportamento:
 //   * Il boss si muove diagonalmente nella stanza rimbalzando sui bordi.

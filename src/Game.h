@@ -42,10 +42,12 @@ enum GameMode { MODE_STORY, MODE_INFINITE };
 
 // Numero di livelli della modalita' STORY. Quando currentLevel supera
 // questo valore (dopo aver sconfitto il boss dell'ultimo livello), si
-// passa a STATE_WIN_STORY. I tipi di boss (17) e le palette labirinto (8)
-// ciclano tramite modulo, quindi e' sicuro aumentare questo numero senza
-// altre modifiche: il gioco continuera' a generare livelli coerenti.
-constexpr int STORY_LEVELS_COUNT = 30;
+// passa a STATE_WIN_STORY. Poiche' ci sono 17 tipi di boss distinti,
+// STORY_LEVELS_COUNT e' fissato a 34 (17 boss x 2 cicli): ogni tipo di
+// boss appare due volte nella modalita' story, con difficolta' crescente
+// (il secondo ciclo ha HP/velocita' maggiori grazie allo scaling gia'
+// presente in Boss::Boss per livello).
+constexpr int STORY_LEVELS_COUNT = 34;
 
 // Arma casuale da posizionare nella stanza del boss: il giocatore puo'
 // raccoglierla per rimpiazzare la sua (le munizioni del boss sono 5).
