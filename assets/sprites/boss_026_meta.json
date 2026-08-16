@@ -2,8 +2,8 @@
   "image": "boss_026_sheet.png",
   "frameWidth": 64,
   "frameHeight": 64,
-  "columns": 1,
-  "rows": 1,
+  "columns": 3,
+  "rows": 4,
   "anchor": {
     "x": 32,
     "y": 56
@@ -11,22 +11,22 @@
   "animations": {
     "idle": {
       "row": 0,
-      "frames": 1,
+      "frames": 3,
       "frameDuration": 200
     },
     "walk": {
-      "row": 0,
-      "frames": 1,
+      "row": 1,
+      "frames": 3,
       "frameDuration": 100
     },
     "attack": {
-      "row": 0,
-      "frames": 1,
+      "row": 2,
+      "frames": 3,
       "frameDuration": 100
     },
     "death": {
-      "row": 0,
-      "frames": 1,
+      "row": 3,
+      "frames": 3,
       "frameDuration": 120
     }
   }
