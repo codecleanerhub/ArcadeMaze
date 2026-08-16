@@ -239,15 +239,19 @@ void Boss::render(sf::RenderTarget& target) const {
             float drawX = px;
             float drawY = py - size * 0.25f;
             it->second.render(target, animName, frame, drawX, drawY, scale, false);
-            // Barra HP sopra la testa, ben distante dallo sprite (size/2 + 20)
-            float barY = py - size/2 - 20;
+            // Barra HP sopra la testa, ben distante dallo sprite.
+            // Lo sprite 64x64 con anchor (32,56) scalato di size/64 ha il top a:
+            //   drawY - 56*scale = py - size*0.25 - 56*(size/64) = py - size*1.125
+            // Quindi la barra deve essere a py - size*1.125 - 15 (15px sopra il top)
+            float spriteTop = py - size * 1.125f;
+            float barY = spriteTop - 18.f;
             // Sfondo barra (scuro con bordo)
             sf::RectangleShape hbBg(sf::Vector2f(size, 12.0f));
             hbBg.setFillColor(sf::Color(30, 0, 0));
             hbBg.setOutlineThickness(2.f);
             hbBg.setOutlineColor(sf::Color(100, 0, 0));
             hbBg.setPosition(px - size/2, barY); target.draw(hbBg);
-            // Barra HP (rossa, sfumata gialla ad alta vita)
+            // Barra HP (colore dinamico in base alla % vita)
             float hpPct = (float)health / maxHealth;
             sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
                                 (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
