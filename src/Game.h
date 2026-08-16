@@ -28,7 +28,9 @@
 // sono simbolici (non usati come indici).
 enum GameState {
     STATE_MENU,           // menu' principale
-    STATE_CONFIG_JOY,     // configurazione joystick (2 step)
+    STATE_SELECT_PLAYERS, // scelta tra 1 o 2 giocatori
+    STATE_CONFIG_JOY,     // configurazione joystick giocatore 1 (2 step)
+    STATE_CONFIG_JOY_2,   // configurazione joystick giocatore 2 (2 step)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
     STATE_BOSS,           // scontro con il boss
     STATE_LOSE,           // schermata game over
@@ -65,8 +67,11 @@ private:
     sf::RenderWindow window;
     Maze maze;
     Player player;
+    Player player2;      // Secondo giocatore (usato solo se numPlayers == 2)
     UI ui;
     AudioManager audio;
+    int numPlayers;      // 1 o 2 giocatori (impostato nel menu)
+    int selectedPlayers; // Voce di selezione dei giocatori nel menu'
 
     // Entita' di gioco. `enemies` e' un vettore perche' ogni livello ne
     // genera 5. `boss` e' un puntatore perche' viene creato/destroyato
@@ -111,8 +116,12 @@ private:
 
     // Disegna il menu' principale (sfondo stellato + luna + fulmini + opzioni).
     void drawMenu();
+    // Disegna la schermata di selezione numero di giocatori.
+    void drawSelectPlayers();
     // Disegna la schermata di configurazione joystick.
     void drawConfigJoy();
+    // Disegna la schermata di configurazione joystick per il giocatore 2.
+    void drawConfigJoy2();
     // Genera un fuoco d'artificio esploso in posizione casuale.
     void spawnFirework();
 };

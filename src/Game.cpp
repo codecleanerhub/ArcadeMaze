@@ -35,8 +35,8 @@
 // dichiarazione dei membri in Game.h, altrimenti g++ emette -Wreorder.
 // Ordine dichiarazione: window, boss, state, gameMode, isRunning,
 // currentLevel, selectedModeIndex, menuItemIndex, musicEnabled,
-// lightningTimer, configJoyStep.
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0) {
+// lightningTimer, configJoyStep, numPlayers, selectedPlayers.
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), numPlayers(1), selectedPlayers(0) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -60,6 +60,11 @@ void Game::startLevel(int lvl) {
     currentLevel = lvl;
     maze.generate();
     player.resetPosition();
+    if (numPlayers == 2) {
+        player2.resetPosition();
+        // Posiziona il secondo giocatore a una distanza dal primo
+        player2.setPosition(player.getPixelPos().x + 60.f, player.getPixelPos().y + 60.f);
+    }
     spawnEnemies();
     enemyProjectiles.clear();
     state = STATE_PLAYING;
@@ -111,6 +116,11 @@ void Game::startBossFight() {
     player.resetPosition();
     // Posiziona il giocatore in fondo alla stanza (centro orizzontale)
     player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
+    if (numPlayers == 2) {
+        player2.resetPosition();
+        // Posiziona player2 accanto al player
+        player2.setPosition(WINDOW_WIDTH / 2.0f + 80.0f, WINDOW_HEIGHT - 100.0f);
+    }
     bossProjectiles.clear();
     enemyProjectiles.clear();
     spawnBossRoomWeapons();
@@ -180,31 +190,33 @@ void Game::handleEvents() {
             int key = event.key.code;
             // ESC: comportamento dipendente dallo stato
             if (key == sf::Keyboard::Escape) {
-                if (state == STATE_CONFIG_JOY) state = STATE_MENU;
+                if (state == STATE_CONFIG_JOY || state == STATE_CONFIG_JOY_2) state = STATE_MENU;
                 else if (state == STATE_MENU) isRunning = false;
                 else { state = STATE_MENU; currentLevel = 1; }
             }
 
             // Navigazione menu'
             if (state == STATE_MENU) {
-                // Su/Giu: cambio voce selezionata (5 voci totali, wrap con +5 %5)
-                if (key == sf::Keyboard::Up) menuItemIndex = (menuItemIndex - 1 + 5) % 5;
-                else if (key == sf::Keyboard::Down) menuItemIndex = (menuItemIndex + 1) % 5;
+                // Su/Giu: cambio voce selezionata (6 voci totali, wrap con +6 %6)
+                if (key == sf::Keyboard::Up) menuItemIndex = (menuItemIndex - 1 + 6) % 6;
+                else if (key == sf::Keyboard::Down) menuItemIndex = (menuItemIndex + 1) % 6;
                 // Sinistra/Destra: modifica dell'opzione selezionata
                 else if (key == sf::Keyboard::Left) {
-                    if (menuItemIndex == 0) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
-                    if (menuItemIndex == 1) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
-                    if (menuItemIndex == 2) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+                    if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
+                    if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
+                    if (menuItemIndex == 2) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
+                    if (menuItemIndex == 3) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
                 }
                 else if (key == sf::Keyboard::Right) {
-                    if (menuItemIndex == 0) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
-                    if (menuItemIndex == 1) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
-                    if (menuItemIndex == 2) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+                    if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
+                    if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
+                    if (menuItemIndex == 2) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
+                    if (menuItemIndex == 3) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
                 }
-                // Return: conferma (solo voci 3 = config joystick, 4 = avvia partita)
+                // Return: conferma (voci 4 = config joystick, 5 = avvia partita)
                 else if (key == sf::Keyboard::Return) {
-                    if (menuItemIndex == 3) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 4) {
+                    if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 5) {
                         // Applica la risoluzione selezionata e avvia il livello 1
                         sf::VideoMode mode = displayModes[selectedModeIndex];
                         window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
@@ -231,8 +243,8 @@ void Game::handleEvents() {
                 // Cast a unsigned: event.joystickButton.button e' unsigned int,
                 // config.joy_jump e' int (perche' letto da file INI come intero).
                 if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
-                    if (menuItemIndex == 3) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 4) {
+                    if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 5) {
                         sf::VideoMode mode = displayModes[selectedModeIndex];
                         window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
                         window.setFramerateLimit(60);
@@ -247,6 +259,15 @@ void Game::handleEvents() {
                 //   step 0: cattura pulsante per salto
                 //   step 1: cattura pulsante per sparo, poi torna al menu'
                 if (event.joystickButton.joystickId == 0) {
+                    if (configJoyStep == 0) { config.joy_jump = event.joystickButton.button; configJoyStep = 1; }
+                    else if (configJoyStep == 1) { config.joy_shoot = event.joystickButton.button; 
+                        if (numPlayers == 2) state = STATE_CONFIG_JOY_2; 
+                        else state = STATE_MENU; 
+                    }
+                }
+            } else if (state == STATE_CONFIG_JOY_2) {
+                // Configurazione joystick secondo giocatore a 2 step
+                if (event.joystickButton.joystickId == 1) {
                     if (configJoyStep == 0) { config.joy_jump = event.joystickButton.button; configJoyStep = 1; }
                     else if (configJoyStep == 1) { config.joy_shoot = event.joystickButton.button; state = STATE_MENU; }
                 }
@@ -285,8 +306,8 @@ void Game::update() {
             static bool joyMoved = false;
             if (fabs(y) > 50 && !joyMoved) {
                 joyMoved = true;
-                if (y < 0) menuItemIndex = (menuItemIndex - 1 + 5) % 5;
-                else menuItemIndex = (menuItemIndex + 1) % 5;
+                if (y < 0) menuItemIndex = (menuItemIndex - 1 + 6) % 6;
+                else menuItemIndex = (menuItemIndex + 1) % 6;
             } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
         }
 
@@ -342,11 +363,40 @@ void Game::update() {
         if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_jump)) player.activateJump();
     }
 
+    // --- Input secondo giocatore (solo in modalita' 2 giocatori) ---
+    if ((state == STATE_PLAYING || state == STATE_BOSS) && numPlayers == 2) {
+        // Joystick 1 (secondo giocatore usa il joystick 1)
+        if (sf::Joystick::isConnected(1)) {
+            float x = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy_axis_x);
+            float y = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy_axis_y);
+            if (fabs(x) > 30 || fabs(y) > 30) {
+                if (fabs(x) > fabs(y)) {
+                    if (x > 30) { player2.setDirection(1, 0); }
+                    else if (x < -30) { player2.setDirection(-1, 0); }
+                } else {
+                    if (y > 30) { player2.setDirection(0, 1); }
+                    else if (y < -30) { player2.setDirection(0, -1); }
+                }
+            }
+            // Sparo joystick: cooldown 150 ms (~9 frame)
+            if (sf::Joystick::isButtonPressed(1, config.joy_shoot)) {
+                if (player2.getShootCooldown() == 0) {
+                    int ammoBefore = player2.getCurrentWeapon().ammo;
+                    player2.shoot();
+                    if (player2.getCurrentWeapon().ammo < ammoBefore) audio.playSound(getWeaponSound(player2.getCurrentWeapon().type));
+                    player2.setShootCooldown(150);
+                }
+            }
+            if (sf::Joystick::isButtonPressed(1, config.joy_jump)) player2.activateJump();
+        }
+    }
+
     // --- Logica STATE_PLAYING: labirinto ---
     if (state == STATE_PLAYING) {
         // Tesori: rileva raccolta confrontando il conteggio prima/dopo update
         int treasuresBefore = maze.getRemainingTreasures();
         player.update(maze, false, particles);
+        if (numPlayers == 2) player2.update(maze, false, particles);
         if (maze.getRemainingTreasures() < treasuresBefore) audio.playSound(SOUND_TREASURE);
 
         // Aggiornamento nemici (passa pos giocatore per AI + sparo)
@@ -425,14 +475,86 @@ void Game::update() {
                 }
             }
         }
+
+        // --- Collisioni player2: proiettili vs nemici (solo se 2 giocatori) ---
+        if (numPlayers == 2) {
+            for (auto& proj : player2.getProjectiles()) {
+                if (!proj.active) continue;
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    float dx = proj.pos.x - enemy.getPixelPos().x;
+                    float dy = proj.pos.y - enemy.getPixelPos().y;
+                    if (dx*dx + dy*dy < 600) {
+                        enemy.takeDamage(proj.power);
+                        proj.active = false;
+                        if (enemy.isDead()) {
+                            player2.addScore(5000);  // Bonus per uccisione
+                            audio.playSound(SOUND_ENEMY_DEATH);
+                            for(int i=0; i<20; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(0, 150, 0), 40, 40});
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // --- Collisioni player2: proiettili nemici vs player2 ---
+            if (!player2.isInvulnerable() && !player2.isJumping()) {
+                for (auto& proj : enemyProjectiles) {
+                    if (!proj.active) continue;
+                    float dx = proj.pos.x - player2.getPixelPos().x;
+                    float dy = proj.pos.y - player2.getPixelPos().y;
+                    if (dx*dx + dy*dy < 600) {
+                        proj.active = false;
+                        int livesBefore = player2.getLives();
+                        player2.takeDamage();
+                        if (player2.getLives() < livesBefore || player2.getEnergy() < player2.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
+                    }
+                }
+            }
+
+            // --- Collisioni corpo a corpo player2 vs nemici ---
+            if (!player2.isInvulnerable() && !player2.isJumping()) {
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    sf::Vector2f pPos2 = player2.getPixelPos();
+                    float dx = pPos2.x - enemy.getPixelPos().x;
+                    float dy = pPos2.y - enemy.getPixelPos().y;
+                    if (dx*dx + dy*dy < 800) {
+                        int livesBefore = player2.getLives();
+                        player2.takeDamage();
+                        if (player2.getLives() < livesBefore || player2.getEnergy() < player2.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
+                        break;
+                    }
+                }
+            }
+
+            // --- Collisioni tra i due giocatori (danni reciproci) ---
+            if (!player.isJumping() && !player2.isJumping()) {
+                float dx = pPos.x - player2.getPixelPos().x;
+                float dy = pPos.y - player2.getPixelPos().y;
+                if (dx*dx + dy*dy < 800) {  // Soglia di contatto
+                    if (!player.isInvulnerable()) {
+                        player.takeDamage();
+                        player.addScore(1000);  // Bonus per danno reciproco
+                    }
+                    if (!player2.isInvulnerable()) {
+                        player2.takeDamage();
+                        player2.addScore(1000);  // Bonus per danno reciproco
+                    }
+                }
+            }
+        }
+
         // Transizioni di stato
-        if (player.getLives() <= 0) state = STATE_LOSE;
+        if (numPlayers == 1 && player.getLives() <= 0) state = STATE_LOSE;
+        if (numPlayers == 2 && player.getLives() <= 0 && player2.getLives() <= 0) state = STATE_LOSE;
         if (maze.getRemainingTreasures() == 0) startBossFight();
     }
     // --- Logica STATE_BOSS: stanza del boss ---
     else if (state == STATE_BOSS) {
         // freeMovement=true: il giocatore si muove liberamente (non snap-to-grid)
         player.update(maze, true, particles);
+        if (numPlayers == 2) player2.update(maze, true, particles);
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
 
         // --- Aggiornamento proiettili boss ---
@@ -479,6 +601,42 @@ void Game::update() {
             float dx = it->pos.x - player.getPixelPos().x;
             float dy = it->pos.y - player.getPixelPos().y;
             if (dx*dx + dy*dy < 1000) { player.collectWeapon(it->w); it = bossRoomWeapons.erase(it); } else ++it;
+        }
+
+        // --- Raccolta armi player2 (solo se 2 giocatori) ---
+        if (numPlayers == 2) {
+            for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
+                float dx = it->pos.x - player2.getPixelPos().x;
+                float dy = it->pos.y - player2.getPixelPos().y;
+                if (dx*dx + dy*dy < 1000) { player2.collectWeapon(it->w); it = bossRoomWeapons.erase(it); } else ++it;
+            }
+
+            // --- Collisioni player2 vs boss ---
+            for (auto& proj : player2.getProjectiles()) {
+                if (!proj.active) continue;
+                float dx = proj.pos.x - boss->getPos().x;
+                float dy = proj.pos.y - boss->getPos().y;
+                if (dx*dx + dy*dy < (boss->getSize()/2)*(boss->getSize()/2)) {
+                    boss->takeDamage(proj.power);
+                    proj.active = false;
+                    audio.playSound(SOUND_BOSS_HIT);
+                }
+            }
+
+            // --- Collisioni proiettili boss vs player2 ---
+            if (!player2.isInvulnerable() && !player2.isJumping()) {
+                for (auto& proj : bossProjectiles) {
+                    if (!proj.active) continue;
+                    float dx = proj.pos.x - player2.getPixelPos().x;
+                    float dy = proj.pos.y - player2.getPixelPos().y;
+                    if (dx*dx + dy*dy < 600) {
+                        proj.active = false;
+                        int livesBefore = player2.getLives();
+                        player2.takeDamage();
+                        if (player2.getLives() < livesBefore || player2.getEnergy() < player2.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
+                    }
+                }
+            }
         }
 
         // Se il giocatore ha finito le munizioni e non ci sono armi a terra,
@@ -624,8 +782,9 @@ void Game::drawMenu() {
     border.setOutlineColor(sf::Color(100, 80, 50));
     window.draw(border);
 
-    // Voci di menu': valori dinamici per le prime 3 (modalita'/risoluzione/musica)
+    // Voci di menu': valori dinamici per le prime 4 (giocatori/modalita'/risoluzione/musica)
     std::string items[] = {
+        "NUMBER OF PLAYERS: " + std::to_string(numPlayers),
         "GAME MODE: " + std::string(gameMode == MODE_STORY ? "STORY" : "INFINITE"),
         "RESOLUTION: " + std::to_string(displayModes[selectedModeIndex].width) + "x" + std::to_string(displayModes[selectedModeIndex].height),
         "MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"),
@@ -633,11 +792,11 @@ void Game::drawMenu() {
         "START GAME"
     };
 
-    // Disegna le 5 voci; quella selezionata e' in giallo con "> ... <"
-    for(int i=0; i<5; i++) {
+    // Disegna le 6 voci; quella selezionata e' in giallo con "> ... <"
+    for(int i=0; i<6; i++) {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, 400 + i * 80, 3, color);
+        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, 380 + i * 70, 3, color);
     }
 
     // Istruzioni in basso
@@ -651,7 +810,25 @@ void Game::drawConfigJoy() {
     bg.setFillColor(sf::Color(10, 10, 30));
     window.draw(bg);
 
-    drawTextCenteredOutlined(window, "JOYSTICK CONFIGURATION", WINDOW_WIDTH/2, 200, 4, sf::Color::White);
+    drawTextCenteredOutlined(window, "JOYSTICK CONFIGURATION - PLAYER 1", WINDOW_WIDTH/2, 200, 4, sf::Color::White);
+
+    if (configJoyStep == 0) {
+        drawTextCenteredOutlined(window, "PRESS BUTTON FOR JUMP", WINDOW_WIDTH/2, 450, 3, sf::Color::Yellow);
+    } else if (configJoyStep == 1) {
+        drawTextCenteredOutlined(window, "PRESS BUTTON FOR SHOOT", WINDOW_WIDTH/2, 450, 3, sf::Color::Yellow);
+    }
+
+    drawTextCenteredOutlined(window, "PRESS ESC TO CANCEL", WINDOW_WIDTH/2, 800, 2, sf::Color::Red);
+}
+
+// drawConfigJoy2: schermata minimale per la configurazione del secondo joystick.
+// Mostra solo un titolo e un prompt che cambia in base a configJoyStep.
+void Game::drawConfigJoy2() {
+    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+    bg.setFillColor(sf::Color(10, 10, 30));
+    window.draw(bg);
+
+    drawTextCenteredOutlined(window, "JOYSTICK CONFIGURATION - PLAYER 2", WINDOW_WIDTH/2, 200, 4, sf::Color::White);
 
     if (configJoyStep == 0) {
         drawTextCenteredOutlined(window, "PRESS BUTTON FOR JUMP", WINDOW_WIDTH/2, 450, 3, sf::Color::Yellow);
@@ -681,11 +858,15 @@ void Game::render() {
     else if (state == STATE_CONFIG_JOY) {
         drawConfigJoy();
     }
+    else if (state == STATE_CONFIG_JOY_2) {
+        drawConfigJoy2();
+    }
     else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE) {
         // Rendering comune per gameplay/schermate finali
         maze.render(window);
         ui.render(window, player, maze.getRemainingTreasures());
         player.render(window);
+        if (numPlayers == 2) player2.render(window);
         for (const auto& enemy : enemies) if (!enemy.isDead()) enemy.render(window);
 
         // Proiettili nemici: piccoli cerchi arancioni
@@ -724,6 +905,7 @@ void Game::render() {
         // Armi a terra (raccoglibili)
         for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
         player.render(window);
+        if (numPlayers == 2) player2.render(window);
         boss->render(window);
 
         // Proiettili boss: forma diversa per tipo (razzo = grande viola, altri = rosso)
