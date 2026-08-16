@@ -40,7 +40,7 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true) {
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -275,10 +275,12 @@ void Game::handleEvents() {
                     audio.playSound(SOUND_MENU_CONFIRM);
                     if (continuesChoice) {
                         // YES: continua con 3 vite, consuma 1 credito
+                        // Se morto nel boss, riparte dal boss; altrimenti dal livello
                         continuesLeft--;
                         player.reset();
                         if (numPlayers == 2) player2.reset();
-                        startLevel(currentLevel);
+                        if (diedInBoss) startBossFight();
+                        else startLevel(currentLevel);
                     } else {
                         // NO: game over
                         state = STATE_LOSE;
@@ -344,7 +346,8 @@ void Game::handleEvents() {
                             continuesLeft--;
                             player.reset();
                             if (numPlayers == 2) player2.reset();
-                            startLevel(currentLevel);
+                            if (diedInBoss) startBossFight();
+                            else startLevel(currentLevel);
                         } else {
                             state = STATE_LOSE;
                         }
@@ -677,13 +680,13 @@ void Game::update() {
         // Transizioni di stato: morte -> continues (se crediti) o lose
         if (numPlayers == 1 && player.getLives() <= 0) {
             if (continuesLeft > 0) {
-                state = STATE_CONTINUES;
+                state = STATE_CONTINUES; diedInBoss = false;
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
         }
         if (numPlayers == 2 && player.getLives() <= 0 && player2.getLives() <= 0) {
             if (continuesLeft > 0) {
-                state = STATE_CONTINUES;
+                state = STATE_CONTINUES; diedInBoss = false;
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
         }
@@ -815,7 +818,7 @@ void Game::update() {
         if (player.getLives() <= 0
             && (numPlayers == 1 || player2.getLives() <= 0)) {
             if (continuesLeft > 0) {
-                state = STATE_CONTINUES;
+                state = STATE_CONTINUES; diedInBoss = true;
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
         }

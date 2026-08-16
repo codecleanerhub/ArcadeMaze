@@ -107,6 +107,7 @@ private:
     int continuesTimer;                        // conto alla rovescia 10-0 (secondi)
     int continuesTimerMs;                      // ms residui del secondo corrente
     bool continuesChoice;                      // true = YES, false = NO
+    bool diedInBoss;                           // true se morto durante il boss
 
     // Sottometodi del ciclo principale
     void handleEvents();
