@@ -225,8 +225,8 @@ void Game::handleEvents() {
             // Navigazione menu'
             if (state == STATE_MENU) {
                 // Su/Giu: cambio voce selezionata (6 voci totali, wrap con +6 %6)
-                if (key == sf::Keyboard::Up) menuItemIndex = (menuItemIndex - 1 + 6) % 6;
-                else if (key == sf::Keyboard::Down) menuItemIndex = (menuItemIndex + 1) % 6;
+                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
                 // Sinistra/Destra: modifica dell'opzione selezionata
                 else if (key == sf::Keyboard::Left) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
@@ -242,6 +242,7 @@ void Game::handleEvents() {
                 }
                 // Return: conferma (voci 4 = config joystick, 5 = avvia partita)
                 else if (key == sf::Keyboard::Return) {
+                    audio.playSound(SOUND_MENU_CONFIRM);
                     if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
                     else if (menuItemIndex == 5) {
                         // Applica la risoluzione selezionata e avvia il livello 1
@@ -270,6 +271,7 @@ void Game::handleEvents() {
                 // Cast a unsigned: event.joystickButton.button e' unsigned int,
                 // config.joy_jump e' int (perche' letto da file INI come intero).
                 if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
+                    audio.playSound(SOUND_MENU_CONFIRM);
                     if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
                     else if (menuItemIndex == 5) {
                         sf::VideoMode mode = displayModes[selectedModeIndex];
@@ -335,8 +337,8 @@ void Game::update() {
             static bool joyMoved = false;
             if (fabs(y) > 50 && !joyMoved) {
                 joyMoved = true;
-                if (y < 0) menuItemIndex = (menuItemIndex - 1 + 6) % 6;
-                else menuItemIndex = (menuItemIndex + 1) % 6;
+                if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                else { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
             } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
         }
 
@@ -378,7 +380,11 @@ void Game::update() {
                     player.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(0, config.joy_jump)) player.activateJump();
+            if (sf::Joystick::isButtonPressed(0, (unsigned)config.joy_jump)) {
+                bool wasJumping = player.isJumping();
+                player.activateJump();
+                if (!wasJumping && player.isJumping()) audio.playSound(SOUND_JUMP);
+            }
         }
         // Sparo tastiera (stessa logica del joystick)
         if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_shoot)) {
@@ -389,7 +395,11 @@ void Game::update() {
                 player.setShootCooldown(150);
             }
         }
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_jump)) player.activateJump();
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_jump)) {
+            bool wasJumping = player.isJumping();
+            player.activateJump();
+            if (!wasJumping && player.isJumping()) audio.playSound(SOUND_JUMP);
+        }
     }
 
     // --- Input secondo giocatore (solo in modalita' 2 giocatori) ---
@@ -425,7 +435,11 @@ void Game::update() {
                     player2.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_jump)) player2.activateJump();
+            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_jump)) {
+                bool wasJumping = player2.isJumping();
+                player2.activateJump();
+                if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
+            }
         }
 
         // Sparo tastiera (tasto E di default)
@@ -438,7 +452,11 @@ void Game::update() {
             }
         }
         // Salto tastiera (tasto Q di default)
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_jump)) player2.activateJump();
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_jump)) {
+            bool wasJumping = player2.isJumping();
+            player2.activateJump();
+            if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
+        }
     }
 
     // --- Logica STATE_PLAYING: labirinto ---
