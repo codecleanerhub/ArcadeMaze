@@ -3228,56 +3228,98 @@ void Game::render() {
             }
             switch (p.bpKind) {
                 case BP_BOULDER: {
-                    // GOLEM: masso di pietra grigio con outline scuro
-                    sf::CircleShape boulder(6.f);
+                    // GOLEM: blocco di pietra squadrato con angoli smussati
+                    // (non piu' un pallino, ma un vero masso quadrato)
+                    sf::ConvexShape boulder; boulder.setPointCount(6);
                     boulder.setFillColor(sf::Color(110, 100, 85));
                     boulder.setOutlineThickness(1.f);
                     boulder.setOutlineColor(sf::Color(50, 45, 35));
-                    boulder.setPosition(px - 6.f, py - 6.f);
+                    // Esagono irregolare (masso)
+                    boulder.setPoint(0, sf::Vector2f(px - 5.f, py - 4.f));
+                    boulder.setPoint(1, sf::Vector2f(px + 5.f, py - 5.f));
+                    boulder.setPoint(2, sf::Vector2f(px + 6.f, py + 2.f));
+                    boulder.setPoint(3, sf::Vector2f(px + 4.f, py + 5.f));
+                    boulder.setPoint(4, sf::Vector2f(px - 5.f, py + 5.f));
+                    boulder.setPoint(5, sf::Vector2f(px - 6.f, py - 1.f));
                     window.draw(boulder);
-                    // Highlight
-                    sf::CircleShape bHigh(2.f);
+                    // Highlight (sfaccettatura)
+                    sf::ConvexShape bHigh; bHigh.setPointCount(3);
                     bHigh.setFillColor(sf::Color(170, 160, 140));
-                    bHigh.setPosition(px - 4.f, py - 4.f);
+                    bHigh.setPoint(0, sf::Vector2f(px - 3.f, py - 3.f));
+                    bHigh.setPoint(1, sf::Vector2f(px + 3.f, py - 3.f));
+                    bHigh.setPoint(2, sf::Vector2f(px, py));
                     window.draw(bHigh);
+                    // Crepa
+                    sf::RectangleShape crack(sf::Vector2f(0.8f, 5.f));
+                    crack.setFillColor(sf::Color(40, 35, 28));
+                    crack.setOrigin(0.4f, 2.5f);
+                    crack.setPosition(px + 1.f, py);
+                    crack.rotate(25.f);
+                    window.draw(crack);
                     break;
                 }
                 case BP_NECRO_BOLT: {
-                    // LICH: saetta necrotica verde veleno con alone
-                    sf::CircleShape necAura(7.f);
-                    necAura.setFillColor(sf::Color(80, 220, 80, 70));
-                    necAura.setPosition(px - 7.f, py - 7.f);
+                    // LICH: fulmine necrotico verde a zigzag
+                    // (non piu' un pallino, ma una vera saetta)
+                    sf::CircleShape necAura(8.f);
+                    necAura.setFillColor(sf::Color(80, 220, 80, 60));
+                    necAura.setPosition(px - 8.f, py - 8.f);
                     window.draw(necAura);
-                    sf::CircleShape bolt(3.5f);
+                    // Fulmine zigzag: 4 segmenti collegati a forma di ConvexShape
+                    sf::ConvexShape bolt; bolt.setPointCount(8);
                     bolt.setFillColor(sf::Color(120, 255, 120));
-                    bolt.setOutlineThickness(0.8f);
+                    bolt.setOutlineThickness(0.6f);
                     bolt.setOutlineColor(sf::Color(40, 120, 40));
-                    bolt.setPosition(px - 3.5f, py - 3.5f);
+                    // Forma a saetta: parte larga in alto, zigzag, punta in basso
+                    bolt.setPoint(0, sf::Vector2f(px - 1.5f, py - 6.f));
+                    bolt.setPoint(1, sf::Vector2f(px + 1.5f, py - 6.f));
+                    bolt.setPoint(2, sf::Vector2f(px + 3.f,  py - 2.f));
+                    bolt.setPoint(3, sf::Vector2f(px + 1.f,  py - 1.f));
+                    bolt.setPoint(4, sf::Vector2f(px + 3.f,  py + 2.f));
+                    bolt.setPoint(5, sf::Vector2f(px + 1.5f, py + 6.f));
+                    bolt.setPoint(6, sf::Vector2f(px - 1.5f, py + 6.f));
+                    bolt.setPoint(7, sf::Vector2f(px - 1.f,  py + 2.f));
+                    // (i punti formano un fulmine stilizzato)
                     window.draw(bolt);
-                    // Scintilla centrale
+                    // Scintilla centrale bianca
                     sf::CircleShape spark(1.f);
-                    spark.setFillColor(sf::Color(220, 255, 220));
+                    spark.setFillColor(sf::Color(240, 255, 240));
                     spark.setPosition(px - 1.f, py - 1.f);
                     window.draw(spark);
                     break;
                 }
                 case BP_FIREBALL: {
-                    // DEMON: palla di fuoco arancione animata (pulsazione)
+                    // DEMON: palla di fuoco con lingue di fiamma
+                    // (non piu' un pallino, ma una sfera con 4 fiamme che si alzano)
                     float pulse = sin(p.age * 0.02f) * 0.8f;
                     sf::CircleShape fAura(7.f + pulse);
                     fAura.setFillColor(sf::Color(255, 100, 30, 80));
                     fAura.setPosition(px - 7.f - pulse, py - 7.f - pulse);
                     window.draw(fAura);
-                    sf::CircleShape fb(4.f);
+                    // 4 lingue di fiamma che si alzano (triangoli animati)
+                    for (int i = 0; i < 4; i++) {
+                        float ang = i * (float)M_PI / 2.f + p.age * 0.005f;
+                        float flameLen = 4.f + sin(p.age * 0.025f + i) * 1.5f;
+                        sf::ConvexShape flame; flame.setPointCount(3);
+                        flame.setFillColor(sf::Color(255, 140, 30, 200));
+                        // Triangolo che parte dal centro verso l'esterno
+                        flame.setPoint(0, sf::Vector2f(px + cos(ang) * 3.f, py + sin(ang) * 3.f));
+                        flame.setPoint(1, sf::Vector2f(px + cos(ang + 0.3f) * 1.5f, py + sin(ang + 0.3f) * 1.5f));
+                        flame.setPoint(2, sf::Vector2f(px + cos(ang) * (3.f + flameLen),
+                                                         py + sin(ang) * (3.f + flameLen)));
+                        window.draw(flame);
+                    }
+                    // Nucleo centrale (sfera di fuoco)
+                    sf::CircleShape fb(3.f);
                     fb.setFillColor(sf::Color(255, 160, 40));
-                    fb.setOutlineThickness(0.8f);
+                    fb.setOutlineThickness(0.6f);
                     fb.setOutlineColor(sf::Color(180, 60, 10));
-                    fb.setPosition(px - 4.f, py - 4.f);
+                    fb.setPosition(px - 3.f, py - 3.f);
                     window.draw(fb);
                     // Nucleo giallo
-                    sf::CircleShape fCore(2.f);
+                    sf::CircleShape fCore(1.5f);
                     fCore.setFillColor(sf::Color(255, 240, 150));
-                    fCore.setPosition(px - 2.f, py - 2.f);
+                    fCore.setPosition(px - 1.5f, py - 1.5f);
                     window.draw(fCore);
                     break;
                 }
@@ -3322,66 +3364,151 @@ void Game::render() {
                     break;
                 }
                 case BP_INK_SPRAY: {
-                    // KRAKEN: getto d'inchiostro viola scuro
-                    sf::CircleShape ink(4.f);
-                    ink.setFillColor(sf::Color(60, 20, 80));
-                    ink.setOutlineThickness(0.8f);
-                    ink.setOutlineColor(sf::Color(20, 5, 30));
-                    ink.setPosition(px - 4.f, py - 4.f);
-                    window.draw(ink);
-                    // Macchia più chiara al centro
-                    sf::CircleShape inkCore(2.f);
+                    // KRAKEN: catena di gocce d'inchiostro viola
+                    // (non piu' un pallino, ma una sequenza di 3 gocce)
+                    // Aura
+                    sf::CircleShape inkAura(7.f);
+                    inkAura.setFillColor(sf::Color(80, 30, 110, 70));
+                    inkAura.setPosition(px - 7.f, py - 7.f);
+                    window.draw(inkAura);
+                    // Calcola angolo di volo per allineare la catena
+                    float inkAng = atan2(p.dir.y, p.dir.x) * 180.f / (float)M_PI;
+                    // 3 gocce di inchiostro disposte lungo la direzione di volo
+                    for (int i = 0; i < 3; i++) {
+                        float t = (i - 1.f) * 3.f;  // offset lungo la direzione
+                        float dx = cos(inkAng * (float)M_PI / 180.f) * t;
+                        float dy = sin(inkAng * (float)M_PI / 180.f) * t;
+                        sf::CircleShape drop(2.5f - i * 0.4f);
+                        drop.setFillColor(sf::Color(60, 20, 80));
+                        drop.setOutlineThickness(0.5f);
+                        drop.setOutlineColor(sf::Color(20, 5, 30));
+                        drop.setPosition(px + dx - 2.5f + i * 0.4f, py + dy - 2.5f + i * 0.4f);
+                        window.draw(drop);
+                    }
+                    // Goccia centrale più chiara
+                    sf::CircleShape inkCore(1.5f);
                     inkCore.setFillColor(sf::Color(120, 60, 150));
-                    inkCore.setPosition(px - 2.f, py - 2.f);
+                    inkCore.setPosition(px - 1.5f, py - 1.5f);
                     window.draw(inkCore);
                     break;
                 }
                 case BP_DRAGON_BREATH: {
-                    // DRAGON: piccolo soffio di fuoco giallo-arancio veloce
+                    // DRAGON: cono di fuoco (non piu' un pallino, ma un piccolo
+                    // soffio conico rivolto nella direzione di volo)
                     float pulse = sin(p.age * 0.025f) * 0.5f;
-                    sf::CircleShape bAura(5.f + pulse);
+                    sf::CircleShape bAura(6.f + pulse);
                     bAura.setFillColor(sf::Color(255, 200, 80, 100));
-                    bAura.setPosition(px - 5.f - pulse, py - 5.f - pulse);
+                    bAura.setPosition(px - 6.f - pulse, py - 6.f - pulse);
                     window.draw(bAura);
-                    sf::CircleShape breath(3.f);
-                    breath.setFillColor(sf::Color(255, 180, 60));
-                    breath.setOutlineThickness(0.5f);
-                    breath.setOutlineColor(sf::Color(200, 80, 20));
-                    breath.setPosition(px - 3.f, py - 3.f);
-                    window.draw(breath);
+                    // Cono: ConvexShape triangolare allungato nella direzione di volo
+                    float bAng = atan2(p.dir.y, p.dir.x) * 180.f / (float)M_PI;
+                    float perpX = -sin(bAng * (float)M_PI / 180.f);
+                    float perpY = cos(bAng * (float)M_PI / 180.f);
+                    sf::ConvexShape cone; cone.setPointCount(3);
+                    cone.setFillColor(sf::Color(255, 180, 60));
+                    cone.setOutlineThickness(0.5f);
+                    cone.setOutlineColor(sf::Color(200, 80, 20));
+                    // Punta in avanti, base larga dietro
+                    cone.setPoint(0, sf::Vector2f(px + cos(bAng * (float)M_PI / 180.f) * 5.f,
+                                                   py + sin(bAng * (float)M_PI / 180.f) * 5.f));
+                    cone.setPoint(1, sf::Vector2f(px - cos(bAng * (float)M_PI / 180.f) * 2.f + perpX * 3.f,
+                                                   py - sin(bAng * (float)M_PI / 180.f) * 2.f + perpY * 3.f));
+                    cone.setPoint(2, sf::Vector2f(px - cos(bAng * (float)M_PI / 180.f) * 2.f - perpX * 3.f,
+                                                   py - sin(bAng * (float)M_PI / 180.f) * 2.f - perpY * 3.f));
+                    window.draw(cone);
+                    // Nucleo giallo centrale
+                    sf::CircleShape core(1.5f);
+                    core.setFillColor(sf::Color(255, 240, 150));
+                    core.setPosition(px - 1.5f, py - 1.5f);
+                    window.draw(core);
                     break;
                 }
                 case BP_GHOST_BOLT: {
-                    // WRAITH_LORD: saetta spettrale ciano con aura
-                    sf::CircleShape gAura(7.f);
-                    gAura.setFillColor(sf::Color(120, 220, 255, 80));
-                    gAura.setPosition(px - 7.f, py - 7.f);
+                    // WRAITH_LORD: piccolo fantasma svolazzante ciano
+                    // (non piu' un pallino, ma un fantasma con testa + corpo ondulato)
+                    sf::CircleShape gAura(8.f);
+                    gAura.setFillColor(sf::Color(120, 220, 255, 70));
+                    gAura.setPosition(px - 8.f, py - 8.f);
                     window.draw(gAura);
-                    sf::CircleShape bolt(3.5f);
-                    bolt.setFillColor(sf::Color(180, 240, 255));
-                    bolt.setOutlineThickness(0.8f);
-                    bolt.setOutlineColor(sf::Color(60, 120, 180));
-                    bolt.setPosition(px - 3.5f, py - 3.5f);
-                    window.draw(bolt);
+                    // Testa del fantasma (semicerchio)
+                    sf::CircleShape head(3.f, 8);  // 8 segmenti
+                    head.setFillColor(sf::Color(180, 240, 255, 220));
+                    head.setOutlineThickness(0.5f);
+                    head.setOutlineColor(sf::Color(60, 120, 180));
+                    head.setPosition(px - 3.f, py - 4.f);
+                    window.draw(head);
+                    // Corpo: rettangolo con bordo inferiore ondulato (3 punte)
+                    sf::ConvexShape body; body.setPointCount(6);
+                    body.setFillColor(sf::Color(180, 240, 255, 200));
+                    body.setOutlineThickness(0.5f);
+                    body.setOutlineColor(sf::Color(60, 120, 180));
+                    body.setPoint(0, sf::Vector2f(px - 3.f, py - 1.f));
+                    body.setPoint(1, sf::Vector2f(px + 3.f, py - 1.f));
+                    body.setPoint(2, sf::Vector2f(px + 3.f, py + 4.f));
+                    body.setPoint(3, sf::Vector2f(px + 1.f, py + 6.f));
+                    body.setPoint(4, sf::Vector2f(px,     py + 4.f));
+                    body.setPoint(5, sf::Vector2f(px - 1.f, py + 6.f));
+                    // Nota: il 6° punto chiude tornando al 1° (px-3, py-1)
+                    // Inseriamo l'ultimo punto inferiore sx
+                    body.setPoint(5, sf::Vector2f(px - 3.f, py + 4.f));
+                    window.draw(body);
+                    // Occhi neri
+                    sf::CircleShape eye(0.6f);
+                    eye.setFillColor(sf::Color(20, 20, 40));
+                    eye.setPosition(px - 1.6f, py - 2.f);
+                    window.draw(eye);
+                    eye.setPosition(px + 0.6f, py - 2.f);
+                    window.draw(eye);
                     break;
                 }
                 case BP_BLOOD_BOLT: {
-                    // VAMPIRE: dardo di sangue rosso scuro
-                    sf::CircleShape bAura(6.f);
-                    bAura.setFillColor(sf::Color(180, 20, 30, 90));
-                    bAura.setPosition(px - 6.f, py - 6.f);
+                    // VAMPIRE: freccia/dardo di sangue appuntito
+                    // (non piu' un pallino, ma una freccia ruotata nella direzione di volo)
+                    sf::CircleShape bAura(7.f);
+                    bAura.setFillColor(sf::Color(180, 20, 30, 80));
+                    bAura.setPosition(px - 7.f, py - 7.f);
                     window.draw(bAura);
-                    sf::CircleShape bolt(4.f);
-                    bolt.setFillColor(sf::Color(200, 30, 40));
-                    bolt.setOutlineThickness(0.8f);
-                    bolt.setOutlineColor(sf::Color(100, 10, 20));
-                    bolt.setPosition(px - 4.f, py - 4.f);
-                    window.draw(bolt);
-                    // Nucleo più scuro
-                    sf::CircleShape bCore(1.5f);
-                    bCore.setFillColor(sf::Color(120, 10, 20));
-                    bCore.setPosition(px - 1.5f, py - 1.5f);
-                    window.draw(bCore);
+                    // Calcola angolo di volo
+                    float bAng = atan2(p.dir.y, p.dir.x) * 180.f / (float)M_PI;
+                    // Asta della freccia (rettangolo allungato)
+                    sf::RectangleShape shaft(sf::Vector2f(8.f, 1.5f));
+                    shaft.setFillColor(sf::Color(180, 30, 40));
+                    shaft.setOutlineThickness(0.4f);
+                    shaft.setOutlineColor(sf::Color(100, 10, 20));
+                    shaft.setOrigin(2.f, 0.75f);  // origine verso la coda
+                    shaft.setPosition(px, py);
+                    shaft.rotate(bAng);
+                    window.draw(shaft);
+                    // Punta della freccia (triangolo)
+                    sf::ConvexShape head; head.setPointCount(3);
+                    head.setFillColor(sf::Color(220, 50, 60));
+                    head.setOutlineThickness(0.4f);
+                    head.setOutlineColor(sf::Color(100, 10, 20));
+                    // Punta davanti all'asta
+                    float hx = px + cos(bAng * (float)M_PI / 180.f) * 4.f;
+                    float hy = py + sin(bAng * (float)M_PI / 180.f) * 4.f;
+                    float perpX = -sin(bAng * (float)M_PI / 180.f);
+                    float perpY = cos(bAng * (float)M_PI / 180.f);
+                    head.setPoint(0, sf::Vector2f(hx, hy));  // punta
+                    head.setPoint(1, sf::Vector2f(hx - cos(bAng * (float)M_PI / 180.f) * 3.f + perpX * 2.f,
+                                                  hy - sin(bAng * (float)M_PI / 180.f) * 3.f + perpY * 2.f));
+                    head.setPoint(2, sf::Vector2f(hx - cos(bAng * (float)M_PI / 180.f) * 3.f - perpX * 2.f,
+                                                  hy - sin(bAng * (float)M_PI / 180.f) * 3.f - perpY * 2.f));
+                    window.draw(head);
+                    // Piume della coda (2 piccoli triangoli)
+                    for (int side = 0; side < 2; side++) {
+                        float s = (side == 0) ? 1.f : -1.f;
+                        sf::ConvexShape fletch; fletch.setPointCount(3);
+                        fletch.setFillColor(sf::Color(140, 20, 30));
+                        float tx = px - cos(bAng * (float)M_PI / 180.f) * 3.f;
+                        float ty = py - sin(bAng * (float)M_PI / 180.f) * 3.f;
+                        fletch.setPoint(0, sf::Vector2f(tx, ty));
+                        fletch.setPoint(1, sf::Vector2f(tx - cos(bAng * (float)M_PI / 180.f) * 2.f + perpX * s * 2.f,
+                                                        ty - sin(bAng * (float)M_PI / 180.f) * 2.f + perpY * s * 2.f));
+                        fletch.setPoint(2, sf::Vector2f(tx - cos(bAng * (float)M_PI / 180.f) * 4.f,
+                                                        ty - sin(bAng * (float)M_PI / 180.f) * 4.f));
+                        window.draw(fletch);
+                    }
                     break;
                 }
                 case BP_EYE_RAY: {
@@ -3440,23 +3567,42 @@ void Game::render() {
                     break;
                 }
                 case BP_CULT_ORB: {
-                    // CULT_HERALD: sfera magica viola pulsante
+                    // CULT_HERALD: libro magico volante con pagine
+                    // (non piu' un pallino, ma un piccolo tomo aperto)
                     float pulse = sin(p.age * 0.02f) * 0.6f;
                     sf::CircleShape oAura(7.f + pulse);
-                    oAura.setFillColor(sf::Color(180, 60, 220, 80));
+                    oAura.setFillColor(sf::Color(180, 60, 220, 70));
                     oAura.setPosition(px - 7.f - pulse, py - 7.f - pulse);
                     window.draw(oAura);
-                    sf::CircleShape orb(4.f);
-                    orb.setFillColor(sf::Color(220, 100, 240));
-                    orb.setOutlineThickness(0.8f);
-                    orb.setOutlineColor(sf::Color(100, 30, 130));
-                    orb.setPosition(px - 4.f, py - 4.f);
-                    window.draw(orb);
-                    // Nucleo bianco
-                    sf::CircleShape oCore(1.5f);
-                    oCore.setFillColor(sf::Color(255, 220, 255));
-                    oCore.setPosition(px - 1.5f, py - 1.5f);
-                    window.draw(oCore);
+                    // Copertina del libro (rettangolo viola scuro)
+                    sf::RectangleShape book(sf::Vector2f(8.f, 6.f));
+                    book.setFillColor(sf::Color(100, 40, 130));
+                    book.setOutlineThickness(0.6f);
+                    book.setOutlineColor(sf::Color(50, 20, 70));
+                    book.setOrigin(4.f, 3.f);
+                    book.setPosition(px, py);
+                    // Ruota leggermente il libro (effetto "fluttuante")
+                    book.rotate(sin(p.age * 0.015f) * 15.f);
+                    window.draw(book);
+                    // Pagine (striscia chiara centrale)
+                    sf::RectangleShape pages(sf::Vector2f(6.f, 4.f));
+                    pages.setFillColor(sf::Color(240, 220, 240));
+                    pages.setOrigin(3.f, 2.f);
+                    pages.setPosition(px, py);
+                    pages.rotate(sin(p.age * 0.015f) * 15.f);
+                    window.draw(pages);
+                    // Simbolo magico sul libro (punto dorato)
+                    sf::CircleShape sym(1.f);
+                    sym.setFillColor(sf::Color(255, 215, 0));
+                    sym.setPosition(px - 1.f, py - 1.f);
+                    window.draw(sym);
+                    // Linea di rilegatura
+                    sf::RectangleShape spine(sf::Vector2f(0.5f, 6.f));
+                    spine.setFillColor(sf::Color(60, 25, 80));
+                    spine.setOrigin(0.25f, 3.f);
+                    spine.setPosition(px, py);
+                    spine.rotate(sin(p.age * 0.015f) * 15.f);
+                    window.draw(spine);
                     break;
                 }
                 case BP_MIMIC_GOO: {
@@ -3495,7 +3641,8 @@ void Game::render() {
                     break;
                 }
                 case BP_WITCH_HEX: {
-                    // SUPREME_WITCH: maledizione viola con simbolo runico
+                    // SUPREME_WITCH: piccolo calderone ribollente viola
+                    // (non piu' un pallino, ma un calderone con bolle animate)
                     float pulse = sin(p.age * 0.018f) * 0.7f;
                     // Aura estesa se homing (chiazza più grande)
                     float auraR = (p.homingTimer > 0) ? 10.f : 7.f;
@@ -3503,20 +3650,39 @@ void Game::render() {
                     hAura.setFillColor(sf::Color(180, 60, 240, 90));
                     hAura.setPosition(px - auraR - pulse, py - auraR - pulse);
                     window.draw(hAura);
-                    // Sfera viola
-                    sf::CircleShape hex(4.f);
-                    hex.setFillColor(sf::Color(200, 80, 230));
-                    hex.setOutlineThickness(0.8f);
-                    hex.setOutlineColor(sf::Color(100, 30, 130));
-                    hex.setPosition(px - 4.f, py - 4.f);
-                    window.draw(hex);
-                    // Simbolo runico centrale (piccolo rombo)
+                    // Corpo del calderone (ConvexShape trapezoidale: largo in alto, stretto in basso)
+                    sf::ConvexShape cauldron; cauldron.setPointCount(4);
+                    cauldron.setFillColor(sf::Color(60, 30, 80));
+                    cauldron.setOutlineThickness(0.8f);
+                    cauldron.setOutlineColor(sf::Color(30, 15, 40));
+                    cauldron.setPoint(0, sf::Vector2f(px - 5.f, py - 2.f));
+                    cauldron.setPoint(1, sf::Vector2f(px + 5.f, py - 2.f));
+                    cauldron.setPoint(2, sf::Vector2f(px + 3.f, py + 5.f));
+                    cauldron.setPoint(3, sf::Vector2f(px - 3.f, py + 5.f));
+                    window.draw(cauldron);
+                    // Bordo superiore del calderone (cerniera)
+                    sf::RectangleShape rim(sf::Vector2f(11.f, 1.5f));
+                    rim.setFillColor(sf::Color(40, 20, 60));
+                    rim.setPosition(px - 5.5f, py - 3.f);
+                    window.draw(rim);
+                    // Contenuto ribollente (palline viola animate)
+                    for (int i = 0; i < 3; i++) {
+                        float bubbleX = px - 3.f + i * 3.f;
+                        float bubbleY = py - 3.f + sin(p.age * 0.03f + i * 1.5f) * 1.f;
+                        sf::CircleShape bubble(1.f + (i % 2) * 0.4f);
+                        bubble.setFillColor(sf::Color(200, 80, 230));
+                        bubble.setOutlineThickness(0.3f);
+                        bubble.setOutlineColor(sf::Color(100, 30, 130));
+                        bubble.setPosition(bubbleX - 1.f, bubbleY);
+                        window.draw(bubble);
+                    }
+                    // Simbolo runico centrale sul calderone (piccolo rombo)
                     sf::ConvexShape rune; rune.setPointCount(4);
                     rune.setFillColor(sf::Color(255, 200, 255));
-                    rune.setPoint(0, sf::Vector2f(px, py - 2.f));
-                    rune.setPoint(1, sf::Vector2f(px + 1.5f, py));
-                    rune.setPoint(2, sf::Vector2f(px, py + 2.f));
-                    rune.setPoint(3, sf::Vector2f(px - 1.5f, py));
+                    rune.setPoint(0, sf::Vector2f(px, py + 1.f));
+                    rune.setPoint(1, sf::Vector2f(px + 1.5f, py + 2.5f));
+                    rune.setPoint(2, sf::Vector2f(px, py + 4.f));
+                    rune.setPoint(3, sf::Vector2f(px - 1.5f, py + 2.5f));
                     window.draw(rune);
                     break;
                 }
