@@ -261,19 +261,48 @@ void Player::render(sf::RenderTarget& target) {
             int frameCount = sprite.getFrameCount("idle");
             frame = (animTime / (uint32_t)frameDuration) % frameCount;
         }
-        // Disegna lo sprite con bob effect + leg movement simulato
-        // Scale 1.0: sprite 64x64 nativo (cella labirinto 48x48)
+        // Disegna lo sprite con bob effect
         float bobY = 0.f;
-        if (animName == "walk" && (dx != 0 || dy != 0)) {
+        bool isWalking = (animName == "walk" && (dx != 0 || dy != 0));
+        if (isWalking) {
             bobY = sin(animTime * 0.012f) * 2.f;
         } else if (animName == "idle") {
             bobY = sin(animTime * 0.004f) * 1.f;
         }
-        // Leg movement simulato: piccolo offset orizzontale alternato
-        // (simula il peso che si sposta da una gamba all'altra)
-        float offsetX = (animName == "walk" && (dx != 0 || dy != 0)) ?
-                        sin(animTime * 0.024f) * 1.f : 0.f;  // +/- 1px
-        sprite.render(target, animName, frame, px + offsetX, pos.y + 8.f + bobY, 1.0f, flipped);
+        sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
+
+        // Leg animation: disegna 2 piccole gambe che si alternano sotto lo sprite.
+        // Queste si sovrappongono ai piedi dello sprite creando l'effetto movimento.
+        if (isWalking) {
+            // 2 frame alternati ad ~8 Hz (camminata)
+            int stepFrame = (animTime / 60) % 2;  // 0 o 1, cambia ogni ~60ms
+            sf::Color bootColor(40, 30, 20);  // stivali scuri
+            sf::Color outline(10, 10, 10);
+
+            // Posizione dei piedi: sotto il centro dello sprite
+            float footY = pos.y + 8.f + 24.f + bobY;  // 24 = metà sprite
+            float footL = px - 5.f;
+            float footR = px + 3.f;
+
+            if (stepFrame == 0) {
+                // Frame 0: gamba sinistra avanti, destra indietro
+                sf::RectangleShape legL(sf::Vector2f(4.f, 6.f));
+                legL.setFillColor(bootColor); legL.setOutlineThickness(1.f); legL.setOutlineColor(outline);
+                legL.setPosition(footL, footY); target.draw(legL);
+                sf::RectangleShape legR(sf::Vector2f(4.f, 4.f));
+                legR.setFillColor(bootColor); legR.setOutlineThickness(1.f); legR.setOutlineColor(outline);
+                legR.setPosition(footR, footY + 2.f); target.draw(legR);
+            } else {
+                // Frame 1: gamba destra avanti, sinistra indietro
+                sf::RectangleShape legL(sf::Vector2f(4.f, 4.f));
+                legL.setFillColor(bootColor); legL.setOutlineThickness(1.f); legL.setOutlineColor(outline);
+                legL.setPosition(footL, footY + 2.f); target.draw(legL);
+                sf::RectangleShape legR(sf::Vector2f(4.f, 6.f));
+                legR.setFillColor(bootColor); legR.setOutlineThickness(1.f); legR.setOutlineColor(outline);
+                legR.setPosition(footR, footY); target.draw(legR);
+            }
+        }
+
         drawProjectiles(target);
         return;
     }
