@@ -1109,4 +1109,123 @@ void Maze::render(sf::RenderTarget& target) {
             drawUrn(cx, cy);
         }
     }
+
+    // --- Aure luminose attorno alle torce (effetto atmosfera) ---
+    // Per ogni cella muro che ha una torcia (le stesse selezionate prima),
+    // disegna un grande cerchio semitrasparente caldo attorno alla posizione
+    // della torcia, simulando la luce che si diffonde. Poiche' le posizioni
+    // delle torce sono deterministiche (selezionate tramite selectTorches),
+    // ricalcoliamo qui le stesse posizioni mantenendo coerenza col disegno
+    // delle torce fatto prima.
+    //
+    // Costo: massimo 12 aure (3 per orientamento x 4), ogni una 1 draw.
+    // Trascurabile rispetto al resto del render.
+    {
+        // Ricalcola le posizioni delle torce selezionate per poterci
+        // disegnare l'aura attorno. Usa la stessa logica di selectTorches.
+        std::vector<Vec2> torchPositions;
+        auto collectTorchCandidates = [&](std::vector<Vec2>& out, int sideFlag) {
+            for (int c = 1; c < MAZE_COLS - 1; ++c) {
+                for (int r = 1; r < MAZE_ROWS - 1; ++r) {
+                    if (grid[c][r].type != CELL_WALL) continue;
+                    bool openUp = (grid[c][r-1].type != CELL_WALL);
+                    bool openDown = (grid[c][r+1].type != CELL_WALL);
+                    bool openLeft = (grid[c-1][r].type != CELL_WALL);
+                    bool openRight = (grid[c+1][r].type != CELL_WALL);
+                    bool open = false;
+                    switch (sideFlag) {
+                        case 0: open = openDown; break;
+                        case 1: open = openUp; break;
+                        case 2: open = openRight; break;
+                        case 3: open = openLeft; break;
+                    }
+                    if (!open) continue;
+                    if (openUp || openDown || openLeft || openRight)
+                        out.push_back({c, r});
+                }
+            }
+        };
+        auto selectTop3 = [](std::vector<Vec2>& in, std::vector<Vec2>& out) {
+            std::sort(in.begin(), in.end(),
+                [](const Vec2& a, const Vec2& b) {
+                    return cellHash(a.x + 1111, a.y + 2222) >
+                           cellHash(b.x + 1111, b.y + 2222);
+                });
+            const int minDist = 3;
+            for (const Vec2& cand : in) {
+                if ((int)out.size() >= 3) break;
+                bool tooClose = false;
+                for (const Vec2& s : out) {
+                    if (std::abs(cand.x - s.x) + std::abs(cand.y - s.y) < minDist) {
+                        tooClose = true; break;
+                    }
+                }
+                if (!tooClose) out.push_back(cand);
+            }
+        };
+        // Raccogli e seleziona per ogni orientamento
+        for (int side = 0; side < 4; side++) {
+            std::vector<Vec2> cand;
+            collectTorchCandidates(cand, side);
+            std::vector<Vec2> selected;
+            selectTop3(cand, selected);
+            // Calcola posizione pixel della torcia per ogni cella selezionata
+            for (const Vec2& t : selected) {
+                float mcx = t.x * TILE_SIZE + TILE_SIZE / 2.f;
+                float mcy;
+                switch (side) {
+                    case 0: mcy = t.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE + 4.f; break;
+                    case 1: mcy = t.y * TILE_SIZE + UI_HEIGHT - 4.f; break;
+                    case 2: mcx = (t.x + 1) * TILE_SIZE + 4.f;
+                            mcy = t.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f; break;
+                    case 3: mcx = t.x * TILE_SIZE - 4.f;
+                            mcy = t.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f; break;
+                }
+                torchPositions.push_back({(int)mcx, (int)mcy});
+            }
+        }
+        // Disegna l'aura per ogni torcia
+        for (const Vec2& tp : torchPositions) {
+            float tx = (float)tp.x;
+            float ty = (float)tp.y;
+            // Aura grande calda
+            sf::CircleShape tAura(36.f);
+            tAura.setFillColor(sf::Color(255, 180, 80, 25));
+            tAura.setPosition(tx - 36.f, ty - 50.f);
+            target.draw(tAura);
+            // Aura media più intensa
+            sf::CircleShape tAura2(22.f);
+            tAura2.setFillColor(sf::Color(255, 200, 100, 40));
+            tAura2.setPosition(tx - 22.f, ty - 38.f);
+            target.draw(tAura2);
+        }
+    }
+
+    // --- Particelle di polvere fluttuanti (effetto atmosfera) ---
+    // Piccoli punti chiari semitrasparenti che fluttuano lentamente,
+    // come polvere illuminata dalla luce delle torce. Posizioni deterministiche
+    // (hash) per stabilita', con animazione sinusoidale.
+    {
+        srand(13);  // seed fisso per layout stabile delle particelle
+        for (int i = 0; i < 24; i++) {
+            // Posizione base deterministica su tutto il labirinto
+            float baseX = (float)(rand() % (MAZE_COLS * TILE_SIZE));
+            float baseY = (float)(rand() % (MAZE_ROWS * TILE_SIZE)) + UI_HEIGHT;
+            // Animazione sinusoidale (fluttuazione lenta)
+            float t = animTime + i * 0.5f;
+            float dx = sin(t * 0.8f) * 6.f;
+            float dy = cos(t * 0.6f + i) * 4.f;
+            float px = baseX + dx;
+            float py = baseY + dy;
+            // Pulsazione alpha (lampeggio lento)
+            float alphaPulse = (sin(t * 1.5f + i) + 1.f) * 0.5f;  // 0..1
+            sf::Uint8 pAlpha = (sf::Uint8)(40 + alphaPulse * 60);
+            // Particella (piccolo punto chiaro)
+            sf::CircleShape dust(1.f);
+            dust.setFillColor(sf::Color(255, 240, 200, pAlpha));
+            dust.setPosition(px - 1.f, py - 1.f);
+            target.draw(dust);
+        }
+        srand(time(NULL));  // ripristina seed
+    }
 }

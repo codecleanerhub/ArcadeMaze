@@ -68,6 +68,7 @@ public:
     bool isDead() const { return health <= 0; }
     sf::Vector2f getPos() const { return pos; }
     int getSize() const { return size; }
+    BossType getType() const { return type; }
 
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei boss dalla cartella data. Da chiamare una

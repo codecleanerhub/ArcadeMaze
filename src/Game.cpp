@@ -743,9 +743,49 @@ void Game::update() {
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
 
         // --- Aggiornamento proiettili boss ---
+        // Gestione comportamenti speciali:
+        //   * homingTimer > 0: il proiettile insegue il player ruotando
+        //     gradualmente la direzione verso di lui. Quando il timer scende
+        //     a 0 il proiettile continua dritto (perde l'effetto).
+        //   * age: incrementato di 16 ms per frame, usato per animazioni
+        //     (es. pulsazione fuoco).
+        sf::Vector2f playerPos = player.getPixelPos();
         for (auto& proj : bossProjectiles) {
             if (!proj.active) continue;
-            proj.pos += proj.dir; // Muove il proiettile/bomba
+            proj.age += 16;
+            // --- Homing: ruota gradualmente verso il player ---
+            if (proj.homingTimer > 0) {
+                proj.homingTimer -= 16;
+                if (proj.homingTimer < 0) proj.homingTimer = 0;
+                float speed = sqrt(proj.dir.x * proj.dir.x + proj.dir.y * proj.dir.y);
+                if (speed > 0.001f) {
+                    // Vettore verso il player
+                    float tx = playerPos.x - proj.pos.x;
+                    float ty = playerPos.y - proj.pos.y;
+                    float tlen = sqrt(tx*tx + ty*ty);
+                    if (tlen > 0.001f) {
+                        // Direzione corrente normalizzata
+                        float cx = proj.dir.x / speed;
+                        float cy = proj.dir.y / speed;
+                        // Direzione target normalizzata
+                        float txn = tx / tlen;
+                        float tyn = ty / tlen;
+                        // Interpolazione lineare verso il target (lerp factor 0.08)
+                        // => curvatura morbida, non snap immediato
+                        float lerp = 0.08f;
+                        float nx = cx + (txn - cx) * lerp;
+                        float ny = cy + (tyn - cy) * lerp;
+                        // Rinormalizza e applica speed originaria
+                        float nlen = sqrt(nx*nx + ny*ny);
+                        if (nlen > 0.001f) {
+                            proj.dir.x = (nx / nlen) * speed;
+                            proj.dir.y = (ny / nlen) * speed;
+                        }
+                    }
+                }
+            }
+            // --- Movimento standard ---
+            proj.pos += proj.dir;
             if (proj.pos.x < 0 || proj.pos.x > WINDOW_WIDTH || proj.pos.y < UI_HEIGHT || proj.pos.y > WINDOW_HEIGHT) {
                 proj.active = false;
             }
@@ -1652,14 +1692,161 @@ void Game::render() {
             // del player e del boss, che occupano l'area centrale.
             // Sono puramente decorative: niente collisioni.
             //
-            // I colori sono in armonia cromatica col muro perimetrale
-            // (rockBase) per dare coerenza visiva.
-            sf::Color stoneBase(80, 70, 60);    // pietra chiara
-            sf::Color stoneDark(50, 42, 35);    // pietra scura (ombra)
-            sf::Color stoneLight(120, 110, 95); // pietra illuminata
-            sf::Color stoneMoss(60, 80, 50, 180); // muschio
-            sf::Color boneCol(220, 210, 180);   // osso
-            sf::Color boneDark(140, 130, 100);  // osso in ombra
+            // I colori delle decorazioni sono in tema col tipo di boss:
+            // ogni tipo di boss ha la propria palette cromatica per dare
+            // carattere distintivo alla stanza (D&D-style). Le palette sono:
+            //   * GOLEM/GHOUL_LORD   : pietra grigia + muschio verde (cripta antica)
+            //   * LICH/CULT_HERALD    : pietra viola necrotica (cripta necromantica)
+            //   * DEMON               : pietra nera + rosso fuoco (sala infernale)
+            //   * SPIDER              : pietra grigia + ragnatele bianche (caverna)
+            //   * ABOMINATION/RAT_KING: pietra marrone + carne (caverna carnosa)
+            //   * KRAKEN              : pietra blu-verde + alghe (grotta sommersa)
+            //   * DRAGON/SPECTRAL_ALPHA: pietra rossa + oro (sala del tesoro)
+            //   * WRAITH_LORD/TWILIGHT: pietra ciano + ombre (cripta spettrale)
+            //   * VAMPIRE              : pietra scura + sangue (cripta gotica)
+            //   * BEHOLDER/SUPREME_WITCH: pietra arcana + bagliori magici (torre)
+            //   * COLOSSAL_MIMIC       : pietra dorata + bava (sala del tesoro)
+            sf::Color stoneBase(80, 70, 60);
+            sf::Color stoneDark(50, 42, 35);
+            sf::Color stoneLight(120, 110, 95);
+            sf::Color stoneMoss(60, 80, 50, 180);
+            sf::Color boneCol(220, 210, 180);
+            sf::Color boneDark(140, 130, 100);
+            // Colore della "luce ambientale" che tinge la stanza: cambia in
+            // base al tipo di boss. Applicato come overlay sottile.
+            sf::Color ambientLight(255, 200, 120, 18);  // default: torcia calda
+            // Adjust palette per boss type
+            if (boss) {
+                BossType bt = boss->getType();
+                switch (bt) {
+                    case BOSS_GOLEM:
+                    case BOSS_GHOUL_LORD:
+                        // Cripta antica grigia + muschio
+                        stoneBase = sf::Color(85, 80, 72);
+                        stoneDark = sf::Color(48, 45, 38);
+                        stoneLight = sf::Color(130, 122, 105);
+                        ambientLight = sf::Color(255, 220, 140, 18);
+                        break;
+                    case BOSS_LICH:
+                    case BOSS_CULT_HERALD:
+                        // Cripta necromantica viola
+                        stoneBase = sf::Color(75, 60, 90);
+                        stoneDark = sf::Color(40, 30, 55);
+                        stoneLight = sf::Color(125, 95, 145);
+                        stoneMoss = sf::Color(120, 60, 150, 180); // muschio viola necrotico
+                        ambientLight = sf::Color(180, 80, 220, 22);
+                        break;
+                    case BOSS_DEMON:
+                        // Sala infernale rossa
+                        stoneBase = sf::Color(85, 45, 35);
+                        stoneDark = sf::Color(45, 18, 12);
+                        stoneLight = sf::Color(135, 70, 50);
+                        ambientLight = sf::Color(255, 80, 30, 25);
+                        break;
+                    case BOSS_SPIDER:
+                        // Caverna della ragnatela (grigio-bianca)
+                        stoneBase = sf::Color(85, 85, 85);
+                        stoneDark = sf::Color(45, 45, 48);
+                        stoneLight = sf::Color(140, 140, 140);
+                        stoneMoss = sf::Color(220, 220, 220, 180); // ragnatele bianche
+                        ambientLight = sf::Color(200, 200, 220, 18);
+                        break;
+                    case BOSS_ABOMINATION:
+                    case BOSS_RAT_KING:
+                        // Caverna carnosa marrone
+                        stoneBase = sf::Color(90, 65, 50);
+                        stoneDark = sf::Color(50, 30, 22);
+                        stoneLight = sf::Color(135, 95, 70);
+                        stoneMoss = sf::Color(150, 60, 50, 180); // carne
+                        ambientLight = sf::Color(200, 100, 80, 20);
+                        break;
+                    case BOSS_KRAKEN:
+                        // Grotta sommersa blu-verde
+                        stoneBase = sf::Color(55, 80, 80);
+                        stoneDark = sf::Color(25, 45, 50);
+                        stoneLight = sf::Color(85, 130, 125);
+                        stoneMoss = sf::Color(50, 130, 100, 180); // alghe
+                        ambientLight = sf::Color(80, 200, 220, 22);
+                        break;
+                    case BOSS_DRAGON:
+                    case BOSS_SPECTRAL_ALPHA:
+                        // Sala del tesoro rossa + oro
+                        stoneBase = sf::Color(95, 70, 45);
+                        stoneDark = sf::Color(55, 35, 18);
+                        stoneLight = sf::Color(155, 115, 70);
+                        stoneMoss = sf::Color(255, 215, 0, 200); // oro
+                        ambientLight = sf::Color(255, 180, 60, 22);
+                        break;
+                    case BOSS_WRAITH_LORD:
+                    case BOSS_TWILIGHT_KNIGHT:
+                        // Cripta spettrale ciano
+                        stoneBase = sf::Color(60, 75, 85);
+                        stoneDark = sf::Color(28, 38, 48);
+                        stoneLight = sf::Color(95, 120, 135);
+                        ambientLight = sf::Color(100, 200, 255, 22);
+                        break;
+                    case BOSS_VAMPIRE:
+                        // Cripta gotica rosso sangue
+                        stoneBase = sf::Color(70, 55, 60);
+                        stoneDark = sf::Color(35, 25, 30);
+                        stoneLight = sf::Color(110, 85, 95);
+                        stoneMoss = sf::Color(150, 30, 40, 200); // sangue
+                        ambientLight = sf::Color(220, 50, 60, 22);
+                        break;
+                    case BOSS_BEHOLDER:
+                    case BOSS_SUPREME_WITCH:
+                        // Torre arcana multicolore
+                        stoneBase = sf::Color(70, 65, 90);
+                        stoneDark = sf::Color(35, 30, 55);
+                        stoneLight = sf::Color(115, 105, 145);
+                        stoneMoss = sf::Color(180, 80, 220, 200); // magia
+                        ambientLight = sf::Color(200, 100, 240, 24);
+                        break;
+                    case BOSS_COLOSSAL_MIMIC:
+                        // Sala del tesoro dorata
+                        stoneBase = sf::Color(90, 75, 50);
+                        stoneDark = sf::Color(50, 35, 18);
+                        stoneLight = sf::Color(150, 120, 75);
+                        stoneMoss = sf::Color(180, 150, 60, 200); // patina
+                        ambientLight = sf::Color(255, 200, 100, 22);
+                        break;
+                }
+            }
+
+            // --- Luce ambientale colorata (overlay sottile su tutta la stanza) ---
+            // Da un effetto "tinta" che cambia l'atmosfera della stanza secondo
+            // il tipo di boss. Sottile (alpha 18-25) per non nascondere i dettagli.
+            {
+                sf::RectangleShape ambLight(sf::Vector2f(WINDOW_WIDTH, playH));
+                ambLight.setFillColor(ambientLight);
+                ambLight.setPosition(0, playTop);
+                window.draw(ambLight);
+            }
+
+            // --- Pulsazione luminosa attorno al boss (effetto aura magica) ---
+            // Cerchio semitrasparente pulsante che segue il boss, in armonia
+            // cromatica col tipo. Da' al boss una presenza "magica" e illumina
+            // l'area circostante.
+            if (boss) {
+                sf::Vector2f bpos = boss->getPos();
+                float pulse = 1.0f + sin(bossRoomTime * 2.5f) * 0.08f;
+                float auraR = (boss->getSize() * 0.9f) * pulse;
+                sf::CircleShape bossAura(auraR);
+                // Colore dell'aura = ambientLight ma più intenso
+                sf::Color auraC = ambientLight;
+                auraC.a = 35;
+                bossAura.setFillColor(auraC);
+                bossAura.setPosition(bpos.x - auraR, bpos.y - auraR);
+                window.draw(bossAura);
+                // Aura interna più intensa
+                float auraR2 = (boss->getSize() * 0.5f) * pulse;
+                sf::CircleShape bossAura2(auraR2);
+                sf::Color auraC2 = ambientLight;
+                auraC2.a = 25;
+                bossAura2.setFillColor(auraC2);
+                bossAura2.setPosition(bpos.x - auraR2, bpos.y - auraR2);
+                window.draw(bossAura2);
+            }
 
             // --- 4 colonne di tempio in rovina (una per angolo) ---
             // Ogni colonna e' una base + fusto (con scanalature) + capitello.
@@ -2151,6 +2338,526 @@ void Game::render() {
             drawHangingChain(WINDOW_WIDTH * 0.25f, WINDOW_HEIGHT - wallThickness - 32.f, 22.f);
             drawHangingChain(WINDOW_WIDTH * 0.5f,  WINDOW_HEIGHT - wallThickness - 28.f, 16.f);
             drawHangingChain(WINDOW_WIDTH * 0.75f, WINDOW_HEIGHT - wallThickness - 32.f, 24.f);
+
+            // --- Elemento "feature" unico per tipo di boss (D&D-style) ---
+            // Ogni tipo di boss ha un elemento decorativo caratteristico che
+            // rende la stanza immediatamente riconoscibile:
+            //   * GOLEM/GHOUL_LORD   : lapidi con incisioni runiche
+            //   * LICH/CULT_HERALD    : altare necromantico con candele viola
+            //   * DEMON               : pozzo di lava con fiamme
+            //   * SPIDER              : grosse ragnatele negli angoli
+            //   * ABOMINATION/RAT_KING: gabbie di ferro aperte
+            //   * KRAKEN              : pozza d'acqua con bolle
+            //   * DRAGON/SPECTRAL_ALPHA: cumulo di tesori (monete+gemme)
+            //   * WRAITH_LORD/TWILIGHT: candeliere gigante a 3 braccia
+            //   * VAMPIRE              : bara di legno aperta
+            //   * BEHOLDER/SUPREME_WITCH: libreria di tomi magici
+            //   * COLOSSAL_MIMIC       : forziere gigante (esca)
+            if (boss) {
+                BossType bt = boss->getType();
+                switch (bt) {
+                    case BOSS_GOLEM:
+                    case BOSS_GHOUL_LORD: {
+                        // Lapide runica centrale sul pavimento (dietro il boss)
+                        float lx = WINDOW_WIDTH / 2.f;
+                        float ly = playTop + playH * 0.5f + 80.f;
+                        // Ombra
+                        sf::CircleShape rs(28.f);
+                        rs.setFillColor(sf::Color(0, 0, 0, 120));
+                        rs.setPosition(lx - 28.f, ly + 12.f);
+                        window.draw(rs);
+                        // Stele grande con runa
+                        sf::ConvexShape stele; stele.setPointCount(6);
+                        stele.setFillColor(stoneBase);
+                        stele.setOutlineThickness(1.5f);
+                        stele.setOutlineColor(stoneDark);
+                        stele.setPoint(0, sf::Vector2f(lx - 16.f, ly + 14.f));
+                        stele.setPoint(1, sf::Vector2f(lx + 16.f, ly + 14.f));
+                        stele.setPoint(2, sf::Vector2f(lx + 16.f, ly - 20.f));
+                        stele.setPoint(3, sf::Vector2f(lx + 12.f, ly - 26.f));
+                        stele.setPoint(4, sf::Vector2f(lx - 12.f, ly - 26.f));
+                        stele.setPoint(5, sf::Vector2f(lx - 16.f, ly - 20.f));
+                        window.draw(stele);
+                        // Runa centrale (cerchio con linee)
+                        sf::CircleShape runeCircle(8.f);
+                        runeCircle.setFillColor(sf::Color(0, 0, 0, 0));
+                        runeCircle.setOutlineThickness(1.5f);
+                        runeCircle.setOutlineColor(stoneLight);
+                        runeCircle.setPosition(lx - 8.f, ly - 14.f);
+                        window.draw(runeCircle);
+                        // Linea verticale runica
+                        sf::RectangleShape runeLine(sf::Vector2f(1.5f, 16.f));
+                        runeLine.setFillColor(stoneLight);
+                        runeLine.setPosition(lx - 0.75f, ly - 16.f);
+                        window.draw(runeLine);
+                        break;
+                    }
+                    case BOSS_LICH:
+                    case BOSS_CULT_HERALD: {
+                        // Altare necromantico con 3 candele viola
+                        float ax = WINDOW_WIDTH / 2.f;
+                        float ay = playTop + playH * 0.5f + 100.f;
+                        // Base altare
+                        sf::RectangleShape altar(sf::Vector2f(60.f, 14.f));
+                        altar.setFillColor(stoneDark);
+                        altar.setOutlineThickness(1.f);
+                        altar.setOutlineColor(stoneBase);
+                        altar.setPosition(ax - 30.f, ay);
+                        window.draw(altar);
+                        sf::RectangleShape altarTop(sf::Vector2f(64.f, 4.f));
+                        altarTop.setFillColor(stoneLight);
+                        altarTop.setPosition(ax - 32.f, ay);
+                        window.draw(altarTop);
+                        // 3 candele viola sopra l'altare
+                        for (int i = 0; i < 3; i++) {
+                            float cx = ax - 18.f + i * 18.f;
+                            // Candela
+                            sf::RectangleShape candle(sf::Vector2f(4.f, 12.f));
+                            candle.setFillColor(sf::Color(220, 200, 240));
+                            candle.setOutlineThickness(0.5f);
+                            candle.setOutlineColor(sf::Color(100, 60, 130));
+                            candle.setPosition(cx - 2.f, ay - 12.f);
+                            window.draw(candle);
+                            // Fiamma viola animata
+                            float flick = sin(bossRoomTime * 14.f + i * 1.5f) * 1.f;
+                            sf::CircleShape cFlame(2.f + flick);
+                            cFlame.setFillColor(sf::Color(200, 100, 240, 230));
+                            cFlame.setPosition(cx - 2.f - flick, ay - 18.f);
+                            window.draw(cFlame);
+                            // Aura fiamma
+                            sf::CircleShape cAura(6.f);
+                            cAura.setFillColor(sf::Color(180, 80, 220, 50));
+                            cAura.setPosition(cx - 6.f, ay - 22.f);
+                            window.draw(cAura);
+                        }
+                        break;
+                    }
+                    case BOSS_DEMON: {
+                        // Pozzo di lava con fiamme
+                        float lx = WINDOW_WIDTH / 2.f;
+                        float ly = playTop + playH * 0.5f + 100.f;
+                        // Pozzo (cerchio scuro)
+                        sf::CircleShape lava(28.f);
+                        lava.setFillColor(sf::Color(80, 20, 5));
+                        lava.setOutlineThickness(2.f);
+                        lava.setOutlineColor(stoneDark);
+                        lava.setPosition(lx - 28.f, ly - 8.f);
+                        window.draw(lava);
+                        // Lava incandescente
+                        sf::CircleShape lavaGlow(22.f);
+                        lavaGlow.setFillColor(sf::Color(255, 100, 20, 200));
+                        lavaGlow.setPosition(lx - 22.f, ly - 2.f);
+                        window.draw(lavaGlow);
+                        // Bagliore
+                        sf::CircleShape lavaBright(14.f);
+                        lavaBright.setFillColor(sf::Color(255, 200, 80, 180));
+                        lavaBright.setPosition(lx - 14.f, ly + 2.f);
+                        window.draw(lavaBright);
+                        // Fiammelle che si alzano
+                        for (int i = 0; i < 5; i++) {
+                            float fx = lx - 18.f + i * 9.f;
+                            float fyOff = sin(bossRoomTime * 8.f + i) * 4.f;
+                            sf::CircleShape flame(2.5f + sin(bossRoomTime * 10.f + i) * 0.5f);
+                            flame.setFillColor(sf::Color(255, 150, 40, 220));
+                            flame.setPosition(fx - 2.5f, ly - 14.f + fyOff);
+                            window.draw(flame);
+                        }
+                        break;
+                    }
+                    case BOSS_SPIDER: {
+                        // Ragnatele negli angoli (sopra le decorazioni esistenti)
+                        // 4 ragnatele grandi agli angoli della stanza
+                        for (int corner = 0; corner < 4; corner++) {
+                            float cx = (corner % 2 == 0) ? wallThickness + 50.f
+                                                         : WINDOW_WIDTH - wallThickness - 50.f;
+                            float cy = (corner < 2) ? playTop + wallThickness + 50.f
+                                                     : WINDOW_HEIGHT - wallThickness - 50.f;
+                            // Ragnatela: 6 fili radiali + 2 cerchi concentrici
+                            for (int r = 0; r < 6; r++) {
+                                float a = r * (float)M_PI / 3.f + corner * 0.5f;
+                                sf::RectangleShape thread(sf::Vector2f(0.8f, 24.f));
+                                thread.setFillColor(sf::Color(240, 240, 240, 140));
+                                thread.setOrigin(0.4f, 0.f);
+                                thread.setPosition(cx, cy);
+                                thread.rotate(a * 180.f / (float)M_PI);
+                                window.draw(thread);
+                            }
+                            // Cerchio concentrico
+                            sf::CircleShape webC1(16.f);
+                            webC1.setFillColor(sf::Color(0, 0, 0, 0));
+                            webC1.setOutlineThickness(0.6f);
+                            webC1.setOutlineColor(sf::Color(240, 240, 240, 120));
+                            webC1.setPosition(cx - 16.f, cy - 16.f);
+                            window.draw(webC1);
+                            sf::CircleShape webC2(8.f);
+                            webC2.setFillColor(sf::Color(0, 0, 0, 0));
+                            webC2.setOutlineThickness(0.6f);
+                            webC2.setOutlineColor(sf::Color(240, 240, 240, 140));
+                            webC2.setPosition(cx - 8.f, cy - 8.f);
+                            window.draw(webC2);
+                        }
+                        break;
+                    }
+                    case BOSS_ABOMINATION:
+                    case BOSS_RAT_KING: {
+                        // Gabbie di ferro aperte sul pavimento
+                        float gx = WINDOW_WIDTH / 2.f;
+                        float gy = playTop + playH * 0.5f + 90.f;
+                        // Base gabbia
+                        sf::RectangleShape cageBase(sf::Vector2f(40.f, 6.f));
+                        cageBase.setFillColor(sf::Color(50, 40, 30));
+                        cageBase.setOutlineThickness(0.8f);
+                        cageBase.setOutlineColor(sf::Color(20, 15, 10));
+                        cageBase.setPosition(gx - 20.f, gy + 8.f);
+                        window.draw(cageBase);
+                        // Sbarre verticali (5)
+                        for (int i = 0; i < 5; i++) {
+                            sf::RectangleShape bar(sf::Vector2f(1.5f, 22.f));
+                            bar.setFillColor(sf::Color(70, 60, 50));
+                            bar.setOutlineThickness(0.4f);
+                            bar.setOutlineColor(sf::Color(30, 25, 20));
+                            bar.setPosition(gx - 18.f + i * 9.f, gy - 14.f);
+                            window.draw(bar);
+                        }
+                        // Top della gabbia aperto (pendente)
+                        sf::ConvexShape cageTop; cageTop.setPointCount(4);
+                        cageTop.setFillColor(sf::Color(50, 40, 30));
+                        cageTop.setOutlineThickness(0.5f);
+                        cageTop.setOutlineColor(sf::Color(20, 15, 10));
+                        cageTop.setPoint(0, sf::Vector2f(gx - 20.f, gy - 14.f));
+                        cageTop.setPoint(1, sf::Vector2f(gx - 8.f, gy - 14.f));
+                        cageTop.setPoint(2, sf::Vector2f(gx - 6.f, gy - 24.f));
+                        cageTop.setPoint(3, sf::Vector2f(gx - 18.f, gy - 22.f));
+                        window.draw(cageTop);
+                        // Osso dentro la gabbia
+                        sf::RectangleShape bone(sf::Vector2f(12.f, 2.f));
+                        bone.setFillColor(boneCol);
+                        bone.setOutlineThickness(0.4f);
+                        bone.setOutlineColor(boneDark);
+                        bone.setPosition(gx - 6.f, gy + 4.f);
+                        window.draw(bone);
+                        break;
+                    }
+                    case BOSS_KRAKEN: {
+                        // Pozza d'acqua con bolle animate
+                        float wx = WINDOW_WIDTH / 2.f;
+                        float wy = playTop + playH * 0.5f + 100.f;
+                        // Pozza (ellisse scura)
+                        sf::CircleShape pool(30.f);
+                        pool.setFillColor(sf::Color(20, 50, 60, 200));
+                        pool.setOutlineThickness(1.5f);
+                        pool.setOutlineColor(sf::Color(40, 80, 90));
+                        pool.setScale(1.f, 0.5f);
+                        pool.setPosition(wx - 30.f, wy - 5.f);
+                        window.draw(pool);
+                        // Riflesso
+                        sf::CircleShape poolRef(22.f);
+                        poolRef.setFillColor(sf::Color(80, 150, 170, 100));
+                        poolRef.setScale(1.f, 0.5f);
+                        poolRef.setPosition(wx - 22.f, wy - 1.f);
+                        window.draw(poolRef);
+                        // Bolle animate
+                        for (int i = 0; i < 6; i++) {
+                            float bx = wx - 18.f + (i * 7.f);
+                            float byOff = sin(bossRoomTime * 3.f + i * 1.2f) * 4.f;
+                            sf::CircleShape bubble(1.5f + (i % 2) * 0.5f);
+                            bubble.setFillColor(sf::Color(180, 220, 230, 180));
+                            bubble.setPosition(bx, wy - 3.f + byOff);
+                            window.draw(bubble);
+                        }
+                        break;
+                    }
+                    case BOSS_DRAGON:
+                    case BOSS_SPECTRAL_ALPHA: {
+                        // Cumulo di tesori (monete + gemme)
+                        float tx = WINDOW_WIDTH / 2.f;
+                        float ty = playTop + playH * 0.5f + 90.f;
+                        // Ombra
+                        sf::CircleShape tShadow(36.f);
+                        tShadow.setFillColor(sf::Color(0, 0, 0, 130));
+                        tShadow.setPosition(tx - 36.f, ty + 4.f);
+                        window.draw(tShadow);
+                        // 6 monete d'oro
+                        for (int i = 0; i < 6; i++) {
+                            sf::CircleShape coin(5.f);
+                            coin.setFillColor(sf::Color(255, 215, 0));
+                            coin.setOutlineThickness(0.6f);
+                            coin.setOutlineColor(sf::Color(180, 130, 30));
+                            coin.setPosition(tx - 22.f + i * 8.f + (i % 2) * 3.f, ty + 4.f - (i % 3) * 2.f);
+                            window.draw(coin);
+                            // Riflesso
+                            sf::RectangleShape cRef(sf::Vector2f(6.f, 0.8f));
+                            cRef.setFillColor(sf::Color(255, 245, 150));
+                            cRef.setPosition(tx - 21.f + i * 8.f + (i % 2) * 3.f, ty + 4.f - (i % 3) * 2.f);
+                            window.draw(cRef);
+                        }
+                        // 3 gemme colorate
+                        sf::Color gemCols[3] = {
+                            sf::Color(220, 30, 30),
+                            sf::Color(30, 180, 80),
+                            sf::Color(80, 80, 220)
+                        };
+                        for (int i = 0; i < 3; i++) {
+                            sf::ConvexShape gem; gem.setPointCount(4);
+                            gem.setFillColor(gemCols[i]);
+                            gem.setOutlineThickness(0.6f);
+                            gem.setOutlineColor(sf::Color(20, 20, 20));
+                            gem.setPoint(0, sf::Vector2f(tx - 12.f + i * 12.f, ty - 2.f));
+                            gem.setPoint(1, sf::Vector2f(tx - 9.f + i * 12.f, ty + 1.f));
+                            gem.setPoint(2, sf::Vector2f(tx - 12.f + i * 12.f, ty + 4.f));
+                            gem.setPoint(3, sf::Vector2f(tx - 15.f + i * 12.f, ty + 1.f));
+                            window.draw(gem);
+                        }
+                        // Calice d'oro al centro del cumulo
+                        sf::RectangleShape chalice(sf::Vector2f(10.f, 8.f));
+                        chalice.setFillColor(sf::Color(255, 215, 0));
+                        chalice.setOutlineThickness(0.8f);
+                        chalice.setOutlineColor(sf::Color(180, 130, 30));
+                        chalice.setPosition(tx - 5.f, ty - 8.f);
+                        window.draw(chalice);
+                        break;
+                    }
+                    case BOSS_WRAITH_LORD:
+                    case BOSS_TWILIGHT_KNIGHT: {
+                        // Candeliere gigante a 3 braccia
+                        float cx = WINDOW_WIDTH / 2.f;
+                        float cy = playTop + playH * 0.5f + 100.f;
+                        // Base
+                        sf::RectangleShape base(sf::Vector2f(20.f, 4.f));
+                        base.setFillColor(stoneDark);
+                        base.setOutlineThickness(0.8f);
+                        base.setOutlineColor(stoneBase);
+                        base.setPosition(cx - 10.f, cy + 10.f);
+                        window.draw(base);
+                        // Stelo centrale
+                        sf::RectangleShape stem(sf::Vector2f(3.f, 24.f));
+                        stem.setFillColor(stoneBase);
+                        stem.setOutlineThickness(0.5f);
+                        stem.setOutlineColor(stoneDark);
+                        stem.setPosition(cx - 1.5f, cy - 14.f);
+                        window.draw(stem);
+                        // 3 braccia (a diverse altezze)
+                        for (int i = 0; i < 3; i++) {
+                            float by = cy - 10.f + i * 8.f;
+                            float dx = (i % 2 == 0) ? -14.f : 14.f;
+                            // Braccio orizzontale
+                            sf::RectangleShape arm(sf::Vector2f(std::abs(dx) + 4.f, 1.5f));
+                            arm.setFillColor(stoneBase);
+                            arm.setOutlineThickness(0.4f);
+                            arm.setOutlineColor(stoneDark);
+                            arm.setPosition((dx < 0) ? cx + dx : cx, by);
+                            window.draw(arm);
+                            // Candela in cima
+                            sf::RectangleShape candle(sf::Vector2f(3.f, 6.f));
+                            candle.setFillColor(sf::Color(220, 220, 200));
+                            candle.setPosition(cx + dx - 1.5f, by - 6.f);
+                            window.draw(candle);
+                            // Fiamma ciano animata
+                            float flick = sin(bossRoomTime * 12.f + i * 1.3f) * 0.8f;
+                            sf::CircleShape flame(1.5f + flick);
+                            flame.setFillColor(sf::Color(150, 220, 255, 230));
+                            flame.setPosition(cx + dx - 1.5f - flick, by - 10.f);
+                            window.draw(flame);
+                            // Aura
+                            sf::CircleShape cAura(5.f);
+                            cAura.setFillColor(sf::Color(100, 200, 255, 50));
+                            cAura.setPosition(cx + dx - 5.f, by - 14.f);
+                            window.draw(cAura);
+                        }
+                        break;
+                    }
+                    case BOSS_VAMPIRE: {
+                        // Bara di legno aperta
+                        float bx = WINDOW_WIDTH / 2.f;
+                        float by = playTop + playH * 0.5f + 90.f;
+                        // Ombra
+                        sf::CircleShape bShadow(34.f);
+                        bShadow.setFillColor(sf::Color(0, 0, 0, 130));
+                        bShadow.setPosition(bx - 34.f, by + 8.f);
+                        window.draw(bShadow);
+                        // Bara (rettangolo scuro)
+                        sf::RectangleShape coffin(sf::Vector2f(50.f, 22.f));
+                        coffin.setFillColor(sf::Color(60, 30, 20));
+                        coffin.setOutlineThickness(1.5f);
+                        coffin.setOutlineColor(sf::Color(30, 15, 10));
+                        coffin.setPosition(bx - 25.f, by - 4.f);
+                        window.draw(coffin);
+                        // Interno rosso (seta)
+                        sf::RectangleShape silk(sf::Vector2f(46.f, 18.f));
+                        silk.setFillColor(sf::Color(120, 30, 30));
+                        silk.setPosition(bx - 23.f, by - 2.f);
+                        window.draw(silk);
+                        // Coperchio aperto (pendente di lato)
+                        sf::ConvexShape lid; lid.setPointCount(4);
+                        lid.setFillColor(sf::Color(50, 25, 15));
+                        lid.setOutlineThickness(1.f);
+                        lid.setOutlineColor(sf::Color(20, 10, 5));
+                        lid.setPoint(0, sf::Vector2f(bx - 25.f, by - 4.f));
+                        lid.setPoint(1, sf::Vector2f(bx + 25.f, by - 4.f));
+                        lid.setPoint(2, sf::Vector2f(bx + 38.f, by - 18.f));
+                        lid.setPoint(3, sf::Vector2f(bx - 12.f, by - 22.f));
+                        window.draw(lid);
+                        // Cross ornamentale sul coperchio
+                        sf::RectangleShape cross1(sf::Vector2f(2.f, 10.f));
+                        cross1.setFillColor(sf::Color(200, 200, 200));
+                        cross1.setPosition(bx + 10.f, by - 14.f);
+                        window.draw(cross1);
+                        sf::RectangleShape cross2(sf::Vector2f(8.f, 2.f));
+                        cross2.setFillColor(sf::Color(200, 200, 200));
+                        cross2.setPosition(bx + 7.f, by - 10.f);
+                        window.draw(cross2);
+                        break;
+                    }
+                    case BOSS_BEHOLDER:
+                    case BOSS_SUPREME_WITCH: {
+                        // Libreria di tomi magici
+                        float bx = WINDOW_WIDTH / 2.f;
+                        float by = playTop + playH * 0.5f + 100.f;
+                        // Base
+                        sf::RectangleShape base(sf::Vector2f(48.f, 4.f));
+                        base.setFillColor(stoneDark);
+                        base.setOutlineThickness(0.8f);
+                        base.setOutlineColor(stoneBase);
+                        base.setPosition(bx - 24.f, by + 8.f);
+                        window.draw(base);
+                        // 5 tomi affiancati
+                        sf::Color bookCols[5] = {
+                            sf::Color(180, 50, 50),    // rosso
+                            sf::Color(50, 100, 180),   // blu
+                            sf::Color(50, 150, 60),    // verde
+                            sf::Color(180, 130, 40),   // giallo
+                            sf::Color(140, 60, 180)    // viola
+                        };
+                        for (int i = 0; i < 5; i++) {
+                            // Copertina del tomo
+                            sf::RectangleShape book(sf::Vector2f(7.f, 18.f));
+                            book.setFillColor(bookCols[i]);
+                            book.setOutlineThickness(0.6f);
+                            book.setOutlineColor(sf::Color(30, 30, 30));
+                            book.setPosition(bx - 22.f + i * 9.f, by - 10.f);
+                            window.draw(book);
+                            // Pagine (striscia chiara)
+                            sf::RectangleShape pages(sf::Vector2f(5.f, 14.f));
+                            pages.setFillColor(sf::Color(240, 230, 200));
+                            pages.setPosition(bx - 21.f + i * 9.f, by - 8.f);
+                            window.draw(pages);
+                            // Simbolo magico sul dorso (punto dorato)
+                            sf::CircleShape symbol(0.8f);
+                            symbol.setFillColor(sf::Color(255, 215, 0));
+                            symbol.setPosition(bx - 19.f + i * 9.f, by - 4.f);
+                            window.draw(symbol);
+                        }
+                        // Aura magica sopra la libreria
+                        sf::CircleShape bookAura(20.f);
+                        bookAura.setFillColor(sf::Color(180, 80, 220, 40));
+                        bookAura.setPosition(bx - 20.f, by - 28.f);
+                        window.draw(bookAura);
+                        break;
+                    }
+                    case BOSS_COLOSSAL_MIMIC: {
+                        // Forziere gigante (esca)
+                        float cx = WINDOW_WIDTH / 2.f;
+                        float cy = playTop + playH * 0.5f + 90.f;
+                        // Ombra
+                        sf::CircleShape tShadow(36.f);
+                        tShadow.setFillColor(sf::Color(0, 0, 0, 130));
+                        tShadow.setPosition(cx - 36.f, cy + 6.f);
+                        window.draw(tShadow);
+                        // Corpo forziere
+                        sf::RectangleShape body(sf::Vector2f(60.f, 32.f));
+                        body.setFillColor(sf::Color(110, 65, 25));
+                        body.setOutlineThickness(1.5f);
+                        body.setOutlineColor(sf::Color(60, 35, 15));
+                        body.setPosition(cx - 30.f, cy - 8.f);
+                        window.draw(body);
+                        // Strato superiore
+                        sf::RectangleShape bodyTop(sf::Vector2f(60.f, 6.f));
+                        bodyTop.setFillColor(sf::Color(140, 85, 35));
+                        bodyTop.setPosition(cx - 30.f, cy - 8.f);
+                        window.draw(bodyTop);
+                        // Coperchio arcuato
+                        sf::ConvexShape lid; lid.setPointCount(6);
+                        lid.setFillColor(sf::Color(90, 55, 20));
+                        lid.setOutlineThickness(1.f);
+                        lid.setOutlineColor(sf::Color(50, 30, 10));
+                        lid.setPoint(0, sf::Vector2f(cx - 30.f, cy - 8.f));
+                        lid.setPoint(1, sf::Vector2f(cx + 30.f, cy - 8.f));
+                        lid.setPoint(2, sf::Vector2f(cx + 26.f, cy - 18.f));
+                        lid.setPoint(3, sf::Vector2f(cx + 16.f, cy - 24.f));
+                        lid.setPoint(4, sf::Vector2f(cx - 16.f, cy - 24.f));
+                        lid.setPoint(5, sf::Vector2f(cx - 26.f, cy - 18.f));
+                        window.draw(lid);
+                        // Bocca aperta (dente) - indica che e' un mimic
+                        sf::RectangleShape maw(sf::Vector2f(36.f, 6.f));
+                        maw.setFillColor(sf::Color::Black);
+                        maw.setPosition(cx - 18.f, cy + 4.f);
+                        window.draw(maw);
+                        // 6 denti
+                        for (int i = 0; i < 6; i++) {
+                            sf::ConvexShape tooth; tooth.setPointCount(3);
+                            tooth.setFillColor(sf::Color(255, 255, 220));
+                            float tw = 6.f;
+                            tooth.setPoint(0, sf::Vector2f(cx - 18.f + i * tw, cy + 4.f));
+                            tooth.setPoint(1, sf::Vector2f(cx - 18.f + (i+1) * tw, cy + 4.f));
+                            tooth.setPoint(2, sf::Vector2f(cx - 18.f + i * tw + tw/2, cy + 10.f));
+                            window.draw(tooth);
+                        }
+                        // Occhio gigante (indizio che e' un mimic)
+                        sf::CircleShape eye(4.f);
+                        eye.setFillColor(sf::Color(255, 240, 100));
+                        eye.setOutlineThickness(0.8f);
+                        eye.setOutlineColor(sf::Color(80, 60, 10));
+                        eye.setPosition(cx - 2.f, cy - 18.f);
+                        window.draw(eye);
+                        sf::CircleShape pupil(1.5f);
+                        pupil.setFillColor(sf::Color::Black);
+                        pupil.setPosition(cx - 0.5f, cy - 16.5f);
+                        window.draw(pupil);
+                        break;
+                    }
+                }
+            }
+
+            // --- Particelle ambientali animate (effetto luce) ---
+            // Piccoli punti luminosi fluttuanti colorati in base al tipo di
+            // boss (es. scintille per DEMON, bolle per KRAKEN, anime per WRAITH,
+            // spore per SUPREME_WITCH). Generati con seed fisso per stabilita'.
+            {
+                // Colore particelle = ambientLight ma più vivo
+                sf::Color particleCol = ambientLight;
+                particleCol.a = 180;
+                // 12 particelle, posizioni deterministiche ma con animazione
+                // verticale sinusoidale (effetto fluttuazione).
+                srand(7);  // seed fisso per layout stabile
+                for (int i = 0; i < 14; i++) {
+                    float baseX = (float)(rand() % (WINDOW_WIDTH - 100)) + 50.f;
+                    float baseY = (float)(rand() % (playH - 100)) + playTop + 50.f;
+                    // Animazione: oscillazione sinusoidale attorno alla posizione base
+                    float t = bossRoomTime + i * 0.7f;
+                    float dx = sin(t * 1.5f) * 8.f;
+                    float dy = cos(t * 1.2f) * 6.f;
+                    float px = baseX + dx;
+                    float py = baseY + dy;
+                    // Pulsazione alpha
+                    float alphaPulse = (sin(t * 3.f) + 1.f) * 0.5f;  // 0..1
+                    sf::Uint8 pAlpha = (sf::Uint8)(100 + alphaPulse * 100);
+                    // Particella principale
+                    sf::CircleShape particle(1.5f);
+                    sf::Color pCol = particleCol;
+                    pCol.a = pAlpha;
+                    particle.setFillColor(pCol);
+                    particle.setPosition(px - 1.5f, py - 1.5f);
+                    window.draw(particle);
+                    // Aura più larga e debole
+                    sf::CircleShape pAura(4.f);
+                    sf::Color aCol = particleCol;
+                    aCol.a = pAlpha / 4;
+                    pAura.setFillColor(aCol);
+                    pAura.setPosition(px - 4.f, py - 4.f);
+                    window.draw(pAura);
+                }
+                srand(time(NULL));  // ripristina seed randomico
+            }
         }
 
         // UI senza tesori (passiamo 0)
@@ -2194,22 +2901,343 @@ void Game::render() {
         if (numPlayers == 2) player2.render(window);
         boss->render(window);
 
-        // Proiettili boss: piccoli e diversi per tipo
+        // --- Proiettili boss: rendering type-specific ---
+        // Ogni BossProjKind ha forma/colore/animazione propri. L'homing e'
+        // evidenziato con un'aura aggiuntiva attorno al proiettile.
         for (const auto& p : bossProjectiles) {
-            if (p.active) {
-                if (p.type == WPN_ROCKET) {
-                    // Razzo: piccolo corpo viola + punta
-                    sf::RectangleShape body(sf::Vector2f(6.f, 4.f));
-                    body.setFillColor(sf::Color(150, 0, 150));
-                    body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color(60, 0, 60));
-                    body.setPosition(p.pos.x - 3.f, p.pos.y - 2.f); window.draw(body);
-                    sf::CircleShape tip(2.f); tip.setFillColor(sf::Color(200, 50, 200));
-                    tip.setPosition(p.pos.x + 1.f, p.pos.y - 2.f); window.draw(tip);
-                } else {
-                    // Proiettile normale: piccolo cerchio rosso (4px)
-                    sf::CircleShape proj(4.f); proj.setFillColor(sf::Color(255, 60, 40));
-                    proj.setOutlineThickness(1.f); proj.setOutlineColor(sf::Color(120, 20, 0));
-                    proj.setPosition(p.pos.x - 4.f, p.pos.y - 4.f); window.draw(proj);
+            if (!p.active) continue;
+            float px = p.pos.x;
+            float py = p.pos.y;
+            // Aura per proiettili homing (chiazza luminosa attorno)
+            if (p.homingTimer > 0) {
+                sf::CircleShape homAura(10.f);
+                homAura.setFillColor(sf::Color(180, 80, 255, 60));
+                homAura.setPosition(px - 10.f, py - 10.f);
+                window.draw(homAura);
+            }
+            switch (p.bpKind) {
+                case BP_BOULDER: {
+                    // GOLEM: masso di pietra grigio con outline scuro
+                    sf::CircleShape boulder(6.f);
+                    boulder.setFillColor(sf::Color(110, 100, 85));
+                    boulder.setOutlineThickness(1.f);
+                    boulder.setOutlineColor(sf::Color(50, 45, 35));
+                    boulder.setPosition(px - 6.f, py - 6.f);
+                    window.draw(boulder);
+                    // Highlight
+                    sf::CircleShape bHigh(2.f);
+                    bHigh.setFillColor(sf::Color(170, 160, 140));
+                    bHigh.setPosition(px - 4.f, py - 4.f);
+                    window.draw(bHigh);
+                    break;
+                }
+                case BP_NECRO_BOLT: {
+                    // LICH: saetta necrotica verde veleno con alone
+                    sf::CircleShape necAura(7.f);
+                    necAura.setFillColor(sf::Color(80, 220, 80, 70));
+                    necAura.setPosition(px - 7.f, py - 7.f);
+                    window.draw(necAura);
+                    sf::CircleShape bolt(3.5f);
+                    bolt.setFillColor(sf::Color(120, 255, 120));
+                    bolt.setOutlineThickness(0.8f);
+                    bolt.setOutlineColor(sf::Color(40, 120, 40));
+                    bolt.setPosition(px - 3.5f, py - 3.5f);
+                    window.draw(bolt);
+                    // Scintilla centrale
+                    sf::CircleShape spark(1.f);
+                    spark.setFillColor(sf::Color(220, 255, 220));
+                    spark.setPosition(px - 1.f, py - 1.f);
+                    window.draw(spark);
+                    break;
+                }
+                case BP_FIREBALL: {
+                    // DEMON: palla di fuoco arancione animata (pulsazione)
+                    float pulse = sin(p.age * 0.02f) * 0.8f;
+                    sf::CircleShape fAura(7.f + pulse);
+                    fAura.setFillColor(sf::Color(255, 100, 30, 80));
+                    fAura.setPosition(px - 7.f - pulse, py - 7.f - pulse);
+                    window.draw(fAura);
+                    sf::CircleShape fb(4.f);
+                    fb.setFillColor(sf::Color(255, 160, 40));
+                    fb.setOutlineThickness(0.8f);
+                    fb.setOutlineColor(sf::Color(180, 60, 10));
+                    fb.setPosition(px - 4.f, py - 4.f);
+                    window.draw(fb);
+                    // Nucleo giallo
+                    sf::CircleShape fCore(2.f);
+                    fCore.setFillColor(sf::Color(255, 240, 150));
+                    fCore.setPosition(px - 2.f, py - 2.f);
+                    window.draw(fCore);
+                    break;
+                }
+                case BP_WEBSHOT: {
+                    // SPIDER: piccola ragnatela bianca a 8 raggi
+                    sf::CircleShape wAura(5.f);
+                    wAura.setFillColor(sf::Color(240, 240, 240, 100));
+                    wAura.setPosition(px - 5.f, py - 5.f);
+                    window.draw(wAura);
+                    // 8 raggi della ragnatela
+                    for (int i = 0; i < 8; i++) {
+                        float a = i * (float)M_PI / 4.f;
+                        sf::RectangleShape ray(sf::Vector2f(1.f, 5.f));
+                        ray.setFillColor(sf::Color(220, 220, 220, 200));
+                        ray.setOrigin(0.5f, 0.f);
+                        ray.setPosition(px, py);
+                        ray.rotate(a * 180.f / (float)M_PI);
+                        window.draw(ray);
+                    }
+                    // Centro
+                    sf::CircleShape wCenter(1.5f);
+                    wCenter.setFillColor(sf::Color(255, 255, 255));
+                    wCenter.setPosition(px - 1.5f, py - 1.5f);
+                    window.draw(wCenter);
+                    break;
+                }
+                case BP_FLESH_CHUNK: {
+                    // ABOMINATION: brandello di carne rossa irregolare
+                    sf::CircleShape flesh(5.f, 6);  // 6 segmenti = forma irregolare
+                    flesh.setFillColor(sf::Color(150, 60, 60));
+                    flesh.setOutlineThickness(0.8f);
+                    flesh.setOutlineColor(sf::Color(80, 30, 30));
+                    flesh.setPosition(px - 5.f, py - 5.f);
+                    window.draw(flesh);
+                    // Macchie più scure
+                    sf::CircleShape spot1(1.5f);
+                    spot1.setFillColor(sf::Color(80, 30, 30));
+                    spot1.setPosition(px - 2.f, py - 1.f);
+                    window.draw(spot1);
+                    spot1.setPosition(px + 1.f, py + 1.f);
+                    window.draw(spot1);
+                    break;
+                }
+                case BP_INK_SPRAY: {
+                    // KRAKEN: getto d'inchiostro viola scuro
+                    sf::CircleShape ink(4.f);
+                    ink.setFillColor(sf::Color(60, 20, 80));
+                    ink.setOutlineThickness(0.8f);
+                    ink.setOutlineColor(sf::Color(20, 5, 30));
+                    ink.setPosition(px - 4.f, py - 4.f);
+                    window.draw(ink);
+                    // Macchia più chiara al centro
+                    sf::CircleShape inkCore(2.f);
+                    inkCore.setFillColor(sf::Color(120, 60, 150));
+                    inkCore.setPosition(px - 2.f, py - 2.f);
+                    window.draw(inkCore);
+                    break;
+                }
+                case BP_DRAGON_BREATH: {
+                    // DRAGON: piccolo soffio di fuoco giallo-arancio veloce
+                    float pulse = sin(p.age * 0.025f) * 0.5f;
+                    sf::CircleShape bAura(5.f + pulse);
+                    bAura.setFillColor(sf::Color(255, 200, 80, 100));
+                    bAura.setPosition(px - 5.f - pulse, py - 5.f - pulse);
+                    window.draw(bAura);
+                    sf::CircleShape breath(3.f);
+                    breath.setFillColor(sf::Color(255, 180, 60));
+                    breath.setOutlineThickness(0.5f);
+                    breath.setOutlineColor(sf::Color(200, 80, 20));
+                    breath.setPosition(px - 3.f, py - 3.f);
+                    window.draw(breath);
+                    break;
+                }
+                case BP_GHOST_BOLT: {
+                    // WRAITH_LORD: saetta spettrale ciano con aura
+                    sf::CircleShape gAura(7.f);
+                    gAura.setFillColor(sf::Color(120, 220, 255, 80));
+                    gAura.setPosition(px - 7.f, py - 7.f);
+                    window.draw(gAura);
+                    sf::CircleShape bolt(3.5f);
+                    bolt.setFillColor(sf::Color(180, 240, 255));
+                    bolt.setOutlineThickness(0.8f);
+                    bolt.setOutlineColor(sf::Color(60, 120, 180));
+                    bolt.setPosition(px - 3.5f, py - 3.5f);
+                    window.draw(bolt);
+                    break;
+                }
+                case BP_BLOOD_BOLT: {
+                    // VAMPIRE: dardo di sangue rosso scuro
+                    sf::CircleShape bAura(6.f);
+                    bAura.setFillColor(sf::Color(180, 20, 30, 90));
+                    bAura.setPosition(px - 6.f, py - 6.f);
+                    window.draw(bAura);
+                    sf::CircleShape bolt(4.f);
+                    bolt.setFillColor(sf::Color(200, 30, 40));
+                    bolt.setOutlineThickness(0.8f);
+                    bolt.setOutlineColor(sf::Color(100, 10, 20));
+                    bolt.setPosition(px - 4.f, py - 4.f);
+                    window.draw(bolt);
+                    // Nucleo più scuro
+                    sf::CircleShape bCore(1.5f);
+                    bCore.setFillColor(sf::Color(120, 10, 20));
+                    bCore.setPosition(px - 1.5f, py - 1.5f);
+                    window.draw(bCore);
+                    break;
+                }
+                case BP_EYE_RAY: {
+                    // BEHOLDER: raggio energetico colorato (variant 0..4)
+                    sf::Color rayColors[5] = {
+                        sf::Color(255, 80, 80),    // rosso
+                        sf::Color(80, 255, 80),    // verde
+                        sf::Color(80, 180, 255),  // blu
+                        sf::Color(255, 200, 80),  // giallo
+                        sf::Color(220, 80, 255)   // viola (potente)
+                    };
+                    sf::Color rayCol = rayColors[p.variant % 5];
+                    sf::CircleShape rAura(6.f);
+                    rAura.setFillColor(sf::Color(rayCol.r, rayCol.g, rayCol.b, 80));
+                    rAura.setPosition(px - 6.f, py - 6.f);
+                    window.draw(rAura);
+                    sf::CircleShape ray(3.5f);
+                    ray.setFillColor(rayCol);
+                    ray.setOutlineThickness(0.8f);
+                    ray.setOutlineColor(sf::Color(rayCol.r / 3, rayCol.g / 3, rayCol.b / 3));
+                    ray.setPosition(px - 3.5f, py - 3.5f);
+                    window.draw(ray);
+                    // Nucleo bianco
+                    sf::CircleShape rayCore(1.2f);
+                    rayCore.setFillColor(sf::Color(255, 255, 255));
+                    rayCore.setPosition(px - 1.2f, py - 1.2f);
+                    window.draw(rayCore);
+                    break;
+                }
+                case BP_GHOUL_CLAW: {
+                    // GHOUL_LORD: artiglio osseo a 3 punte
+                    sf::ConvexShape claw; claw.setPointCount(3);
+                    claw.setFillColor(sf::Color(220, 210, 180));
+                    claw.setOutlineThickness(0.8f);
+                    claw.setOutlineColor(sf::Color(100, 90, 70));
+                    claw.setPoint(0, sf::Vector2f(px - 4.f, py + 3.f));
+                    claw.setPoint(1, sf::Vector2f(px + 4.f, py + 3.f));
+                    claw.setPoint(2, sf::Vector2f(px, py - 5.f));
+                    window.draw(claw);
+                    break;
+                }
+                case BP_SPECTRAL_FANG: {
+                    // SPECTRAL_ALPHA: zanna spettrale ciano-bianca
+                    sf::CircleShape fAura(5.f);
+                    fAura.setFillColor(sf::Color(180, 230, 255, 80));
+                    fAura.setPosition(px - 5.f, py - 5.f);
+                    window.draw(fAura);
+                    sf::ConvexShape fang; fang.setPointCount(3);
+                    fang.setFillColor(sf::Color(220, 250, 255));
+                    fang.setOutlineThickness(0.5f);
+                    fang.setOutlineColor(sf::Color(120, 180, 200));
+                    fang.setPoint(0, sf::Vector2f(px - 3.f, py + 2.f));
+                    fang.setPoint(1, sf::Vector2f(px + 3.f, py + 2.f));
+                    fang.setPoint(2, sf::Vector2f(px, py - 5.f));
+                    window.draw(fang);
+                    break;
+                }
+                case BP_CULT_ORB: {
+                    // CULT_HERALD: sfera magica viola pulsante
+                    float pulse = sin(p.age * 0.02f) * 0.6f;
+                    sf::CircleShape oAura(7.f + pulse);
+                    oAura.setFillColor(sf::Color(180, 60, 220, 80));
+                    oAura.setPosition(px - 7.f - pulse, py - 7.f - pulse);
+                    window.draw(oAura);
+                    sf::CircleShape orb(4.f);
+                    orb.setFillColor(sf::Color(220, 100, 240));
+                    orb.setOutlineThickness(0.8f);
+                    orb.setOutlineColor(sf::Color(100, 30, 130));
+                    orb.setPosition(px - 4.f, py - 4.f);
+                    window.draw(orb);
+                    // Nucleo bianco
+                    sf::CircleShape oCore(1.5f);
+                    oCore.setFillColor(sf::Color(255, 220, 255));
+                    oCore.setPosition(px - 1.5f, py - 1.5f);
+                    window.draw(oCore);
+                    break;
+                }
+                case BP_MIMIC_GOO: {
+                    // COLOSSAL_MIMIC: bava verde-gialla appiccicosa
+                    sf::CircleShape goo(4.f, 6);  // forma irregolare
+                    goo.setFillColor(sf::Color(150, 200, 60));
+                    goo.setOutlineThickness(0.8f);
+                    goo.setOutlineColor(sf::Color(80, 110, 30));
+                    goo.setPosition(px - 4.f, py - 4.f);
+                    window.draw(goo);
+                    // Bolla
+                    sf::CircleShape bubble(1.5f);
+                    bubble.setFillColor(sf::Color(200, 240, 120));
+                    bubble.setPosition(px - 1.f, py - 2.f);
+                    window.draw(bubble);
+                    break;
+                }
+                case BP_RAT_SWARM: {
+                    // RAT_KING: piccolo ratto grigio-marrone
+                    sf::CircleShape ratBody(3.f);
+                    ratBody.setFillColor(sf::Color(90, 75, 60));
+                    ratBody.setOutlineThickness(0.5f);
+                    ratBody.setOutlineColor(sf::Color(40, 30, 20));
+                    ratBody.setPosition(px - 3.f, py - 3.f);
+                    window.draw(ratBody);
+                    // Occhio rosso
+                    sf::CircleShape ratEye(0.6f);
+                    ratEye.setFillColor(sf::Color(255, 60, 60));
+                    ratEye.setPosition(px + 0.5f, py - 1.f);
+                    window.draw(ratEye);
+                    // Coda
+                    sf::RectangleShape tail(sf::Vector2f(4.f, 0.8f));
+                    tail.setFillColor(sf::Color(80, 65, 50));
+                    tail.setPosition(px - 4.f, py);
+                    window.draw(tail);
+                    break;
+                }
+                case BP_WITCH_HEX: {
+                    // SUPREME_WITCH: maledizione viola con simbolo runico
+                    float pulse = sin(p.age * 0.018f) * 0.7f;
+                    // Aura estesa se homing (chiazza più grande)
+                    float auraR = (p.homingTimer > 0) ? 10.f : 7.f;
+                    sf::CircleShape hAura(auraR + pulse);
+                    hAura.setFillColor(sf::Color(180, 60, 240, 90));
+                    hAura.setPosition(px - auraR - pulse, py - auraR - pulse);
+                    window.draw(hAura);
+                    // Sfera viola
+                    sf::CircleShape hex(4.f);
+                    hex.setFillColor(sf::Color(200, 80, 230));
+                    hex.setOutlineThickness(0.8f);
+                    hex.setOutlineColor(sf::Color(100, 30, 130));
+                    hex.setPosition(px - 4.f, py - 4.f);
+                    window.draw(hex);
+                    // Simbolo runico centrale (piccolo rombo)
+                    sf::ConvexShape rune; rune.setPointCount(4);
+                    rune.setFillColor(sf::Color(255, 200, 255));
+                    rune.setPoint(0, sf::Vector2f(px, py - 2.f));
+                    rune.setPoint(1, sf::Vector2f(px + 1.5f, py));
+                    rune.setPoint(2, sf::Vector2f(px, py + 2.f));
+                    rune.setPoint(3, sf::Vector2f(px - 1.5f, py));
+                    window.draw(rune);
+                    break;
+                }
+                case BP_TWILIGHT_BLADE: {
+                    // TWILIGHT_KNIGHT: lama d'ombra viola scura
+                    sf::RectangleShape blade(sf::Vector2f(2.f, 8.f));
+                    blade.setFillColor(sf::Color(80, 30, 120));
+                    blade.setOutlineThickness(0.5f);
+                    blade.setOutlineColor(sf::Color(40, 15, 60));
+                    blade.setOrigin(1.f, 4.f);
+                    blade.setPosition(px, py);
+                    // Ruota nella direzione di volo
+                    float ang = atan2(p.dir.y, p.dir.x) * 180.f / (float)M_PI + 90.f;
+                    blade.rotate(ang);
+                    window.draw(blade);
+                    // Aura
+                    sf::CircleShape tAura(5.f);
+                    tAura.setFillColor(sf::Color(120, 60, 180, 70));
+                    tAura.setPosition(px - 5.f, py - 5.f);
+                    window.draw(tAura);
+                    break;
+                }
+                case BP_NORMAL:
+                default: {
+                    // Fallback: proiettile rosso standard (vecchio render)
+                    sf::CircleShape proj(4.f);
+                    proj.setFillColor(sf::Color(255, 60, 40));
+                    proj.setOutlineThickness(1.f);
+                    proj.setOutlineColor(sf::Color(120, 20, 0));
+                    proj.setPosition(px - 4.f, py - 4.f);
+                    window.draw(proj);
+                    break;
                 }
             }
         }

@@ -147,6 +147,24 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTime
 //   * Man mano che il livello aumenta, il cooldown diminuisce (spara piu'
 //     spesso), ma non scende sotto ~500 ms (1500-10*100).
 // ---------------------------------------------------------------------------
+// Helper locale: crea un Projectile con tipo boss specifico.
+// Lo speed e' il fattore di scala del vettore direzione (già normalizzato).
+static Projectile makeBossProj(sf::Vector2f from, float angle, float speed,
+                                int power, BossProjKind kind,
+                                uint8_t variant = 0, int homingMs = 0) {
+    Projectile p;
+    p.pos = from;
+    p.dir = sf::Vector2f(cos(angle) * speed, sin(angle) * speed);
+    p.power = power;
+    p.active = true;
+    p.type = WPN_PISTOL;  // default, ignorato dal render dei proiettili boss
+    p.bpKind = kind;
+    p.variant = variant;
+    p.homingTimer = homingMs;
+    p.age = 0;
+    return p;
+}
+
 void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossProjectiles) {
     animTime += 0.016f;  // ~16 ms per frame a 60 FPS
     // Decrementa attackingTimer (16 ms per frame a 60 FPS)
@@ -158,9 +176,14 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
     if (pos.y < UI_HEIGHT + size/2 || pos.y > screenHeight - size/2) dy = -dy;
     shootTimer += 16;
 
-    // Sparo a ventaglio: il cooldown diminuisce col livello (min ~800 ms).
-    // Aumentato da 1500 a 2500 per rendere i colpi meno frequenti.
-    if (shootTimer > (uint32_t)(2500 - level * 100)) {
+    // Sparo type-specific: ogni tipo di boss ha pattern, velocita', danno e
+    // comportamento diversi. Il cooldown base diminuisce col livello (min
+    // ~1000 ms); alcuni boss sparano piu' raramente (KRKEN, RAT_KING) altri
+    // piu' spesso (DEMON, DRAGON). Tutti i proiettili portano il proprio
+    // BossProjKind cosi' il rendering e l'update sono coerenti col tipo.
+    uint32_t baseCooldown = 2500 - level * 100;
+    if (baseCooldown < 1000) baseCooldown = 1000;
+    if (shootTimer > baseCooldown) {
         shootTimer = 0;
         // Triggera animazione di attacco per ~500 ms dopo lo sparo
         attackingTimer = 500;
@@ -168,15 +191,188 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
         float dist = sqrt(dxp*dxp + dyp*dyp);
         if (dist > 0) {
             float baseAngle = atan2(dyp, dxp);
-            // 3 colpi a ventaglio con passo 0.3 rad (~17°)
-            for(int i = -1; i <= 1; i++) {
-                float angle = baseAngle + i * 0.3f;
-                bossProjectiles.push_back({pos, sf::Vector2f(cos(angle)*5.0f, sin(angle)*5.0f), 1, true, WPN_PISTOL});
-            }
-            // Bomba: 1/3 di probabilita', danno 2, piu' lenta
-            if (rand() % 3 == 0) {
-                float bombAngle = baseAngle + (rand()%60 - 30) * (M_PI/180.0f);
-                bossProjectiles.push_back({pos, sf::Vector2f(cos(bombAngle)*2.0f, sin(bombAngle)*2.0f), 2, true, WPN_ROCKET});
+            switch (type) {
+                case BOSS_GOLEM: {
+                    // GOLEM: 1 masso pesante lento + 2 pietre minori laterali
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle, 2.5f, 2, BP_BOULDER));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.5f, 3.5f, 1, BP_BOULDER));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.5f, 3.5f, 1, BP_BOULDER));
+                    break;
+                }
+                case BOSS_LICH: {
+                    // LICH: 3 saette necrotiche verdi a ventaglio stretto
+                    for (int i = -1; i <= 1; i++) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.25f, 5.0f, 1, BP_NECRO_BOLT));
+                    }
+                    // 1/3: proiettile necrotico lento e potente
+                    if (rand() % 3 == 0) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle, 2.5f, 2, BP_NECRO_BOLT, 1));
+                    }
+                    break;
+                }
+                case BOSS_DEMON: {
+                    // DEMON: 3 palle di fuoco veloci + bomba incendiaria
+                    for (int i = -1; i <= 1; i++) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.35f, 5.5f, 1, BP_FIREBALL));
+                    }
+                    if (rand() % 2 == 0) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle, 2.0f, 3, BP_FIREBALL, 1));
+                    }
+                    break;
+                }
+                case BOSS_SPIDER: {
+                    // SPIDER: 2 ragnatele appiccicose lente e lente
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.2f, 2.5f, 1, BP_WEBSHOT));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.2f, 2.5f, 1, BP_WEBSHOT));
+                    // 1/4: jumpscade di veleno omni-direzionale (8 colpi)
+                    if (rand() % 4 == 0) {
+                        for (int i = 0; i < 8; i++) {
+                            float a = i * (float)M_PI / 4.f;
+                            bossProjectiles.push_back(makeBossProj(
+                                pos, a, 3.0f, 1, BP_WEBSHOT, 1));
+                        }
+                    }
+                    break;
+                }
+                case BOSS_ABOMINATION: {
+                    // ABOMINATION: 3 brandelli di carne (variabilita' alta)
+                    for (int i = -1; i <= 1; i++) {
+                        float angVar = ((rand() % 40) - 20) * (float)M_PI / 180.f;
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.4f + angVar, 4.0f, 1, BP_FLESH_CHUNK));
+                    }
+                    break;
+                }
+                case BOSS_KRAKEN: {
+                    // KRAKEN: 2 getti d'inchiostro lenti e 2 tentacoli
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.3f, 3.0f, 1, BP_INK_SPRAY));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.3f, 3.0f, 1, BP_INK_SPRAY));
+                    // Tentacoli: lenti e potenti
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.1f, 1.8f, 2, BP_INK_SPRAY, 1));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.1f, 1.8f, 2, BP_INK_SPRAY, 1));
+                    break;
+                }
+                case BOSS_DRAGON: {
+                    // DRAGON: soffio di fuoco a ventaglio largo (5 colpi)
+                    for (int i = -2; i <= 2; i++) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.18f, 6.0f, 1, BP_DRAGON_BREATH));
+                    }
+                    break;
+                }
+                case BOSS_WRAITH_LORD: {
+                    // WRAITH_LORD: 2 saette spettrali ciano + 1 homing debole
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.2f, 4.5f, 1, BP_GHOST_BOLT));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.2f, 4.5f, 1, BP_GHOST_BOLT));
+                    // Homing breve (1.5s): insegue parzialmente il player
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle, 3.0f, 2, BP_GHOST_BOLT, 1, 1500));
+                    break;
+                }
+                case BOSS_VAMPIRE: {
+                    // VAMPIRE: 3 dardi di sangue + 1 homing medio (2s)
+                    for (int i = -1; i <= 1; i++) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.25f, 5.0f, 1, BP_BLOOD_BOLT));
+                    }
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle, 3.0f, 2, BP_BLOOD_BOLT, 1, 2000));
+                    break;
+                }
+                case BOSS_BEHOLDER: {
+                    // BEHOLDER: 4 raggi oculari di colori diversi (variants 0..3)
+                    // I raggi sono piu' veloci e piu' deboli
+                    for (int i = 0; i < 4; i++) {
+                        float ang = baseAngle + (i - 1.5f) * 0.3f;
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, ang, 6.0f, 1, BP_EYE_RAY, (uint8_t)i));
+                    }
+                    // 1/3: raggio potente centrale
+                    if (rand() % 3 == 0) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle, 4.0f, 2, BP_EYE_RAY, 4));
+                    }
+                    break;
+                }
+                case BOSS_GHOUL_LORD: {
+                    // GHOUL_LORD: 3 artigli ossei
+                    for (int i = -1; i <= 1; i++) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.3f, 4.5f, 1, BP_GHOUL_CLAW));
+                    }
+                    break;
+                }
+                case BOSS_SPECTRAL_ALPHA: {
+                    // SPECTRAL_ALPHA: 2 zanne spettrali veloci
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.15f, 5.5f, 1, BP_SPECTRAL_FANG));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.15f, 5.5f, 1, BP_SPECTRAL_FANG));
+                    break;
+                }
+                case BOSS_CULT_HERALD: {
+                    // CULT_HERALD: 1 sfera magica viola + 2 piccole
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle, 3.5f, 2, BP_CULT_ORB));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.4f, 5.0f, 1, BP_CULT_ORB, 1));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.4f, 5.0f, 1, BP_CULT_ORB, 1));
+                    break;
+                }
+                case BOSS_COLOSSAL_MIMIC: {
+                    // COLOSSAL_MIMIC: 3 getti di bava appiccicosa (variabilita')
+                    for (int i = -1; i <= 1; i++) {
+                        float angVar = ((rand() % 30) - 15) * (float)M_PI / 180.f;
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.3f + angVar, 3.5f, 1, BP_MIMIC_GOO));
+                    }
+                    break;
+                }
+                case BOSS_RAT_KING: {
+                    // RAT_KING: 3 piccoli ratti che vanno in direzioni leggermente diverse
+                    for (int i = -1; i <= 1; i++) {
+                        bossProjectiles.push_back(makeBossProj(
+                            pos, baseAngle + i * 0.5f, 4.0f, 1, BP_RAT_SWARM));
+                    }
+                    break;
+                }
+                case BOSS_SUPREME_WITCH: {
+                    // SUPREME_WITCH: 2 esche decorative + 1 HEX homing forte (3s)
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.3f, 4.0f, 1, BP_WITCH_HEX, 1));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.3f, 4.0f, 1, BP_WITCH_HEX, 1));
+                    // Maledizione homing: insegue il player per 3 secondi
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle, 3.0f, 2, BP_WITCH_HEX, 0, 3000));
+                    break;
+                }
+                case BOSS_TWILIGHT_KNIGHT: {
+                    // TWILIGHT_KNIGHT: 1 lama d'ombra potente + 2 piccole veloci
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle, 4.0f, 2, BP_TWILIGHT_BLADE));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle - 0.3f, 6.0f, 1, BP_TWILIGHT_BLADE, 1));
+                    bossProjectiles.push_back(makeBossProj(
+                        pos, baseAngle + 0.3f, 6.0f, 1, BP_TWILIGHT_BLADE, 1));
+                    break;
+                }
             }
         }
     }
