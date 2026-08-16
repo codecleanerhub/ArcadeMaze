@@ -1323,10 +1323,315 @@ void Game::render() {
         }
     }
     else if (state == STATE_BOSS) {
-        // Sfondo completamente nero (no labirinto)
-        sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-        bg.setFillColor(sf::Color(5, 5, 5));
-        window.draw(bg);
+        // --- Stanza del boss: caverna scavata nella roccia ---
+        // Sostituisce il vecchio sfondo nero piatto. Lo stile e' coerente
+        // con quello del labirinto (Maze::render): pavimento terra battuta
+        // scura con ciottoli sparsi, e muro perimetrale roccioso con bande
+        // di illuminazione, ciottoli e crepe. NON viene usato il labirinto
+        // vero e proprio: la stanza e' una grande arena quadrata.
+        //
+        // Tutte le variazioni sono deterministiche (hash 2D) per evitare
+        // flicker tra frame. Le torce lungo i muri sono animate con una
+        // static float (menuTime pattern gia' usato nel menu principale).
+        {
+            // --- Pavimento terra battuta ---
+            // 64 celle da 128x128 px (8x8 griglia) per coprire 1024x944.
+            // Per ogni cella: colore base + variazione hash + ciottoli
+            // sparsi + macchie scure. Identico al pavimento del labirinto
+            // ma con celle piu' grandi (l'arena e' piu' spaziosa).
+            auto floorHash = [](int c, int r) -> float {
+                unsigned int h = (unsigned int)(c * 73856093u) ^ (unsigned int)(r * 19349663u);
+                h ^= h >> 13;
+                h *= 0x5bd1e995u;
+                h ^= h >> 15;
+                return (float)(h & 0xFFFFu) / 65535.f;
+            };
+            const int cellSize = 128;
+            // Area di gioco: da UI_HEIGHT (80) a WINDOW_HEIGHT (1024)
+            const int playTop = UI_HEIGHT;
+            const int playH = WINDOW_HEIGHT - UI_HEIGHT;
+            const int colsFloor = (WINDOW_WIDTH + cellSize - 1) / cellSize;
+            const int rowsFloor = (playH + cellSize - 1) / cellSize;
+            for (int fc = 0; fc < colsFloor; fc++) {
+                for (int fr = 0; fr < rowsFloor; fr++) {
+                    float fx = fc * cellSize;
+                    float fy = playTop + fr * cellSize;
+                    float v = floorHash(fc + 1, fr + 1);
+                    // Colore base terra scura con variazione
+                    sf::Uint8 bgr = (sf::Uint8)(18 + (v - 0.5f) * 12.f);
+                    sf::Uint8 bgg = (sf::Uint8)(13 + (v - 0.5f) * 8.f);
+                    sf::Uint8 bgb = (sf::Uint8)(10 + (v - 0.5f) * 6.f);
+                    sf::RectangleShape floorTile(sf::Vector2f((float)cellSize, (float)cellSize));
+                    floorTile.setFillColor(sf::Color(bgr, bgg, bgb));
+                    floorTile.setPosition(fx, fy);
+                    window.draw(floorTile);
+                    // 2-3 ciottoli sparsi sul pavimento per cella
+                    int nPeb = 2 + (int)(floorHash(fc + 200, fr + 100) * 2.f);
+                    for (int i = 0; i < nPeb; i++) {
+                        float h1 = floorHash(fc * 17 + i + 100, fr * 3 + i + 50);
+                        float h2 = floorHash(fc * 7 + i + 200, fr * 13 + i + 70);
+                        float h3 = floorHash(fc * 23 + i + 1,  fr * 11 + i + 13);
+                        float px = fx + 8.f + h1 * (cellSize - 16.f);
+                        float py = fy + 8.f + h2 * (cellSize - 16.f);
+                        float radius = 2.f + h3 * 2.5f;
+                        sf::Uint8 pr = (sf::Uint8)(60 + h3 * 30);
+                        sf::Uint8 pg = (sf::Uint8)(50 + h3 * 25);
+                        sf::Uint8 pb = (sf::Uint8)(40 + h3 * 18);
+                        sf::CircleShape pebble(radius);
+                        pebble.setFillColor(sf::Color(pr, pg, pb));
+                        pebble.setPosition(px - radius, py - radius);
+                        window.draw(pebble);
+                    }
+                    // Macchie di terra scura in ~15% delle celle
+                    if (floorHash(fc + 700, fr + 350) > 0.85f) {
+                        float h1 = floorHash(fc + 800, fr + 400);
+                        float h2 = floorHash(fc + 900, fr + 500);
+                        float sx = fx + 16.f + h1 * (cellSize - 48.f);
+                        float sy = fy + 16.f + h2 * (cellSize - 48.f);
+                        sf::CircleShape stain(6.f + h1 * 5.f);
+                        stain.setFillColor(sf::Color(8, 5, 3, 180));
+                        stain.setPosition(sx - 6.f, sy - 6.f);
+                        window.draw(stain);
+                    }
+                }
+            }
+
+            // --- Muri perimetrali rocciosi ---
+            // Cornice di 24 px tutto attorno all'area di gioco (sotto la UI).
+            // Stile cavernoso uguale a quello del labirinto: banda superiore
+            // chiara (illuminazione), banda inferiore scura (ombra), ciottoli
+            // e crepe deterministiche.
+            const float wallThickness = 24.f;
+            sf::Color rockBase(70, 60, 55);
+            // Colore banda chiara (illuminazione calda da torcia)
+            sf::Color rockLight(
+                (sf::Uint8)std::min(255, rockBase.r + 40),
+                (sf::Uint8)std::min(255, rockBase.g + 32),
+                (sf::Uint8)std::min(255, rockBase.b + 22));
+            // Colore banda scura (ombra / fessura)
+            sf::Color rockDark(15, 10, 8);
+            // Colore base scuro (ombra profonda)
+            sf::Color rockDeep(
+                (sf::Uint8)std::max(0, rockBase.r - 20),
+                (sf::Uint8)std::max(0, rockBase.g - 18),
+                (sf::Uint8)std::max(0, rockBase.b - 15));
+
+            // Muro superiore (sotto la UI)
+            sf::RectangleShape topWall(sf::Vector2f(WINDOW_WIDTH, wallThickness));
+            topWall.setFillColor(rockDeep);
+            topWall.setPosition(0, playTop);
+            window.draw(topWall);
+            // Banda chiara in basso del muro superiore (illuminazione verso il pavimento)
+            sf::RectangleShape topLight(sf::Vector2f(WINDOW_WIDTH, 6.f));
+            topLight.setFillColor(rockLight);
+            topLight.setPosition(0, playTop + wallThickness - 6.f);
+            window.draw(topLight);
+            // Banda scura in alto (ombra verso UI)
+            sf::RectangleShape topDark(sf::Vector2f(WINDOW_WIDTH, 4.f));
+            topDark.setFillColor(rockDark);
+            topDark.setPosition(0, playTop);
+            window.draw(topDark);
+
+            // Muro inferiore
+            sf::RectangleShape botWall(sf::Vector2f(WINDOW_WIDTH, wallThickness));
+            botWall.setFillColor(rockDeep);
+            botWall.setPosition(0, WINDOW_HEIGHT - wallThickness);
+            window.draw(botWall);
+            sf::RectangleShape botLight(sf::Vector2f(WINDOW_WIDTH, 6.f));
+            botLight.setFillColor(rockLight);
+            botLight.setPosition(0, WINDOW_HEIGHT - wallThickness);
+            window.draw(botLight);
+            sf::RectangleShape botDark(sf::Vector2f(WINDOW_WIDTH, 4.f));
+            botDark.setFillColor(rockDark);
+            botDark.setPosition(0, WINDOW_HEIGHT - 4.f);
+            window.draw(botDark);
+
+            // Muro sinistro
+            sf::RectangleShape leftWall(sf::Vector2f(wallThickness, playH));
+            leftWall.setFillColor(rockDeep);
+            leftWall.setPosition(0, playTop);
+            window.draw(leftWall);
+            sf::RectangleShape leftLight(sf::Vector2f(6.f, playH));
+            leftLight.setFillColor(rockLight);
+            leftLight.setPosition(wallThickness - 6.f, playTop);
+            window.draw(leftLight);
+            sf::RectangleShape leftDark(sf::Vector2f(4.f, playH));
+            leftDark.setFillColor(rockDark);
+            leftDark.setPosition(0, playTop);
+            window.draw(leftDark);
+
+            // Muro destro
+            sf::RectangleShape rightWall(sf::Vector2f(wallThickness, playH));
+            rightWall.setFillColor(rockDeep);
+            rightWall.setPosition(WINDOW_WIDTH - wallThickness, playTop);
+            window.draw(rightWall);
+            sf::RectangleShape rightLight(sf::Vector2f(6.f, playH));
+            rightLight.setFillColor(rockLight);
+            rightLight.setPosition(WINDOW_WIDTH - wallThickness, playTop);
+            window.draw(rightLight);
+            sf::RectangleShape rightDark(sf::Vector2f(4.f, playH));
+            rightDark.setFillColor(rockDark);
+            rightDark.setPosition(WINDOW_WIDTH - 4.f, playTop);
+            window.draw(rightDark);
+
+            // Ciottoli sparsi sui muri (per ogni segmento di 32 px sui 4 lati)
+            auto wallHash = [](int c, int r) -> float {
+                unsigned int h = (unsigned int)(c * 73856093u) ^ (unsigned int)(r * 19349663u);
+                h ^= h >> 13;
+                h *= 0x5bd1e995u;
+                h ^= h >> 15;
+                return (float)(h & 0xFFFFu) / 65535.f;
+            };
+            // Muro superiore: ciottoli lungo la fascia
+            for (int i = 0; i < WINDOW_WIDTH / 32; i++) {
+                float h1 = wallHash(i + 1, 999);
+                float h2 = wallHash(i + 500, 333);
+                float h3 = wallHash(i + 100, 777);
+                float cx = i * 32.f + 8.f + h1 * 16.f;
+                float cy = playTop + 6.f + h2 * 12.f;
+                float radius = 2.f + h3 * 2.f;
+                sf::Uint8 cr = (sf::Uint8)std::min(255, rockBase.r + 15);
+                sf::Uint8 cg = (sf::Uint8)std::min(255, rockBase.g + 12);
+                sf::Uint8 cb = (sf::Uint8)std::min(255, rockBase.b + 8);
+                sf::CircleShape pebble(radius);
+                pebble.setFillColor(sf::Color(cr, cg, cb));
+                pebble.setPosition(cx - radius, cy - radius);
+                window.draw(pebble);
+            }
+            // Muro inferiore
+            for (int i = 0; i < WINDOW_WIDTH / 32; i++) {
+                float h1 = wallHash(i + 2, 998);
+                float h2 = wallHash(i + 501, 334);
+                float h3 = wallHash(i + 101, 778);
+                float cx = i * 32.f + 8.f + h1 * 16.f;
+                float cy = WINDOW_HEIGHT - wallThickness + 6.f + h2 * 12.f;
+                float radius = 2.f + h3 * 2.f;
+                sf::Uint8 cr = (sf::Uint8)std::min(255, rockBase.r + 15);
+                sf::Uint8 cg = (sf::Uint8)std::min(255, rockBase.g + 12);
+                sf::Uint8 cb = (sf::Uint8)std::min(255, rockBase.b + 8);
+                sf::CircleShape pebble(radius);
+                pebble.setFillColor(sf::Color(cr, cg, cb));
+                pebble.setPosition(cx - radius, cy - radius);
+                window.draw(pebble);
+            }
+            // Muro sinistro
+            for (int i = 0; i < (playH) / 32; i++) {
+                float h1 = wallHash(i + 3, 997);
+                float h2 = wallHash(i + 502, 335);
+                float h3 = wallHash(i + 102, 779);
+                float cx = 6.f + h1 * 12.f;
+                float cy = playTop + i * 32.f + 8.f + h2 * 16.f;
+                float radius = 2.f + h3 * 2.f;
+                sf::Uint8 cr = (sf::Uint8)std::min(255, rockBase.r + 15);
+                sf::Uint8 cg = (sf::Uint8)std::min(255, rockBase.g + 12);
+                sf::Uint8 cb = (sf::Uint8)std::min(255, rockBase.b + 8);
+                sf::CircleShape pebble(radius);
+                pebble.setFillColor(sf::Color(cr, cg, cb));
+                pebble.setPosition(cx - radius, cy - radius);
+                window.draw(pebble);
+            }
+            // Muro destro
+            for (int i = 0; i < (playH) / 32; i++) {
+                float h1 = wallHash(i + 4, 996);
+                float h2 = wallHash(i + 503, 336);
+                float h3 = wallHash(i + 103, 780);
+                float cx = WINDOW_WIDTH - wallThickness + 6.f + h1 * 12.f;
+                float cy = playTop + i * 32.f + 8.f + h2 * 16.f;
+                float radius = 2.f + h3 * 2.f;
+                sf::Uint8 cr = (sf::Uint8)std::min(255, rockBase.r + 15);
+                sf::Uint8 cg = (sf::Uint8)std::min(255, rockBase.g + 12);
+                sf::Uint8 cb = (sf::Uint8)std::min(255, rockBase.b + 8);
+                sf::CircleShape pebble(radius);
+                pebble.setFillColor(sf::Color(cr, cg, cb));
+                pebble.setPosition(cx - radius, cy - radius);
+                window.draw(pebble);
+            }
+
+            // --- Torce animate lungo i muri ---
+            // 4 torce per lato (totale 16), posizionate a distanze regolari.
+            // Ogni torcia: bastone + cestello + fiamma a 3 strati animata +
+            // aura luminosa. Stesso stile di quelle del menu principale.
+            static float bossRoomTime = 0.f;
+            bossRoomTime += 0.016f;
+            auto drawTorch = [&](float x, float yBase) {
+                // Bastone
+                sf::RectangleShape handle(sf::Vector2f(5.f, 16.f));
+                handle.setFillColor(sf::Color(60, 30, 10));
+                handle.setOutlineThickness(0.8f); handle.setOutlineColor(sf::Color(20, 10, 0));
+                handle.setPosition(x - 2.5f, yBase);
+                window.draw(handle);
+                // Cestello metallico
+                sf::RectangleShape bracket(sf::Vector2f(10.f, 6.f));
+                bracket.setFillColor(sf::Color(80, 80, 80));
+                bracket.setOutlineThickness(0.8f); bracket.setOutlineColor(sf::Color(40, 40, 40));
+                bracket.setPosition(x - 5.f, yBase - 6.f);
+                window.draw(bracket);
+                // Aura
+                sf::CircleShape aura(20.f);
+                aura.setFillColor(sf::Color(255, 180, 60, 35));
+                aura.setPosition(x - 20.f, yBase - 38.f);
+                window.draw(aura);
+                // Fiamma animata (3 strati)
+                float flicker = sin(bossRoomTime * 18.f + x) * 2.f;
+                // Strato esterno (rosso)
+                sf::CircleShape flame3(8.f + flicker);
+                flame3.setFillColor(sf::Color(180, 30, 10, 220));
+                flame3.setPosition(x - 8.f - flicker, yBase - 26.f);
+                window.draw(flame3);
+                // Strato medio (arancione)
+                sf::CircleShape flame2(5.5f + flicker * 0.5f);
+                flame2.setFillColor(sf::Color(255, 140, 30, 240));
+                flame2.setPosition(x - 5.5f - flicker * 0.5f, yBase - 22.f);
+                window.draw(flame2);
+                // Strato interno (giallo-bianco)
+                sf::CircleShape flame1(3.f);
+                flame1.setFillColor(sf::Color(255, 240, 180, 250));
+                flame1.setPosition(x - 3.f, yBase - 18.f);
+                window.draw(flame1);
+            };
+            // 4 torce sul muro superiore (appese, fiamma verso il basso)
+            for (int i = 0; i < 4; i++) {
+                float x = 200.f + i * (WINDOW_WIDTH - 400.f) / 3.f;
+                drawTorch(x, playTop + wallThickness + 4.f);
+            }
+            // 4 torce sul muro inferiore
+            for (int i = 0; i < 4; i++) {
+                float x = 200.f + i * (WINDOW_WIDTH - 400.f) / 3.f;
+                drawTorch(x, WINDOW_HEIGHT - wallThickness - 30.f);
+            }
+            // 3 torce sul muro sinistro
+            for (int i = 0; i < 3; i++) {
+                float y = playTop + 150.f + i * (playH - 300.f) / 2.f;
+                drawTorch(wallThickness + 4.f, y);
+            }
+            // 3 torce sul muro destro
+            for (int i = 0; i < 3; i++) {
+                float y = playTop + 150.f + i * (playH - 300.f) / 2.f;
+                drawTorch(WINDOW_WIDTH - wallThickness - 6.f, y);
+            }
+
+            // --- Vignette: leggero scuro ai bordi per dare profondita' ---
+            // 4 bande sfumate molto sottili che scuriscono leggermente
+            // gli angoli della stanza (effetto "luce centrale").
+            // Implementazione economica: 4 rettangoli semitrasparenti
+            // spessori 40 px sui lati.
+            sf::RectangleShape vigL(sf::Vector2f(40.f, playH));
+            vigL.setFillColor(sf::Color(0, 0, 0, 60));
+            vigL.setPosition(wallThickness, playTop);
+            window.draw(vigL);
+            sf::RectangleShape vigR(sf::Vector2f(40.f, playH));
+            vigR.setFillColor(sf::Color(0, 0, 0, 60));
+            vigR.setPosition(WINDOW_WIDTH - wallThickness - 40.f, playTop);
+            window.draw(vigR);
+            sf::RectangleShape vigT(sf::Vector2f(WINDOW_WIDTH, 30.f));
+            vigT.setFillColor(sf::Color(0, 0, 0, 60));
+            vigT.setPosition(0, playTop + wallThickness);
+            window.draw(vigT);
+            sf::RectangleShape vigB(sf::Vector2f(WINDOW_WIDTH, 30.f));
+            vigB.setFillColor(sf::Color(0, 0, 0, 60));
+            vigB.setPosition(0, WINDOW_HEIGHT - wallThickness - 30.f);
+            window.draw(vigB);
+        }
 
         // UI senza tesori (passiamo 0)
         ui.render(window, player, 0);

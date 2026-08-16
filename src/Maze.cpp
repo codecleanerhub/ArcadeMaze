@@ -171,11 +171,18 @@ int Maze::getRemainingTreasures() {
 //     forziere, coppa, monete). Tutti i tesori sono costruiti con primitive.
 //   * Arma: chiama Weapon::render sul tile (l'arma ha gia' la sua ombra).
 //
+// Inoltre, dopo aver disegnato tutte le celle, vengono aggiunti:
+//   * Torce animate lungo i muri interni del labirinto (una ogni ~6 celle
+//     muro adiacenti a una cella vuota), con fiamma a 3 strati e aura.
+//   * Urne decorative sul pavimento in posizioni vuote casuali
+//     determinate dalla hash della cella.
+//
 // La posizione y tiene conto dell'offset UI_HEIGHT (la barra in alto).
 //
 // NOTA: tutte le variazioni procedurali sono deterministiche (derivate da
 // una funzione hash delle coordinate della cella), per evitare flickering
-// tra un frame e il successivo.
+// tra un frame e il successivo. Solo le torce sono animate nel tempo
+// (fiamma che guizza).
 // ---------------------------------------------------------------------------
 namespace {
     // Hash 2D deterministico -> [0, 1). Usato per variazioni procedurali
@@ -193,6 +200,12 @@ void Maze::render(sf::RenderTarget& target) {
     sf::RectangleShape rect(sf::Vector2f(TILE_SIZE, TILE_SIZE));
     sf::Color outline(10, 10, 10);
 
+    // Tempo globale per le animazioni (torce). Static per persistere tra
+    // le chiamate di render: ~16 ms per frame a 60 FPS.
+    static float animTime = 0.f;
+    animTime += 0.016f;
+
+    // Prima passata: celle del labirinto (muri, pavimento, tesori, armi).
     for (int c = 0; c < MAZE_COLS; ++c) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
@@ -409,6 +422,235 @@ void Maze::render(sf::RenderTarget& target) {
                     grid[c][r].weapon.render(target, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 }
             }
+        }
+    }
+
+    // ===================================================================
+    // SECONDA PASSATA: torce animate lungo i muri + urne decorative.
+    // Viene fatta dopo le celle cosi' gli elementi decorativi sono sopra
+    // i muri/pavimento ma SOTTO i tesori e le armi (che sono sopra tutto).
+    //
+    // Torce: vengono disegnate sulle celle muro che sono adiacenti a una
+    // cella vuota (cosi' la torcia e' visibile dal corridoio) e selezionate
+    // con probabilita' deterministica (~1 ogni 6 celle muro adiacenti).
+    // Ogni torcia: bastone + cestello + fiamma a 3 strati animata + aura
+    // luminosa calda. La direzione della torcia (appesa sopra il muro o
+    // laterale) dipende da quale lato del muro e' adiacente al vuoto.
+    //
+    // Urne: vasi decorativi posizionati sul pavimento in celle vuote
+    // casuali (~3% delle celle vuote). Ogni urna: corpo ovoidale + bocca
+    // + base + decoro. Varieta' di colori per dare carattere fantasy.
+    // ===================================================================
+
+    // Lambda: disegna una torcia animata in posizione (x, y) dove y e' la
+    // base del bastone (la fiamma e' sopra).
+    auto drawTorch = [&](float x, float yBase, float torchTime) {
+        // Aura luminosa calda (grande cerchio semitrasparente)
+        sf::CircleShape aura(22.f);
+        aura.setFillColor(sf::Color(255, 180, 60, 35));
+        aura.setPosition(x - 22.f, yBase - 44.f);
+        target.draw(aura);
+        sf::CircleShape aura2(14.f);
+        aura2.setFillColor(sf::Color(255, 200, 80, 55));
+        aura2.setPosition(x - 14.f, yBase - 34.f);
+        target.draw(aura2);
+        // Bastone della torcia (legno scuro)
+        sf::RectangleShape handle(sf::Vector2f(4.f, 12.f));
+        handle.setFillColor(sf::Color(60, 30, 10));
+        handle.setOutlineThickness(0.8f); handle.setOutlineColor(sf::Color(20, 10, 0));
+        handle.setPosition(x - 2.f, yBase - 4.f);
+        target.draw(handle);
+        // Cestello metallico della fiamma (trapezio rovesciato)
+        sf::ConvexShape bracket; bracket.setPointCount(4);
+        bracket.setFillColor(sf::Color(80, 70, 60));
+        bracket.setOutlineThickness(0.8f); bracket.setOutlineColor(sf::Color(40, 30, 20));
+        bracket.setPoint(0, sf::Vector2f(x - 5.f, yBase - 4.f));
+        bracket.setPoint(1, sf::Vector2f(x + 5.f, yBase - 4.f));
+        bracket.setPoint(2, sf::Vector2f(x + 4.f, yBase - 10.f));
+        bracket.setPoint(3, sf::Vector2f(x - 4.f, yBase - 10.f));
+        target.draw(bracket);
+        // Fiamma animata (3 strati)
+        float flicker = sin(torchTime * 18.f + x) * 1.5f;
+        float flicker2 = cos(torchTime * 22.f + x * 0.7f) * 1.f;
+        // Strato esterno (rosso scuro)
+        sf::CircleShape flame3(6.f + flicker);
+        flame3.setFillColor(sf::Color(180, 30, 10, 220));
+        flame3.setPosition(x - 6.f - flicker * 0.5f, yBase - 24.f + flicker2 * 0.3f);
+        target.draw(flame3);
+        // Strato medio (arancione)
+        sf::CircleShape flame2(4.f + flicker * 0.6f);
+        flame2.setFillColor(sf::Color(255, 140, 30, 240));
+        flame2.setPosition(x - 4.f - flicker * 0.3f, yBase - 22.f + flicker2 * 0.2f);
+        target.draw(flame2);
+        // Strato interno (giallo-bianco)
+        sf::CircleShape flame1(2.f);
+        flame1.setFillColor(sf::Color(255, 240, 180, 250));
+        flame1.setPosition(x - 2.f, yBase - 19.f);
+        target.draw(flame1);
+    };
+
+    // --- Torce lungo i muri ---
+    // Per ogni cella muro adiacente a una cella vuota, ~17% di probabilita'
+    // (deterministica) di avere una torcia. Posiziona la torcia sul bordo
+    // del muro verso la cella vuota.
+    for (int c = 1; c < MAZE_COLS - 1; ++c) {
+        for (int r = 1; r < MAZE_ROWS - 1; ++r) {
+            if (grid[c][r].type != CELL_WALL) continue;
+            // Determina quali lati del muro sono adiacenti a una cella vuota.
+            bool openUp    = (grid[c][r-1].type != CELL_WALL);
+            bool openDown  = (grid[c][r+1].type != CELL_WALL);
+            bool openLeft  = (grid[c-1][r].type != CELL_WALL);
+            bool openRight = (grid[c+1][r].type != CELL_WALL);
+            // Almeno un lato aperto: e' un muro "di confine" col corridoio.
+            if (!openUp && !openDown && !openLeft && !openRight) continue;
+            // Soglia deterministica: ~17% dei muri di confine hanno una torcia
+            float torchChance = cellHash(c + 1111, r + 2222);
+            if (torchChance > 0.17f) continue;
+
+            // Centro del muro
+            float mcx = c * TILE_SIZE + TILE_SIZE / 2.f;
+            float mcy = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+
+            // Sceglie il lato preferenziale: prio Orizzontali (su/giu) per
+            // avere torce piu' visibili dal corridoio. Se il muro e' aperto
+            // solo lateralmente, usa il lato laterale.
+            if (openDown) {
+                // Torcia appesa SOTTO il centro del muro (fiamma punta in su,
+                // verso il corridoio inferiore). yBase = bordo inferiore del
+                // muro, dove il bastone sporge di 4 px nel corridoio.
+                float yBase = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE + 4.f;
+                drawTorch(mcx, yBase, animTime);
+            } else if (openUp) {
+                // Torcia appesa Sopra il centro del muro (fiamma punta in su,
+                // nel corridoio superiore). yBase = bordo superiore del muro.
+                float yBase = r * TILE_SIZE + UI_HEIGHT - 4.f;
+                drawTorch(mcx, yBase, animTime);
+            } else if (openRight) {
+                // Torcia laterale sul lato destro del muro
+                float x = (c + 1) * TILE_SIZE + 4.f;
+                float yBase = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                drawTorch(x, yBase, animTime);
+            } else if (openLeft) {
+                // Torcia laterale sul lato sinistro del muro
+                float x = c * TILE_SIZE - 4.f;
+                float yBase = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                drawTorch(x, yBase, animTime);
+            }
+        }
+    }
+
+    // --- Urne decorative sul pavimento ---
+    // Vasi ornati posizionati in celle vuote casuali (~2.5% delle celle
+    // vuote). Solo celle che non sono tesori/armi. Le urne sono puramente
+    // decorative: non bloccano il movimento ne' sono raccoglibili.
+    auto drawUrn = [&](float cx, float cy) {
+        // Varieta' di colori determinata dalla hash della cella
+        // (le urne hanno 3 varianti: pietra grigia, bronzo, marmo scuro).
+        // Recuperiamo la hash dalla posizione approssimativa della cella.
+        int cellC = (int)(cx / TILE_SIZE);
+        int cellR = (int)((cy - UI_HEIGHT) / TILE_SIZE);
+        float urnHash = cellHash(cellC + 333, cellR + 777);
+        sf::Color urnCol, urnDark, urnLight, urnDecor;
+        if (urnHash < 0.33f) {
+            // Pietra grigia
+            urnCol   = sf::Color(110, 105, 100);
+            urnDark  = sf::Color(70, 65, 60);
+            urnLight = sf::Color(170, 165, 160);
+            urnDecor = sf::Color(180, 140, 60);  // decoro dorato
+        } else if (urnHash < 0.66f) {
+            // Bronzo
+            urnCol   = sf::Color(120, 90, 50);
+            urnDark  = sf::Color(70, 50, 25);
+            urnLight = sf::Color(180, 140, 80);
+            urnDecor = sf::Color(80, 30, 20);  // decoro rosso scuro
+        } else {
+            // Marmo scuro
+            urnCol   = sf::Color(60, 55, 70);
+            urnDark  = sf::Color(30, 25, 40);
+            urnLight = sf::Color(100, 95, 110);
+            urnDecor = sf::Color(220, 200, 80);  // decoro oro chiaro
+        }
+        sf::Color outlineUrn(20, 15, 10);
+
+        // Ombra a terra morbida
+        sf::CircleShape urnShadow(12.f);
+        urnShadow.setFillColor(sf::Color(0, 0, 0, 120));
+        urnShadow.setPosition(cx - 12.f, cy + 8.f);
+        target.draw(urnShadow);
+
+        // Base dell'urna (rettangolo piu' largo in basso)
+        sf::RectangleShape base(sf::Vector2f(14.f, 3.f));
+        base.setFillColor(urnDark);
+        base.setOutlineThickness(0.8f); base.setOutlineColor(outlineUrn);
+        base.setPosition(cx - 7.f, cy + 6.f);
+        target.draw(base);
+
+        // Corpo ovoidale (ConvexShape a 4 punti: stretto in alto/basso,
+        // largo al centro - effetto vaso).
+        sf::ConvexShape body; body.setPointCount(4);
+        body.setFillColor(urnCol);
+        body.setOutlineThickness(1.f); body.setOutlineColor(outlineUrn);
+        body.setPoint(0, sf::Vector2f(cx - 4.f, cy - 6.f));   // alto sx
+        body.setPoint(1, sf::Vector2f(cx + 4.f, cy - 6.f));   // alto dx
+        body.setPoint(2, sf::Vector2f(cx + 8.f, cy + 2.f));   // centro dx (largo)
+        body.setPoint(3, sf::Vector2f(cx - 8.f, cy + 2.f));   // centro sx (largo)
+        target.draw(body);
+        // Parte inferiore del corpo (restringimento verso la base)
+        sf::ConvexShape bodyBot; bodyBot.setPointCount(4);
+        bodyBot.setFillColor(urnCol);
+        bodyBot.setOutlineThickness(1.f); bodyBot.setOutlineColor(outlineUrn);
+        bodyBot.setPoint(0, sf::Vector2f(cx - 8.f, cy + 2.f));
+        bodyBot.setPoint(1, sf::Vector2f(cx + 8.f, cy + 2.f));
+        bodyBot.setPoint(2, sf::Vector2f(cx + 5.f, cy + 6.f));
+        bodyBot.setPoint(3, sf::Vector2f(cx - 5.f, cy + 6.f));
+        target.draw(bodyBot);
+
+        // Highlight verticale (riflesso luce sul lato sinistro del corpo)
+        sf::RectangleShape highlight(sf::Vector2f(1.5f, 10.f));
+        highlight.setFillColor(urnLight);
+        highlight.setPosition(cx - 5.f, cy - 5.f);
+        target.draw(highlight);
+
+        // Bocca dell'urna (apertura superiore)
+        sf::RectangleShape mouth(sf::Vector2f(6.f, 2.f));
+        mouth.setFillColor(urnDark);
+        mouth.setOutlineThickness(0.5f); mouth.setOutlineColor(outlineUrn);
+        mouth.setPosition(cx - 3.f, cy - 8.f);
+        target.draw(mouth);
+        // Bordo della bocca (cornicetta)
+        sf::RectangleShape rim(sf::Vector2f(8.f, 1.5f));
+        rim.setFillColor(urnLight);
+        rim.setOutlineThickness(0.5f); rim.setOutlineColor(outlineUrn);
+        rim.setPosition(cx - 4.f, cy - 9.f);
+        target.draw(rim);
+
+        // Decoro centrale (striscia orizzontale colorata)
+        sf::RectangleShape decor(sf::Vector2f(10.f, 1.5f));
+        decor.setFillColor(urnDecor);
+        decor.setPosition(cx - 5.f, cy - 1.f);
+        target.draw(decor);
+        // Piccolo simbolo centrale (rombo)
+        sf::ConvexShape symbol; symbol.setPointCount(4);
+        symbol.setFillColor(urnDecor);
+        symbol.setPoint(0, sf::Vector2f(cx, cy - 1.f));
+        symbol.setPoint(1, sf::Vector2f(cx + 2.f, cy + 0.5f));
+        symbol.setPoint(2, sf::Vector2f(cx, cy + 2.f));
+        symbol.setPoint(3, sf::Vector2f(cx - 2.f, cy + 0.5f));
+        target.draw(symbol);
+    };
+
+    // Posiziona urne in celle vuote selezionate deterministicamente (~2.5%)
+    for (int c = 1; c < MAZE_COLS - 1; ++c) {
+        for (int r = 1; r < MAZE_ROWS - 1; ++r) {
+            if (grid[c][r].type != CELL_EMPTY) continue;
+            // Esclude celle adiacenti alla posizione di partenza del player
+            // (cella 1,1) per non ostacolare visivamente l'inizio.
+            if (c <= 2 && r <= 2) continue;
+            // 2.5% delle celle vuote
+            if (cellHash(c + 5000, r + 6000) > 0.025f) continue;
+            float cx = c * TILE_SIZE + TILE_SIZE / 2.f;
+            float cy = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            drawUrn(cx, cy);
         }
     }
 }
