@@ -423,16 +423,21 @@ void Enemy::render(sf::RenderTarget& target) const {
     }
 
     // Barra HP disegnata PER ULTIMO (sempre on top rispetto allo sprite).
-    // Posizione: py - 40 (sopra lo sprite, sotto il limite UI).
-    // Nascosta durante l'animazione di morte.
+    // Posizione: py - 44 (sopra lo sprite 64x64).
+    // Altezza: 6px (piu' visibile).
     if (drawHpBar) {
-        sf::RectangleShape hbBg(sf::Vector2f(36.f, 4.f));
-        hbBg.setFillColor(sf::Color(50, 0, 0, 200));
-        hbBg.setPosition(px - 18.f, py - 40.f);
+        sf::RectangleShape hbBg(sf::Vector2f(36.f, 6.f));
+        hbBg.setFillColor(sf::Color(30, 0, 0));
+        hbBg.setOutlineThickness(1.f); hbBg.setOutlineColor(sf::Color(80, 0, 0));
+        hbBg.setPosition(px - 18.f, py - 44.f);
         target.draw(hbBg);
-        sf::RectangleShape hbFg(sf::Vector2f(36.f * health / maxHealth, 4.f));
-        hbFg.setFillColor(sf::Color(255, 50, 50));
-        hbFg.setPosition(px - 18.f, py - 40.f);
+        float hpPct = (float)health / maxHealth;
+        sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
+                            (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
+                            sf::Color(220, 40, 40);
+        sf::RectangleShape hbFg(sf::Vector2f(36.f * hpPct, 6.f));
+        hbFg.setFillColor(hpColor);
+        hbFg.setPosition(px - 18.f, py - 44.f);
         target.draw(hbFg);
     }
 }

@@ -74,10 +74,11 @@ void UI::render(sf::RenderTarget& target, Player& player, int remainingTreasures
 
     // ENERGY: barra proporzionale (magenta su grigio)
     drawTextOutlined(target, "ENERGY", 280, 10, 2, sf::Color::White);
-    sf::RectangleShape enBg(sf::Vector2f(100.f, 10.f)); enBg.setFillColor(sf::Color(100, 100, 100));
-    enBg.setPosition(280, 35); target.draw(enBg);
-    sf::RectangleShape enFg(sf::Vector2f(100.f * player.getEnergy() / player.getMaxEnergy(), 10.f)); enFg.setFillColor(sf::Color(255, 0, 255));
-    enFg.setPosition(280, 35); target.draw(enFg);
+    sf::RectangleShape enBg(sf::Vector2f(100.f, 14.f)); enBg.setFillColor(sf::Color(100, 100, 100));
+    enBg.setOutlineThickness(1.f); enBg.setOutlineColor(sf::Color(60, 60, 60));
+    enBg.setPosition(280, 33); target.draw(enBg);
+    sf::RectangleShape enFg(sf::Vector2f(100.f * player.getEnergy() / player.getMaxEnergy(), 14.f)); enFg.setFillColor(sf::Color(255, 0, 255));
+    enFg.setPosition(280, 33); target.draw(enFg);
 
     // WPN: nome dell'arma nel colore associato
     Weapon w = player.getCurrentWeapon();
@@ -86,10 +87,11 @@ void UI::render(sf::RenderTarget& target, Player& player, int remainingTreasures
 
     // AMMO: barra normalizzata a 15 (max della pistola)
     drawTextOutlined(target, "AMMO", 570, 10, 2, sf::Color::White);
-    sf::RectangleShape ammoBg(sf::Vector2f(100.f, 10.f)); ammoBg.setFillColor(sf::Color(100, 100, 100));
-    ammoBg.setPosition(570, 35); target.draw(ammoBg);
-    sf::RectangleShape ammoFg(sf::Vector2f(100.f * w.ammo / 15.f, 10.f)); ammoFg.setFillColor(sf::Color::Yellow);
-    ammoFg.setPosition(570, 35); target.draw(ammoFg);
+    sf::RectangleShape ammoBg(sf::Vector2f(100.f, 14.f)); ammoBg.setFillColor(sf::Color(100, 100, 100));
+    ammoBg.setOutlineThickness(1.f); ammoBg.setOutlineColor(sf::Color(60, 60, 60));
+    ammoBg.setPosition(570, 33); target.draw(ammoBg);
+    sf::RectangleShape ammoFg(sf::Vector2f(100.f * w.ammo / 15.f, 14.f)); ammoFg.setFillColor(sf::Color::Yellow);
+    ammoFg.setPosition(570, 33); target.draw(ammoFg);
 
     // TRES: tesori ancora da raccogliere (quando arriva a 0 parte il boss)
     drawTextOutlined(target, "TRES", 700, 10, 2, sf::Color::White);

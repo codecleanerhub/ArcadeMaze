@@ -158,10 +158,9 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
     if (pos.y < UI_HEIGHT + size/2 || pos.y > screenHeight - size/2) dy = -dy;
     shootTimer += 16;
 
-    // Sparo a ventaglio: il cooldown diminuisce col livello (min ~500 ms).
-    // Cast a uint32_t per evitare -Wsign-compare fra shootTimer (unsigned) e
-    // l'espressione (1500 - level*100) che e' int firmato.
-    if (shootTimer > (uint32_t)(1500 - level * 100)) {
+    // Sparo a ventaglio: il cooldown diminuisce col livello (min ~800 ms).
+    // Aumentato da 1500 a 2500 per rendere i colpi meno frequenti.
+    if (shootTimer > (uint32_t)(2500 - level * 100)) {
         shootTimer = 0;
         // Triggera animazione di attacco per ~500 ms dopo lo sparo
         attackingTimer = 500;

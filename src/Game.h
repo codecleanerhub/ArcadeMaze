@@ -32,6 +32,7 @@ enum GameState {
     STATE_CONFIG_JOY_2,   // configurazione joystick giocatore 2 (2 step)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
     STATE_BOSS,           // scontro con il boss
+    STATE_CONTINUES,      // schermata continues (conto alla rovescia 10-0)
     STATE_LOSE,           // schermata game over
     STATE_WIN_STORY,      // vittoria modalita' story (con fuochi d'artificio)
     STATE_WIN_INFINITE    // vittoria modalita' infinite (placeholder)
@@ -102,6 +103,10 @@ private:
     bool musicEnabled;
     int lightningTimer;                        // durata residua del fulmine nel menu'
     int configJoyStep;                         // step configurazione joystick (0/1)
+    int continuesLeft;                         // crediti continues rimanenti (max 3)
+    int continuesTimer;                        // conto alla rovescia 10-0 (secondi)
+    int continuesTimerMs;                      // ms residui del secondo corrente
+    bool continuesChoice;                      // true = YES, false = NO
 
     // Sottometodi del ciclo principale
     void handleEvents();
@@ -125,6 +130,8 @@ private:
     void drawMenu();
     // Disegna la schermata di configurazione joystick.
     void drawConfigJoy();
+    // Disegna la schermata continues (conto alla rovescia, Yes/No).
+    void drawContinues();
     // Disegna la schermata di configurazione joystick per il giocatore 2.
     void drawConfigJoy2();
     // Genera un fuoco d'artificio esploso in posizione casuale.
@@ -132,3 +139,4 @@ private:
 };
 
 #endif
+

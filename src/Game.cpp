@@ -40,7 +40,7 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0) {
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -265,11 +265,34 @@ void Game::handleEvents() {
                         startLevel(1);
                     }
                 }
+            } else if (state == STATE_CONTINUES) {
+                // Schermata continues: Left/Right scegli Yes/No, Enter conferma
+                if (key == sf::Keyboard::Left || key == sf::Keyboard::Right) {
+                    continuesChoice = !continuesChoice;
+                    audio.playSound(SOUND_MENU_SELECT);
+                }
+                else if (key == sf::Keyboard::Return) {
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                    if (continuesChoice) {
+                        // YES: continua con 3 vite, consuma 1 credito
+                        continuesLeft--;
+                        player.reset();
+                        if (numPlayers == 2) player2.reset();
+                        startLevel(currentLevel);
+                    } else {
+                        // NO: game over
+                        state = STATE_LOSE;
+                    }
+                }
+                else if (key == sf::Keyboard::Escape) {
+                    state = STATE_LOSE;
+                }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
                 // Schermate finali: Enter torna al menu'
                 if (key == sf::Keyboard::Return) {
                     state = STATE_MENU;
                     currentLevel = 1;
+                    continuesLeft = 3;  // reset crediti per nuova partita
                 }
             }
         }
@@ -312,10 +335,29 @@ void Game::handleEvents() {
                     if (configJoyStep == 0) { config.joy2_jump = event.joystickButton.button; configJoyStep = 1; }
                     else if (configJoyStep == 1) { config.joy2_shoot = event.joystickButton.button; state = STATE_MENU; }
                 }
+            } else if (state == STATE_CONTINUES) {
+                // Joystick: pulsante jump = conferma, pulsante shoot = toggle
+                if (event.joystickButton.joystickId == 0) {
+                    if (event.joystickButton.button == (unsigned)config.joy_jump) {
+                        audio.playSound(SOUND_MENU_CONFIRM);
+                        if (continuesChoice) {
+                            continuesLeft--;
+                            player.reset();
+                            if (numPlayers == 2) player2.reset();
+                            startLevel(currentLevel);
+                        } else {
+                            state = STATE_LOSE;
+                        }
+                    } else if (event.joystickButton.button == (unsigned)config.joy_shoot) {
+                        continuesChoice = !continuesChoice;
+                        audio.playSound(SOUND_MENU_SELECT);
+                    }
+                }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
                 if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     state = STATE_MENU;
                     currentLevel = 1;
+                    continuesLeft = 3;
                 }
             }
         }
@@ -632,9 +674,19 @@ void Game::update() {
             }
         }
 
-        // Transizioni di stato
-        if (numPlayers == 1 && player.getLives() <= 0) state = STATE_LOSE;
-        if (numPlayers == 2 && player.getLives() <= 0 && player2.getLives() <= 0) state = STATE_LOSE;
+        // Transizioni di stato: morte -> continues (se crediti) o lose
+        if (numPlayers == 1 && player.getLives() <= 0) {
+            if (continuesLeft > 0) {
+                state = STATE_CONTINUES;
+                continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
+            } else state = STATE_LOSE;
+        }
+        if (numPlayers == 2 && player.getLives() <= 0 && player2.getLives() <= 0) {
+            if (continuesLeft > 0) {
+                state = STATE_CONTINUES;
+                continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
+            } else state = STATE_LOSE;
+        }
         if (maze.getRemainingTreasures() == 0) startBossFight();
     }
     // --- Logica STATE_BOSS: stanza del boss ---
@@ -761,7 +813,12 @@ void Game::update() {
         // In 2P: GAME OVER quando ENTRAMBI i giocatori sono morti (uno dei due
         // puo' continuare a giocare da solo finche' ha vite).
         if (player.getLives() <= 0
-            && (numPlayers == 1 || player2.getLives() <= 0)) state = STATE_LOSE;
+            && (numPlayers == 1 || player2.getLives() <= 0)) {
+            if (continuesLeft > 0) {
+                state = STATE_CONTINUES;
+                continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
+            } else state = STATE_LOSE;
+        }
         if (boss->isDead()) {
             audio.playSound(SOUND_BOSS_DEATH);
             player.addLife(); // Guadagni una vita dopo aver sconfitto il boss
@@ -787,6 +844,18 @@ void Game::update() {
         }
         // Rimuove i fuochi esauriti
         fireworks.erase(std::remove_if(fireworks.begin(), fireworks.end(), [](const Firework& fw) { return fw.life <= 0; }), fireworks.end());
+    }
+    // --- Logica STATE_CONTINUES: conto alla rovescia ---
+    else if (state == STATE_CONTINUES) {
+        continuesTimerMs += 16;
+        if (continuesTimerMs >= 1000) {
+            continuesTimerMs = 0;
+            continuesTimer--;
+            if (continuesTimer <= 0) {
+                // Tempo scaduto: game over
+                state = STATE_LOSE;
+            }
+        }
     }
 
     // --- Aggiornamento particelle (comune a tutti gli stati) ---
@@ -939,6 +1008,37 @@ void Game::drawConfigJoy() {
     drawTextCenteredOutlined(window, "PRESS ESC TO CANCEL", WINDOW_WIDTH/2, 800, 2, sf::Color::Red);
 }
 
+// drawContinues: schermata "Continues?" con conto alla rovescia 10-0 e Yes/No.
+void Game::drawContinues() {
+    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+    bg.setFillColor(sf::Color(10, 0, 20));
+    window.draw(bg);
+
+    // Titolo
+    drawTextCenteredOutlined(window, "CONTINUES?", WINDOW_WIDTH/2, 200, 5, sf::Color(255, 50, 50));
+
+    // Crediti rimanenti
+    drawTextCenteredOutlined(window, "CREDITS: " + std::to_string(continuesLeft),
+        WINDOW_WIDTH/2, 300, 3, sf::Color(255, 215, 0));
+
+    // Conto alla rovescia
+    std::string timerStr = std::to_string(continuesTimer);
+    sf::Color timerColor = (continuesTimer <= 3) ? sf::Color(255, 50, 50) : sf::Color::White;
+    drawTextCenteredOutlined(window, timerStr, WINDOW_WIDTH/2, 400, 8, timerColor);
+
+    // Yes / No
+    std::string yesStr = (continuesChoice) ? "> YES <" : "YES";
+    std::string noStr = (!continuesChoice) ? "> NO <" : "NO";
+    sf::Color yesColor = (continuesChoice) ? sf::Color::Yellow : sf::Color(150, 150, 150);
+    sf::Color noColor = (!continuesChoice) ? sf::Color::Yellow : sf::Color(150, 150, 150);
+    drawTextCenteredOutlined(window, yesStr, WINDOW_WIDTH/2 - 150, 600, 3, yesColor);
+    drawTextCenteredOutlined(window, noStr, WINDOW_WIDTH/2 + 150, 600, 3, noColor);
+
+    // Istruzioni
+    drawTextCenteredOutlined(window, "LEFT/RIGHT TO SELECT - ENTER TO CONFIRM",
+        WINDOW_WIDTH/2, 800, 2, sf::Color(120, 120, 120));
+}
+
 // drawConfigJoy2: schermata minimale per la configurazione del secondo joystick.
 // Mostra solo un titolo e un prompt che cambia in base a configJoyStep.
 void Game::drawConfigJoy2() {
@@ -978,6 +1078,9 @@ void Game::render() {
     }
     else if (state == STATE_CONFIG_JOY_2) {
         drawConfigJoy2();
+    }
+    else if (state == STATE_CONTINUES) {
+        drawContinues();
     }
     else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE) {
         // Rendering comune per gameplay/schermate finali
