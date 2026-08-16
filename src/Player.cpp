@@ -241,7 +241,7 @@ void Player::render(sf::RenderTarget& target) {
     float py = pos.y - jumpOffset; // Applica offset visivo del salto
 
     // Etichetta arma sopra la testa
-    drawTextCentered(target, currentWeapon.getName(), px, pos.y - 45, 2, sf::Color(255, 255, 0));
+    drawTextCentered(target, currentWeapon.getName(), px, pos.y - 60, 2, sf::Color(255, 255, 0));
 
     // Tentativo di rendering con sprite.
     // Animazioni: attack (se shootAnimTimer>0) > walk > idle.
