@@ -28,8 +28,10 @@ Maze::Maze() {
 // ---------------------------------------------------------------------------
 // generate: rigenera completamente il labirinto come descritto in testa al
 // file. Non restituisce nulla; modifica `grid`, `wallColor` e `bgColor`.
+// `level` (1-based) seleziona la palette cromatica del livello (8 palette
+// che ciclano: caverna grigia, dungeon blu, cripta viola, ecc.).
 // ---------------------------------------------------------------------------
-void Maze::generate() {
+void Maze::generate(int level) {
     // 1) Riempi tutto di muri (punto di partenza).
     for (int c = 0; c < MAZE_COLS; ++c)
         for (int r = 0; r < MAZE_ROWS; ++r)
@@ -97,11 +99,50 @@ void Maze::generate() {
         grid[p.x][p.y].weapon = Weapon::generateRandom();
     }
 
-    // 5) Colori: muri con toni grigi casuali (40..90 per canale), sfondo
-    //    fisso scuro. La variazione cromatica dei muri fa percepire ogni
-    //    livello come diverso anche se la struttura e' simile.
-    wallColor = sf::Color(rand() % 50 + 40, rand() % 50 + 40, rand() % 50 + 40);
-    bgColor = sf::Color(15, 15, 15);
+    // 5) Colori: ogni livello ha una palette tematica diversa per dare
+    //    carattere distintivo al dungeon. Sono state definite 8 palette
+    //    che ciclano: caverna grigia, dungeon blu notturno, cripta viola
+    //    necrotica, caverne rocciose rosse, ossario giallo-osso, palude
+    //    verde, sale infernali rosso scuro, abisso turchese.
+    //    Inoltre il pavimento (`bgColor`) e' scelto in armonia cromatica
+    //    col muro per dare coerenza al "tema" del livello.
+    {
+        int palIdx = (level - 1) % 8;  // 8 palette disponibili (level e' 1-based)
+        switch (palIdx) {
+            case 0: // Caverna grigia (palette classica)
+                wallColor = sf::Color(75, 70, 65);
+                bgColor  = sf::Color(28, 22, 18);
+                break;
+            case 1: // Dungeon blu notturno (illuminazione fredda)
+                wallColor = sf::Color(55, 70, 90);
+                bgColor  = sf::Color(18, 22, 35);
+                break;
+            case 2: // Cripta viola necrotica
+                wallColor = sf::Color(85, 60, 90);
+                bgColor  = sf::Color(28, 18, 30);
+                break;
+            case 3: // Caverne rocciose rosse (terra bruciata)
+                wallColor = sf::Color(95, 60, 50);
+                bgColor  = sf::Color(35, 20, 15);
+                break;
+            case 4: // Ossario giallo-osso (polvere di ossa)
+                wallColor = sf::Color(95, 85, 60);
+                bgColor  = sf::Color(32, 28, 18);
+                break;
+            case 5: // Palude verde (muffa e muschio)
+                wallColor = sf::Color(60, 80, 55);
+                bgColor  = sf::Color(18, 28, 18);
+                break;
+            case 6: // Sale infernali (rosso scuro fuoco)
+                wallColor = sf::Color(95, 50, 45);
+                bgColor  = sf::Color(35, 15, 12);
+                break;
+            case 7: // Abisso turchese (grotta sottomarina)
+                wallColor = sf::Color(45, 85, 85);
+                bgColor  = sf::Color(15, 28, 30);
+                break;
+        }
+    }
 }
 
 // Conta i muri tra le 4 celle ortogonalmente adiacenti a (c, r).
@@ -210,83 +251,106 @@ void Maze::render(sf::RenderTarget& target) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             if (grid[c][r].type == CELL_WALL) {
-                // --- Muro 3D roccioso (pietra compatta, non porosa) ---
-                // Lo stile e' "roccia massiccia": superficie piu' solida possibile
-                // con poche variazioni, banda superiore chiara (illuminazione
-                // dall'alto), banda inferiore scura (fessura col pavimento) e
-                // al massimo UN piccolo ciottolo di colore uniforme per cella.
-                // Niente crepe multiple ne' macchie chiare sparse: la roccia
-                // deve sembrare compatta, non "buchi porosi".
+                // --- Muro 3D roccioso con gradiente verticale ---
+                // La roccia e' resa con un gradiente verticale a 5 strisce
+                // sovrapposte: molto chiara in alto (illuminazione da torcia),
+                // via via piu' scura verso il basso (ombra e umidita' di fondo).
+                // Questo da' al muro un aspetto "pietra massiccia" senza usare
+                // texture esterne, e varieta' cromatica tra livelli (palette).
+                // Le bande sono rese sfumate sovrapponendo rettangoli semi-
+                // trasparenti: ogni striscia aggiunge un po' del suo colore
+                // sopra la precedente, ammorbidendo i bordi netti.
+                //
+                // Strati (dall'alto al basso):
+                //   1. cima: luce intensa (wallColor + 50, tonalita' calda)
+                //   2. alto-sopra: luce media (wallColor + 25)
+                //   3. centro: tono base (wallColor - 5, leggermente piu' scuro)
+                //   4. basso-sotto: ombra (wallColor - 30)
+                //   5. fondo: ombra profonda (wallColor - 55)
 
-                // Colore base = wallColor scurito (effetto ombra profonda)
-                sf::Color baseCol = sf::Color(
-                    (sf::Uint8)std::max(0,   wallColor.r - 18),
-                    (sf::Uint8)std::max(0,   wallColor.g - 18),
-                    (sf::Uint8)std::max(0,   wallColor.b - 18));
-                rect.setFillColor(baseCol);
+                // Strato 5 (fondo, ombra profonda): copre tutta la cella
+                sf::Color colBottom = sf::Color(
+                    (sf::Uint8)std::max(0, wallColor.r - 55),
+                    (sf::Uint8)std::max(0, wallColor.g - 50),
+                    (sf::Uint8)std::max(0, wallColor.b - 45));
+                rect.setFillColor(colBottom);
                 target.draw(rect);
 
-                // Banda superiore piu' chiara (illuminazione calda da torcia)
-                rect.setSize(sf::Vector2f(TILE_SIZE, 8.f));
-                rect.setFillColor(sf::Color(
-                    (sf::Uint8)std::min(255, wallColor.r + 30),
-                    (sf::Uint8)std::min(255, wallColor.g + 24),
-                    (sf::Uint8)std::min(255, wallColor.b + 18)));
+                // Strato 4 (basso-sotto, ombra media): 60% del tile dal basso,
+                // sovrapposto con alpha per ammorbidire
+                sf::Color colLowShadow = sf::Color(
+                    (sf::Uint8)std::max(0, wallColor.r - 25),
+                    (sf::Uint8)std::max(0, wallColor.g - 22),
+                    (sf::Uint8)std::max(0, wallColor.b - 20));
+                rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.75f));
+                rect.setFillColor(colLowShadow);
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE * 0.25f);
+                target.draw(rect);
+
+                // Strato 3 (centro, tono base): 55% del tile dal centro in su
+                sf::Color colMid = sf::Color(
+                    (sf::Uint8)std::max(0, wallColor.r - 5),
+                    (sf::Uint8)std::max(0, wallColor.g - 5),
+                    (sf::Uint8)std::max(0, wallColor.b - 5));
+                rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.55f));
+                rect.setFillColor(colMid);
                 rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 target.draw(rect);
 
-                // Sottile striscia di luce ancora piu' chiara sul bordo superiore
-                // (effetto "taglio di luce" che evidenzia il top del muro)
-                rect.setSize(sf::Vector2f(TILE_SIZE, 2.f));
-                rect.setFillColor(sf::Color(
-                    (sf::Uint8)std::min(255, wallColor.r + 55),
-                    (sf::Uint8)std::min(255, wallColor.g + 45),
-                    (sf::Uint8)std::min(255, wallColor.b + 35)));
+                // Strato 2 (alto-sopra, luce media): 30% del tile dall'alto
+                sf::Color colHigh = sf::Color(
+                    (sf::Uint8)std::min(255, wallColor.r + 22),
+                    (sf::Uint8)std::min(255, wallColor.g + 18),
+                    (sf::Uint8)std::min(255, wallColor.b + 14));
+                rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.30f));
+                rect.setFillColor(colHigh);
                 rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 target.draw(rect);
 
-                // Banda inferiore molto scura (ombra / fessura col pavimento)
-                rect.setSize(sf::Vector2f(TILE_SIZE, 5.f));
-                rect.setFillColor(sf::Color(12, 8, 6));
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 5);
+                // Strato 1 (cima, luce intensa): 10% del tile dal bordo superiore
+                sf::Color colTop = sf::Color(
+                    (sf::Uint8)std::min(255, wallColor.r + 48),
+                    (sf::Uint8)std::min(255, wallColor.g + 40),
+                    (sf::Uint8)std::min(255, wallColor.b + 32));
+                rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.10f));
+                rect.setFillColor(colTop);
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 target.draw(rect);
 
                 // Piccola variazione di tonalita' sulla superficie (deterministica):
-                // UN solo "ciottolo" per cella, grande e molto sfumato, per dare
-                // l'impressione di una pietra leggermente irregolare senza
-                // buchi porosi.
+                // UN solo "ciottolo" per cella, molto sfumato, per dare
+                // l'impressione di una pietra leggermente irregolare.
                 {
                     float h1 = cellHash(c * 7 + 1, r * 3 + 1);
                     float h2 = cellHash(c * 13 + 1, r * 5 + 7);
                     float px = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 16.f);
                     float py = r * TILE_SIZE + UI_HEIGHT + 14.f + h2 * (TILE_SIZE - 24.f);
-                    float radius = 4.f;  // fisso, niente variazioni estreme
-                    sf::Uint8 cr = (sf::Uint8)std::min(255, wallColor.r + 8);
-                    sf::Uint8 cg = (sf::Uint8)std::min(255, wallColor.g + 6);
-                    sf::Uint8 cb = (sf::Uint8)std::min(255, wallColor.b + 4);
+                    float radius = 4.f;
+                    sf::Uint8 cr = (sf::Uint8)std::min(255, wallColor.r + 12);
+                    sf::Uint8 cg = (sf::Uint8)std::min(255, wallColor.g + 10);
+                    sf::Uint8 cb = (sf::Uint8)std::min(255, wallColor.b + 8);
                     sf::CircleShape pebble(radius);
-                    pebble.setFillColor(sf::Color(cr, cg, cb, 180));
+                    pebble.setFillColor(sf::Color(cr, cg, cb, 140));
                     pebble.setPosition(px - radius, py - radius);
                     target.draw(pebble);
-                    // Highlight leggero (effetto volumetrico morbido)
+                    // Highlight molto sfumato
                     sf::CircleShape highlight(radius * 0.5f);
                     highlight.setFillColor(sf::Color(
-                        (sf::Uint8)std::min(255, (int)cr + 20),
-                        (sf::Uint8)std::min(255, (int)cg + 18),
-                        (sf::Uint8)std::min(255, (int)cb + 14), 200));
+                        (sf::Uint8)std::min(255, (int)cr + 30),
+                        (sf::Uint8)std::min(255, (int)cg + 25),
+                        (sf::Uint8)std::min(255, (int)cb + 20), 130));
                     highlight.setPosition(px - radius * 0.6f, py - radius * 0.6f);
                     target.draw(highlight);
                 }
 
-                // Singola crepa rara (~12% delle celle muro), sottile e corta:
-                // sufficiente per dare carattere senza sembrare "poroso".
-                if (cellHash(c + 99, r + 17) > 0.88f) {
+                // Singola crepa rara (~10% delle celle muro), sottile e corta
+                if (cellHash(c + 99, r + 17) > 0.90f) {
                     float h1 = cellHash(c * 5 + 31, r * 7 + 19);
                     float cx = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 16.f);
                     float cy = r * TILE_SIZE + UI_HEIGHT + 18.f;
                     float ang = (h1 - 0.5f) * 60.f;
                     sf::RectangleShape crack(sf::Vector2f(1.2f, 6.f));
-                    crack.setFillColor(sf::Color(5, 5, 5, 180));
+                    crack.setFillColor(sf::Color(5, 5, 5, 150));
                     crack.setOrigin(0.6f, crack.getSize().y * 0.5f);
                     crack.setPosition(cx, cy);
                     crack.rotate(ang);
@@ -307,18 +371,38 @@ void Maze::render(sf::RenderTarget& target) {
                 // Ripristina dimensione del rettangolo base per il prossimo tile
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE));
             } else {
-                // --- Pavimento terriccio da dungeon ---
-                // Colore base terriccio scuro (terra battuta bruna) con
-                // variazione deterministica di tonalita' per evitare piattezza.
-                // Rispetto al vecchio pavimento: tinta piu' calda (marrone
-                // terroso invece di grigio scuro), texture piu' omogenea.
+                // --- Pavimento terriccio con gradiente radiale morbido ---
+                // Il pavimento ha un gradiente "radiale": leggermente piu'
+                // scuro ai bordi della cella (transizione col muro) e piu'
+                // chiaro al centro (come se la luce venisse dall'alto).
+                // Questo da' l'effetto di un pavimento di dungeon battuto,
+                // non piatto ne' "bucato".
+
+                // Base: terriccio scuro (colorato in armonia col bgColor del
+                // livello, leggermente variato per cella per evitare piattezza)
                 float v = cellHash(c + 1, r + 1);
-                // Base terriccio: R alto, G medio, B basso (marrone caldo)
-                sf::Uint8 fr = (sf::Uint8)std::max(0, std::min(255, (int)(45 + (v - 0.5f) * 14.f)));
-                sf::Uint8 fg = (sf::Uint8)std::max(0, std::min(255, (int)(30 + (v - 0.5f) * 10.f)));
-                sf::Uint8 fb = (sf::Uint8)std::max(0, std::min(255, (int)(20 + (v - 0.5f) *  7.f)));
+                sf::Uint8 fr = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.r + 18 + (v - 0.5f) * 10.f)));
+                sf::Uint8 fg = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.g + 12 + (v - 0.5f) *  8.f)));
+                sf::Uint8 fb = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.b +  6 + (v - 0.5f) *  6.f)));
                 rect.setFillColor(sf::Color(fr, fg, fb));
                 target.draw(rect);
+
+                // Macchia chiara centrale (gradiente radiale morbido):
+                // un cerchio piu' chiaro al centro del tile che simula la luce
+                // che cade dall'alto. Solo su ~50% delle celle (alternanza)
+                // per dare ritmo visivo senza appesantire.
+                if (cellHash(c + 33, r + 22) > 0.5f) {
+                    float h1 = cellHash(c + 11, r + 7);
+                    float cx2 = c * TILE_SIZE + TILE_SIZE / 2.f + (h1 - 0.5f) * 8.f;
+                    float cy2 = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f + (cellHash(c+5, r+9) - 0.5f) * 8.f;
+                    sf::CircleShape lightSpot(14.f);
+                    lightSpot.setFillColor(sf::Color(
+                        (sf::Uint8)std::min(255, fr + 12),
+                        (sf::Uint8)std::min(255, fg + 10),
+                        (sf::Uint8)std::min(255, fb + 8), 90));
+                    lightSpot.setPosition(cx2 - 14.f, cy2 - 14.f);
+                    target.draw(lightSpot);
+                }
 
                 // Piccole crepe di terra (terriccio seccato): 1-2 sottilissime
                 // linee scure per cella, posizioni deterministiche. Danno
@@ -331,7 +415,7 @@ void Maze::render(sf::RenderTarget& target) {
                     float py = r * TILE_SIZE + UI_HEIGHT + 6.f + h2 * (TILE_SIZE - 12.f);
                     float ang = (h1 - 0.5f) * 40.f;
                     sf::RectangleShape crack(sf::Vector2f(0.8f, 5.f + h2 * 4.f));
-                    crack.setFillColor(sf::Color(15, 8, 4, 160));
+                    crack.setFillColor(sf::Color(15, 8, 4, 140));
                     crack.setOrigin(0.4f, crack.getSize().y * 0.5f);
                     crack.setPosition(px, py);
                     crack.rotate(ang);
@@ -347,7 +431,6 @@ void Maze::render(sf::RenderTarget& target) {
                     float px = c * TILE_SIZE + 4.f + h1 * (TILE_SIZE - 8.f);
                     float py = r * TILE_SIZE + UI_HEIGHT + 4.f + h2 * (TILE_SIZE - 8.f);
                     float radius = 1.2f + h3 * 1.2f;
-                    // Colore grigio-marrone chiaro (sassolini)
                     sf::Uint8 pr = (sf::Uint8)(95 + h3 * 30);
                     sf::Uint8 pg = (sf::Uint8)(80 + h3 * 25);
                     sf::Uint8 pb = (sf::Uint8)(60 + h3 * 18);
@@ -366,7 +449,7 @@ void Maze::render(sf::RenderTarget& target) {
                     float sx = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 24.f);
                     float sy = r * TILE_SIZE + UI_HEIGHT + 8.f + h2 * (TILE_SIZE - 24.f);
                     sf::CircleShape stain(3.f + h1 * 2.f);
-                    stain.setFillColor(sf::Color(20, 12, 6, 140));
+                    stain.setFillColor(sf::Color(15, 8, 4, 130));
                     stain.setPosition(sx - 3.f, sy - 3.f);
                     target.draw(stain);
                 }
@@ -843,53 +926,94 @@ void Maze::render(sf::RenderTarget& target) {
         target.draw(flame1);
     };
 
-    // --- Torce lungo i muri ---
-    // Per ogni cella muro adiacente a una cella vuota, ~17% di probabilita'
-    // (deterministica) di avere una torcia. Posiziona la torcia sul bordo
-    // del muro verso la cella vuota.
-    for (int c = 1; c < MAZE_COLS - 1; ++c) {
-        for (int r = 1; r < MAZE_ROWS - 1; ++r) {
-            if (grid[c][r].type != CELL_WALL) continue;
-            // Determina quali lati del muro sono adiacenti a una cella vuota.
-            bool openUp    = (grid[c][r-1].type != CELL_WALL);
-            bool openDown  = (grid[c][r+1].type != CELL_WALL);
-            bool openLeft  = (grid[c-1][r].type != CELL_WALL);
-            bool openRight = (grid[c+1][r].type != CELL_WALL);
-            // Almeno un lato aperto: e' un muro "di confine" col corridoio.
-            if (!openUp && !openDown && !openLeft && !openRight) continue;
-            // Soglia deterministica: ~17% dei muri di confine hanno una torcia
-            float torchChance = cellHash(c + 1111, r + 2222);
-            if (torchChance > 0.17f) continue;
-
-            // Centro del muro
-            float mcx = c * TILE_SIZE + TILE_SIZE / 2.f;
-            float mcy = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-
-            // Sceglie il lato preferenziale: prio Orizzontali (su/giu) per
-            // avere torce piu' visibili dal corridoio. Se il muro e' aperto
-            // solo lateralmente, usa il lato laterale.
-            if (openDown) {
-                // Torcia appesa SOTTO il centro del muro (fiamma punta in su,
-                // verso il corridoio inferiore). yBase = bordo inferiore del
-                // muro, dove il bastone sporge di 4 px nel corridoio.
-                float yBase = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE + 4.f;
-                drawTorch(mcx, yBase, animTime);
-            } else if (openUp) {
-                // Torcia appesa Sopra il centro del muro (fiamma punta in su,
-                // nel corridoio superiore). yBase = bordo superiore del muro.
-                float yBase = r * TILE_SIZE + UI_HEIGHT - 4.f;
-                drawTorch(mcx, yBase, animTime);
-            } else if (openRight) {
-                // Torcia laterale sul lato destro del muro
-                float x = (c + 1) * TILE_SIZE + 4.f;
-                float yBase = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-                drawTorch(x, yBase, animTime);
-            } else if (openLeft) {
-                // Torcia laterale sul lato sinistro del muro
-                float x = c * TILE_SIZE - 4.f;
-                float yBase = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-                drawTorch(x, yBase, animTime);
+    // --- Torce lungo i muri (massimo 3 per tipo di orientamento) ---
+    // Per evitare troppe torci nel labirinto, vengono selezionate al piu'
+    // 3 celle muro per ciascun orientamento (openDown / openUp / openRight /
+    // openLeft). Le celle candidato sono prima raccolte in 4 vettori, poi
+    // ordinate per "hash" (funzione cellHash deterministica) e prelevate
+    // le migliori 3. Questo garantisce:
+    //   - distribuzione uniforme delle torce (non concentrate in un'area)
+    //   - stabilita' tra frame (le torce non appaiono/scompaiono a caso)
+    //   - massimo 12 torce totali (3 x 4 orientamenti)
+    //
+    // Le torce vengono posizionate sul lato del muro verso la cella vuota
+    // adiacente, come prima.
+    {
+        // 4 vettori per i 4 orientamenti, contenenti (col, row) dei candidati
+        std::vector<Vec2> candDown, candUp, candRight, candLeft;
+        for (int c = 1; c < MAZE_COLS - 1; ++c) {
+            for (int r = 1; r < MAZE_ROWS - 1; ++r) {
+                if (grid[c][r].type != CELL_WALL) continue;
+                bool openUp    = (grid[c][r-1].type != CELL_WALL);
+                bool openDown  = (grid[c][r+1].type != CELL_WALL);
+                bool openLeft  = (grid[c-1][r].type != CELL_WALL);
+                bool openRight = (grid[c+1][r].type != CELL_WALL);
+                if (!openUp && !openDown && !openLeft && !openRight) continue;
+                // Inserisce il candidato in TUTTI gli orientamenti aperti:
+                // sara' poi la selezione per hash a decidere quali vincono.
+                // (In pratica ogni cella finisce in 1-2 vettori al massimo,
+                // dato che un muro con 3+ lati aperti e' raro.)
+                if (openDown)  candDown.push_back({c, r});
+                if (openUp)    candUp.push_back({c, r});
+                if (openRight) candRight.push_back({c, r});
+                if (openLeft)  candLeft.push_back({c, r});
             }
+        }
+
+        // Funzione: seleziona le migliori 3 celle dal vettore candidato.
+        // La selezione e' basata sull'hash della cella: ordiniamo per hash
+        // decrescente e prendiamo le prime 3. Inoltre, per distribuire bene
+        // le torce nello spazio, saltiamo i candidati troppo vicini (>1 cella
+        // di distanza) a uno gia' selezionato.
+        auto selectTorches = [&](std::vector<Vec2>& candidates,
+                                 std::vector<Vec2>& out) {
+            // Ordina per hash decrescente (le migliori hash vincono)
+            std::sort(candidates.begin(), candidates.end(),
+                [](const Vec2& a, const Vec2& b) {
+                    return cellHash(a.x + 1111, a.y + 2222) >
+                           cellHash(b.x + 1111, b.y + 2222);
+                });
+            // Seleziona mantenendo distanza minima di 3 celle tra le
+            // torce scelte, per evitare raggruppamenti.
+            const int minDist = 3;
+            for (const Vec2& cand : candidates) {
+                if ((int)out.size() >= 3) break;
+                bool tooClose = false;
+                for (const Vec2& s : out) {
+                    int dx = std::abs(cand.x - s.x);
+                    int dy = std::abs(cand.y - s.y);
+                    if (dx + dy < minDist) { tooClose = true; break; }
+                }
+                if (!tooClose) out.push_back(cand);
+            }
+        };
+
+        std::vector<Vec2> torchesDown, torchesUp, torchesRight, torchesLeft;
+        selectTorches(candDown,  torchesDown);
+        selectTorches(candUp,    torchesUp);
+        selectTorches(candRight, torchesRight);
+        selectTorches(candLeft,  torchesLeft);
+
+        // Disegna le torce selezionate per ogni orientamento
+        for (const Vec2& t : torchesDown) {
+            float mcx = t.x * TILE_SIZE + TILE_SIZE / 2.f;
+            float yBase = t.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE + 4.f;
+            drawTorch(mcx, yBase, animTime);
+        }
+        for (const Vec2& t : torchesUp) {
+            float mcx = t.x * TILE_SIZE + TILE_SIZE / 2.f;
+            float yBase = t.y * TILE_SIZE + UI_HEIGHT - 4.f;
+            drawTorch(mcx, yBase, animTime);
+        }
+        for (const Vec2& t : torchesRight) {
+            float x = (t.x + 1) * TILE_SIZE + 4.f;
+            float yBase = t.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            drawTorch(x, yBase, animTime);
+        }
+        for (const Vec2& t : torchesLeft) {
+            float x = t.x * TILE_SIZE - 4.f;
+            float yBase = t.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            drawTorch(x, yBase, animTime);
         }
     }
 

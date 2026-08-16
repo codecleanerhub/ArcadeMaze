@@ -40,8 +40,9 @@ public:
     Maze();
 
     // Rigenera casualmente l'intero labirinto: muri, tesori, armi e colori.
-    // Va chiamato all'inizio di ogni livello.
-    void generate();
+    // Va chiamato all'inizio di ogni livello. `level` (1-based) seleziona
+    // la palette cromatica del livello (8 palette che ciclano).
+    void generate(int level = 1);
 
     // Disegna l'intero labirinto (muri 3D, tesori, armi) sul target.
     void render(sf::RenderTarget& target);

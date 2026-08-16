@@ -74,7 +74,9 @@ bool Game::init() {
 // ---------------------------------------------------------------------------
 void Game::startLevel(int lvl) {
     currentLevel = lvl;
-    maze.generate();
+    // Passa il livello a maze.generate() per selezionare la palette
+    // cromatica tematica del livello (8 palette che ciclano).
+    maze.generate(currentLevel);
     // Se il livello e' 1 (nuova partita), resetta completamente vite/energia/
     // punteggio del giocatore. Altrimenti (livello successivo) mantieni i
     // progressi e resetta solo la posizione.
@@ -1027,95 +1029,6 @@ void Game::drawMenu() {
             }
         }
     }
-
-    // --- Pipistrelli fantasy vicini alla luna ---
-    // Sostituiscono le vecchie torce "sospese in aria" che non avevano senso.
-    // I pipistrelli sono disegnati con ali a forma di "M" stilizzata (3 punte
-    // per ala) e un corpo ovale scuro, in stile fantasy/arcade.
-    // Posizionati a circa meta' altezza della luna, in volo daventi ad essa.
-    // L'animazione delle ali e' molto sottile: oscillazione +/-3 gradi per
-    // dare l'idea del battito senza distrarre dal menu'.
-    auto drawBat = [&](float cx, float cy, float scale, float wingPhase) {
-        // Colore pipistrello: nero profondo con leggero alone viola
-        sf::Color batBody(15, 10, 20);
-        sf::Color batOutline(40, 25, 50);
-        // Aura sottile viola attorno al pipistrello (effetto "notte")
-        sf::CircleShape batAura(14.f * scale);
-        batAura.setFillColor(sf::Color(80, 40, 100, 25));
-        batAura.setPosition(cx - 14.f * scale, cy - 14.f * scale);
-        window.draw(batAura);
-
-        // Ali a forma di "M" stilizzata (3 punte per ala)
-        // Disegnate come ConvexShape a 14 punti: partendo dal corpo, vanno
-        // verso sinistra con 3 punte, tornano al corpo, vanno verso destra
-        // con 3 punte, tornano al corpo. La rotazione delle punte segue
-        // wingPhase per simulare il battito delle ali.
-        float wingY = sin(wingPhase) * 4.f * scale;   // oscillazione verticale punte
-        sf::ConvexShape wings; wings.setPointCount(14);
-        wings.setFillColor(batBody);
-        wings.setOutlineThickness(1.f * scale); wings.setOutlineColor(batOutline);
-        // Ala sinistra (3 punte): dal corpo verso l'esterno
-        wings.setPoint(0,  sf::Vector2f(cx - 1.f * scale,  cy + 0.f));              // attaccatura sx corpo
-        wings.setPoint(1,  sf::Vector2f(cx - 6.f * scale,  cy - 6.f * scale + wingY));  // punta interna sx (su)
-        wings.setPoint(2,  sf::Vector2f(cx - 4.f * scale,  cy + 2.f * scale));          // valle
-        wings.setPoint(3,  sf::Vector2f(cx - 10.f * scale, cy - 4.f * scale + wingY));  // punta media sx (su)
-        wings.setPoint(4,  sf::Vector2f(cx - 8.f * scale,  cy + 4.f * scale));          // valle
-        wings.setPoint(5,  sf::Vector2f(cx - 14.f * scale, cy + 2.f * scale + wingY * 0.5f)); // punta esterna sx (laterale)
-        wings.setPoint(6,  sf::Vector2f(cx - 14.f * scale, cy + 6.f * scale));          // bordo esterno sx (giu)
-        // Passaggio dal corpo: parte bassa
-        wings.setPoint(7,  sf::Vector2f(cx - 1.f * scale,  cy + 6.f * scale));          // basso corpo sx
-        // Ala destra (speculare)
-        wings.setPoint(8,  sf::Vector2f(cx + 1.f * scale,  cy + 6.f * scale));          // basso corpo dx
-        wings.setPoint(9,  sf::Vector2f(cx + 14.f * scale, cy + 6.f * scale));          // bordo esterno dx (giu)
-        wings.setPoint(10, sf::Vector2f(cx + 14.f * scale, cy + 2.f * scale + wingY * 0.5f)); // punta esterna dx (laterale)
-        wings.setPoint(11, sf::Vector2f(cx + 8.f * scale,  cy + 4.f * scale));          // valle
-        wings.setPoint(12, sf::Vector2f(cx + 10.f * scale, cy - 4.f * scale + wingY));  // punta media dx (su)
-        wings.setPoint(13, sf::Vector2f(cx + 4.f * scale,  cy + 2.f * scale));          // valle
-        // Nota: lasciamo 14 punti; l'attaccatura dx e' implicita nel ritorno
-        // al corpo tramite le punte. Disegna comunque per non perdere la forma.
-        window.draw(wings);
-        // Corpo (ovale scuro)
-        sf::CircleShape body(3.f * scale, 12);  // 12 segmenti = quasi cerchio
-        body.setFillColor(batBody);
-        body.setOutlineThickness(0.8f * scale); body.setOutlineColor(batOutline);
-        // Schiaccia verticalmente per dare forma ovale (pipistrello)
-        body.setScale(1.f, 1.4f);
-        body.setPosition(cx - 3.f * scale, cy - 4.f * scale);
-        window.draw(body);
-        // Testa (piccolo cerchio sopra il corpo)
-        sf::CircleShape head(2.f * scale, 10);
-        head.setFillColor(batBody);
-        head.setOutlineThickness(0.6f * scale); head.setOutlineColor(batOutline);
-        head.setPosition(cx - 2.f * scale, cy - 8.f * scale);
-        window.draw(head);
-        // Orecchie appuntite (2 piccoli triangoli sulla testa)
-        for (int side = 0; side < 2; side++) {
-            float dx = (side == 0) ? -1.4f : 1.0f;
-            sf::ConvexShape ear; ear.setPointCount(3);
-            ear.setFillColor(batBody);
-            ear.setOutlineThickness(0.5f * scale); ear.setOutlineColor(batOutline);
-            ear.setPoint(0, sf::Vector2f(cx + dx * scale,           cy - 8.f * scale));
-            ear.setPoint(1, sf::Vector2f(cx + (dx + 0.6f) * scale,  cy - 8.f * scale));
-            ear.setPoint(2, sf::Vector2f(cx + (dx + 0.3f) * scale,  cy - 11.f * scale));
-            window.draw(ear);
-        }
-        // Occhi rossi brillanti (piccoli punti)
-        for (int side = 0; side < 2; side++) {
-            float dx = (side == 0) ? -1.2f : 0.4f;
-            sf::CircleShape eye(0.5f * scale);
-            eye.setFillColor(sf::Color(220, 30, 30));
-            eye.setPosition(cx + dx * scale, cy - 7.f * scale);
-            window.draw(eye);
-        }
-    };
-    // 4 pipistrelli con dimensioni e fasi di battito diverse per dare
-    // profondita' e varieta'. Tutti vicini alla luna (alto-destra).
-    // Posizioni relative alla luna: la luna e' a (WINDOW_WIDTH-200, 100)
-    // con raggio 80, quindi i pipistrelli volano a y 80-300, x 600-950.
-    drawBat(WINDOW_WIDTH - 280.f, 100.f, 1.0f, menuTime * 4.f);
-    drawBat(WINDOW_WIDTH - 360.f, 180.f, 0.8f, menuTime * 4.f + 1.0f);
-    drawBat(WINDOW_WIDTH - 200.f, 240.f, 0.9f, menuTime * 4.f + 2.0f);
-    drawBat(WINDOW_WIDTH - 320.f,  70.f, 0.7f, menuTime * 4.f + 0.5f);
 
     // --- Titolo con effetto ombra: due copie sfalsate di 4 px ---
     drawTextCenteredOutlined(window, "ARCADE MAZE", WINDOW_WIDTH/2, 120, 10, sf::Color(255, 215, 0));
