@@ -48,12 +48,13 @@ bool Enemy::spritesLoaded = false;
 //   ENEMY_CURSED_BOAR    -> monster_019 (Cinghiale Maledetto)
 //   ENEMY_PREDATOR_FUNGUS-> monster_020 (Fungo Predatore)
 //
-// Non mappati (nessuno sprite nel bestiary, usano primitive):
-//   ENEMY_ZOMBIE, ENEMY_BAT, ENEMY_SLIME, ENEMY_DEMON, ENEMY_ROBOT,
-//   ENEMY_GOBLIN, ENEMY_ORC, ENEMY_WRAITH, ENEMY_IMP
+// Mappatura completa: tutti i 28 tipi hanno uno sprite (19 diretti + 9
+// riutilizzati da sprite simili del bestiary). Nessun nemico usa piu'
+// primitive SFML come fallback: tutti hanno pixel art.
 // ---------------------------------------------------------------------------
 std::string Enemy::getSpriteId(EnemyType t) {
     switch(t) {
+        // 19 tipi con mapping diretto sul bestiary
         case ENEMY_GHOUL:           return "monster_001";
         case ENEMY_SPIDER:          return "monster_002";
         case ENEMY_WOLF:            return "monster_003";
@@ -73,8 +74,18 @@ std::string Enemy::getSpriteId(EnemyType t) {
         case ENEMY_WELL_SPIRIT:     return "monster_018";
         case ENEMY_CURSED_BOAR:     return "monster_019";
         case ENEMY_PREDATOR_FUNGUS: return "monster_020";
-        default: return "";  // ENEMY_ZOMBIE, BAT, SLIME, DEMON, ROBOT,
-                             // GOBLIN, ORC, WRAITH, IMP -> nessuno sprite
+        // 9 tipi originali senza sprite diretto nel file: riutilizzano
+        // sprite del bestiary piu' simile per coerenza visiva.
+        case ENEMY_ZOMBIE:          return "monster_001";  // ghoul = zombie-like
+        case ENEMY_BAT:             return "monster_015";  // crow = flying
+        case ENEMY_SLIME:           return "monster_020";  // fungus = blob
+        case ENEMY_DEMON:           return "monster_012";  // damned knight = dark
+        case ENEMY_ROBOT:           return "monster_010";  // bone golem = construct
+        case ENEMY_GOBLIN:          return "monster_006";  // rat = small creature
+        case ENEMY_ORC:             return "monster_019";  // boar = brute
+        case ENEMY_WRAITH:          return "monster_009";  // shadow = ghost
+        case ENEMY_IMP:             return "monster_003";  // wolf = small beast
+        default: return "";
     }
 }
 

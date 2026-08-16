@@ -75,12 +75,18 @@ bool Game::init() {
 void Game::startLevel(int lvl) {
     currentLevel = lvl;
     maze.generate();
-    player.resetPosition();
+    // Se il livello e' 1 (nuova partita), resetta completamente vite/energia/
+    // punteggio del giocatore. Altrimenti (livello successivo) mantieni i
+    // progressi e resetta solo la posizione.
+    if (lvl == 1) {
+        player.reset();
+        if (numPlayers == 2) player2.reset();
+    } else {
+        player.resetPosition();
+        if (numPlayers == 2) player2.resetPosition();
+    }
     if (numPlayers == 2) {
-        player2.resetPosition();
         // Posiziona il secondo giocatore a una cella di distanza dal primo
-        // (una colonna a destra) per evitare sovrapposizione e friendly fire
-        // immediato al respawn. Usiamo TILE_SIZE come offset orizzontale.
         player2.setPosition(player.getPixelPos().x + TILE_SIZE,
                              player.getPixelPos().y);
     }
