@@ -251,21 +251,23 @@ void Maze::render(sf::RenderTarget& target) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             if (grid[c][r].type == CELL_WALL) {
-                // --- Muro 3D roccioso con gradiente verticale ---
+                // --- Muro 3D roccioso con gradiente verticale pulito ---
                 // La roccia e' resa con un gradiente verticale a 5 strisce
                 // sovrapposte: molto chiara in alto (illuminazione da torcia),
                 // via via piu' scura verso il basso (ombra e umidita' di fondo).
                 // Questo da' al muro un aspetto "pietra massiccia" senza usare
                 // texture esterne, e varieta' cromatica tra livelli (palette).
-                // Le bande sono rese sfumate sovrapponendo rettangoli semi-
-                // trasparenti: ogni striscia aggiunge un po' del suo colore
-                // sopra la precedente, ammorbidendo i bordi netti.
+                //
+                // Niente ciottoli, niente puntini, niente highlights puntiformi:
+                // la superficie deve essere pulita, solo gradiente. Le vecchie
+                // macchie chiare sparse venivano percepite come "stelline" e
+                // rovinavano l'effetto material.
                 //
                 // Strati (dall'alto al basso):
                 //   1. cima: luce intensa (wallColor + 50, tonalita' calda)
-                //   2. alto-sopra: luce media (wallColor + 25)
+                //   2. alto-sopra: luce media (wallColor + 22)
                 //   3. centro: tono base (wallColor - 5, leggermente piu' scuro)
-                //   4. basso-sotto: ombra (wallColor - 30)
+                //   4. basso-sotto: ombra (wallColor - 25)
                 //   5. fondo: ombra profonda (wallColor - 55)
 
                 // Strato 5 (fondo, ombra profonda): copre tutta la cella
@@ -276,8 +278,7 @@ void Maze::render(sf::RenderTarget& target) {
                 rect.setFillColor(colBottom);
                 target.draw(rect);
 
-                // Strato 4 (basso-sotto, ombra media): 60% del tile dal basso,
-                // sovrapposto con alpha per ammorbidire
+                // Strato 4 (basso-sotto, ombra media): 60% del tile dal basso
                 sf::Color colLowShadow = sf::Color(
                     (sf::Uint8)std::max(0, wallColor.r - 25),
                     (sf::Uint8)std::max(0, wallColor.g - 22),
@@ -317,40 +318,16 @@ void Maze::render(sf::RenderTarget& target) {
                 rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 target.draw(rect);
 
-                // Piccola variazione di tonalita' sulla superficie (deterministica):
-                // UN solo "ciottolo" per cella, molto sfumato, per dare
-                // l'impressione di una pietra leggermente irregolare.
-                {
-                    float h1 = cellHash(c * 7 + 1, r * 3 + 1);
-                    float h2 = cellHash(c * 13 + 1, r * 5 + 7);
-                    float px = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 16.f);
-                    float py = r * TILE_SIZE + UI_HEIGHT + 14.f + h2 * (TILE_SIZE - 24.f);
-                    float radius = 4.f;
-                    sf::Uint8 cr = (sf::Uint8)std::min(255, wallColor.r + 12);
-                    sf::Uint8 cg = (sf::Uint8)std::min(255, wallColor.g + 10);
-                    sf::Uint8 cb = (sf::Uint8)std::min(255, wallColor.b + 8);
-                    sf::CircleShape pebble(radius);
-                    pebble.setFillColor(sf::Color(cr, cg, cb, 140));
-                    pebble.setPosition(px - radius, py - radius);
-                    target.draw(pebble);
-                    // Highlight molto sfumato
-                    sf::CircleShape highlight(radius * 0.5f);
-                    highlight.setFillColor(sf::Color(
-                        (sf::Uint8)std::min(255, (int)cr + 30),
-                        (sf::Uint8)std::min(255, (int)cg + 25),
-                        (sf::Uint8)std::min(255, (int)cb + 20), 130));
-                    highlight.setPosition(px - radius * 0.6f, py - radius * 0.6f);
-                    target.draw(highlight);
-                }
-
-                // Singola crepa rara (~10% delle celle muro), sottile e corta
+                // Singola crepa rara (~10% delle celle muro), sottile e corta.
+                // Le crepe NON sono "puntini": sono linee sottili scure che danno
+                // carattere di roccia erosa senza rovinare il gradiente.
                 if (cellHash(c + 99, r + 17) > 0.90f) {
                     float h1 = cellHash(c * 5 + 31, r * 7 + 19);
                     float cx = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 16.f);
                     float cy = r * TILE_SIZE + UI_HEIGHT + 18.f;
                     float ang = (h1 - 0.5f) * 60.f;
                     sf::RectangleShape crack(sf::Vector2f(1.2f, 6.f));
-                    crack.setFillColor(sf::Color(5, 5, 5, 150));
+                    crack.setFillColor(sf::Color(5, 5, 5, 130));
                     crack.setOrigin(0.6f, crack.getSize().y * 0.5f);
                     crack.setPosition(cx, cy);
                     crack.rotate(ang);
@@ -359,6 +336,7 @@ void Maze::render(sf::RenderTarget& target) {
 
                 // Muschio verde molto raro (~3% delle celle muro) per variazione
                 // cromatica: solo alla base del muro (effetto umidita' di fondo).
+                // Piccolo e non invadente, non e' un "puntino" sparso.
                 if (cellHash(c + 555, r + 333) > 0.97f) {
                     float mx = c * TILE_SIZE + 6.f + cellHash(c, r) * (TILE_SIZE - 12.f);
                     float my = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 6.f;

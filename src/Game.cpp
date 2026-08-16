@@ -1592,6 +1592,517 @@ void Game::render() {
             vigB.setFillColor(sf::Color(0, 0, 0, 60));
             vigB.setPosition(0, WINDOW_HEIGHT - wallThickness - 30.f);
             window.draw(vigB);
+
+            // --- Decorazioni fantasy: cripta / tempio in rovina ---
+            // La stanza del boss e' ambientata in una cripta scavata nella
+            // roccia con resti di un antico tempio: colonne spezzate, basi
+            // di colonna, capitelli caduti, tombe scoperchiate, lastre di
+            // pietra con incisioni, teschi cumuli.
+            //
+            // Tutte le decorazioni sono POSIZIONATE AI BORDI della stanza
+            // (lungo i muri perimetrali) per non interferire col movimento
+            // del player e del boss, che occupano l'area centrale.
+            // Sono puramente decorative: niente collisioni.
+            //
+            // I colori sono in armonia cromatica col muro perimetrale
+            // (rockBase) per dare coerenza visiva.
+            sf::Color stoneBase(80, 70, 60);    // pietra chiara
+            sf::Color stoneDark(50, 42, 35);    // pietra scura (ombra)
+            sf::Color stoneLight(120, 110, 95); // pietra illuminata
+            sf::Color stoneMoss(60, 80, 50, 180); // muschio
+            sf::Color boneCol(220, 210, 180);   // osso
+            sf::Color boneDark(140, 130, 100);  // osso in ombra
+
+            // --- 4 colonne di tempio in rovina (una per angolo) ---
+            // Ogni colonna e' una base + fusto (con scanalature) + capitello.
+            // Le colonne sono "spezzate": la parte superiore e' troncata
+            // (effetto rovina) con pezzi di pietra caduti di lato.
+            auto drawRuinColumn = [&](float x, float yBase, float height) {
+                // Ombra a terra
+                sf::CircleShape colShadow(28.f);
+                colShadow.setFillColor(sf::Color(0, 0, 0, 110));
+                colShadow.setPosition(x - 28.f, yBase + 4.f);
+                window.draw(colShadow);
+                // Base (rettangolo largo piu' del fusto)
+                sf::RectangleShape baseBot(sf::Vector2f(40.f, 6.f));
+                baseBot.setFillColor(stoneDark);
+                baseBot.setOutlineThickness(1.f); baseBot.setOutlineColor(stoneBase);
+                baseBot.setPosition(x - 20.f, yBase - 6.f);
+                window.draw(baseBot);
+                sf::RectangleShape baseTop(sf::Vector2f(36.f, 3.f));
+                baseTop.setFillColor(stoneLight);
+                baseTop.setPosition(x - 18.f, yBase - 6.f);
+                window.draw(baseTop);
+                // Fusto (rettangolo con scanalature verticali)
+                sf::RectangleShape shaft(sf::Vector2f(28.f, height));
+                shaft.setFillColor(stoneBase);
+                shaft.setOutlineThickness(1.f); shaft.setOutlineColor(stoneDark);
+                shaft.setPosition(x - 14.f, yBase - 6.f - height);
+                window.draw(shaft);
+                // Scanalature (3 linee verticali scure)
+                for (int i = 0; i < 3; i++) {
+                    sf::RectangleShape flute(sf::Vector2f(1.5f, height - 4.f));
+                    flute.setFillColor(stoneDark);
+                    flute.setPosition(x - 10.f + i * 7.f, yBase - 8.f - height);
+                    window.draw(flute);
+                }
+                // Gradiente verticale del fusto (luce da sinistra)
+                sf::RectangleShape shaftLight(sf::Vector2f(6.f, height - 4.f));
+                shaftLight.setFillColor(sf::Color(
+                    (sf::Uint8)std::min(255, stoneBase.r + 30),
+                    (sf::Uint8)std::min(255, stoneBase.g + 25),
+                    (sf::Uint8)std::min(255, stoneBase.b + 20), 160));
+                shaftLight.setPosition(x - 14.f, yBase - 8.f - height);
+                window.draw(shaftLight);
+                // Capitello (in cima, se la colonna non e' troncata)
+                // Per le colonne "in rovina" il capitello manca o e' caduto
+                // di lato. Lo mettiamo solo su 2 colonne su 4 (alternanza).
+                // Top del fusto: bordo irregolare (piccoli triangoli)
+                for (int i = 0; i < 5; i++) {
+                    sf::ConvexShape top; top.setPointCount(3);
+                    top.setFillColor(stoneDark);
+                    top.setPoint(0, sf::Vector2f(x - 14.f + i * 7.f, yBase - 6.f - height));
+                    top.setPoint(1, sf::Vector2f(x - 14.f + (i+1) * 7.f, yBase - 6.f - height));
+                    top.setPoint(2, sf::Vector2f(x - 14.f + i * 7.f + 3.5f,
+                        yBase - 6.f - height - (i % 2 == 0 ? 6.f : 3.f)));
+                    window.draw(top);
+                }
+                // Pezzo di capitello caduto a terra (piccolo blocco)
+                sf::RectangleShape fallen(sf::Vector2f(14.f, 8.f));
+                fallen.setFillColor(stoneLight);
+                fallen.setOutlineThickness(1.f); fallen.setOutlineColor(stoneDark);
+                fallen.setPosition(x + 18.f, yBase - 2.f);
+                window.draw(fallen);
+                // Muschio alla base della colonna
+                sf::CircleShape moss1(3.f);
+                moss1.setFillColor(stoneMoss);
+                moss1.setPosition(x - 16.f, yBase - 4.f);
+                window.draw(moss1);
+                sf::CircleShape moss2(2.f);
+                moss2.setFillColor(stoneMoss);
+                moss2.setPosition(x + 12.f, yBase - 2.f);
+                window.draw(moss2);
+            };
+            // 4 colonne negli angoli della stanza (non dove gioca il player)
+            drawRuinColumn(wallThickness + 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
+            drawRuinColumn(WINDOW_WIDTH - wallThickness - 60.f, WINDOW_HEIGHT - wallThickness - 10.f, 80.f);
+            drawRuinColumn(wallThickness + 60.f, playTop + wallThickness + 60.f, 60.f);
+            drawRuinColumn(WINDOW_WIDTH - wallThickness - 60.f, playTop + wallThickness + 60.f, 60.f);
+
+            // --- Tombe scoperchiate sul pavimento (laterali) ---
+            // Sarcofagi di pietra aperti con coperchio caduto di lato.
+            // Posizionati sui lati sinistro e destro della stanza, a meta'
+            // altezza, in modo da non ostacolare il player (che si muove
+            // nell'area centrale).
+            auto drawSarcophagus = [&](float cx, float cy, bool flipped) {
+                // Ombra a terra
+                sf::CircleShape sarShadow(40.f);
+                sarShadow.setFillColor(sf::Color(0, 0, 0, 130));
+                sarShadow.setPosition(cx - 40.f, cy + 8.f);
+                window.draw(sarShadow);
+                // Corpo del sarcofago (rettangolo con bordi smussati)
+                sf::RectangleShape body(sf::Vector2f(60.f, 22.f));
+                body.setFillColor(stoneDark);
+                body.setOutlineThickness(1.5f); body.setOutlineColor(stoneBase);
+                body.setPosition(cx - 30.f, cy - 4.f);
+                window.draw(body);
+                // Strato superiore del corpo (pietra piu' chiara)
+                sf::RectangleShape bodyTop(sf::Vector2f(58.f, 6.f));
+                bodyTop.setFillColor(stoneBase);
+                bodyTop.setPosition(cx - 29.f, cy - 4.f);
+                window.draw(bodyTop);
+                // Strato superiore-chiaro (riflesso)
+                sf::RectangleShape bodyRef(sf::Vector2f(54.f, 1.5f));
+                bodyRef.setFillColor(stoneLight);
+                bodyRef.setPosition(cx - 27.f, cy - 4.f);
+                window.draw(bodyRef);
+                // Decorazione frontale (croce templare incisa)
+                sf::RectangleShape cross1(sf::Vector2f(2.f, 12.f));
+                cross1.setFillColor(stoneLight);
+                cross1.setPosition(cx - 1.f, cy + 2.f);
+                window.draw(cross1);
+                sf::RectangleShape cross2(sf::Vector2f(8.f, 2.f));
+                cross2.setFillColor(stoneLight);
+                cross2.setPosition(cx - 4.f, cy + 6.f);
+                window.draw(cross2);
+                // Bordo inferiore (zoccolo)
+                sf::RectangleShape socle(sf::Vector2f(64.f, 4.f));
+                socle.setFillColor(stoneDark);
+                socle.setOutlineThickness(1.f); socle.setOutlineColor(stoneBase);
+                socle.setPosition(cx - 32.f, cy + 16.f);
+                window.draw(socle);
+
+                // Coperchio scoperchiato (caduto di lato)
+                // E' un pezzo lungo, appoggiato obliquo sul pavimento.
+                float lidX = (flipped ? cx - 50.f : cx + 30.f);
+                float lidY = cy + 18.f;
+                sf::ConvexShape lid; lid.setPointCount(4);
+                lid.setFillColor(stoneBase);
+                lid.setOutlineThickness(1.5f); lid.setOutlineColor(stoneDark);
+                lid.setPoint(0, sf::Vector2f(lidX, lidY));
+                lid.setPoint(1, sf::Vector2f(lidX + 30.f, lidY - 4.f));
+                lid.setPoint(2, sf::Vector2f(lidX + 30.f, lidY + 4.f));
+                lid.setPoint(3, sf::Vector2f(lidX, lidY + 8.f));
+                window.draw(lid);
+                // Riflesso del coperchio
+                sf::ConvexShape lidRef; lidRef.setPointCount(4);
+                lidRef.setFillColor(stoneLight);
+                lidRef.setPoint(0, sf::Vector2f(lidX + 2.f, lidY + 0.5f));
+                lidRef.setPoint(1, sf::Vector2f(lidX + 28.f, lidY - 3.f));
+                lidRef.setPoint(2, sf::Vector2f(lidX + 28.f, lidY - 1.f));
+                lidRef.setPoint(3, sf::Vector2f(lidX + 2.f, lidY + 1.5f));
+                window.draw(lidRef);
+
+                // Osso / teschio che sporge dal sarcofago (interno scuro)
+                sf::RectangleShape interior(sf::Vector2f(50.f, 6.f));
+                interior.setFillColor(sf::Color(10, 8, 5));
+                interior.setPosition(cx - 25.f, cy - 2.f);
+                window.draw(interior);
+                // Teschio (solo se non flipped: visibile da un lato)
+                if (!flipped) {
+                    // Teschio bianco sporco
+                    sf::CircleShape skull(5.f, 8);
+                    skull.setFillColor(boneCol);
+                    skull.setOutlineThickness(0.8f); skull.setOutlineColor(boneDark);
+                    skull.setPosition(cx - 5.f, cy - 6.f);
+                    window.draw(skull);
+                    // Occhi neri
+                    sf::CircleShape eyeS(1.f);
+                    eyeS.setFillColor(sf::Color::Black);
+                    eyeS.setPosition(cx - 3.5f, cy - 3.f);
+                    window.draw(eyeS);
+                    eyeS.setPosition(cx + 0.5f, cy - 3.f);
+                    window.draw(eyeS);
+                    // Denti (piccoli segmenti)
+                    for (int i = 0; i < 3; i++) {
+                        sf::RectangleShape tooth(sf::Vector2f(1.f, 1.5f));
+                        tooth.setFillColor(boneDark);
+                        tooth.setPosition(cx - 2.f + i * 1.5f, cy + 1.f);
+                        window.draw(tooth);
+                    }
+                } else {
+                    // Osso lungo (femore) che sporge
+                    sf::RectangleShape bone(sf::Vector2f(20.f, 3.f));
+                    bone.setFillColor(boneCol);
+                    bone.setOutlineThickness(0.5f); bone.setOutlineColor(boneDark);
+                    bone.setPosition(cx - 18.f, cy - 3.f);
+                    bone.rotate(-15.f);
+                    window.draw(bone);
+                    // Testa del femore (sfera)
+                    sf::CircleShape boneHead(2.f);
+                    boneHead.setFillColor(boneCol);
+                    boneHead.setOutlineThickness(0.5f); boneHead.setOutlineColor(boneDark);
+                    boneHead.setPosition(cx + 0.f, cy - 4.f);
+                    window.draw(boneHead);
+                }
+                // Muschio ai bordi del sarcofago
+                sf::CircleShape mossS1(3.f);
+                mossS1.setFillColor(stoneMoss);
+                mossS1.setPosition(cx - 32.f, cy + 12.f);
+                window.draw(mossS1);
+                sf::CircleShape mossS2(2.f);
+                mossS2.setFillColor(stoneMoss);
+                mossS2.setPosition(cx + 26.f, cy + 14.f);
+                window.draw(mossS2);
+            };
+            // 2 sarcofagi sui lati lunghi della stanza
+            drawSarcophagus(wallThickness + 100.f, playTop + playH * 0.5f, false);
+            drawSarcophagus(WINDOW_WIDTH - wallThickness - 100.f, playTop + playH * 0.5f, true);
+
+            // --- Lastre di pietra con incisioni (lapidi) ---
+            // Piccole lapidi inclinate posizionate vicino ai muri laterali,
+            // come una cripta con tombe antiche.
+            auto drawTombstone = [&](float cx, float cy, float tilt) {
+                // Ombra
+                sf::CircleShape tsShadow(18.f);
+                tsShadow.setFillColor(sf::Color(0, 0, 0, 110));
+                tsShadow.setPosition(cx - 18.f, cy + 12.f);
+                window.draw(tsShadow);
+                // Base (rettangolo largo)
+                sf::RectangleShape base(sf::Vector2f(24.f, 4.f));
+                base.setFillColor(stoneDark);
+                base.setOutlineThickness(0.8f); base.setOutlineColor(stoneBase);
+                base.setPosition(cx - 12.f, cy + 12.f);
+                window.draw(base);
+                // Stele (rettangolo con cima arrotondata)
+                sf::ConvexShape stele; stele.setPointCount(6);
+                stele.setFillColor(stoneBase);
+                stele.setOutlineThickness(1.f); stele.setOutlineColor(stoneDark);
+                stele.setPoint(0, sf::Vector2f(cx - 10.f, cy + 12.f));
+                stele.setPoint(1, sf::Vector2f(cx + 10.f, cy + 12.f));
+                stele.setPoint(2, sf::Vector2f(cx + 10.f, cy - 14.f));
+                stele.setPoint(3, sf::Vector2f(cx + 7.f,  cy - 18.f));
+                stele.setPoint(4, sf::Vector2f(cx - 7.f,  cy - 18.f));
+                stele.setPoint(5, sf::Vector2f(cx - 10.f, cy - 14.f));
+                // Applica inclinazione (effetto lapide inclinata)
+                stele.rotate(tilt);
+                window.draw(stele);
+                // Riflesso della stele (luce da sinistra)
+                sf::RectangleShape steleRef(sf::Vector2f(3.f, 24.f));
+                steleRef.setFillColor(stoneLight);
+                steleRef.setPosition(cx - 9.f, cy - 12.f);
+                steleRef.rotate(tilt);
+                window.draw(steleRef);
+                // Incisione (piccola croce o simbolo)
+                sf::RectangleShape ins1(sf::Vector2f(1.5f, 8.f));
+                ins1.setFillColor(stoneDark);
+                ins1.setPosition(cx - 0.75f, cy - 8.f);
+                ins1.rotate(tilt);
+                window.draw(ins1);
+                sf::RectangleShape ins2(sf::Vector2f(6.f, 1.5f));
+                ins2.setFillColor(stoneDark);
+                ins2.setPosition(cx - 3.f, cy - 4.f);
+                ins2.rotate(tilt);
+                window.draw(ins2);
+                // Muschio alla base
+                sf::CircleShape mossT(2.5f);
+                mossT.setFillColor(stoneMoss);
+                mossT.setPosition(cx - 10.f, cy + 10.f);
+                window.draw(mossT);
+            };
+            // 4 lapidi distribuite lungo i muri laterali
+            drawTombstone(wallThickness + 80.f, playTop + playH * 0.3f, -8.f);
+            drawTombstone(wallThickness + 80.f, playTop + playH * 0.7f, 6.f);
+            drawTombstone(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.3f, 8.f);
+            drawTombstone(WINDOW_WIDTH - wallThickness - 80.f, playTop + playH * 0.7f, -6.f);
+
+            // --- Blocchi di pietra caduti (cumuli di rovine) ---
+            // Piccoli blocchi sparsi lungo il perimetro della stanza,
+            // come resti di un tempio crollato.
+            auto drawRubblePile = [&](float cx, float cy) {
+                // Ombra
+                sf::CircleShape rubbleShadow(22.f);
+                rubbleShadow.setFillColor(sf::Color(0, 0, 0, 100));
+                rubbleShadow.setPosition(cx - 22.f, cy + 6.f);
+                window.draw(rubbleShadow);
+                // 3-4 blocchi di pietra di grandezze e toni diversi
+                sf::RectangleShape block1(sf::Vector2f(20.f, 12.f));
+                block1.setFillColor(stoneDark);
+                block1.setOutlineThickness(0.8f); block1.setOutlineColor(stoneBase);
+                block1.setPosition(cx - 14.f, cy);
+                block1.rotate(-5.f);
+                window.draw(block1);
+                sf::RectangleShape block2(sf::Vector2f(16.f, 10.f));
+                block2.setFillColor(stoneBase);
+                block2.setOutlineThickness(0.8f); block2.setOutlineColor(stoneDark);
+                block2.setPosition(cx + 4.f, cy + 4.f);
+                block2.rotate(8.f);
+                window.draw(block2);
+                // Riflesso sul blocco superiore
+                sf::RectangleShape block2Ref(sf::Vector2f(14.f, 1.5f));
+                block2Ref.setFillColor(stoneLight);
+                block2Ref.setPosition(cx + 5.f, cy + 4.f);
+                block2Ref.rotate(8.f);
+                window.draw(block2Ref);
+                // Blocco piu' piccolo sopra
+                sf::RectangleShape block3(sf::Vector2f(10.f, 6.f));
+                block3.setFillColor(stoneLight);
+                block3.setOutlineThickness(0.5f); block3.setOutlineColor(stoneDark);
+                block3.setPosition(cx - 6.f, cy - 4.f);
+                block3.rotate(-12.f);
+                window.draw(block3);
+                // Muschio sui blocchi
+                sf::CircleShape mossR(2.f);
+                mossR.setFillColor(stoneMoss);
+                mossR.setPosition(cx - 12.f, cy + 8.f);
+                window.draw(mossR);
+                mossR.setPosition(cx + 8.f, cy + 2.f);
+                window.draw(mossR);
+            };
+            // 4 cumuli di rovine ai lati della stanza (non agli angoli,
+            // dove ci sono le colonne)
+            drawRubblePile(wallThickness + 50.f, playTop + playH * 0.5f);
+            drawRubblePile(WINDOW_WIDTH - wallThickness - 50.f, playTop + playH * 0.5f);
+            drawRubblePile(WINDOW_WIDTH / 2.f - 200.f, playTop + wallThickness + 40.f);
+            drawRubblePile(WINDOW_WIDTH / 2.f + 200.f, WINDOW_HEIGHT - wallThickness - 40.f);
+
+            // --- Teschi cumulo sul pavimento (decorazione macabra) ---
+            // Piccolo cumulo di teschi in un angolo della stanza.
+            {
+                float pileX = wallThickness + 40.f;
+                float pileY = WINDOW_HEIGHT - wallThickness - 30.f;
+                // Ombra
+                sf::CircleShape pileShadow(20.f);
+                pileShadow.setFillColor(sf::Color(0, 0, 0, 120));
+                pileShadow.setPosition(pileX - 20.f, pileY + 4.f);
+                window.draw(pileShadow);
+                // 5 teschi disposti a piramide
+                float skullPos[5][2] = {
+                    {0.f,  0.f}, {10.f, 2.f}, {-10.f, 2.f}, {5.f, -8.f}, {-5.f, -6.f}
+                };
+                for (int i = 0; i < 5; i++) {
+                    float sx = pileX + skullPos[i][0];
+                    float sy = pileY + skullPos[i][1];
+                    // Teschio
+                    sf::CircleShape skull(4.f, 8);
+                    skull.setFillColor(boneCol);
+                    skull.setOutlineThickness(0.5f); skull.setOutlineColor(boneDark);
+                    skull.setPosition(sx - 4.f, sy - 4.f);
+                    window.draw(skull);
+                    // Occhi
+                    sf::CircleShape eye1(0.8f);
+                    eye1.setFillColor(sf::Color::Black);
+                    eye1.setPosition(sx - 2.5f, sy - 1.5f);
+                    window.draw(eye1);
+                    sf::CircleShape eye2(0.8f);
+                    eye2.setFillColor(sf::Color::Black);
+                    eye2.setPosition(sx + 1.f, sy - 1.5f);
+                    window.draw(eye2);
+                    // Naso (piccolo triangolo)
+                    sf::ConvexShape nose; nose.setPointCount(3);
+                    nose.setFillColor(boneDark);
+                    nose.setPoint(0, sf::Vector2f(sx - 1.f, sy + 0.5f));
+                    nose.setPoint(1, sf::Vector2f(sx + 1.f, sy + 0.5f));
+                    nose.setPoint(2, sf::Vector2f(sx, sy + 2.f));
+                    window.draw(nose);
+                }
+            }
+            // Cumulo di teschi nell'angolo opposto (simmetrico)
+            {
+                float pileX = WINDOW_WIDTH - wallThickness - 40.f;
+                float pileY = playTop + wallThickness + 30.f;
+                sf::CircleShape pileShadow(20.f);
+                pileShadow.setFillColor(sf::Color(0, 0, 0, 120));
+                pileShadow.setPosition(pileX - 20.f, pileY + 4.f);
+                window.draw(pileShadow);
+                float skullPos[5][2] = {
+                    {0.f,  0.f}, {10.f, 2.f}, {-10.f, 2.f}, {5.f, -8.f}, {-5.f, -6.f}
+                };
+                for (int i = 0; i < 5; i++) {
+                    float sx = pileX + skullPos[i][0];
+                    float sy = pileY + skullPos[i][1];
+                    sf::CircleShape skull(4.f, 8);
+                    skull.setFillColor(boneCol);
+                    skull.setOutlineThickness(0.5f); skull.setOutlineColor(boneDark);
+                    skull.setPosition(sx - 4.f, sy - 4.f);
+                    window.draw(skull);
+                    sf::CircleShape eye1(0.8f);
+                    eye1.setFillColor(sf::Color::Black);
+                    eye1.setPosition(sx - 2.5f, sy - 1.5f);
+                    window.draw(eye1);
+                    sf::CircleShape eye2(0.8f);
+                    eye2.setFillColor(sf::Color::Black);
+                    eye2.setPosition(sx + 1.f, sy - 1.5f);
+                    window.draw(eye2);
+                    sf::ConvexShape nose; nose.setPointCount(3);
+                    nose.setFillColor(boneDark);
+                    nose.setPoint(0, sf::Vector2f(sx - 1.f, sy + 0.5f));
+                    nose.setPoint(1, sf::Vector2f(sx + 1.f, sy + 0.5f));
+                    nose.setPoint(2, sf::Vector2f(sx, sy + 2.f));
+                    window.draw(nose);
+                }
+            }
+
+            // --- Bracieri ardenti agli angoli della stanza ---
+            // Piccoli bracieri con fiamma animata per dare atmosfera
+            // e illuminazione calda, in stile cripta infernale.
+            auto drawBrazier = [&](float cx, float cy) {
+                // Ombra
+                sf::CircleShape brShadow(16.f);
+                brShadow.setFillColor(sf::Color(0, 0, 0, 120));
+                brShadow.setPosition(cx - 16.f, cy + 8.f);
+                window.draw(brShadow);
+                // Treppiede (3 gambe metalliche)
+                for (int i = 0; i < 3; i++) {
+                    sf::RectangleShape leg(sf::Vector2f(2.f, 12.f));
+                    leg.setFillColor(sf::Color(50, 45, 40));
+                    leg.setOutlineThickness(0.5f); leg.setOutlineColor(sf::Color(20, 15, 10));
+                    leg.setOrigin(1.f, 0.f);
+                    leg.setPosition(cx, cy);
+                    leg.rotate(i * 120.f + 30.f);
+                    window.draw(leg);
+                }
+                // Coppa del braciere (semicerchio rovesciato)
+                sf::ConvexShape bowl; bowl.setPointCount(6);
+                bowl.setFillColor(sf::Color(70, 60, 50));
+                bowl.setOutlineThickness(1.f); bowl.setOutlineColor(sf::Color(30, 25, 20));
+                bowl.setPoint(0, sf::Vector2f(cx - 12.f, cy - 4.f));
+                bowl.setPoint(1, sf::Vector2f(cx + 12.f, cy - 4.f));
+                bowl.setPoint(2, sf::Vector2f(cx + 10.f, cy + 2.f));
+                bowl.setPoint(3, sf::Vector2f(cx + 6.f,  cy + 6.f));
+                bowl.setPoint(4, sf::Vector2f(cx - 6.f,  cy + 6.f));
+                bowl.setPoint(5, sf::Vector2f(cx - 10.f, cy + 2.f));
+                window.draw(bowl);
+                // Bordo superiore della coppa
+                sf::RectangleShape bowlRim(sf::Vector2f(24.f, 2.f));
+                bowlRim.setFillColor(sf::Color(100, 90, 75));
+                bowlRim.setOutlineThickness(0.5f); bowlRim.setOutlineColor(sf::Color(30, 25, 20));
+                bowlRim.setPosition(cx - 12.f, cy - 5.f);
+                window.draw(bowlRim);
+                // Aura luminosa calda
+                sf::CircleShape bAura(28.f);
+                bAura.setFillColor(sf::Color(255, 180, 60, 30));
+                bAura.setPosition(cx - 28.f, cy - 50.f);
+                window.draw(bAura);
+                // Fiamma animata (3 strati)
+                float flicker = sin(bossRoomTime * 16.f + cx) * 1.5f;
+                // Strato esterno (rosso)
+                sf::CircleShape flame3(7.f + flicker);
+                flame3.setFillColor(sf::Color(180, 30, 10, 220));
+                flame3.setPosition(cx - 7.f - flicker * 0.5f, cy - 18.f);
+                window.draw(flame3);
+                // Strato medio (arancione)
+                sf::CircleShape flame2(5.f + flicker * 0.5f);
+                flame2.setFillColor(sf::Color(255, 140, 30, 240));
+                flame2.setPosition(cx - 5.f - flicker * 0.3f, cy - 16.f);
+                window.draw(flame2);
+                // Strato interno (giallo)
+                sf::CircleShape flame1(2.5f);
+                flame1.setFillColor(sf::Color(255, 240, 180, 250));
+                flame1.setPosition(cx - 2.5f, cy - 13.f);
+                window.draw(flame1);
+                // Piccola scintilla sopra
+                sf::CircleShape spark(0.6f);
+                spark.setFillColor(sf::Color(255, 220, 120, 200));
+                spark.setPosition(cx - 0.3f, cy - 22.f - flicker);
+                window.draw(spark);
+            };
+            // 2 bracieri negli angoli della stanza (opposti)
+            drawBrazier(wallThickness + 30.f, playTop + wallThickness + 30.f);
+            drawBrazier(WINDOW_WIDTH - wallThickness - 30.f, WINDOW_HEIGHT - wallThickness - 30.f);
+
+            // --- Catene appese ai muri (decorazione gotica) ---
+            // Catene di ferro arrugginito appese al muro superiore e inferiore,
+            // come una prigione / cripta.
+            auto drawHangingChain = [&](float x, float yTop, float length) {
+                // Anelli di catena (cerchi scuri impilati)
+                int numLinks = (int)(length / 5.f);
+                for (int i = 0; i < numLinks; i++) {
+                    float y = yTop + i * 5.f;
+                    // Anello verticale
+                    sf::RectangleShape linkV(sf::Vector2f(2.f, 5.f));
+                    linkV.setFillColor(sf::Color(45, 40, 35));
+                    linkV.setOutlineThickness(0.5f); linkV.setOutlineColor(sf::Color(20, 18, 15));
+                    linkV.setPosition(x - 1.f, y);
+                    window.draw(linkV);
+                    // Anello orizzontale (alternato)
+                    if (i % 2 == 0) {
+                        sf::RectangleShape linkH(sf::Vector2f(5.f, 2.f));
+                        linkH.setFillColor(sf::Color(55, 50, 45));
+                        linkH.setOutlineThickness(0.5f); linkH.setOutlineColor(sf::Color(20, 18, 15));
+                        linkH.setPosition(x - 2.5f, y + 1.5f);
+                        window.draw(linkH);
+                    }
+                }
+                // Ultimo anello con un gancio (uncino)
+                sf::ConvexShape hook; hook.setPointCount(4);
+                hook.setFillColor(sf::Color(50, 45, 40));
+                hook.setOutlineThickness(0.5f); hook.setOutlineColor(sf::Color(20, 18, 15));
+                hook.setPoint(0, sf::Vector2f(x - 1.f, yTop + length));
+                hook.setPoint(1, sf::Vector2f(x + 1.f, yTop + length));
+                hook.setPoint(2, sf::Vector2f(x + 4.f, yTop + length + 4.f));
+                hook.setPoint(3, sf::Vector2f(x + 2.f, yTop + length + 6.f));
+                window.draw(hook);
+            };
+            // 3 catene appese al muro superiore, 3 al muro inferiore
+            drawHangingChain(WINDOW_WIDTH * 0.25f, playTop + wallThickness, 30.f);
+            drawHangingChain(WINDOW_WIDTH * 0.5f,  playTop + wallThickness, 22.f);
+            drawHangingChain(WINDOW_WIDTH * 0.75f, playTop + wallThickness, 28.f);
+            // Catene dal muro inferiore (pendono verso l'alto? no, verso il basso:
+            // in realta' appese alla parte bassa del muro, pendono nel vuoto)
+            drawHangingChain(WINDOW_WIDTH * 0.25f, WINDOW_HEIGHT - wallThickness - 32.f, 22.f);
+            drawHangingChain(WINDOW_WIDTH * 0.5f,  WINDOW_HEIGHT - wallThickness - 28.f, 16.f);
+            drawHangingChain(WINDOW_WIDTH * 0.75f, WINDOW_HEIGHT - wallThickness - 32.f, 24.f);
         }
 
         // UI senza tesori (passiamo 0)
