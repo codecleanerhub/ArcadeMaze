@@ -351,17 +351,9 @@ void Enemy::render(sf::RenderTarget& target) const {
     float py = pos.y;
     sf::Color outline(20, 20, 20, 255);
 
-    // Barra HP (nascosta durante l'animazione di morte)
-    if (dyingTimer == 0) {
-        sf::RectangleShape hbBg(sf::Vector2f(36.f, 4.f));
-        hbBg.setFillColor(sf::Color(50, 0, 0, 200));
-        hbBg.setPosition(px - 18.f, py - 36.f);
-        target.draw(hbBg);
-        sf::RectangleShape hbFg(sf::Vector2f(36.f * health / maxHealth, 4.f));
-        hbFg.setFillColor(sf::Color(255, 50, 50));
-        hbFg.setPosition(px - 18.f, py - 36.f);
-        target.draw(hbFg);
-    }
+    // Flag: la barra HP verra' disegnata DOPO lo sprite (cosi' e' sempre
+    // visibile, anche se lo sprite oscilla con il bob effect).
+    bool drawHpBar = (dyingTimer == 0);
 
     // Tentativo di rendering con sprite.
     // Selezione animazione in base allo stato:
@@ -424,6 +416,21 @@ void Enemy::render(sf::RenderTarget& target) const {
 
     // Fallback: primitive SFML
     renderPrimitives(target);
+
+    // Barra HP disegnata PER ULTIMO (sempre on top rispetto allo sprite).
+    // Posizione: py - 48 (sopra la testa dello sprite 64x64 con anchor a py+8,
+    // il cui top e' a py-24; con bob effect +/-2px resta sotto py-26).
+    // Nascosta durante l'animazione di morte.
+    if (drawHpBar) {
+        sf::RectangleShape hbBg(sf::Vector2f(36.f, 4.f));
+        hbBg.setFillColor(sf::Color(50, 0, 0, 200));
+        hbBg.setPosition(px - 18.f, py - 48.f);
+        target.draw(hbBg);
+        sf::RectangleShape hbFg(sf::Vector2f(36.f * health / maxHealth, 4.f));
+        hbFg.setFillColor(sf::Color(255, 50, 50));
+        hbFg.setPosition(px - 18.f, py - 48.f);
+        target.draw(hbFg);
+    }
 }
 
 // ---------------------------------------------------------------------------
