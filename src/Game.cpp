@@ -31,7 +31,12 @@
 // il viewport viene poi riadattato in handleEvents (evento Resized) per
 // mantenere l'aspect ratio e centrare l'immagine (letterboxing).
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), state(STATE_MENU), boss(nullptr), currentLevel(1), selectedModeIndex(0), isRunning(true), musicEnabled(false), lightningTimer(0), menuItemIndex(0), gameMode(MODE_STORY), configJoyStep(0) {
+// Nota: l'ordine della initializer list deve rispettare l'ordine di
+// dichiarazione dei membri in Game.h, altrimenti g++ emette -Wreorder.
+// Ordine dichiarazione: window, boss, state, gameMode, isRunning,
+// currentLevel, selectedModeIndex, menuItemIndex, musicEnabled,
+// lightningTimer, configJoyStep.
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -223,7 +228,9 @@ void Game::handleEvents() {
             // Pulsante "jump" del joystick e' usato come "conferma" perche' e'
             // quello piu' intuitivo (es. pulsante A di un pad Xbox).
             if (state == STATE_MENU) {
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == config.joy_jump) {
+                // Cast a unsigned: event.joystickButton.button e' unsigned int,
+                // config.joy_jump e' int (perche' letto da file INI come intero).
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     if (menuItemIndex == 3) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
                     else if (menuItemIndex == 4) {
                         sf::VideoMode mode = displayModes[selectedModeIndex];
@@ -244,7 +251,7 @@ void Game::handleEvents() {
                     else if (configJoyStep == 1) { config.joy_shoot = event.joystickButton.button; state = STATE_MENU; }
                 }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == config.joy_jump) {
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     state = STATE_MENU;
                     currentLevel = 1;
                 }
@@ -290,12 +297,11 @@ void Game::update() {
 
     // --- Input giocatore (sia STATE_PLAYING che STATE_BOSS) ---
     if (state == STATE_PLAYING || state == STATE_BOSS) {
-        bool moved = false;
         // Tastiera: direzioni (mutuamente esclusive con else-if)
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); moved = true; }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down))  { player.setDirection(0, 1);  moved = true; }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); moved = true; }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  moved = true; }
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down))  { player.setDirection(0, 1);  }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
 
         // Joystick: prevale sulla tastiera se fuori dalla deadzone (30%)
         if (sf::Joystick::isConnected(0)) {
@@ -305,11 +311,11 @@ void Game::update() {
                 // Determina l'asse dominante per evitare movimenti diagonali
                 // non intenzionali (utile per labirinto "snap-to-grid").
                 if (fabs(x) > fabs(y)) {
-                    if (x > 30) { player.setDirection(1, 0); moved = true; }
-                    else if (x < -30) { player.setDirection(-1, 0); moved = true; }
+                    if (x > 30) { player.setDirection(1, 0); }
+                    else if (x < -30) { player.setDirection(-1, 0); }
                 } else {
-                    if (y > 30) { player.setDirection(0, 1); moved = true; }
-                    else if (y < -30) { player.setDirection(0, -1); moved = true; }
+                    if (y > 30) { player.setDirection(0, 1); }
+                    else if (y < -30) { player.setDirection(0, -1); }
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)

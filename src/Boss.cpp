@@ -63,8 +63,10 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
     if (pos.y < UI_HEIGHT + size/2 || pos.y > screenHeight - size/2) dy = -dy;
     shootTimer += 16;
 
-    // Sparo a ventaglio: il cooldown diminuisce col livello (min ~500 ms)
-    if (shootTimer > (1500 - level * 100)) {
+    // Sparo a ventaglio: il cooldown diminuisce col livello (min ~500 ms).
+    // Cast a uint32_t per evitare -Wsign-compare fra shootTimer (unsigned) e
+    // l'espressione (1500 - level*100) che e' int firmato.
+    if (shootTimer > (uint32_t)(1500 - level * 100)) {
         shootTimer = 0;
         float dxp = playerX - pos.x, dyp = playerY - pos.y;
         float dist = sqrt(dxp*dxp + dyp*dyp);
