@@ -1,0 +1,31 @@
+# --- CMake / Build ---
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+
+# --- Eseguibile ---
+ArcadeMazeFantasy
+ArcadeMazeFantasy.exe
+ArcadeMazeFantasy.app
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Log / tmp ---
+*.log
+*.tmp

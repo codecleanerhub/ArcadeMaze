@@ -1,3 +1,0 @@
-/home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles/ArcadeMazeFantasy.dir
-/home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles/edit_cache.dir
-/home/luca/Scrivania/Sviluppo/ArcadeMaze/build/CMakeFiles/rebuild_cache.dir
