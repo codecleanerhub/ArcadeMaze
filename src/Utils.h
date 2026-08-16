@@ -33,19 +33,44 @@ struct Vec2 { int x, y; };
 // --- Configurazione comandi (tastiera + joystick) ------------------------
 // I valori di default rispecchiano le frecce direzionali e i tasti Space/Alt.
 // Vengono comunque sovrascritti da loadConfig() leggendo "config.ini".
+//
+// In modalita' 2 giocatori:
+//   * Player 1 usa la tastiera (key_*) o il joystick 0 (joy_*).
+//   * Player 2 usa una tastiera secondaria (key2_*) o il joystick 1 (joy2_*).
+// I pulsanti del joystick 0/1 sono configurabili da menu' (STATE_CONFIG_JOY
+// e STATE_CONFIG_JOY_2); la tastiera secondaria ha valori fissi (WASD + Q/E)
+// definiti qui come default.
 struct Config {
+    // --- Player 1 (tastiera) ---
     int key_up    = sf::Keyboard::Up;
     int key_down  = sf::Keyboard::Down;
     int key_left  = sf::Keyboard::Left;
     int key_right = sf::Keyboard::Right;
-    int key_jump  = sf::Keyboard::Space;   // salto (salvato da `config.ini` come Alt sinistro)
-    int key_shoot = sf::Keyboard::LAlt;    // sparo
+    int key_jump  = sf::Keyboard::Space;
+    int key_shoot = sf::Keyboard::LAlt;
 
-    // Joystick: assi analogici e pulsanti (configurabili da menu').
+    // --- Player 1 (joystick 0) ---
     int joy_axis_x = 0;   // asse orizzontale
     int joy_axis_y = 1;   // asse verticale
     int joy_jump   = 0;   // pulsante salto
     int joy_shoot  = 2;   // pulsante sparo
+
+    // --- Player 2 (tastiera secondaria, fissa) ---
+    // WASD per il movimento, Q per saltare, E per sparare.
+    int key2_up    = sf::Keyboard::W;
+    int key2_down  = sf::Keyboard::S;
+    int key2_left  = sf::Keyboard::A;
+    int key2_right = sf::Keyboard::D;
+    int key2_jump  = sf::Keyboard::Q;
+    int key2_shoot = sf::Keyboard::E;
+
+    // --- Player 2 (joystick 1) ---
+    // Assi solitamente identici al joystick 0; i pulsanti sono configurabili
+    // da menu' (STATE_CONFIG_JOY_2) e quindi inizializzati a default comuni.
+    int joy2_axis_x = 0;
+    int joy2_axis_y = 1;
+    int joy2_jump   = 0;
+    int joy2_shoot  = 2;
 };
 
 // --- Particella generica --------------------------------------------------

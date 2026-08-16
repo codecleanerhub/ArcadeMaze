@@ -27,8 +27,7 @@
 // Stati di gioco: l'ordine NON e' arbitrario per la logica, ma i valori
 // sono simbolici (non usati come indici).
 enum GameState {
-    STATE_MENU,           // menu' principale
-    STATE_SELECT_PLAYERS, // scelta tra 1 o 2 giocatori
+    STATE_MENU,           // menu' principale (sceglie anche 1/2 giocatori)
     STATE_CONFIG_JOY,     // configurazione joystick giocatore 1 (2 step)
     STATE_CONFIG_JOY_2,   // configurazione joystick giocatore 2 (2 step)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
@@ -71,7 +70,6 @@ private:
     UI ui;
     AudioManager audio;
     int numPlayers;      // 1 o 2 giocatori (impostato nel menu)
-    int selectedPlayers; // Voce di selezione dei giocatori nel menu'
 
     // Entita' di gioco. `enemies` e' un vettore perche' ogni livello ne
     // genera 5. `boss` e' un puntatore perche' viene creato/destroyato
@@ -116,8 +114,6 @@ private:
 
     // Disegna il menu' principale (sfondo stellato + luna + fulmini + opzioni).
     void drawMenu();
-    // Disegna la schermata di selezione numero di giocatori.
-    void drawSelectPlayers();
     // Disegna la schermata di configurazione joystick.
     void drawConfigJoy();
     // Disegna la schermata di configurazione joystick per il giocatore 2.

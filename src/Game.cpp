@@ -30,13 +30,17 @@
 // a una risoluzione logica fissa WINDOW_WIDTH x WINDOW_HEIGHT (1024x1024):
 // il viewport viene poi riadattato in handleEvents (evento Resized) per
 // mantenere l'aspect ratio e centrare l'immagine (letterboxing).
-// ---------------------------------------------------------------------------
+//
 // Nota: l'ordine della initializer list deve rispettare l'ordine di
 // dichiarazione dei membri in Game.h, altrimenti g++ emette -Wreorder.
-// Ordine dichiarazione: window, boss, state, gameMode, isRunning,
-// currentLevel, selectedModeIndex, menuItemIndex, musicEnabled,
-// lightningTimer, configJoyStep, numPlayers, selectedPlayers.
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), numPlayers(1), selectedPlayers(0) {
+// Ordine dichiarazione in Game.h: window, maze, player, player2, ui, audio,
+// numPlayers, enemies, boss, ..., config, state, gameMode, isRunning,
+// currentLevel, displayModes, selectedModeIndex, menuItemIndex, musicEnabled,
+// lightningTimer, configJoyStep.
+// Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
+// player) sono costruiti di default.
+// ---------------------------------------------------------------------------
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0) {
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -62,8 +66,11 @@ void Game::startLevel(int lvl) {
     player.resetPosition();
     if (numPlayers == 2) {
         player2.resetPosition();
-        // Posiziona il secondo giocatore a una distanza dal primo
-        player2.setPosition(player.getPixelPos().x + 60.f, player.getPixelPos().y + 60.f);
+        // Posiziona il secondo giocatore a una cella di distanza dal primo
+        // (una colonna a destra) per evitare sovrapposizione e friendly fire
+        // immediato al respawn. Usiamo TILE_SIZE come offset orizzontale.
+        player2.setPosition(player.getPixelPos().x + TILE_SIZE,
+                             player.getPixelPos().y);
     }
     spawnEnemies();
     enemyProjectiles.clear();
@@ -118,8 +125,9 @@ void Game::startBossFight() {
     player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
     if (numPlayers == 2) {
         player2.resetPosition();
-        // Posiziona player2 accanto al player
-        player2.setPosition(WINDOW_WIDTH / 2.0f + 80.0f, WINDOW_HEIGHT - 100.0f);
+        // Posiziona player2 a 120 px dal player (abbastanza da non scattare
+        // subito il friendly fire, soglia 800 ~= 28 px).
+        player2.setPosition(WINDOW_WIDTH / 2.0f + 120.0f, WINDOW_HEIGHT - 100.0f);
     }
     bossProjectiles.clear();
     enemyProjectiles.clear();
@@ -266,10 +274,12 @@ void Game::handleEvents() {
                     }
                 }
             } else if (state == STATE_CONFIG_JOY_2) {
-                // Configurazione joystick secondo giocatore a 2 step
+                // Configurazione joystick secondo giocatore (joystick 1).
+                // Usa i campi joy2_* dedicati: NON tocca config.joy_jump/joy_shoot
+                // del giocatore 1 (bug critico della versione precedente).
                 if (event.joystickButton.joystickId == 1) {
-                    if (configJoyStep == 0) { config.joy_jump = event.joystickButton.button; configJoyStep = 1; }
-                    else if (configJoyStep == 1) { config.joy_shoot = event.joystickButton.button; state = STATE_MENU; }
+                    if (configJoyStep == 0) { config.joy2_jump = event.joystickButton.button; configJoyStep = 1; }
+                    else if (configJoyStep == 1) { config.joy2_shoot = event.joystickButton.button; state = STATE_MENU; }
                 }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
                 if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
@@ -364,11 +374,20 @@ void Game::update() {
     }
 
     // --- Input secondo giocatore (solo in modalita' 2 giocatori) ---
+    // Player 2 puo' usare sia il joystick 1 sia una tastiera secondaria
+    // (default WASD + Q salto + E sparo). I due input coesistono.
     if ((state == STATE_PLAYING || state == STATE_BOSS) && numPlayers == 2) {
-        // Joystick 1 (secondo giocatore usa il joystick 1)
+        // Tastiera secondaria (default WASD + Q/E)
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_up))    { player2.setDirection(0, -1); }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_down))  { player2.setDirection(0, 1);  }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
+
+        // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
+        // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
         if (sf::Joystick::isConnected(1)) {
-            float x = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy_axis_x);
-            float y = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy_axis_y);
+            float x = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_x);
+            float y = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_y);
             if (fabs(x) > 30 || fabs(y) > 30) {
                 if (fabs(x) > fabs(y)) {
                     if (x > 30) { player2.setDirection(1, 0); }
@@ -379,7 +398,7 @@ void Game::update() {
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(1, config.joy_shoot)) {
+            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
                     player2.shoot();
@@ -387,8 +406,20 @@ void Game::update() {
                     player2.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(1, config.joy_jump)) player2.activateJump();
+            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_jump)) player2.activateJump();
         }
+
+        // Sparo tastiera (tasto E di default)
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_shoot)) {
+            if (player2.getShootCooldown() == 0) {
+                int ammoBefore = player2.getCurrentWeapon().ammo;
+                player2.shoot();
+                if (player2.getCurrentWeapon().ammo < ammoBefore) audio.playSound(getWeaponSound(player2.getCurrentWeapon().type));
+                player2.setShootCooldown(150);
+            }
+        }
+        // Salto tastiera (tasto Q di default)
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_jump)) player2.activateJump();
     }
 
     // --- Logica STATE_PLAYING: labirinto ---
@@ -528,18 +559,27 @@ void Game::update() {
                 }
             }
 
-            // --- Collisioni tra i due giocatori (danni reciproci) ---
-            if (!player.isJumping() && !player2.isJumping()) {
+            // --- Collisioni tra i due giocatori (friendly fire) ---
+            // Quando i due giocatori si sovrappongono si danneggiano a vicenda.
+            // La precedente versione assegnava +1000 punti al danno: era una
+            // meccanica illogica (premia il danneggiare l'alleato). Ora e'
+            // una penalita' pura: entrambi prendono danno e ricevono invulnerabilita'
+            // temporanea (gestita da Player::takeDamage) per evitare che si
+            // scateni una catena di hit nello stesso frame.
+            if (!player.isInvulnerable() && !player2.isInvulnerable()
+                && !player.isJumping() && !player2.isJumping()) {
                 float dx = pPos.x - player2.getPixelPos().x;
                 float dy = pPos.y - player2.getPixelPos().y;
-                if (dx*dx + dy*dy < 800) {  // Soglia di contatto
-                    if (!player.isInvulnerable()) {
-                        player.takeDamage();
-                        player.addScore(1000);  // Bonus per danno reciproco
-                    }
-                    if (!player2.isInvulnerable()) {
-                        player2.takeDamage();
-                        player2.addScore(1000);  // Bonus per danno reciproco
+                if (dx*dx + dy*dy < 800) {  // Soglia di contatto (sqrt ~28 px)
+                    int livesBefore1 = player.getLives();
+                    int livesBefore2 = player2.getLives();
+                    player.takeDamage();
+                    player2.takeDamage();
+                    if (player.getLives() < livesBefore1
+                        || player.getEnergy() < player.getMaxEnergy()
+                        || player2.getLives() < livesBefore2
+                        || player2.getEnergy() < player2.getMaxEnergy()) {
+                        audio.playSound(SOUND_LOSE_LIFE);
                     }
                 }
             }
@@ -639,11 +679,19 @@ void Game::update() {
             }
         }
 
-        // Se il giocatore ha finito le munizioni e non ci sono armi a terra,
-        // ne spawniamo altre 3 (evita soft-lock: il boss diventerebbe
-        // invincibile se il giocatore non puo' piu' attaccare).
-        if (player.getCurrentWeapon().ammo <= 0 && bossRoomWeapons.empty()) spawnBossRoomWeapons();
-        if (player.getLives() <= 0) state = STATE_LOSE;
+        // Se entrambi i giocatori hanno finito le munizioni e non ci sono armi
+        // a terra, ne spawniamo altre 3 (evita soft-lock: il boss diventerebbe
+        // invincibile se nessuno puo' piu' attaccare).
+        if (player.getCurrentWeapon().ammo <= 0
+            && (numPlayers == 1 || player2.getCurrentWeapon().ammo <= 0)
+            && bossRoomWeapons.empty()) {
+            spawnBossRoomWeapons();
+        }
+        // In 1P: GAME OVER quando il player 1 muore.
+        // In 2P: GAME OVER quando ENTRAMBI i giocatori sono morti (uno dei due
+        // puo' continuare a giocare da solo finche' ha vite).
+        if (player.getLives() <= 0
+            && (numPlayers == 1 || player2.getLives() <= 0)) state = STATE_LOSE;
         if (boss->isDead()) {
             audio.playSound(SOUND_BOSS_DEATH);
             player.addLife(); // Guadagni una vita dopo aver sconfitto il boss
