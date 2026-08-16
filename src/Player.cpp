@@ -261,8 +261,14 @@ void Player::render(sf::RenderTarget& target) {
             int frameCount = sprite.getFrameCount("idle");
             frame = (animTime / (uint32_t)frameDuration) % frameCount;
         }
-        // Disegna lo sprite
-        sprite.render(target, animName, frame, px, pos.y + 8.f, flipped);
+        // Disegna lo sprite con bob effect (oscillazione verticale)
+        float bobY = 0.f;
+        if (animName == "walk" && (dx != 0 || dy != 0)) {
+            bobY = sin(animTime * 0.012f) * 2.f;  // camminata: 2px, 6Hz
+        } else if (animName == "idle") {
+            bobY = sin(animTime * 0.004f) * 1.f;  // respirazione: 1px, 2.5Hz
+        }
+        sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, flipped);
         // Disegna comunque i proiettili (sono separati dal corpo)
         drawProjectiles(target);
         return;

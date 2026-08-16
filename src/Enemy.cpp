@@ -403,7 +403,16 @@ void Enemy::render(sf::RenderTarget& target) const {
         if (frameCount > 0) {
             int frame = (pathUpdateTimer / (uint32_t)frameDuration) % frameCount;
             bool flipped = (dx < 0);
-            it->second.render(target, animName, frame, px, py + 8.f, flipped);
+            // Bob effect: oscillazione verticale per simulare camminata.
+            // Solo quando si muove (walk), ampiezza 2px, frequenza ~6Hz.
+            float bobY = 0.f;
+            if (animName == "walk" && (dx != 0 || dy != 0)) {
+                bobY = sin(pathUpdateTimer * 0.012f) * 2.f;
+            } else if (animName == "idle") {
+                // Respirazione: oscillazione piu' lenta e sottile
+                bobY = sin(pathUpdateTimer * 0.004f) * 1.f;
+            }
+            it->second.render(target, animName, frame, px, py + 8.f + bobY, flipped);
             return;
         }
     }
