@@ -366,15 +366,13 @@ void Enemy::render(sf::RenderTarget& target) const {
         if (dyingTimer > 0 && it->second.getFrameCount("death") > 0) {
             animName = "death";
             frameDuration = 120;
-            // Frame ricavato dal tempo residuo: piu' il tempo passa,
-            // piu' si avanza nei frame (6 frame totali in 600 ms).
-            // dyingTimer va da 600 a 0: frame = (600 - dyingTimer) / 100
             int elapsed = 600 - (int)dyingTimer;
             int frameCount = it->second.getFrameCount("death");
             int frame = elapsed / frameDuration;
             if (frame >= frameCount) frame = frameCount - 1;
             bool flipped = (dx < 0);
-            it->second.render(target, animName, frame, px, py + 8.f, flipped);
+            // Scale x4: 64x64 -> 256x256 (pixel art con smoothing off)
+            it->second.render(target, animName, frame, px, py + 8.f, 4.0f, flipped);
             return;
         }
         if (attackingTimer > 0 && it->second.getFrameCount("attack") > 0) {
@@ -385,7 +383,7 @@ void Enemy::render(sf::RenderTarget& target) const {
             int frame = elapsed / frameDuration;
             if (frame >= frameCount) frame = frameCount - 1;
             bool flipped = (dx < 0);
-            it->second.render(target, animName, frame, px, py + 8.f, flipped);
+            it->second.render(target, animName, frame, px, py + 8.f, 4.0f, flipped);
             return;
         }
         if ((dx != 0 || dy != 0) && it->second.getFrameCount("walk") > 0) {
@@ -395,7 +393,6 @@ void Enemy::render(sf::RenderTarget& target) const {
             animName = "idle";
             frameDuration = 200;
         } else {
-            // Fallback a walk se idle non c'e'
             animName = "walk";
             frameDuration = 100;
         }
@@ -403,16 +400,13 @@ void Enemy::render(sf::RenderTarget& target) const {
         if (frameCount > 0) {
             int frame = (pathUpdateTimer / (uint32_t)frameDuration) % frameCount;
             bool flipped = (dx < 0);
-            // Bob effect: oscillazione verticale per simulare camminata.
-            // Solo quando si muove (walk), ampiezza 2px, frequenza ~6Hz.
             float bobY = 0.f;
             if (animName == "walk" && (dx != 0 || dy != 0)) {
                 bobY = sin(pathUpdateTimer * 0.012f) * 2.f;
             } else if (animName == "idle") {
-                // Respirazione: oscillazione piu' lenta e sottile
                 bobY = sin(pathUpdateTimer * 0.004f) * 1.f;
             }
-            it->second.render(target, animName, frame, px, py + 8.f + bobY, flipped);
+            it->second.render(target, animName, frame, px, py + 8.f + bobY, 4.0f, flipped);
             return;
         }
     }

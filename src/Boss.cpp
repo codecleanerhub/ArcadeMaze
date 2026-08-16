@@ -231,17 +231,14 @@ void Boss::render(sf::RenderTarget& target) const {
             frameDuration = 80;  // ~480 ms totali per 6 frame
         }
         if (frameCount > 0) {
-            // animTime e' in secondi; convertiamo in ms.
             int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
             if (frame < 0) frame += frameCount;
-            // Scaling: size px / 64 px nativi = fattore di scala
-            float scale = (float)size / 64.0f;
-            // Posizione: l'ancora dei piedi e' a (32, 56) su 64x64; scalando,
-            // l'ancora si sposta a (32*scale, 56*scale). Centriamo il corpo
-            // del boss su pos + leggero offset verticale per allineare i
-            // piedi al suolo dell'ombra.
+            // Scale: size/64 per far coincidere l'hitbox con lo sprite.
+            // Minimo 4.0 (256x256) per visibilita' del pixel art.
+            float baseScale = (float)size / 64.0f;
+            float scale = (baseScale > 4.0f) ? baseScale : 4.0f;
             float drawX = px;
-            float drawY = py - size * 0.25f;  // piedi verso l'ombra
+            float drawY = py - size * 0.25f;
             it->second.render(target, animName, frame, drawX, drawY, scale, false);
             // Barra HP sopra la testa
             sf::RectangleShape hbBg(sf::Vector2f(size, 15.0f)); hbBg.setFillColor(sf::Color(50, 0, 0));

@@ -39,6 +39,10 @@ bool SpriteSheet::load(const std::string& basePath) {
             return false;
         }
     }
+    // Disattiva smoothing per pixel art: mantiene i pixel netti anche quando
+    // lo sprite viene scalato (es. x4 per schermo).
+    texture.setSmooth(false);
+
     // PNG caricato: aggiorna le dimensioni effettive della texture.
     sf::Vector2u texSize = texture.getSize();
     if (texSize.x > 0 && texSize.y > 0 && columns > 0 && rows > 0) {
