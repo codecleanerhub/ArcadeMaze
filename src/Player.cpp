@@ -281,13 +281,21 @@ void Player::render(sf::RenderTarget& target) {
             bobY = sin(animTime * 0.004f) * 1.f;
         }
 
-        // Se sta saltando, usa sprite salto dedicato
-        if (isJumping && jumpSprite.isLoaded()) {
-            jumpSprite.render(target, "idle", 0, px, pos.y + 8.f, 1.0f, flipped);
+        // --- Salto: usa lo sprite idle con effetto zoom-in-alto ---
+        // Invece di uno sprite jump separato, scaliamo leggermente in alto
+        // e solleviamo lo sprite per simulare il salto.
+        if (isJumping) {
+            // Progresso del salto: 0 (inizio) -> 1 (apice) -> 0 (fine)
+            float jumpProgress = 1.0f - (float)jumpTimer / (float)maxJumpTime;
+            // jumpOffset e' gia' calcolato in update (sin curve, max 25px)
+            // Effetto zoom: comprime leggermente in orizzontale (0.9x)
+            // per simulare lo stretching del salto
+            float scaleX = 0.9f + sin(jumpProgress * M_PI) * 0.1f;  // 0.9 -> 1.0 -> 0.9
+            // Disegna lo sprite idle con scale modificato e sollevato
+            sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped);
         }
         // Se sta camminando e abbiamo 4 frame, cicla walk0->walk1->walk2->walk3
         else if (isWalking && walkSprites[0].isLoaded() && walkSprites[1].isLoaded()) {
-            // 4 frame a ~80ms ciascuno = ciclo completo a ~320ms (~3Hz)
             int stepFrame = (animTime / 80) % 4;
             int availableFrames = 0;
             for (int i = 0; i < 4; i++) {
@@ -305,13 +313,17 @@ void Player::render(sf::RenderTarget& target) {
             sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
         }
 
-        // Speed boost aura: se attivo, disegna piccole ali scarpe sotto i piedi
+        // Speed boost: effetto discreto (piccoli pixel gialli ai piedi, non cerchio)
         if (speedBoostTimer > 0) {
-            sf::Color auraColor(255, 220, 80, 150);
-            sf::CircleShape aura(6.f);
-            aura.setFillColor(auraColor);
-            aura.setPosition(px - 6.f, pos.y + 16.f);
-            target.draw(aura);
+            sf::Color sparkColor(255, 220, 80, 200);
+            for (int i = 0; i < 3; i++) {
+                float sparkX = px + (rand() % 12 - 6);
+                float sparkY = pos.y + 18.f + (rand() % 4);
+                sf::RectangleShape spark(sf::Vector2f(2.f, 2.f));
+                spark.setFillColor(sparkColor);
+                spark.setPosition(sparkX, sparkY);
+                target.draw(spark);
+            }
         }
 
         drawProjectiles(target);
