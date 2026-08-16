@@ -91,6 +91,12 @@ private:
     // --- Render fallback a primitive SFML ---
     void renderPrimitives(sf::RenderTarget& target) const;
 
+    // --- Overlays procedurali animati disegnati sopra lo sprite ---
+    // Indipendenti dai frame dello sprite: arti, tentacoli, occhi, ali, ecc.
+    // che si muovono in tempo reale secondo `animTime`. Danno al boss un
+    // aspetto piu' "vivo" anche quando lo sprite ha pochi frame.
+    void renderSpriteExtras(sf::RenderTarget& target) const;
+
     // --- SpriteSheet statici condivisi fra tutte le istanze ---
     static std::map<BossType, SpriteSheet> sprites;
     static bool spritesLoaded;

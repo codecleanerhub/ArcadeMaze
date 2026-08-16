@@ -121,7 +121,10 @@ private:
     void startLevel(int lvl);
     // Passa alla stanza del boss: crea il boss, posiziona il giocatore in
     // fondo, spawn delle armi casuali sul pavimento.
-    void startBossFight();
+    // Se `keepBossState` e' true (continue dopo morte nel boss), NON ricrea
+    // il boss: mantiene HP/posizione/animazione esatti del boss in vita al
+    // momento della morte del player. Resetta solo player, proiettili e armi.
+    void startBossFight(bool keepBossState = false);
     // Genera 3 armi casuali nella stanza del boss (raccoglibili).
     void spawnBossRoomWeapons();
     // Mappa WeaponType -> SoundType per riprodurre il suono corretto.

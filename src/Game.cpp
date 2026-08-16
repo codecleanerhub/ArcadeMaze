@@ -140,11 +140,25 @@ void Game::spawnEnemies() {
 // Crea il boss (allocato dinamicamente: il precedente viene deallocato),
 // posiziona il giocatore in fondo alla stanza, pulisce proiettili e fa
 // spawn di 3 armi casuali a terra (cosi' il giocatore ha munizioni fresche).
+//
+// Se `keepBossState` e' true (chiamato dopo morte del player nel boss con
+// continue credit), NON ricrea il boss: mantiene HP, posizione, animazione e
+// tipo di attacco esattamente come erano al momento della morte del player.
+// In questo modo il player non puo' "farmare" il boss ricominciando da capo
+// con la barra energia piena ad ogni continue. Vengono comunque ripuliti i
+// proiettili in volo e re-spawnate le armi a terra, cosi' il player ha
+// munizioni fresche per continuare la fight.
 // ---------------------------------------------------------------------------
-void Game::startBossFight() {
+void Game::startBossFight(bool keepBossState) {
     state = STATE_BOSS;
-    if(boss) delete boss;
-    boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
+    if (keepBossState && boss != nullptr && !boss->isDead()) {
+        // Continua la fight esistente: il boss resta invariato.
+        // (nessuna ricreazione, nessun reset HP)
+    } else {
+        // Creazione boss nuova o reset completo.
+        if (boss) delete boss;
+        boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
+    }
     player.resetPosition();
     // Posiziona il giocatore in fondo alla stanza (centro orizzontale)
     player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
@@ -279,7 +293,7 @@ void Game::handleEvents() {
                         continuesLeft--;
                         player.reset();
                         if (numPlayers == 2) player2.reset();
-                        if (diedInBoss) startBossFight();
+                        if (diedInBoss) startBossFight(true);
                         else startLevel(currentLevel);
                     } else {
                         // NO: game over
@@ -346,7 +360,7 @@ void Game::handleEvents() {
                             continuesLeft--;
                             player.reset();
                             if (numPlayers == 2) player2.reset();
-                            if (diedInBoss) startBossFight();
+                            if (diedInBoss) startBossFight(true);
                             else startLevel(currentLevel);
                         } else {
                             state = STATE_LOSE;

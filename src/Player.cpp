@@ -390,39 +390,109 @@ void Player::render(sf::RenderTarget& target) {
 
 // ---------------------------------------------------------------------------
 // drawProjectiles: disegna i proiettili sparati dal giocatore.
-// Forma diversa per tipo di arma: pistol = pallottola gialla, laser = raggio
-// ciano, shotgun/rocket = palla rossa.
+//
+// Forma diversa per tipo di arma:
+//   * PISTOL  : pallottola rotonda gialla (la rotazione e' visivamente
+//               ininfluente sulle forme circolari, ma la posizione e' OK).
+//   * LASER   : raggio ciano allungato (14x3) ruotato in modo da allinearsi
+//               alla direzione di volo. Se il proiettile si muove in
+//               verticale, il raggio risulta verticale (non orizzontale).
+//   * SHOTGUN : 3 pallini rossi disposti PERPENDICOLARMENTE alla direzione
+//               di volo (pattern a "ventaglio stretto").
+//   * ROCKET  : corpo allungato (10x4) + punta conica rossa sul fronte +
+//               scia dietro. Tutto ruotato in base alla direzione di volo:
+//               un missile sparato verso il basso ha la punta verso il
+//               basso e scende in verticale.
+//
+// La rotazione e' calcolata da `p.dir` tramite atan2(dy, dx). Per le forme
+// allungate (laser, rocket) viene impostato l'origine al centro del corpo e
+// la rotazione viene applicata con setRotation. Per i pallini rotondi
+// (pistol) la rotazione non e' visibile ma la posizione e' corretta.
 // ---------------------------------------------------------------------------
 void Player::drawProjectiles(sf::RenderTarget& target) {
     for (const auto& p : projectiles) {
-        if (p.active) {
-            if (p.type == WPN_PISTOL) {
-                // Pallottola piccola gialla (3px raggio)
-                sf::CircleShape proj(3.f); proj.setFillColor(sf::Color(255, 220, 80));
-                proj.setOutlineThickness(1.f); proj.setOutlineColor(sf::Color(120, 80, 0));
-                proj.setPosition(p.pos.x - 3.f, p.pos.y - 3.f); target.draw(proj);
-            } else if (p.type == WPN_LASER) {
-                // Raggio laser ciano sottile (12x3)
-                sf::RectangleShape beam(sf::Vector2f(12.f, 3.f)); beam.setFillColor(sf::Color(80, 220, 255));
-                beam.setOutlineThickness(1.f); beam.setOutlineColor(sf::Color(20, 100, 180));
-                beam.setPosition(p.pos.x - 6.f, p.pos.y - 1.5f); target.draw(beam);
-            } else if (p.type == WPN_SHOTGUN) {
-                // ShotGun: 3 pallini rossi piccoli (2px)
-                for(int i = -2; i <= 2; i += 2) {
-                    sf::CircleShape proj(2.f); proj.setFillColor(sf::Color(255, 100, 50));
-                    proj.setPosition(p.pos.x - 2.f + i, p.pos.y - 2.f); target.draw(proj);
-                }
-            } else { // WPN_ROCKET
-                // Razzo: corpo + punta + scia
-                sf::RectangleShape body(sf::Vector2f(8.f, 4.f)); body.setFillColor(sf::Color(120, 120, 130));
-                body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color(40, 40, 50));
-                body.setPosition(p.pos.x - 4.f, p.pos.y - 2.f); target.draw(body);
-                sf::CircleShape tip(2.f); tip.setFillColor(sf::Color(220, 60, 40));
-                tip.setPosition(p.pos.x + 2.f, p.pos.y - 2.f); target.draw(tip);
-                // Scia arancione dietro
-                sf::RectangleShape trail(sf::Vector2f(4.f, 2.f)); trail.setFillColor(sf::Color(255, 150, 0, 180));
-                trail.setPosition(p.pos.x - 8.f, p.pos.y - 1.f); target.draw(trail);
+        if (!p.active) continue;
+
+        // Angolo di rotazione in gradi, derivato dalla direzione del proiettile.
+        // atan2 ritorna 0 per (1,0) [destra], 90 per (0,1) [basso], ecc.
+        // Default 0 = puntato verso destra (come da disegno delle forme).
+        float angleDeg = 0.f;
+        float dlen = std::sqrt(p.dir.x * p.dir.x + p.dir.y * p.dir.y);
+        if (dlen > 0.0001f) {
+            angleDeg = std::atan2(p.dir.y, p.dir.x) * 180.f / static_cast<float>(M_PI);
+        }
+        // Coseno/seno precalcolati per posizionare elementi "offset" (punta,
+        // scia, pallini satellite) lungo la direzione di volo.
+        float rad = angleDeg * static_cast<float>(M_PI) / 180.f;
+        float cosA = std::cos(rad);
+        float sinA = std::sin(rad);
+
+        if (p.type == WPN_PISTOL) {
+            // Pallottola piccola gialla (3px raggio). Essendo circolare,
+            // la rotazione non e' visibile ma la posizione rimane corretta.
+            sf::CircleShape proj(3.f); proj.setFillColor(sf::Color(255, 220, 80));
+            proj.setOutlineThickness(1.f); proj.setOutlineColor(sf::Color(120, 80, 0));
+            proj.setPosition(p.pos.x - 3.f, p.pos.y - 3.f); target.draw(proj);
+        } else if (p.type == WPN_LASER) {
+            // Raggio laser ciano allungato (14x3), ruotato in base alla
+            // direzione di volo. setOrigin al centro per rotazione corretta.
+            sf::RectangleShape beam(sf::Vector2f(14.f, 3.f));
+            beam.setFillColor(sf::Color(80, 220, 255));
+            beam.setOutlineThickness(1.f); beam.setOutlineColor(sf::Color(20, 100, 180));
+            beam.setOrigin(7.f, 1.5f);  // centro del raggio
+            beam.setPosition(p.pos.x, p.pos.y);
+            beam.setRotation(angleDeg);
+            target.draw(beam);
+            // Glow centrale (piccolo cerchio luminoso sopra il raggio)
+            sf::CircleShape glow(2.f); glow.setFillColor(sf::Color(200, 250, 255, 200));
+            glow.setPosition(p.pos.x - 2.f, p.pos.y - 2.f);
+            target.draw(glow);
+        } else if (p.type == WPN_SHOTGUN) {
+            // ShotGun: 3 pallini rossi piccoli (2px raggio) allineati
+            // PERPENDICOLARMENTE alla direzione di volo. L'offset dei pallini
+            // e' lungo il vettore perpendicolare (-sinA, cosA).
+            float perpX = -sinA;
+            float perpY = cosA;
+            for (int i = -2; i <= 2; i += 2) {
+                sf::CircleShape proj(2.f); proj.setFillColor(sf::Color(255, 100, 50));
+                // Offset i/2 lungo il perpendicolare (i = -2, 0, 2 -> -1, 0, 1 px)
+                float ox = perpX * (i * 0.5f);
+                float oy = perpY * (i * 0.5f);
+                proj.setPosition(p.pos.x - 2.f + ox, p.pos.y - 2.f + oy);
+                target.draw(proj);
             }
+        } else { // WPN_ROCKET
+            // Razzo composto da corpo + punta + scia, tutti ruotati in base
+            // alla direzione di volo. La punta va sul "fronte" (lato verso
+            // cui il missile si muove), la scia sul retro (lato opposto).
+            //
+            // Corpo: rettangolo 10x4, origine al centro, ruotato.
+            sf::RectangleShape body(sf::Vector2f(10.f, 4.f));
+            body.setFillColor(sf::Color(120, 120, 130));
+            body.setOutlineThickness(1.f); body.setOutlineColor(sf::Color(40, 40, 50));
+            body.setOrigin(5.f, 2.f);  // centro del corpo
+            body.setPosition(p.pos.x, p.pos.y);
+            body.setRotation(angleDeg);
+            target.draw(body);
+
+            // Punta: cerchio 2px posizionato sul fronte del missile (offset
+            // +5 px lungo la direzione di volo dal centro del corpo).
+            float tipX = p.pos.x + cosA * 5.f;
+            float tipY = p.pos.y + sinA * 5.f;
+            sf::CircleShape tip(2.f); tip.setFillColor(sf::Color(220, 60, 40));
+            tip.setPosition(tipX - 2.f, tipY - 2.f);
+            target.draw(tip);
+
+            // Scia arancione dietro al missile (offset -7 px lungo la
+            // direzione opposta al volo). Anche la scia e' ruotata.
+            float trailX = p.pos.x - cosA * 7.f;
+            float trailY = p.pos.y - sinA * 7.f;
+            sf::RectangleShape trail(sf::Vector2f(6.f, 2.f));
+            trail.setFillColor(sf::Color(255, 150, 0, 180));
+            trail.setOrigin(3.f, 1.f);  // centro
+            trail.setPosition(trailX, trailY);
+            trail.setRotation(angleDeg);
+            target.draw(trail);
         }
     }
 }
