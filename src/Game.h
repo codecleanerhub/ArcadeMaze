@@ -99,7 +99,7 @@ private:
     int currentLevel;                          // 1..10 (story) o illimitato (infinite)
     std::vector<sf::VideoMode> displayModes;   // modalita' video disponibili
     int selectedModeIndex;                     // indice modalita' selezionata nel menu'
-    int menuItemIndex;                         // voce menu' selezionata (0..4)
+    int menuItemIndex;                         // voce menu' selezionata (0..6)
     bool musicEnabled;
     int lightningTimer;                        // durata residua del fulmine nel menu'
     int configJoyStep;                         // step configurazione joystick (0/1)
@@ -108,6 +108,17 @@ private:
     int continuesTimerMs;                      // ms residui del secondo corrente
     bool continuesChoice;                      // true = YES, false = NO
     bool diedInBoss;                           // true se morto durante il boss
+
+    // --- TEST MODE (feature temporanea, facilmente disabilitabile) ---
+    // Per disabilitare completamente la voce di menu "Test Mode" e la
+    // scorciatoia da tastiera (barra spaziatrice per saltare il livello),
+    // basta commentare la riga #define seguente. Tutto il codice collegato
+    // e' racchiuso tra #ifdef TEST_MODE_FEATURE / #endif.
+#define TEST_MODE_FEATURE
+#ifdef TEST_MODE_FEATURE
+    bool testModeEnabled;                      // true = salto livello con Space attivo
+    bool testSkipKeyPressed;                   // debounce: true finche' Space resta premuto
+#endif
 
     // Sottometodi del ciclo principale
     void handleEvents();

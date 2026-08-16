@@ -40,7 +40,11 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false) {
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), selectedModeIndex(0), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false)
+#ifdef TEST_MODE_FEATURE
+    , testModeEnabled(false), testSkipKeyPressed(false)
+#endif
+{
     displayModes = sf::VideoMode::getFullscreenModes();
     selectedModeIndex = 0;
 }
@@ -250,27 +254,33 @@ void Game::handleEvents() {
 
             // Navigazione menu'
             if (state == STATE_MENU) {
-                // Su/Giu: cambio voce selezionata (6 voci totali, wrap con +6 %6)
-                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
-                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                // Su/Giu: cambio voce selezionata (7 voci totali, wrap con +7 %7)
+                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
                 // Sinistra/Destra: modifica dell'opzione selezionata
                 else if (key == sf::Keyboard::Left) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
                     if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
                     if (menuItemIndex == 2) selectedModeIndex = (selectedModeIndex - 1 + displayModes.size()) % displayModes.size();
                     if (menuItemIndex == 3) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+#ifdef TEST_MODE_FEATURE
+                    if (menuItemIndex == 4) testModeEnabled = !testModeEnabled;
+#endif
                 }
                 else if (key == sf::Keyboard::Right) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
                     if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
                     if (menuItemIndex == 2) selectedModeIndex = (selectedModeIndex + 1) % displayModes.size();
                     if (menuItemIndex == 3) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+#ifdef TEST_MODE_FEATURE
+                    if (menuItemIndex == 4) testModeEnabled = !testModeEnabled;
+#endif
                 }
-                // Return: conferma (voci 4 = config joystick, 5 = avvia partita)
+                // Return: conferma (voci 5 = config joystick, 6 = avvia partita)
                 else if (key == sf::Keyboard::Return) {
                     audio.playSound(SOUND_MENU_CONFIRM);
-                    if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 5) {
+                    if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 6) {
                         // Applica la risoluzione selezionata e avvia il livello 1
                         sf::VideoMode mode = displayModes[selectedModeIndex];
                         window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
@@ -323,8 +333,8 @@ void Game::handleEvents() {
                 // config.joy_jump e' int (perche' letto da file INI come intero).
                 if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     audio.playSound(SOUND_MENU_CONFIRM);
-                    if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 5) {
+                    if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 6) {
                         sf::VideoMode mode = displayModes[selectedModeIndex];
                         window.create(mode, "Arcade Maze Fantasy", sf::Style::Fullscreen);
                         window.setFramerateLimit(60);
@@ -408,8 +418,8 @@ void Game::update() {
             static bool joyMoved = false;
             if (fabs(y) > 50 && !joyMoved) {
                 joyMoved = true;
-                if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
-                else { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+                else { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
             } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
         }
 
@@ -707,6 +717,23 @@ void Game::update() {
             } else state = STATE_LOSE;
         }
         if (maze.getRemainingTreasures() == 0) startBossFight();
+
+#ifdef TEST_MODE_FEATURE
+        // --- TEST MODE: salta direttamente al boss premendo barra spaziatrice ---
+        // Se testModeEnabled e' true e il player preme Space, salta tutta la
+        // fase di esplorazione del labirinto e va dritto al boss del livello
+        // corrente. Debounce: salta solo alla pressione (non ogni frame).
+        if (testModeEnabled) {
+            bool spaceNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
+            if (spaceNow && !testSkipKeyPressed) {
+                // Salta al boss: same behaviour as raccogliere tutti i tesori.
+                // Inoltre dà un po' di munizioni al player per essere sicuro
+                // che possa combattere (5 colpi come le armi del boss room).
+                startBossFight();
+            }
+            testSkipKeyPressed = spaceNow;
+        }
+#endif
     }
     // --- Logica STATE_BOSS: stanza del boss ---
     else if (state == STATE_BOSS) {
@@ -838,6 +865,22 @@ void Game::update() {
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
         }
+#ifdef TEST_MODE_FEATURE
+        // --- TEST MODE: salta al livello successivo premendo barra spaziatrice ---
+        // Se testModeEnabled e' true e il player preme Space, il boss muore
+        // istantaneamente. Verra' poi il normale flusso boss->isDead() a far
+        // avanzare il livello. Debounce: salta solo alla pressione.
+        if (testModeEnabled) {
+            bool spaceNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
+            if (spaceNow && !testSkipKeyPressed) {
+                // Uccidi il boss istantaneamente: takeDamage con un valore
+                // molto alto (> maxHealth di qualsiasi boss). maxHealth del
+                // boss piu' grosso (livello 10) e' 50+10*20=250, usiamo 9999.
+                boss->takeDamage(9999);
+            }
+            testSkipKeyPressed = spaceNow;
+        }
+#endif
         if (boss->isDead()) {
             audio.playSound(SOUND_BOSS_DEATH);
             player.addLife(); // Guadagni una vita dopo aver sconfitto il boss
@@ -1116,13 +1159,18 @@ void Game::drawMenu() {
         "GAME MODE: " + std::string(gameMode == MODE_STORY ? "STORY" : "INFINITE"),
         "RESOLUTION: " + std::to_string(displayModes[selectedModeIndex].width) + "x" + std::to_string(displayModes[selectedModeIndex].height),
         "MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"),
+#ifdef TEST_MODE_FEATURE
+        "TEST MODE: " + std::string(testModeEnabled ? "ON" : "OFF"),
+#else
+        "TEST MODE: DISABLED",
+#endif
         "CONFIGURE JOYSTICK",
         "START GAME"
     };
 
-    // Disegna le 6 voci; quella selezionata e' in giallo con "> ... <"
+    // Disegna le 7 voci; quella selezionata e' in giallo con "> ... <"
     // e una piccola fiammella pulsante alla sua sinistra.
-    for(int i=0; i<6; i++) {
+    for(int i=0; i<7; i++) {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
         float itemY = 380 + i * 70;
