@@ -210,135 +210,164 @@ void Maze::render(sf::RenderTarget& target) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
             if (grid[c][r].type == CELL_WALL) {
-                // --- Muro 3D roccia cavernosa ---
-                // Colore base piu' scuro del wallColor (effetto ombra profonda).
+                // --- Muro 3D roccioso (pietra compatta, non porosa) ---
+                // Lo stile e' "roccia massiccia": superficie piu' solida possibile
+                // con poche variazioni, banda superiore chiara (illuminazione
+                // dall'alto), banda inferiore scura (fessura col pavimento) e
+                // al massimo UN piccolo ciottolo di colore uniforme per cella.
+                // Niente crepe multiple ne' macchie chiare sparse: la roccia
+                // deve sembrare compatta, non "buchi porosi".
+
+                // Colore base = wallColor scurito (effetto ombra profonda)
                 sf::Color baseCol = sf::Color(
-                    (sf::Uint8)std::max(0,   wallColor.r - 25),
-                    (sf::Uint8)std::max(0,   wallColor.g - 25),
-                    (sf::Uint8)std::max(0,   wallColor.b - 25));
+                    (sf::Uint8)std::max(0,   wallColor.r - 18),
+                    (sf::Uint8)std::max(0,   wallColor.g - 18),
+                    (sf::Uint8)std::max(0,   wallColor.b - 18));
                 rect.setFillColor(baseCol);
                 target.draw(rect);
 
-                // Banda superiore piu' chiara (effetto illuminazione)
-                // Colorazione leggermente calda, come luce di torcia.
-                rect.setSize(sf::Vector2f(TILE_SIZE, 10.f));
+                // Banda superiore piu' chiara (illuminazione calda da torcia)
+                rect.setSize(sf::Vector2f(TILE_SIZE, 8.f));
                 rect.setFillColor(sf::Color(
-                    (sf::Uint8)std::min(255, wallColor.r + 40),
-                    (sf::Uint8)std::min(255, wallColor.g + 35),
-                    (sf::Uint8)std::min(255, wallColor.b + 25)));
+                    (sf::Uint8)std::min(255, wallColor.r + 30),
+                    (sf::Uint8)std::min(255, wallColor.g + 24),
+                    (sf::Uint8)std::min(255, wallColor.b + 18)));
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+                target.draw(rect);
+
+                // Sottile striscia di luce ancora piu' chiara sul bordo superiore
+                // (effetto "taglio di luce" che evidenzia il top del muro)
+                rect.setSize(sf::Vector2f(TILE_SIZE, 2.f));
+                rect.setFillColor(sf::Color(
+                    (sf::Uint8)std::min(255, wallColor.r + 55),
+                    (sf::Uint8)std::min(255, wallColor.g + 45),
+                    (sf::Uint8)std::min(255, wallColor.b + 35)));
                 rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
                 target.draw(rect);
 
                 // Banda inferiore molto scura (ombra / fessura col pavimento)
-                rect.setSize(sf::Vector2f(TILE_SIZE, 6.f));
-                rect.setFillColor(sf::Color(15, 10, 8));
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 6);
+                rect.setSize(sf::Vector2f(TILE_SIZE, 5.f));
+                rect.setFillColor(sf::Color(12, 8, 6));
+                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 5);
                 target.draw(rect);
 
-                // Ciottoli di roccia: 3 macchie chiare in posizioni deterministiche
-                // per dare texture rocciosa. La grandezza varia leggermente.
-                for (int i = 0; i < 3; i++) {
-                    float h1 = cellHash(c * 7 + i, r * 3 + i);
-                    float h2 = cellHash(c * 13 + i, r * 5 + i + 7);
-                    float h3 = cellHash(c * 3 + i + 11, r * 11 + i + 3);
-                    // Posizione dentro la cella (margini di 6 px)
-                    float px = c * TILE_SIZE + 6.f + h1 * (TILE_SIZE - 12.f);
-                    float py = r * TILE_SIZE + UI_HEIGHT + 12.f + h2 * (TILE_SIZE - 20.f);
-                    float radius = 2.5f + h3 * 2.5f;  // 2.5..5
-                    // Colore piu' chiaro del base ma piu' scuro della banda alta
-                    sf::Uint8 cr = (sf::Uint8)std::min(255, wallColor.r + 15);
-                    sf::Uint8 cg = (sf::Uint8)std::min(255, wallColor.g + 12);
-                    sf::Uint8 cb = (sf::Uint8)std::min(255, wallColor.b + 8);
-                    // Aggiunge una leggera variazione per ogni ciottolo
-                    sf::Int8 variation = (sf::Int8)(h3 * 20.f) - 10;
-                    cr = (sf::Uint8)std::max(0, std::min(255, (int)cr + variation));
-                    cg = (sf::Uint8)std::max(0, std::min(255, (int)cg + variation));
-                    cb = (sf::Uint8)std::max(0, std::min(255, (int)cb + variation));
+                // Piccola variazione di tonalita' sulla superficie (deterministica):
+                // UN solo "ciottolo" per cella, grande e molto sfumato, per dare
+                // l'impressione di una pietra leggermente irregolare senza
+                // buchi porosi.
+                {
+                    float h1 = cellHash(c * 7 + 1, r * 3 + 1);
+                    float h2 = cellHash(c * 13 + 1, r * 5 + 7);
+                    float px = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 16.f);
+                    float py = r * TILE_SIZE + UI_HEIGHT + 14.f + h2 * (TILE_SIZE - 24.f);
+                    float radius = 4.f;  // fisso, niente variazioni estreme
+                    sf::Uint8 cr = (sf::Uint8)std::min(255, wallColor.r + 8);
+                    sf::Uint8 cg = (sf::Uint8)std::min(255, wallColor.g + 6);
+                    sf::Uint8 cb = (sf::Uint8)std::min(255, wallColor.b + 4);
                     sf::CircleShape pebble(radius);
-                    pebble.setFillColor(sf::Color(cr, cg, cb));
+                    pebble.setFillColor(sf::Color(cr, cg, cb, 180));
                     pebble.setPosition(px - radius, py - radius);
                     target.draw(pebble);
-                    // Piccolo highlight in alto a sinistra (effetto volumetrico)
-                    sf::CircleShape highlight(radius * 0.4f);
+                    // Highlight leggero (effetto volumetrico morbido)
+                    sf::CircleShape highlight(radius * 0.5f);
                     highlight.setFillColor(sf::Color(
-                        (sf::Uint8)std::min(255, (int)cr + 25),
-                        (sf::Uint8)std::min(255, (int)cg + 22),
-                        (sf::Uint8)std::min(255, (int)cb + 18)));
+                        (sf::Uint8)std::min(255, (int)cr + 20),
+                        (sf::Uint8)std::min(255, (int)cg + 18),
+                        (sf::Uint8)std::min(255, (int)cb + 14), 200));
                     highlight.setPosition(px - radius * 0.6f, py - radius * 0.6f);
                     target.draw(highlight);
                 }
 
-                // Crepe nere sottili (1-2 per cella, posizioni deterministiche)
-                int numCracks = (cellHash(c + 99, r + 17) > 0.6f) ? 2 : 1;
-                for (int i = 0; i < numCracks; i++) {
-                    float h1 = cellHash(c * 5 + i + 31, r * 7 + i + 19);
-                    float h2 = cellHash(c * 11 + i + 41, r * 2 + i + 73);
-                    float cx = c * TILE_SIZE + 4.f + h1 * (TILE_SIZE - 8.f);
-                    float cy = r * TILE_SIZE + UI_HEIGHT + 14.f + h2 * (TILE_SIZE - 24.f);
-                    // Breve segmento verticale o diagonale
-                    float ang = (h1 + h2) * 90.f;
-                    sf::RectangleShape crack(sf::Vector2f(2.f, 8.f + h2 * 8.f));
-                    crack.setFillColor(sf::Color(5, 5, 5, 200));
-                    crack.setOrigin(1.f, crack.getSize().y * 0.5f);
+                // Singola crepa rara (~12% delle celle muro), sottile e corta:
+                // sufficiente per dare carattere senza sembrare "poroso".
+                if (cellHash(c + 99, r + 17) > 0.88f) {
+                    float h1 = cellHash(c * 5 + 31, r * 7 + 19);
+                    float cx = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 16.f);
+                    float cy = r * TILE_SIZE + UI_HEIGHT + 18.f;
+                    float ang = (h1 - 0.5f) * 60.f;
+                    sf::RectangleShape crack(sf::Vector2f(1.2f, 6.f));
+                    crack.setFillColor(sf::Color(5, 5, 5, 180));
+                    crack.setOrigin(0.6f, crack.getSize().y * 0.5f);
                     crack.setPosition(cx, cy);
                     crack.rotate(ang);
                     target.draw(crack);
                 }
 
-                // Muschio verde raro (5% delle celle muro) per dare colore
-                if (cellHash(c + 555, r + 333) > 0.95f) {
+                // Muschio verde molto raro (~3% delle celle muro) per variazione
+                // cromatica: solo alla base del muro (effetto umidita' di fondo).
+                if (cellHash(c + 555, r + 333) > 0.97f) {
                     float mx = c * TILE_SIZE + 6.f + cellHash(c, r) * (TILE_SIZE - 12.f);
-                    float my = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 8.f;
-                    sf::CircleShape moss(3.f);
+                    float my = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE - 6.f;
+                    sf::CircleShape moss(2.5f);
                     moss.setFillColor(sf::Color(50, 90, 40, 200));
-                    moss.setPosition(mx - 3.f, my - 3.f);
-                    target.draw(moss);
-                    moss.setRadius(2.f);
-                    moss.setPosition(mx + 4.f, my - 1.f);
+                    moss.setPosition(mx - 2.5f, my - 2.5f);
                     target.draw(moss);
                 }
 
                 // Ripristina dimensione del rettangolo base per il prossimo tile
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE));
             } else {
-                // --- Pavimento terra battuta ---
-                // Colore base (terra scura). Variazione deterministica per
-                // evitare effetto piatto uniforme.
+                // --- Pavimento terriccio da dungeon ---
+                // Colore base terriccio scuro (terra battuta bruna) con
+                // variazione deterministica di tonalita' per evitare piattezza.
+                // Rispetto al vecchio pavimento: tinta piu' calda (marrone
+                // terroso invece di grigio scuro), texture piu' omogenea.
                 float v = cellHash(c + 1, r + 1);
-                sf::Uint8 fr = (sf::Uint8)(bgColor.r + (v - 0.5f) * 12.f);
-                sf::Uint8 fg = (sf::Uint8)(bgColor.g + (v - 0.5f) * 8.f);
-                sf::Uint8 fb = (sf::Uint8)(bgColor.b + (v - 0.5f) * 6.f);
+                // Base terriccio: R alto, G medio, B basso (marrone caldo)
+                sf::Uint8 fr = (sf::Uint8)std::max(0, std::min(255, (int)(45 + (v - 0.5f) * 14.f)));
+                sf::Uint8 fg = (sf::Uint8)std::max(0, std::min(255, (int)(30 + (v - 0.5f) * 10.f)));
+                sf::Uint8 fb = (sf::Uint8)std::max(0, std::min(255, (int)(20 + (v - 0.5f) *  7.f)));
                 rect.setFillColor(sf::Color(fr, fg, fb));
                 target.draw(rect);
 
-                // Piccoli ciottoli sparsi sul pavimento (2-3 per cella)
-                int numFloorPebbles = 2 + (int)(cellHash(c + 200, r + 100) * 2.f);
+                // Piccole crepe di terra (terriccio seccato): 1-2 sottilissime
+                // linee scure per cella, posizioni deterministiche. Danno
+                // l'idea di terra battuta senza diventare "buche".
+                int numFloorCracks = 1 + (int)(cellHash(c + 50, r + 25) * 2.f);
+                for (int i = 0; i < numFloorCracks; i++) {
+                    float h1 = cellHash(c * 17 + i + 100, r * 3 + i + 50);
+                    float h2 = cellHash(c * 7 + i + 200, r * 13 + i + 70);
+                    float px = c * TILE_SIZE + 6.f + h1 * (TILE_SIZE - 12.f);
+                    float py = r * TILE_SIZE + UI_HEIGHT + 6.f + h2 * (TILE_SIZE - 12.f);
+                    float ang = (h1 - 0.5f) * 40.f;
+                    sf::RectangleShape crack(sf::Vector2f(0.8f, 5.f + h2 * 4.f));
+                    crack.setFillColor(sf::Color(15, 8, 4, 160));
+                    crack.setOrigin(0.4f, crack.getSize().y * 0.5f);
+                    crack.setPosition(px, py);
+                    crack.rotate(ang);
+                    target.draw(crack);
+                }
+
+                // Piccoli sassolini sparsi sul terriccio (~1-2 per cella)
+                int numFloorPebbles = 1 + (int)(cellHash(c + 200, r + 100) * 2.f);
                 for (int i = 0; i < numFloorPebbles; i++) {
                     float h1 = cellHash(c * 17 + i + 100, r * 3 + i + 50);
                     float h2 = cellHash(c * 7 + i + 200, r * 13 + i + 70);
                     float h3 = cellHash(c * 23 + i + 1,   r * 11 + i + 13);
                     float px = c * TILE_SIZE + 4.f + h1 * (TILE_SIZE - 8.f);
                     float py = r * TILE_SIZE + UI_HEIGHT + 4.f + h2 * (TILE_SIZE - 8.f);
-                    float radius = 1.f + h3 * 1.5f;
-                    // Colore grigio-marrone chiaro
-                    sf::Uint8 pr = (sf::Uint8)(60 + h3 * 30);
-                    sf::Uint8 pg = (sf::Uint8)(50 + h3 * 25);
-                    sf::Uint8 pb = (sf::Uint8)(40 + h3 * 18);
+                    float radius = 1.2f + h3 * 1.2f;
+                    // Colore grigio-marrone chiaro (sassolini)
+                    sf::Uint8 pr = (sf::Uint8)(95 + h3 * 30);
+                    sf::Uint8 pg = (sf::Uint8)(80 + h3 * 25);
+                    sf::Uint8 pb = (sf::Uint8)(60 + h3 * 18);
                     sf::CircleShape pebble(radius);
                     pebble.setFillColor(sf::Color(pr, pg, pb));
                     pebble.setPosition(px - radius, py - radius);
                     target.draw(pebble);
                 }
 
-                // Macchie di terra piu' scura (~15% delle celle pavimento)
-                if (cellHash(c + 700, r + 350) > 0.85f) {
+                // Macchie di terra piu' scura (~12% delle celle pavimento):
+                // piccoli avvallamenti che sembrano umidita' / terriccio
+                // accumulato, non buchi profondi.
+                if (cellHash(c + 700, r + 350) > 0.88f) {
                     float h1 = cellHash(c + 800, r + 400);
                     float h2 = cellHash(c + 900, r + 500);
                     float sx = c * TILE_SIZE + 8.f + h1 * (TILE_SIZE - 24.f);
                     float sy = r * TILE_SIZE + UI_HEIGHT + 8.f + h2 * (TILE_SIZE - 24.f);
-                    sf::CircleShape stain(4.f + h1 * 3.f);
-                    stain.setFillColor(sf::Color(8, 5, 3, 180));
-                    stain.setPosition(sx - 4.f, sy - 4.f);
+                    sf::CircleShape stain(3.f + h1 * 2.f);
+                    stain.setFillColor(sf::Color(20, 12, 6, 140));
+                    stain.setPosition(sx - 3.f, sy - 3.f);
                     target.draw(stain);
                 }
 
@@ -347,75 +376,400 @@ void Maze::render(sf::RenderTarget& target) {
                 float cy = r * TILE_SIZE + TILE_SIZE/2.f + UI_HEIGHT;
 
                 if (grid[c][r].type == CELL_TREASURE) {
-                    // Pedistallo di pietra ombreggiato che evidenzia il tesoro
-                    // Piastrella circolare scura con anello chiaro (effetto altare)
-                    sf::CircleShape ped(20.f); ped.setFillColor(sf::Color(30, 30, 30, 150));
-                    ped.setPosition(cx-20.f, cy-12.f); target.draw(ped);
-                    sf::CircleShape pedRing(18.f); pedRing.setFillColor(sf::Color(0, 0, 0, 0));
-                    pedRing.setOutlineThickness(2.f); pedRing.setOutlineColor(sf::Color(120, 100, 80, 200));
-                    pedRing.setPosition(cx-18.f, cy-10.f); target.draw(pedRing);
+                    // --- Pedistallo di pietra elaborato (altare) ---
+                    // Piastra ovale scura ai piedi del tesoro + cornicetta dorata
+                    // decorativa che evidenzia il tesoro come oggetto prezioso.
+                    // Ombra morbida a terra
+                    sf::CircleShape shadow(18.f);
+                    shadow.setFillColor(sf::Color(0, 0, 0, 100));
+                    shadow.setPosition(cx - 18.f, cy + 6.f);
+                    target.draw(shadow);
+                    // Piastra di base (rettangolare, pietra scura)
+                    sf::RectangleShape pedestalBase(sf::Vector2f(30.f, 4.f));
+                    pedestalBase.setFillColor(sf::Color(60, 50, 40));
+                    pedestalBase.setOutlineThickness(0.8f);
+                    pedestalBase.setOutlineColor(sf::Color(20, 15, 10));
+                    pedestalBase.setPosition(cx - 15.f, cy + 10.f);
+                    target.draw(pedestalBase);
+                    // Decorazione dorata del piedistallo (cornicetta)
+                    sf::RectangleShape pedestalTrim(sf::Vector2f(32.f, 1.5f));
+                    pedestalTrim.setFillColor(sf::Color(200, 160, 60));
+                    pedestalTrim.setPosition(cx - 16.f, cy + 9.f);
+                    target.draw(pedestalTrim);
 
                     if (grid[c][r].treasure == TRES_CROWN) {
-                        // Corona: base + 3 punte + gemme rosse/blu
-                        sf::RectangleShape base(sf::Vector2f(28.f, 8.f)); base.setFillColor(sf::Color(255, 215, 0)); base.setOutlineThickness(1.5f); base.setOutlineColor(outline);
-                        base.setPosition(cx-14.f, cy+4.f); target.draw(base);
-                        sf::RectangleShape s1(sf::Vector2f(6.f, 8.f)); s1.setFillColor(sf::Color(255, 215, 0)); s1.setOutlineThickness(1.f); s1.setOutlineColor(outline);
-                        s1.setPosition(cx-14.f, cy-2.f); target.draw(s1);
-                        s1.setSize(sf::Vector2f(6.f, 14.f)); s1.setPosition(cx-3.f, cy-8.f); target.draw(s1);
-                        s1.setSize(sf::Vector2f(6.f, 8.f)); s1.setPosition(cx+8.f, cy-2.f); target.draw(s1);
-                        // Gemme decorative
-                        sf::CircleShape gem(2.f); gem.setFillColor(sf::Color::Red);
-                        gem.setPosition(cx-12.f, cy+4.f); target.draw(gem);
-                        gem.setFillColor(sf::Color::Blue);
-                        gem.setPosition(cx+10.f, cy+4.f); target.draw(gem);
+                        // === Corona reale dettagliata (piu' grande) ===
+                        // Sotto-corpo (basamento della corona)
+                        sf::RectangleShape crownBase(sf::Vector2f(34.f, 8.f));
+                        crownBase.setFillColor(sf::Color(180, 130, 30));
+                        crownBase.setOutlineThickness(1.5f); crownBase.setOutlineColor(outline);
+                        crownBase.setPosition(cx - 17.f, cy + 2.f);
+                        target.draw(crownBase);
+                        // Strato dorato superiore della base (riflesso)
+                        sf::RectangleShape crownTop(sf::Vector2f(34.f, 4.f));
+                        crownTop.setFillColor(sf::Color(255, 215, 0));
+                        crownTop.setOutlineThickness(1.f); crownTop.setOutlineColor(outline);
+                        crownTop.setPosition(cx - 17.f, cy + 2.f);
+                        target.draw(crownTop);
+                        // Riflesso cromatico superiore (striscia chiara)
+                        sf::RectangleShape crownRef(sf::Vector2f(28.f, 1.2f));
+                        crownRef.setFillColor(sf::Color(255, 245, 150));
+                        crownRef.setPosition(cx - 14.f, cy + 2.5f);
+                        target.draw(crownRef);
+
+                        // 5 punte della corona (rette, non coniche per non sforare)
+                        // Posizionate lungo il bordo superiore della base
+                        float tipPositions[5] = {-15.f, -7.f, 0.f, 7.f, 15.f};
+                        float tipHeights[5] = {8.f, 11.f, 13.f, 11.f, 8.f};
+                        for (int i = 0; i < 5; i++) {
+                            sf::ConvexShape tip; tip.setPointCount(3);
+                            tip.setFillColor(sf::Color(255, 215, 0));
+                            tip.setOutlineThickness(1.f); tip.setOutlineColor(outline);
+                            tip.setPoint(0, sf::Vector2f(cx + tipPositions[i] - 3.f, cy + 2.f));
+                            tip.setPoint(1, sf::Vector2f(cx + tipPositions[i] + 3.f, cy + 2.f));
+                            tip.setPoint(2, sf::Vector2f(cx + tipPositions[i], cy + 2.f - tipHeights[i]));
+                            target.draw(tip);
+                            // Riflesso sulla punta
+                            sf::ConvexShape tipRef; tipRef.setPointCount(3);
+                            tipRef.setFillColor(sf::Color(255, 245, 150));
+                            tipRef.setPoint(0, sf::Vector2f(cx + tipPositions[i] - 1.5f, cy + 1.f));
+                            tipRef.setPoint(1, sf::Vector2f(cx + tipPositions[i] - 0.5f, cy + 1.f));
+                            tipRef.setPoint(2, sf::Vector2f(cx + tipPositions[i] - 0.5f, cy + 2.f - tipHeights[i] * 0.8f));
+                            target.draw(tipRef);
+                            // Sfera dorata sulla punta della punta
+                            sf::CircleShape tipBall(1.5f);
+                            tipBall.setFillColor(sf::Color(255, 235, 80));
+                            tipBall.setOutlineThickness(0.5f); tipBall.setOutlineColor(outline);
+                            tipBall.setPosition(cx + tipPositions[i] - 1.5f, cy + 2.f - tipHeights[i] - 1.5f);
+                            target.draw(tipBall);
+                        }
+
+                        // Gemme incastonate sulla base (5 piccole)
+                        sf::Color gemColors[5] = {
+                            sf::Color(220, 30, 30),    // rosso
+                            sf::Color(30, 180, 80),    // verde
+                            sf::Color(80, 80, 220),    // blu
+                            sf::Color(220, 200, 30),   // giallo
+                            sf::Color(180, 30, 220)    // viola
+                        };
+                        for (int i = 0; i < 5; i++) {
+                            sf::CircleShape gem(1.8f);
+                            gem.setFillColor(gemColors[i]);
+                            gem.setOutlineThickness(0.5f); gem.setOutlineColor(outline);
+                            gem.setPosition(cx - 14.f + i * 7.f, cy + 5.f);
+                            target.draw(gem);
+                            // Riflesso luminoso sulla gemma
+                            sf::CircleShape gemRef(0.6f);
+                            gemRef.setFillColor(sf::Color(255, 255, 255, 200));
+                            gemRef.setPosition(cx - 13.5f + i * 7.f, cy + 5.5f);
+                            target.draw(gemRef);
+                        }
                     }
                     else if (grid[c][r].treasure == TRES_GEM) {
-                        // Gemma ciano con alone luminoso e riflesso bianco
-                        sf::CircleShape glow(16.f); glow.setFillColor(sf::Color(0, 255, 255, 50));
-                        glow.setPosition(cx-16.f, cy-16.f); target.draw(glow);
+                        // === Gemma preziosa dettagliata (piu' grande) ===
+                        // Triplo alone luminoso per dare profondita'
+                        sf::CircleShape glow3(20.f);
+                        glow3.setFillColor(sf::Color(0, 255, 255, 25));
+                        glow3.setPosition(cx - 20.f, cy - 20.f);
+                        target.draw(glow3);
+                        sf::CircleShape glow2(15.f);
+                        glow2.setFillColor(sf::Color(80, 220, 255, 45));
+                        glow2.setPosition(cx - 15.f, cy - 15.f);
+                        target.draw(glow2);
+                        sf::CircleShape glow1(11.f);
+                        glow1.setFillColor(sf::Color(150, 240, 255, 65));
+                        glow1.setPosition(cx - 11.f, cy - 11.f);
+                        target.draw(glow1);
 
-                        sf::ConvexShape gem; gem.setPointCount(4);
-                        gem.setFillColor(sf::Color(0, 255, 255)); gem.setOutlineThickness(1.5f); gem.setOutlineColor(outline);
-                        gem.setPoint(0, sf::Vector2f(cx, cy-16)); gem.setPoint(1, sf::Vector2f(cx+12, cy));
-                        gem.setPoint(2, sf::Vector2f(cx, cy+16)); gem.setPoint(3, sf::Vector2f(cx-12, cy));
+                        // Gemma taglio a diamante (8 facce)
+                        sf::ConvexShape gem; gem.setPointCount(8);
+                        gem.setFillColor(sf::Color(0, 220, 220));
+                        gem.setOutlineThickness(1.5f); gem.setOutlineColor(outline);
+                        // Otto punti a forma di diamante stellato
+                        for (int i = 0; i < 8; i++) {
+                            float ang = i * (float)M_PI / 4.f;
+                            float r = (i % 2 == 0) ? 14.f : 7.f;  // alterna raggio (stella)
+                            gem.setPoint(i, sf::Vector2f(cx + cos(ang) * r, cy + sin(ang) * r));
+                        }
                         target.draw(gem);
-                        // riflesso (piccolo triangolo bianco)
+
+                        // Facce interne piu' chiare (effetto rifrazione)
+                        sf::ConvexShape gemFacets; gemFacets.setPointCount(4);
+                        gemFacets.setFillColor(sf::Color(150, 255, 255, 180));
+                        gemFacets.setPoint(0, sf::Vector2f(cx, cy - 6.f));
+                        gemFacets.setPoint(1, sf::Vector2f(cx + 4.f, cy));
+                        gemFacets.setPoint(2, sf::Vector2f(cx, cy + 6.f));
+                        gemFacets.setPoint(3, sf::Vector2f(cx - 4.f, cy));
+                        target.draw(gemFacets);
+
+                        // Riflesso bianco (piccolo triangolo)
                         sf::ConvexShape gleam; gleam.setPointCount(3);
-                        gleam.setFillColor(sf::Color(255, 255, 255));
-                        gleam.setPoint(0, sf::Vector2f(cx-4, cy-8)); gleam.setPoint(1, sf::Vector2f(cx, cy-12)); gleam.setPoint(2, sf::Vector2f(cx-8, cy));
+                        gleam.setFillColor(sf::Color(255, 255, 255, 230));
+                        gleam.setPoint(0, sf::Vector2f(cx - 3.f, cy - 5.f));
+                        gleam.setPoint(1, sf::Vector2f(cx - 0.5f, cy - 8.f));
+                        gleam.setPoint(2, sf::Vector2f(cx - 5.f, cy - 1.f));
                         target.draw(gleam);
+
+                        // Piccola scintilla luminosa (punto bianco brillante)
+                        sf::CircleShape spark(0.8f);
+                        spark.setFillColor(sf::Color(255, 255, 255));
+                        spark.setPosition(cx + 2.f, cy - 4.f);
+                        target.draw(spark);
                     }
                     else if (grid[c][r].treasure == TRES_CHEST) {
-                        // Forziere: corpo + coperchio + bande metalliche + lucchetto
-                        sf::RectangleShape body(sf::Vector2f(28.f, 18.f)); body.setFillColor(sf::Color(139, 69, 19)); body.setOutlineThickness(1.5f); body.setOutlineColor(outline);
-                        body.setPosition(cx-14.f, cy-4.f); target.draw(body);
-                        sf::RectangleShape top(sf::Vector2f(28.f, 6.f)); top.setFillColor(sf::Color(100, 50, 10)); top.setOutlineThickness(1.f); top.setOutlineColor(outline);
-                        top.setPosition(cx-14.f, cy-10.f); target.draw(top);
-                        sf::RectangleShape band1(sf::Vector2f(2.f, 18.f)); band1.setFillColor(sf::Color(200, 200, 200));
-                        band1.setPosition(cx-8.f, cy-4.f); target.draw(band1);
-                        band1.setPosition(cx+6.f, cy-4.f); target.draw(band1);
-                        sf::RectangleShape lock(sf::Vector2f(6.f, 6.f)); lock.setFillColor(sf::Color(255, 215, 0));
-                        lock.setPosition(cx-3.f, cy-2.f); target.draw(lock);
+                        // === Forziere del tesoro dettagliato (piu' grande) ===
+                        // 4 piedini (piccoli blocchi scuri)
+                        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) {
+                            sf::RectangleShape foot(sf::Vector2f(3.f, 2.f));
+                            foot.setFillColor(sf::Color(40, 25, 10));
+                            foot.setOutlineThickness(0.5f); foot.setOutlineColor(outline);
+                            foot.setPosition(cx - 14.f + i * 25.f, cy + 12.f);
+                            target.draw(foot);
+                        }
+
+                        // Corpo del forziere (3 strati per dar volume)
+                        // Strato base scuro
+                        sf::RectangleShape body(sf::Vector2f(34.f, 18.f));
+                        body.setFillColor(sf::Color(110, 65, 25));
+                        body.setOutlineThickness(1.5f); body.setOutlineColor(outline);
+                        body.setPosition(cx - 17.f, cy - 4.f);
+                        target.draw(body);
+                        // Strato mediano (legno piu' chiaro, effetto volume)
+                        sf::RectangleShape bodyMid(sf::Vector2f(34.f, 4.f));
+                        bodyMid.setFillColor(sf::Color(140, 85, 35));
+                        bodyMid.setPosition(cx - 17.f, cy - 4.f);
+                        target.draw(bodyMid);
+                        // Venature del legno (3 linee)
+                        for (int i = 0; i < 3; i++) {
+                            sf::RectangleShape vein(sf::Vector2f(32.f, 0.6f));
+                            vein.setFillColor(sf::Color(80, 50, 20));
+                            vein.setPosition(cx - 16.f, cy + 2.f + i * 4.f);
+                            target.draw(vein);
+                        }
+
+                        // Coperchio (forma arrotondata con ConvexShape)
+                        sf::ConvexShape lid; lid.setPointCount(6);
+                        lid.setFillColor(sf::Color(90, 55, 20));
+                        lid.setOutlineThickness(1.5f); lid.setOutlineColor(outline);
+                        lid.setPoint(0, sf::Vector2f(cx - 17.f, cy - 4.f));
+                        lid.setPoint(1, sf::Vector2f(cx + 17.f, cy - 4.f));
+                        lid.setPoint(2, sf::Vector2f(cx + 15.f, cy - 10.f));
+                        lid.setPoint(3, sf::Vector2f(cx + 10.f, cy - 13.f));
+                        lid.setPoint(4, sf::Vector2f(cx - 10.f, cy - 13.f));
+                        lid.setPoint(5, sf::Vector2f(cx - 15.f, cy - 10.f));
+                        target.draw(lid);
+                        // Highlight del coperchio
+                        sf::ConvexShape lidHigh; lidHigh.setPointCount(6);
+                        lidHigh.setFillColor(sf::Color(130, 80, 30));
+                        lidHigh.setPoint(0, sf::Vector2f(cx - 16.f, cy - 4.5f));
+                        lidHigh.setPoint(1, sf::Vector2f(cx - 14.f, cy - 9.f));
+                        lidHigh.setPoint(2, sf::Vector2f(cx - 9.f, cy - 12.f));
+                        lidHigh.setPoint(3, sf::Vector2f(cx - 4.f, cy - 12.5f));
+                        lidHigh.setPoint(4, sf::Vector2f(cx - 6.f, cy - 10.f));
+                        lidHigh.setPoint(5, sf::Vector2f(cx - 13.f, cy - 5.f));
+                        target.draw(lidHigh);
+
+                        // 2 bande metalliche verticali (rinforzo)
+                        for (int i = 0; i < 2; i++) {
+                            float bx = cx - 8.f + i * 16.f;
+                            sf::RectangleShape band(sf::Vector2f(3.f, 18.f));
+                            band.setFillColor(sf::Color(180, 180, 180));
+                            band.setOutlineThickness(0.8f); band.setOutlineColor(outline);
+                            band.setPosition(bx, cy - 4.f);
+                            target.draw(band);
+                            // Riflesso della banda (striscia chiara)
+                            sf::RectangleShape bandRef(sf::Vector2f(0.8f, 16.f));
+                            bandRef.setFillColor(sf::Color(240, 240, 240));
+                            bandRef.setPosition(bx + 0.5f, cy - 3.f);
+                            target.draw(bandRef);
+                            // Rivetto sulla banda
+                            sf::CircleShape rivet(1.f);
+                            rivet.setFillColor(sf::Color(220, 180, 60));
+                            rivet.setPosition(bx + 0.5f, cy + 4.f);
+                            target.draw(rivet);
+                        }
+
+                        // Lucchetto dorato (con dettaglio della serratura)
+                        sf::RectangleShape lock(sf::Vector2f(8.f, 7.f));
+                        lock.setFillColor(sf::Color(255, 215, 0));
+                        lock.setOutlineThickness(1.f); lock.setOutlineColor(outline);
+                        lock.setPosition(cx - 4.f, cy - 2.f);
+                        target.draw(lock);
+                        // Riflesso del lucchetto
+                        sf::RectangleShape lockRef(sf::Vector2f(6.f, 1.f));
+                        lockRef.setFillColor(sf::Color(255, 245, 150));
+                        lockRef.setPosition(cx - 3.f, cy - 1.5f);
+                        target.draw(lockRef);
+                        // Foro della serratura (piccolo cerchio nero)
+                        sf::CircleShape keyhole(0.8f);
+                        keyhole.setFillColor(sf::Color(20, 15, 5));
+                        keyhole.setPosition(cx - 0.8f, cy + 0.5f);
+                        target.draw(keyhole);
+
+                        // Lingotti d'oro che sporgono dal forziere (effetto "pieno")
+                        sf::RectangleShape ingot1(sf::Vector2f(6.f, 3.f));
+                        ingot1.setFillColor(sf::Color(255, 215, 0));
+                        ingot1.setOutlineThickness(0.5f); ingot1.setOutlineColor(outline);
+                        ingot1.setPosition(cx - 8.f, cy - 11.f);
+                        target.draw(ingot1);
+                        sf::RectangleShape ingot2(sf::Vector2f(6.f, 3.f));
+                        ingot2.setFillColor(sf::Color(255, 235, 50));
+                        ingot2.setOutlineThickness(0.5f); ingot2.setOutlineColor(outline);
+                        ingot2.setPosition(cx + 2.f, cy - 12.f);
+                        target.draw(ingot2);
                     }
                     else if (grid[c][r].treasure == TRES_CUP) {
-                        // Coppa d'oro: calice + stelo + base + gemma
-                        sf::RectangleShape cup(sf::Vector2f(16.f, 12.f)); cup.setFillColor(sf::Color(255, 215, 0)); cup.setOutlineThickness(1.5f); cup.setOutlineColor(outline);
-                        cup.setPosition(cx-8.f, cy-8.f); target.draw(cup);
-                        sf::RectangleShape stand(sf::Vector2f(6.f, 4.f)); stand.setFillColor(sf::Color(200, 180, 0));
-                        stand.setPosition(cx-3.f, cy+4.f); target.draw(stand);
-                        sf::RectangleShape base(sf::Vector2f(16.f, 4.f)); base.setFillColor(sf::Color(255, 215, 0)); base.setOutlineThickness(1.f); base.setOutlineColor(outline);
-                        base.setPosition(cx-8.f, cy+8.f); target.draw(base);
-                        sf::CircleShape gem(3.f); gem.setFillColor(sf::Color::Red);
-                        gem.setPosition(cx-3.f, cy-4.f); target.draw(gem);
+                        // === Coppa / calice reale dettagliata (piu' grande) ===
+                        // Base allargata (3 strati)
+                        sf::RectangleShape baseBottom(sf::Vector2f(20.f, 4.f));
+                        baseBottom.setFillColor(sf::Color(180, 130, 30));
+                        baseBottom.setOutlineThickness(1.f); baseBottom.setOutlineColor(outline);
+                        baseBottom.setPosition(cx - 10.f, cy + 10.f);
+                        target.draw(baseBottom);
+                        sf::RectangleShape baseTop(sf::Vector2f(20.f, 2.f));
+                        baseTop.setFillColor(sf::Color(255, 215, 0));
+                        baseTop.setPosition(cx - 10.f, cy + 10.f);
+                        target.draw(baseTop);
+                        // Decorazione della base (puntini dorati)
+                        for (int i = 0; i < 4; i++) {
+                            sf::CircleShape dot(0.8f);
+                            dot.setFillColor(sf::Color(255, 245, 150));
+                            dot.setPosition(cx - 8.f + i * 5.f, cy + 11.f);
+                            target.draw(dot);
+                        }
+
+                        // Stelo (colonna con fregio centrale)
+                        sf::RectangleShape stem(sf::Vector2f(4.f, 8.f));
+                        stem.setFillColor(sf::Color(220, 170, 30));
+                        stem.setOutlineThickness(0.8f); stem.setOutlineColor(outline);
+                        stem.setPosition(cx - 2.f, cy + 2.f);
+                        target.draw(stem);
+                        // Nodo centrale dello stelo (sfera dorata)
+                        sf::CircleShape node(2.5f);
+                        node.setFillColor(sf::Color(255, 215, 0));
+                        node.setOutlineThickness(0.8f); node.setOutlineColor(outline);
+                        node.setPosition(cx - 2.5f, cy + 4.f);
+                        target.draw(node);
+                        // Riflesso del nodo
+                        sf::CircleShape nodeRef(0.8f);
+                        nodeRef.setFillColor(sf::Color(255, 245, 150));
+                        nodeRef.setPosition(cx - 1.8f, cy + 4.5f);
+                        target.draw(nodeRef);
+
+                        // Calice (la coppa vera e propria, forma trapezoidale)
+                        sf::ConvexShape cup; cup.setPointCount(4);
+                        cup.setFillColor(sf::Color(255, 215, 0));
+                        cup.setOutlineThickness(1.5f); cup.setOutlineColor(outline);
+                        cup.setPoint(0, sf::Vector2f(cx - 10.f, cy - 8.f));
+                        cup.setPoint(1, sf::Vector2f(cx + 10.f, cy - 8.f));
+                        cup.setPoint(2, sf::Vector2f(cx + 6.f, cy + 2.f));
+                        cup.setPoint(3, sf::Vector2f(cx - 6.f, cy + 2.f));
+                        target.draw(cup);
+                        // Riflesso cromatico del calice (striscia chiara verticale)
+                        sf::ConvexShape cupRef; cupRef.setPointCount(4);
+                        cupRef.setFillColor(sf::Color(255, 245, 150));
+                        cupRef.setPoint(0, sf::Vector2f(cx - 8.f, cy - 7.f));
+                        cupRef.setPoint(1, sf::Vector2f(cx - 6.f, cy - 7.f));
+                        cupRef.setPoint(2, sf::Vector2f(cx - 4.f, cy + 1.f));
+                        cupRef.setPoint(3, sf::Vector2f(cx - 5.f, cy + 1.f));
+                        target.draw(cupRef);
+
+                        // Bordo superiore del calice (cornicetta dorata)
+                        sf::RectangleShape rim(sf::Vector2f(22.f, 2.f));
+                        rim.setFillColor(sf::Color(220, 170, 30));
+                        rim.setOutlineThickness(0.8f); rim.setOutlineColor(outline);
+                        rim.setPosition(cx - 11.f, cy - 9.f);
+                        target.draw(rim);
+
+                        // Gemma rossa centrale sul calice
+                        sf::CircleShape gem(2.5f);
+                        gem.setFillColor(sf::Color(220, 30, 30));
+                        gem.setOutlineThickness(0.8f); gem.setOutlineColor(outline);
+                        gem.setPosition(cx - 2.5f, cy - 5.f);
+                        target.draw(gem);
+                        // Riflesso della gemma
+                        sf::CircleShape gemRef(0.8f);
+                        gemRef.setFillColor(sf::Color(255, 200, 200));
+                        gemRef.setPosition(cx - 1.8f, cy - 4.5f);
+                        target.draw(gemRef);
                     }
                     else if (grid[c][r].treasure == TRES_GOLD) {
-                        // Pila di monete d'oro
-                        sf::CircleShape coin1(8.f); coin1.setFillColor(sf::Color(255, 215, 0)); coin1.setOutlineThickness(1.f); coin1.setOutlineColor(outline);
-                        coin1.setPosition(cx-12.f, cy+4.f); target.draw(coin1);
-                        sf::CircleShape coin2(8.f); coin2.setFillColor(sf::Color(255, 235, 50)); coin2.setOutlineThickness(1.f); coin2.setOutlineColor(outline);
-                        coin2.setPosition(cx+2.f, cy+4.f); target.draw(coin2);
-                        sf::CircleShape coin3(10.f); coin3.setFillColor(sf::Color(255, 255, 100)); coin3.setOutlineThickness(1.f); coin3.setOutlineColor(outline);
-                        coin3.setPosition(cx-5.f, cy-6.f); target.draw(coin3);
+                        // === Pila di monete d'oro dettagliata (piu' grande) ===
+                        // Strato 1: 3 monete di base
+                        for (int i = 0; i < 3; i++) {
+                            sf::CircleShape coin(7.f);
+                            coin.setFillColor(sf::Color(255, 215, 0));
+                            coin.setOutlineThickness(1.f); coin.setOutlineColor(outline);
+                            coin.setPosition(cx - 13.f + i * 9.f, cy + 6.f);
+                            target.draw(coin);
+                            // Striscia di riflesso sul bordo superiore
+                            sf::RectangleShape ref(sf::Vector2f(10.f, 1.2f));
+                            ref.setFillColor(sf::Color(255, 245, 150));
+                            ref.setPosition(cx - 12.f + i * 9.f, cy + 5.f);
+                            target.draw(ref);
+                            // Simbolo centrale della moneta (piccolo rombo)
+                            sf::ConvexShape sym; sym.setPointCount(4);
+                            sym.setFillColor(sf::Color(180, 130, 30));
+                            sym.setPoint(0, sf::Vector2f(cx - 6.f + i * 9.f, cy + 7.f));
+                            sym.setPoint(1, sf::Vector2f(cx - 4.f + i * 9.f, cy + 9.f));
+                            sym.setPoint(2, sf::Vector2f(cx - 6.f + i * 9.f, cy + 11.f));
+                            sym.setPoint(3, sf::Vector2f(cx - 8.f + i * 9.f, cy + 9.f));
+                            target.draw(sym);
+                        }
+                        // Strato 2: 2 monete sopra (sfalsate)
+                        for (int i = 0; i < 2; i++) {
+                            sf::CircleShape coin(7.f);
+                            coin.setFillColor(sf::Color(255, 235, 50));
+                            coin.setOutlineThickness(1.f); coin.setOutlineColor(outline);
+                            coin.setPosition(cx - 9.f + i * 11.f, cy - 1.f);
+                            target.draw(coin);
+                            // Riflesso
+                            sf::RectangleShape ref(sf::Vector2f(10.f, 1.2f));
+                            ref.setFillColor(sf::Color(255, 245, 180));
+                            ref.setPosition(cx - 8.f + i * 11.f, cy - 2.f);
+                            target.draw(ref);
+                            // Simbolo
+                            sf::ConvexShape sym; sym.setPointCount(4);
+                            sym.setFillColor(sf::Color(180, 130, 30));
+                            sym.setPoint(0, sf::Vector2f(cx - 2.f + i * 11.f, cy));
+                            sym.setPoint(1, sf::Vector2f(cx + 0.f + i * 11.f, cy + 2.f));
+                            sym.setPoint(2, sf::Vector2f(cx - 2.f + i * 11.f, cy + 4.f));
+                            sym.setPoint(3, sf::Vector2f(cx - 4.f + i * 11.f, cy + 2.f));
+                            target.draw(sym);
+                        }
+                        // Strato 3: 1 moneta in cima (apice)
+                        sf::CircleShape coin3(8.f);
+                        coin3.setFillColor(sf::Color(255, 255, 100));
+                        coin3.setOutlineThickness(1.f); coin3.setOutlineColor(outline);
+                        coin3.setPosition(cx - 8.f, cy - 9.f);
+                        target.draw(coin3);
+                        // Riflesso della moneta apicale
+                        sf::RectangleShape ref3(sf::Vector2f(12.f, 1.5f));
+                        ref3.setFillColor(sf::Color(255, 250, 200));
+                        ref3.setPosition(cx - 6.f, cy - 10.f);
+                        target.draw(ref3);
+                        // Simbolo della moneta apicale (stella a 5 punte)
+                        sf::ConvexShape star; star.setPointCount(10);
+                        star.setFillColor(sf::Color(180, 130, 30));
+                        for (int i = 0; i < 10; i++) {
+                            float ang = i * (float)M_PI / 5.f - (float)M_PI / 2.f;
+                            float r = (i % 2 == 0) ? 3.f : 1.2f;
+                            star.setPoint(i, sf::Vector2f(cx + cos(ang) * r, cy - 5.f + sin(ang) * r));
+                        }
+                        target.draw(star);
+
+                        // Piccoli raggi luminosi attorno alla pila (effetto scintillio)
+                        for (int i = 0; i < 4; i++) {
+                            float ang = i * (float)M_PI / 2.f + (float)M_PI / 4.f;
+                            float sx = cx + cos(ang) * 14.f;
+                            float sy = cy - 4.f + sin(ang) * 10.f;
+                            sf::RectangleShape ray(sf::Vector2f(1.f, 3.f));
+                            ray.setFillColor(sf::Color(255, 240, 150, 180));
+                            ray.setOrigin(0.5f, 1.5f);
+                            ray.setPosition(sx, sy);
+                            ray.rotate(ang * 180.f / (float)M_PI);
+                            target.draw(ray);
+                        }
                     }
                 } else if (grid[c][r].type == CELL_WEAPON) {
                     // Arma a terra: delega a Weapon::render
