@@ -20,27 +20,28 @@ SpriteSheet::SpriteSheet() : frameW(64), frameH(64), columns(6), rows(4), loaded
 }
 
 // ---------------------------------------------------------------------------
-// load: carica PNG + JSON. `basePath` senza estensione.
-//   1. Prova a caricare <basePath>.png con sf::Texture::loadFromFile.
-//   2. Se OK, prova a leggere <basePath>.json per i metadati.
-//   3. Se il JSON manca o e' malformato, mantiene i default (va bene lo stesso
-//      perche' i default combaciano con gli script di generazione).
-//   4. Se il PNG manca, resta unloaded: il chiamante fa fallback.
+// load: carica PNG + JSON. Prova piu' pattern di nome file:
+//   1. <basePath>.png + <basePath>.json
+//   2. <basePath>_sheet.png + <basePath>_meta.json  (formato generato dagli script)
+// Se nessuno dei due funziona, resta unloaded.
 // ---------------------------------------------------------------------------
 bool SpriteSheet::load(const std::string& basePath) {
+    // Pattern 1: <basePath>.png + <basePath>.json
     std::string pngPath = basePath + ".png";
     std::string jsonPath = basePath + ".json";
 
     if (!texture.loadFromFile(pngPath)) {
-        loaded = false;
-        return false;
+        // Pattern 2: <basePath>_sheet.png + <basePath>_meta.json
+        pngPath = basePath + "_sheet.png";
+        jsonPath = basePath + "_meta.json";
+        if (!texture.loadFromFile(pngPath)) {
+            loaded = false;
+            return false;
+        }
     }
     // PNG caricato: aggiorna le dimensioni effettive della texture.
     sf::Vector2u texSize = texture.getSize();
     if (texSize.x > 0 && texSize.y > 0 && columns > 0 && rows > 0) {
-        // Ricalcola le dimensioni del frame in base alla texture reale
-        // (potrebbe essere diversa dal default 64x64 se lo script e' stato
-        // configurato diversamente).
         frameW = texSize.x / columns;
         frameH = texSize.y / rows;
     }
@@ -179,4 +180,37 @@ int SpriteSheet::getFrameCount(const std::string& animName) const {
     auto it = animations.find(animName);
     if (it == animations.end()) return 0;
     return it->second.frames;
+}
+
+// ---------------------------------------------------------------------------
+// render (overload con scaling): come render() ma applica uno scale factor
+// al frame. Usato per i boss che hanno `size` variabile ma sprite 64x64.
+// L'ancora dei piedi (32, 56) viene scalata proporzionalmente.
+// ---------------------------------------------------------------------------
+void SpriteSheet::render(sf::RenderTarget& target, const std::string& animName,
+                          int frameIdx, float x, float y, float scale,
+                          bool flipped) const {
+    if (!loaded) return;
+    auto it = animations.find(animName);
+    if (it == animations.end()) return;
+    const AnimInfo& info = it->second;
+
+    int idx = frameIdx;
+    if (info.frames > 0) idx = ((idx % info.frames) + info.frames) % info.frames;
+
+    int sx = idx * frameW;
+    int sy = info.row * frameH;
+    sf::IntRect rect(sx, sy, frameW, frameH);
+
+    sf::Sprite sprite(texture, rect);
+    // Ancora scalata: (32, 56) su frame 64x64 -> (32*scale, 56*scale)
+    float ox = frameW * 0.5f * scale;
+    float oy = frameH * (56.f / 64.f) * scale;
+    sprite.setOrigin(ox / scale, oy / scale);  // origin in coordinate frame
+    sprite.setPosition(x, y);
+    sprite.setScale(scale, scale);
+    if (flipped) {
+        sprite.scale(-1.f, 1.f);
+    }
+    target.draw(sprite);
 }

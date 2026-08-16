@@ -166,7 +166,7 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0) {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0) {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
@@ -267,6 +267,14 @@ void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
 //   * Sparano se il giocatore e' nel raggio di 500 px.
 // ---------------------------------------------------------------------------
 void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& playerPixelPos, std::vector<Projectile>& enemyProjectiles) {
+    // Decrementa i timer delle animazioni (16 ms per frame a 60 FPS)
+    if (attackingTimer > 16) attackingTimer -= 16; else attackingTimer = 0;
+    if (dyingTimer > 16) dyingTimer -= 16; else dyingTimer = 0;
+
+    // Se il nemico sta morendo (animazione morte in corso), blocca movimento
+    // e sparo: lascia solo scorrere il timer.
+    if (dyingTimer > 0) return;
+
     int col = (int)(pos.x / TILE_SIZE);
     int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);
     float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
@@ -298,13 +306,24 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
             float dyp = playerPixelPos.y - pos.y;
             float dist = sqrt(dxp*dxp + dyp*dyp);
             if (dist > 0 && dist < 500) {
+                // Triggera animazione di attacco per ~400 ms
+                attackingTimer = 400;
                 enemyProjectiles.push_back({pos, sf::Vector2f(dxp/dist * 3.f, dyp/dist * 3.f), 1, true, WPN_PISTOL});
             }
         }
     }
 }
 
-void Enemy::takeDamage(int dmg) { health -= dmg; }
+// takeDamage: riduce la salute e, se arriva a 0 o meno, triggera l'animazione
+// di morte (dyingTimer = 600 ms ~= durata totale di 6 frame a 120 ms).
+void Enemy::takeDamage(int dmg) {
+    if (dyingTimer > 0) return;  // gia' in animazione morte, ignora ulteriori danni
+    health -= dmg;
+    if (health <= 0) {
+        health = 0;
+        dyingTimer = 600;  // ~600 ms di animazione death (6 frame x 120 ms)
+    }
+}
 
 Vec2 Enemy::getGridPos() const { return { (int)(pos.x / TILE_SIZE), (int)((pos.y - UI_HEIGHT) / TILE_SIZE) }; }
 
@@ -321,32 +340,70 @@ void Enemy::render(sf::RenderTarget& target) const {
     float py = pos.y;
     sf::Color outline(20, 20, 20, 255);
 
-    // Barra HP (comune a tutti i nemici)
-    sf::RectangleShape hbBg(sf::Vector2f(36.f, 4.f));
-    hbBg.setFillColor(sf::Color(50, 0, 0, 200));
-    hbBg.setPosition(px - 18.f, py - 36.f);
-    target.draw(hbBg);
-    sf::RectangleShape hbFg(sf::Vector2f(36.f * health / maxHealth, 4.f));
-    hbFg.setFillColor(sf::Color(255, 50, 50));
-    hbFg.setPosition(px - 18.f, py - 36.f);
-    target.draw(hbFg);
+    // Barra HP (nascosta durante l'animazione di morte)
+    if (dyingTimer == 0) {
+        sf::RectangleShape hbBg(sf::Vector2f(36.f, 4.f));
+        hbBg.setFillColor(sf::Color(50, 0, 0, 200));
+        hbBg.setPosition(px - 18.f, py - 36.f);
+        target.draw(hbBg);
+        sf::RectangleShape hbFg(sf::Vector2f(36.f * health / maxHealth, 4.f));
+        hbFg.setFillColor(sf::Color(255, 50, 50));
+        hbFg.setPosition(px - 18.f, py - 36.f);
+        target.draw(hbFg);
+    }
 
-    // Tentativo di rendering con sprite
+    // Tentativo di rendering con sprite.
+    // Selezione animazione in base allo stato:
+    //   - dyingTimer > 0           -> "death" (6 frame, 120 ms)
+    //   - attackingTimer > 0        -> "attack" (6 frame, 100 ms)
+    //   - dx != 0 || dy != 0        -> "walk" (6 frame, 100 ms)
+    //   - altrimenti (fermo)        -> "idle" (4 frame, 200 ms)
     auto it = sprites.find(type);
     if (it != sprites.end() && it->second.isLoaded()) {
-        // Animazione "walk": 6 frame a 100 ms ciascuno.
-        // Frame = (tempo_ms / 100) % frameCount.
-        // Usiamo pathUpdateTimer come fonte di tempo (incrementato di 16
-        // per frame in update). Va bene per animare la camminata.
-        int frameCount = it->second.getFrameCount("walk");
-        if (frameCount > 0) {
-            int frame = (pathUpdateTimer / 100) % frameCount;
-            // flipped se si sta muovendo verso sinistra (dx < 0)
+        std::string animName = "idle";
+        int frameDuration = 200;
+        // Priorita: death > attack > walk > idle
+        if (dyingTimer > 0 && it->second.getFrameCount("death") > 0) {
+            animName = "death";
+            frameDuration = 120;
+            // Frame ricavato dal tempo residuo: piu' il tempo passa,
+            // piu' si avanza nei frame (6 frame totali in 600 ms).
+            // dyingTimer va da 600 a 0: frame = (600 - dyingTimer) / 100
+            int elapsed = 600 - (int)dyingTimer;
+            int frameCount = it->second.getFrameCount("death");
+            int frame = elapsed / frameDuration;
+            if (frame >= frameCount) frame = frameCount - 1;
             bool flipped = (dx < 0);
-            // Anchor dei piedi: py e' il centro della cella, i piedi del
-            // sprite sono a y=56 (su 64), quindi spostiamo di +8 in giu'
-            // per allineare il personaggio alla cella.
-            it->second.render(target, "walk", frame, px, py + 8.f, flipped);
+            it->second.render(target, animName, frame, px, py + 8.f, flipped);
+            return;
+        }
+        if (attackingTimer > 0 && it->second.getFrameCount("attack") > 0) {
+            animName = "attack";
+            frameDuration = 100;
+            int elapsed = 400 - (int)attackingTimer;
+            int frameCount = it->second.getFrameCount("attack");
+            int frame = elapsed / frameDuration;
+            if (frame >= frameCount) frame = frameCount - 1;
+            bool flipped = (dx < 0);
+            it->second.render(target, animName, frame, px, py + 8.f, flipped);
+            return;
+        }
+        if ((dx != 0 || dy != 0) && it->second.getFrameCount("walk") > 0) {
+            animName = "walk";
+            frameDuration = 100;
+        } else if (it->second.getFrameCount("idle") > 0) {
+            animName = "idle";
+            frameDuration = 200;
+        } else {
+            // Fallback a walk se idle non c'e'
+            animName = "walk";
+            frameDuration = 100;
+        }
+        int frameCount = it->second.getFrameCount(animName);
+        if (frameCount > 0) {
+            int frame = (pathUpdateTimer / (uint32_t)frameDuration) % frameCount;
+            bool flipped = (dx < 0);
+            it->second.render(target, animName, frame, px, py + 8.f, flipped);
             return;
         }
     }

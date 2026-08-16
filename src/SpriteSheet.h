@@ -38,6 +38,13 @@ public:
     void render(sf::RenderTarget& target, const std::string& animName,
                 int frameIdx, float x, float y, bool flipped = false) const;
 
+    // Overload con scaling: disegna lo sprite scalato di `scale` rispetto
+    // alle dimensioni native del frame (default 64x64). Utile per i boss
+    // che hanno `size` variabile (160+ px) ma sprite a 64x64.
+    void render(sf::RenderTarget& target, const std::string& animName,
+                int frameIdx, float x, float y, float scale,
+                bool flipped) const;
+
     // True se il PNG e' stato caricato con successo.
     bool isLoaded() const { return loaded; }
 

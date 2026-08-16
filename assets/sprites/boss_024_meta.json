@@ -1,0 +1,33 @@
+{
+  "image": "boss_024_sheet.png",
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "columns": 6,
+  "rows": 4,
+  "anchor": {
+    "x": 32,
+    "y": 56
+  },
+  "animations": {
+    "idle": {
+      "row": 0,
+      "frames": 4,
+      "frameDuration": 200
+    },
+    "walk": {
+      "row": 1,
+      "frames": 6,
+      "frameDuration": 100
+    },
+    "attack": {
+      "row": 2,
+      "frames": 6,
+      "frameDuration": 100
+    },
+    "death": {
+      "row": 3,
+      "frames": 6,
+      "frameDuration": 120
+    }
+  }
+}

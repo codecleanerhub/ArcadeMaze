@@ -31,34 +31,67 @@ bool Boss::spritesLoaded = false;
 // ---------------------------------------------------------------------------
 // getSpriteId: mappa BossType -> ID file bestiary.
 //
-// Solo 3 boss hanno match diretto col bestiary fantasy horror:
-//   BOSS_SPIDER  -> boss_022 (Regina Ragno Abissale)
-//   BOSS_KRAKEN  -> boss_030 (Guardiano delle Profondita')
-//   BOSS_VAMPIRE -> boss_029 (Vescovo Vampiro)
+// Tutti i 17 tipi hanno match diretto col bestiary fantasy horror:
+//   BOSS_GHOUL_LORD         -> boss_021 (Signore dei Ghoul)
+//   BOSS_SPECTRAL_ALPHA     -> boss_023 (Lupo Alpha Spettrale)
+//   BOSS_CULT_HERALD        -> boss_024 (Araldo del Culto)
+//   BOSS_COLOSSAL_MIMIC     -> boss_025 (Mimic Colossale)
+//   BOSS_RAT_KING           -> boss_026 (Re dei Topi)
+//   BOSS_SUPREME_WITCH      -> boss_027 (Strega Suprema delle Paludi)
+//   BOSS_TWILIGHT_KNIGHT    -> boss_028 (Cavaliere del Crepuscolo)
+//   BOSS_VAMPIRE            -> boss_029 (Vescovo Vampiro)
+//   BOSS_KRAKEN             -> boss_030 (Guardiano delle Profondita')
 //
-// Gli altri 7 tipi non hanno controparte nel file e usano il render
-// a primitive SFML (vedi renderPrimitives).
+// I 7 tipi originali senza match diretto nel file bestiary (GOLEM, LICH,
+// DEMON, ABOMINATION, DRAGON, WRAITH_LORD, BEHOLDER) sono stati rimappati
+// sui 7 nuovi tipi del file per allineamento totale:
+//   BOSS_GOLEM         -> boss_021 (Signore dei Ghoul, golem-like)
+//   BOSS_LICH          -> boss_024 (Araldo del Culto, caster undead)
+//   BOSS_DEMON         -> boss_025 (Mimic Colossale, big monster)
+//   BOSS_ABOMINATION   -> boss_026 (Re dei Topi, abomination-like)
+//   BOSS_DRAGON        -> boss_023 (Lupo Alpha, beast)
+//   BOSS_WRAITH_LORD   -> boss_028 (Cavaliere del Crepuscolo, wraith-like)
+//   BOSS_BEHOLDER      -> boss_027 (Strega Suprema, multi-eye caster)
 // ---------------------------------------------------------------------------
 std::string Boss::getSpriteId(BossType t) {
     switch(t) {
-        case BOSS_SPIDER:  return "boss_022";
-        case BOSS_KRAKEN:  return "boss_030";
-        case BOSS_VAMPIRE: return "boss_029";
-        default:           return "";
+        // 10 tipi originali - rimappati sui 7 nuovi + 3 esistenti
+        case BOSS_GOLEM:         return "boss_021";
+        case BOSS_LICH:          return "boss_024";
+        case BOSS_DEMON:         return "boss_025";
+        case BOSS_SPIDER:        return "boss_022";
+        case BOSS_ABOMINATION:   return "boss_026";
+        case BOSS_KRAKEN:        return "boss_030";
+        case BOSS_DRAGON:        return "boss_023";
+        case BOSS_WRAITH_LORD:   return "boss_028";
+        case BOSS_VAMPIRE:       return "boss_029";
+        case BOSS_BEHOLDER:      return "boss_027";
+        // 7 nuovi tipi (mappati 1:1 sul file)
+        case BOSS_GHOUL_LORD:        return "boss_021";
+        case BOSS_SPECTRAL_ALPHA:    return "boss_023";
+        case BOSS_CULT_HERALD:       return "boss_024";
+        case BOSS_COLOSSAL_MIMIC:    return "boss_025";
+        case BOSS_RAT_KING:          return "boss_026";
+        case BOSS_SUPREME_WITCH:     return "boss_027";
+        case BOSS_TWILIGHT_KNIGHT:   return "boss_028";
     }
+    return "";
 }
 
 // ---------------------------------------------------------------------------
 // loadAllSprites: carica tutti gli sprite dei boss dalla cartella `basePath`.
-// Per ogni tipo mappato (getSpriteId != ""), prova a caricare
-// `<basePath>/<id>`. I file mancanti vengono saltati silenziosamente.
+// Per ogni tipo (tutti i 17), prova a caricare `<basePath>/<id>`. I file
+// mancanti vengono saltati silenziosamente.
 // ---------------------------------------------------------------------------
 bool Boss::loadAllSprites(const std::string& basePath) {
     spritesLoaded = false;
     BossType allTypes[] = {
         BOSS_GOLEM, BOSS_LICH, BOSS_DEMON, BOSS_SPIDER,
         BOSS_ABOMINATION, BOSS_KRAKEN, BOSS_DRAGON,
-        BOSS_WRAITH_LORD, BOSS_VAMPIRE, BOSS_BEHOLDER
+        BOSS_WRAITH_LORD, BOSS_VAMPIRE, BOSS_BEHOLDER,
+        BOSS_GHOUL_LORD, BOSS_SPECTRAL_ALPHA, BOSS_CULT_HERALD,
+        BOSS_COLOSSAL_MIMIC, BOSS_RAT_KING, BOSS_SUPREME_WITCH,
+        BOSS_TWILIGHT_KNIGHT
     };
     bool any = false;
     for (BossType t : allTypes) {
@@ -84,9 +117,10 @@ void Boss::unloadAllSprites() {
 //   * speed: cresce lentamente (1 + lvl/2)
 //   * health: 50 + lvl*20 (il boss del livello 10 ha 250 HP)
 //   * dx/dy: direzione iniziale (alternata in base alla parita' del livello)
-//   * type: ciclo sui 10 tipi (1->GOLEM, ..., 10->BEHOLDER)
+//   * type: ciclo sui 17 tipi (1->GOLEM, ..., 17->TWILIGHT_KNIGHT)
+//   * attackingTimer: inizializzato a 0 (nessun attacco in corso)
 // ---------------------------------------------------------------------------
-Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f) {
+Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTimer(0) {
     level = lvl; screenWidth = w; screenHeight = h;
     size = 160 + lvl * 10;
     // Posizione iniziale: centro orizzontale, sotto la UI
@@ -95,8 +129,8 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f) {
     dx = (lvl % 2 == 0) ? 2 : -2; dy = (lvl % 3 == 0) ? 1 : -1;
     speed = 1 + lvl / 2;
     health = 50 + lvl * 20; maxHealth = health;
-    // Tipo ciclico: lvl 1 -> GOLEM (indice 0), lvl 10 -> BEHOLDER (indice 9)
-    type = static_cast<BossType>((lvl - 1) % 10);
+    // Tipo ciclico sui 17 tipi disponibili
+    type = static_cast<BossType>((lvl - 1) % BOSS_TYPE_COUNT);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +149,8 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f) {
 // ---------------------------------------------------------------------------
 void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossProjectiles) {
     animTime += 0.016f;  // ~16 ms per frame a 60 FPS
+    // Decrementa attackingTimer (16 ms per frame a 60 FPS)
+    if (attackingTimer > 16) attackingTimer -= 16; else attackingTimer = 0;
     pos.x += dx * speed; pos.y += dy * speed;
     // Rimbalzo sui bordi orizzontali
     if (pos.x < size/2 || pos.x > screenWidth - size/2) dx = -dx;
@@ -127,6 +163,8 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
     // l'espressione (1500 - level*100) che e' int firmato.
     if (shootTimer > (uint32_t)(1500 - level * 100)) {
         shootTimer = 0;
+        // Triggera animazione di attacco per ~500 ms dopo lo sparo
+        attackingTimer = 500;
         float dxp = playerX - pos.x, dyp = playerY - pos.y;
         float dist = sqrt(dxp*dxp + dyp*dyp);
         if (dist > 0) {
@@ -176,30 +214,35 @@ void Boss::render(sf::RenderTarget& target) const {
 
     // Tentativo di rendering con sprite.
     // Lo sprite del boss e' 64x64 ma il boss ha `size` variabile (160+).
-    // Disegnamo lo sprite scalato a `size` px di larghezza, centrato su (px, py).
-    // Usiamo animazione "walk" o "idle" se disponibile.
+    // Applichiamo uno scaling = size/64 per far coincidere l'hitbox con
+    // lo sprite visibile.
+    // Animazioni: usa "attack" se attackingTimer>0, altrimenti "idle".
     auto it = sprites.find(type);
     if (it != sprites.end() && it->second.isLoaded()) {
-        // Prova prima "idle" (4 frame), fallback "walk" (6 frame)
+        // Selezione animazione: attack > idle (walk non usato per i boss)
         std::string animName = "idle";
         int frameCount = it->second.getFrameCount(animName);
-        if (frameCount == 0) {
-            animName = "walk";
+        int frameDuration = 200;
+        bool isAttacking = (attackingTimer > 0)
+                           && (it->second.getFrameCount("attack") > 0);
+        if (isAttacking) {
+            animName = "attack";
             frameCount = it->second.getFrameCount(animName);
+            frameDuration = 80;  // ~480 ms totali per 6 frame
         }
         if (frameCount > 0) {
-            // animTime e' in secondi; i frame sono a 100-200 ms ciascuno.
-            // Usiamo 200 ms per idle, 100 per walk.
-            int frameDuration = (animName == "idle") ? 200 : 100;
+            // animTime e' in secondi; convertiamo in ms.
             int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
             if (frame < 0) frame += frameCount;
-            // Lo sprite del boss e' 64x64; il boss ha `size` variabile (160+).
-            // Disegniamo lo sprite all'ancora (32, 56) su frame 64x64, e
-            // spostiamo di size/4 in su per centrare il corpo rispetto al
-            // pivot `pos` (che rappresenta il centro del boss).
-            // Nota: lo scaling non e' applicato qui per semplicita'; lo sprite
-            // appare 64x64 anche se il boss ha hitbox piu' grande. Da migliorare.
-            it->second.render(target, animName, frame, px, py - size/4, false);
+            // Scaling: size px / 64 px nativi = fattore di scala
+            float scale = (float)size / 64.0f;
+            // Posizione: l'ancora dei piedi e' a (32, 56) su 64x64; scalando,
+            // l'ancora si sposta a (32*scale, 56*scale). Centriamo il corpo
+            // del boss su pos + leggero offset verticale per allineare i
+            // piedi al suolo dell'ombra.
+            float drawX = px;
+            float drawY = py - size * 0.25f;  // piedi verso l'ombra
+            it->second.render(target, animName, frame, drawX, drawY, scale, false);
             // Barra HP sopra la testa
             sf::RectangleShape hbBg(sf::Vector2f(size, 15.0f)); hbBg.setFillColor(sf::Color(50, 0, 0));
             hbBg.setPosition(px - size/2, py - size/2 - 30); target.draw(hbBg);
@@ -522,10 +565,220 @@ void Boss::renderPrimitives(sf::RenderTarget& target) const {
             sPupil.setPosition(tx - size/24, ty - size/24); target.draw(sPupil);
         }
     }
+    // === 7 nuovi tipi dal bestiary ===
+    else if (type == BOSS_GHOUL_LORD) {
+        // Signore dei Ghoul: corpo scheletrico + corona d'osso + aura necromantica
+        sf::Color bone(220, 220, 200);
+        sf::CircleShape aura(size/2.0f + 10.f);
+        aura.setFillColor(sf::Color(80, 255, 80, 40));
+        aura.setPosition(px - size/2.0f - 10.f, py - size/2.0f - 10.f);
+        target.draw(aura);
+        sf::RectangleShape body(sf::Vector2f(size*4/5, size));
+        body.setFillColor(bone); body.setOutlineThickness(4.0f); body.setOutlineColor(outline);
+        body.setPosition(px - size*2/5, py - size/2.0f); target.draw(body);
+        float armWave = sin(animTime * 2.0f) * 15.0f;
+        sf::RectangleShape arm1(sf::Vector2f(size/5, size*3/5));
+        arm1.setFillColor(bone); arm1.setOutlineThickness(3.0f); arm1.setOutlineColor(outline);
+        arm1.setPosition(px - size*3/5, py - size/4 + armWave); target.draw(arm1);
+        arm1.setPosition(px + size*2/5, py - size/4 - armWave); target.draw(arm1);
+        sf::CircleShape head(size/3.0f); head.setFillColor(bone); head.setOutlineThickness(3.0f); head.setOutlineColor(outline);
+        head.setPosition(px - size/3.0f, py - size*4/5); target.draw(head);
+        for(int i=0; i<5; i++) {
+            sf::ConvexShape spike; spike.setPointCount(3);
+            spike.setFillColor(sf::Color(240, 240, 220));
+            float sx = px - size/3.0f + i * (size*2/3.0f)/4;
+            spike.setPoint(0, sf::Vector2f(sx, py - size*4/5));
+            spike.setPoint(1, sf::Vector2f(sx + size/12, py - size*4/5));
+            spike.setPoint(2, sf::Vector2f(sx + size/24, py - size*4/5 - size/8));
+            target.draw(spike);
+        }
+        sf::CircleShape eye(size/14.0f); eye.setFillColor(sf::Color(255, 50, 50));
+        eye.setPosition(px - size/5, py - size*3/5); target.draw(eye);
+        eye.setPosition(px + size/10, py - size*3/5); target.draw(eye);
+    }
+    else if (type == BOSS_SPECTRAL_ALPHA) {
+        // Lupo Alpha Spettrale: piu' grande, criniera di fumo
+        sf::Color smoke(120, 120, 140, 200);
+        for(int i=0; i<6; i++) {
+            float a = i * (M_PI / 3.0f) + animTime;
+            sf::CircleShape puff(size/4.0f);
+            puff.setFillColor(smoke);
+            puff.setPosition(px - size/2 + cos(a)*size/3, py - size/3 + sin(a)*size/4);
+            target.draw(puff);
+        }
+        sf::ConvexShape body; body.setPointCount(5);
+        body.setFillColor(sf::Color(90, 90, 110, 230)); body.setOutlineThickness(3.0f); body.setOutlineColor(outline);
+        body.setPoint(0, sf::Vector2f(px-size/2, py+size/4)); body.setPoint(1, sf::Vector2f(px-size/3, py-size/4));
+        body.setPoint(2, sf::Vector2f(px+size/4, py-size/4)); body.setPoint(3, sf::Vector2f(px+size/2, py));
+        body.setPoint(4, sf::Vector2f(px+size/3, py+size/4));
+        target.draw(body);
+        sf::CircleShape head(size/4.0f); head.setFillColor(sf::Color(110, 110, 130, 230)); head.setOutlineThickness(3.0f); head.setOutlineColor(outline);
+        head.setPosition(px + size/4, py - size/3); target.draw(head);
+        sf::ConvexShape ear; ear.setPointCount(3); ear.setFillColor(sf::Color(90, 90, 110, 230));
+        ear.setPoint(0, sf::Vector2f(px+size/4, py-size/3)); ear.setPoint(1, sf::Vector2f(px+size/5, py-size/2)); ear.setPoint(2, sf::Vector2f(px+size/3, py-size/3));
+        target.draw(ear);
+        sf::CircleShape eye(size/20.0f); eye.setFillColor(sf::Color(150, 255, 150));
+        eye.setPosition(px + size/3, py - size/4); target.draw(eye);
+    }
+    else if (type == BOSS_CULT_HERALD) {
+        // Araldo del Culto: tunica sontuosa + bastone + sigilli
+        sf::ConvexShape robe; robe.setPointCount(6);
+        robe.setFillColor(sf::Color(60, 0, 80)); robe.setOutlineThickness(4.0f); robe.setOutlineColor(outline);
+        float wave = sin(animTime * 3.0f) * 15.0f;
+        robe.setPoint(0, sf::Vector2f(px - size/2, py - size/3));
+        robe.setPoint(1, sf::Vector2f(px + size/2, py - size/3));
+        robe.setPoint(2, sf::Vector2f(px + size/3 + wave, py + size/2));
+        robe.setPoint(3, sf::Vector2f(px + size/6, py + size/3));
+        robe.setPoint(4, sf::Vector2f(px - size/6, py + size/2));
+        robe.setPoint(5, sf::Vector2f(px - size/3 - wave, py + size/3));
+        target.draw(robe);
+        sf::CircleShape hood(size/3.0f); hood.setFillColor(sf::Color(40, 0, 60)); hood.setOutlineThickness(3.0f); hood.setOutlineColor(outline);
+        hood.setPosition(px - size/3, py - size*4/5); target.draw(hood);
+        sf::CircleShape face(size/6.0f); face.setFillColor(sf::Color::Black);
+        face.setPosition(px - size/6, py - size*2/3); target.draw(face);
+        sf::CircleShape eye(size/24.0f); eye.setFillColor(sf::Color(255, 215, 0));
+        eye.setPosition(px - size/12, py - size*7/12); target.draw(eye);
+        eye.setPosition(px + size/24, py - size*7/12); target.draw(eye);
+        sf::RectangleShape staff(sf::Vector2f(size/12, size*4/5));
+        staff.setFillColor(sf::Color(120, 80, 40)); staff.setOutlineThickness(2.0f); staff.setOutlineColor(outline);
+        staff.setPosition(px + size*2/5, py - size/3); target.draw(staff);
+        sf::CircleShape sigil(size/10.0f); sigil.setFillColor(sf::Color(180, 50, 220, 200));
+        sigil.setPosition(px + size*2/5 - size/30, py - size/3 - size/10); target.draw(sigil);
+    }
+    else if (type == BOSS_COLOSSAL_MIMIC) {
+        // Mimic Colossale: forziere gigante con bocca spalancata
+        sf::Color wood(110, 70, 30);
+        sf::RectangleShape body(sf::Vector2f(size, size*4/5));
+        body.setFillColor(wood); body.setOutlineThickness(4.0f); body.setOutlineColor(outline);
+        body.setPosition(px - size/2, py - size/3); target.draw(body);
+        sf::ConvexShape lid; lid.setPointCount(4);
+        lid.setFillColor(sf::Color(80, 50, 20)); lid.setOutlineThickness(3.0f); lid.setOutlineColor(outline);
+        lid.setPoint(0, sf::Vector2f(px - size/2, py - size/3));
+        lid.setPoint(1, sf::Vector2f(px + size/2, py - size/3));
+        lid.setPoint(2, sf::Vector2f(px + size/3, py - size*4/5));
+        lid.setPoint(3, sf::Vector2f(px - size/3, py - size*4/5));
+        target.draw(lid);
+        sf::RectangleShape maw(sf::Vector2f(size*4/5, size/4));
+        maw.setFillColor(sf::Color::Black);
+        maw.setPosition(px - size*2/5, py - size/8); target.draw(maw);
+        for(int i=0; i<8; i++) {
+            sf::ConvexShape tooth; tooth.setPointCount(3);
+            tooth.setFillColor(sf::Color(255, 255, 220));
+            float tw = (size*4/5) / 8;
+            tooth.setPoint(0, sf::Vector2f(px - size*2/5 + i*tw, py - size/8));
+            tooth.setPoint(1, sf::Vector2f(px - size*2/5 + (i+1)*tw, py - size/8));
+            tooth.setPoint(2, sf::Vector2f(px - size*2/5 + i*tw + tw/2, py));
+            target.draw(tooth);
+        }
+        sf::ConvexShape tongue; tongue.setPointCount(4);
+        tongue.setFillColor(sf::Color(220, 80, 120));
+        tongue.setPoint(0, sf::Vector2f(px - size/8, py));
+        tongue.setPoint(1, sf::Vector2f(px + size/8, py));
+        tongue.setPoint(2, sf::Vector2f(px + size/12, py + size/6));
+        tongue.setPoint(3, sf::Vector2f(px - size/12, py + size/6));
+        target.draw(tongue);
+        sf::RectangleShape band1(sf::Vector2f(size/12, size*4/5));
+        band1.setFillColor(sf::Color(200, 200, 200));
+        band1.setPosition(px - size/3, py - size/3); target.draw(band1);
+        band1.setPosition(px + size/4, py - size/3); target.draw(band1);
+    }
+    else if (type == BOSS_RAT_KING) {
+        // Re dei Topi: groviglio di ratti con corona d'osso
+        sf::Color fur(80, 70, 60);
+        for(int i=0; i<5; i++) {
+            float a = i * (2*M_PI/5) + animTime * 0.5f;
+            sf::CircleShape body(size/5.0f);
+            body.setFillColor(fur); body.setOutlineThickness(2.0f); body.setOutlineColor(outline);
+            body.setPosition(px + cos(a)*size/3 - size/5, py + sin(a)*size/3 - size/5);
+            target.draw(body);
+            sf::CircleShape eye(size/30.0f); eye.setFillColor(sf::Color(255, 0, 0));
+            eye.setPosition(px + cos(a)*size/3 - size/15, py + sin(a)*size/3 - size/15);
+            target.draw(eye);
+        }
+        sf::CircleShape mainBody(size/3.0f); mainBody.setFillColor(sf::Color(60, 50, 40)); mainBody.setOutlineThickness(3.0f); mainBody.setOutlineColor(outline);
+        mainBody.setPosition(px - size/3, py - size/3); target.draw(mainBody);
+        for(int i=0; i<5; i++) {
+            sf::ConvexShape spike; spike.setPointCount(3);
+            spike.setFillColor(sf::Color(240, 240, 220));
+            float sx = px - size/4 + i * size/8;
+            spike.setPoint(0, sf::Vector2f(sx, py - size/3));
+            spike.setPoint(1, sf::Vector2f(sx + size/12, py - size/3));
+            spike.setPoint(2, sf::Vector2f(sx + size/24, py - size/2));
+            target.draw(spike);
+        }
+        sf::CircleShape eye(size/16.0f); eye.setFillColor(sf::Color(255, 30, 30));
+        eye.setPosition(px - size/8, py - size/6); target.draw(eye);
+        eye.setPosition(px + size/16, py - size/6); target.draw(eye);
+    }
+    else if (type == BOSS_SUPREME_WITCH) {
+        // Strega Suprema: cappello grande + tunica + viti animate
+        sf::Color robe(40, 80, 40);
+        for(int i=0; i<6; i++) {
+            float a = i * (M_PI / 3.0f) + animTime;
+            sf::RectangleShape vine(sf::Vector2f(size/12, size/3));
+            vine.setFillColor(sf::Color(60, 120, 60));
+            vine.setOutlineThickness(1.5f); vine.setOutlineColor(outline);
+            vine.rotate(a * 180 / M_PI);
+            vine.setPosition(px + cos(a)*size/3, py + sin(a)*size/3);
+            target.draw(vine);
+        }
+        sf::ConvexShape robeShape; robeShape.setPointCount(5);
+        robeShape.setFillColor(robe); robeShape.setOutlineThickness(4.0f); robeShape.setOutlineColor(outline);
+        float wave = sin(animTime * 2.0f) * 12.0f;
+        robeShape.setPoint(0, sf::Vector2f(px, py - size/3));
+        robeShape.setPoint(1, sf::Vector2f(px + size/2 + wave, py));
+        robeShape.setPoint(2, sf::Vector2f(px + size/3, py + size/2));
+        robeShape.setPoint(3, sf::Vector2f(px - size/3, py + size/2));
+        robeShape.setPoint(4, sf::Vector2f(px - size/2 - wave, py));
+        target.draw(robeShape);
+        sf::CircleShape face(size/4.0f); face.setFillColor(sf::Color(150, 200, 120)); face.setOutlineThickness(3.0f); face.setOutlineColor(outline);
+        face.setPosition(px - size/4, py - size/2); target.draw(face);
+        sf::ConvexShape hat; hat.setPointCount(3); hat.setFillColor(sf::Color(20, 20, 20));
+        hat.setPoint(0, sf::Vector2f(px - size/3, py - size/2));
+        hat.setPoint(1, sf::Vector2f(px + size/3, py - size/2));
+        hat.setPoint(2, sf::Vector2f(px + size/12, py - size));
+        target.draw(hat);
+        sf::CircleShape eye(size/24.0f); eye.setFillColor(sf::Color(255, 255, 100));
+        eye.setPosition(px - size/10, py - size*5/12); target.draw(eye);
+        eye.setPosition(px + size/30, py - size*5/12); target.draw(eye);
+    }
+    else if (type == BOSS_TWILIGHT_KNIGHT) {
+        // Cavaliere del Crepuscolo: armatura che assorbe luce + scudo + lancia
+        sf::Color armor(20, 20, 35);
+        sf::RectangleShape body(sf::Vector2f(size*3/4, size*3/4));
+        body.setFillColor(armor); body.setOutlineThickness(4.0f); body.setOutlineColor(outline);
+        body.setPosition(px - size*3/8, py - size*3/8); target.draw(body);
+        float pulse = 1.0f + sin(animTime * 3.0f) * 0.1f;
+        sf::CircleShape aura(size/2.0f * pulse);
+        aura.setFillColor(sf::Color(0, 0, 30, 100));
+        aura.setPosition(px - size/2 * pulse, py - size/2 * pulse);
+        target.draw(aura);
+        sf::RectangleShape chest(sf::Vector2f(size/2, size/3));
+        chest.setFillColor(sf::Color(40, 40, 60)); chest.setOutlineThickness(2.0f); chest.setOutlineColor(outline);
+        chest.setPosition(px - size/4, py - size/6); target.draw(chest);
+        sf::RectangleShape helm(sf::Vector2f(size/2, size*2/5));
+        helm.setFillColor(armor); helm.setOutlineThickness(3.0f); helm.setOutlineColor(outline);
+        helm.setPosition(px - size/4, py - size*4/5); target.draw(helm);
+        sf::RectangleShape visor(sf::Vector2f(size/3, size/16));
+        visor.setFillColor(sf::Color(150, 50, 220));
+        visor.setPosition(px - size/6, py - size*11/20); target.draw(visor);
+        sf::CircleShape shield(size/4.0f);
+        shield.setFillColor(sf::Color(30, 30, 50)); shield.setOutlineThickness(3.0f); shield.setOutlineColor(sf::Color(100, 100, 150));
+        shield.setPosition(px - size/2, py); target.draw(shield);
+        sf::RectangleShape lance(sf::Vector2f(size/12, size));
+        lance.setFillColor(sf::Color(180, 180, 200)); lance.setOutlineThickness(2.0f); lance.setOutlineColor(outline);
+        lance.setPosition(px + size/3, py - size/2); target.draw(lance);
+        sf::ConvexShape tip; tip.setPointCount(3); tip.setFillColor(sf::Color(220, 220, 240));
+        tip.setPoint(0, sf::Vector2f(px + size/3, py - size/2));
+        tip.setPoint(1, sf::Vector2f(px + size/3 + size/12, py - size/2));
+        tip.setPoint(2, sf::Vector2f(px + size/3 + size/24, py - size*5/8));
+        target.draw(tip);
+    }
 
-    // Bocca con denti (per tutti i boss tranne BEHOLDER e LICH che hanno
-    // bocca custom piu' sopra).
-    if(type != BOSS_BEHOLDER && type != BOSS_LICH) {
+    // Bocca con denti (per i tipi che non hanno design custom senza bocca).
+    if(type != BOSS_BEHOLDER && type != BOSS_LICH
+       && type != BOSS_CULT_HERALD && type != BOSS_COLOSSAL_MIMIC
+       && type != BOSS_SUPREME_WITCH && type != BOSS_TWILIGHT_KNIGHT) {
         sf::RectangleShape mouth(sf::Vector2f(size*3/5, mouthHeight));
         mouth.setFillColor(sf::Color::Black);
         mouth.setPosition(px - size*3/10, py + size/6);

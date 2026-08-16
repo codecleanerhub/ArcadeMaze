@@ -58,6 +58,11 @@ bool Game::init() {
     // I file mancanti vengono saltati: il render fara' fallback alle primitive.
     Enemy::loadAllSprites("assets/sprites");
     Boss::loadAllSprites("assets/sprites");
+    // Carica gli sprite dei giocatori (player1 e player2 distinti).
+    // Carichiamo sempre entrambi: se il file non esiste resta unloaded e il
+    // render fa fallback alle primitive. numPlayers verra' scelto dopo nel menu.
+    player.loadSprite("assets/sprites/player1");
+    player2.loadSprite("assets/sprites/player2");
     return true;
 }
 
@@ -929,7 +934,10 @@ void Game::render() {
         ui.render(window, player, maze.getRemainingTreasures());
         player.render(window);
         if (numPlayers == 2) player2.render(window);
-        for (const auto& enemy : enemies) if (!enemy.isDead()) enemy.render(window);
+        // Render dei nemici: inclusi quelli in animazione di morte (isDying)
+        // finche' non e' conclusa (isDeathAnimDone). Quelli gia' conclusi
+        // non vengono renderizzati.
+        for (const auto& enemy : enemies) if (!enemy.isDeathAnimDone()) enemy.render(window);
 
         // Proiettili nemici: piccoli cerchi arancioni
         for (const auto& p : enemyProjectiles) {

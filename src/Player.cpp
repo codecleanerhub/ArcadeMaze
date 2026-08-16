@@ -37,7 +37,15 @@ void Player::resetPosition() {
     pos.y = 1 * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
     dx = 0; dy = 0; nextDx = 0; nextDy = 0; lastDx = 1; lastDy = 0;
     speed = 2; jumpTimer = 0; maxJumpTime = 0; damageTimer = 0; shootCooldown = 0;
+    shootAnimTimer = 0;
+    animTime = 0;
     jumpOffset = 0.0f;
+}
+
+// loadSprite: carica lo sprite del giocatore da basePath.png + basePath.json.
+// Restituisce true se il caricamento ha avuto successo.
+bool Player::loadSprite(const std::string& basePath) {
+    return sprite.load(basePath);
 }
 
 // Imposta posizione assoluta e ferma il movimento (usato in modalita' boss).
@@ -90,6 +98,9 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
     //    per evitare che il valore resti bloccato a 1..15.
     if (damageTimer > 16) damageTimer -= 16; else damageTimer = 0;
     if (shootCooldown > 16) shootCooldown -= 16; else shootCooldown = 0;
+    if (shootAnimTimer > 16) shootAnimTimer -= 16; else shootAnimTimer = 0;
+    // Incrementa animTime per le animazioni idle/walk
+    animTime += 16;
 
     if (freeMovement) {
         // --- Modalita' stanza del boss: movimento libero ---
@@ -164,6 +175,8 @@ void Player::shoot() {
 
         projectiles.push_back({pos, sf::Vector2f((float)shootDx, (float)shootDy), currentWeapon.power, true, currentWeapon.type});
         currentWeapon.ammo--;
+        // Triggera animazione di attacco per ~300 ms
+        shootAnimTimer = 300;
     }
 }
 
@@ -220,7 +233,42 @@ void Player::render(sf::RenderTarget& target) {
     // Etichetta arma sopra la testa
     drawTextCentered(target, currentWeapon.getName(), px, pos.y - 45, 2, sf::Color(255, 255, 0));
 
-    // Palette colori del personaggio
+    // Tentativo di rendering con sprite.
+    // Animazioni: attack (se shootAnimTimer>0) > walk > idle.
+    // Lo sprite e' 64x64 con anchor piedi a (32, 56); posizioniamo a (px, py+8)
+    // per allineare i piedi al suolo della cella.
+    if (sprite.isLoaded()) {
+        // Selezione animazione
+        std::string animName = "idle";
+        int frameDuration = 200;
+        int frame = 0;
+        bool flipped = (lastDx < 0);
+        if (shootAnimTimer > 0 && sprite.getFrameCount("attack") > 0) {
+            animName = "attack";
+            frameDuration = 50;  // 6 frame in 300 ms
+            int elapsed = 300 - (int)shootAnimTimer;
+            int frameCount = sprite.getFrameCount("attack");
+            frame = elapsed / frameDuration;
+            if (frame >= frameCount) frame = frameCount - 1;
+        } else if ((dx != 0 || dy != 0) && sprite.getFrameCount("walk") > 0) {
+            animName = "walk";
+            frameDuration = 100;
+            int frameCount = sprite.getFrameCount("walk");
+            frame = (animTime / (uint32_t)frameDuration) % frameCount;
+        } else if (sprite.getFrameCount("idle") > 0) {
+            animName = "idle";
+            frameDuration = 200;
+            int frameCount = sprite.getFrameCount("idle");
+            frame = (animTime / (uint32_t)frameDuration) % frameCount;
+        }
+        // Disegna lo sprite
+        sprite.render(target, animName, frame, px, pos.y + 8.f, flipped);
+        // Disegna comunque i proiettili (sono separati dal corpo)
+        drawProjectiles(target);
+        return;
+    }
+
+    // Fallback: rendering a primitive (Indiana Jones)
     sf::Color skin(210, 180, 140);
     sf::Color shirt(200, 200, 200);
     sf::Color jacket(139, 69, 19);
@@ -274,19 +322,25 @@ void Player::render(sf::RenderTarget& target) {
     // direzione di orientamento (lastDx). Su y resta all'altezza del corpo.
     currentWeapon.renderEquipped(target, px + (lastDx * 16), py);
 
-    // Proiettili: forma diversa in base al tipo di arma
+    // Proiettili (comune a sprite e primitive)
+    drawProjectiles(target);
+}
+
+// ---------------------------------------------------------------------------
+// drawProjectiles: disegna i proiettili sparati dal giocatore.
+// Forma diversa per tipo di arma: pistol = pallottola gialla, laser = raggio
+// ciano, shotgun/rocket = palla rossa.
+// ---------------------------------------------------------------------------
+void Player::drawProjectiles(sf::RenderTarget& target) {
     for (const auto& p : projectiles) {
         if (p.active) {
             if (p.type == WPN_PISTOL) {
-                // Pallottola gialla piccola
                 sf::CircleShape proj(6.f); proj.setFillColor(sf::Color(255, 255, 100));
                 proj.setPosition(p.pos.x - 6.f, p.pos.y - 6.f); target.draw(proj);
             } else if (p.type == WPN_LASER) {
-                // Raggio laser ciano orizzontale (24x6)
                 sf::RectangleShape beam(sf::Vector2f(24.f, 6.f)); beam.setFillColor(sf::Color(50, 200, 255));
                 beam.setPosition(p.pos.x - 12.f, p.pos.y - 3.f); target.draw(beam);
             } else {
-                // ShotGun/Rocket: palla rossa piu' grande
                 sf::CircleShape proj(8.f); proj.setFillColor(sf::Color(200, 50, 50));
                 proj.setPosition(p.pos.x - 8.f, p.pos.y - 8.f); target.draw(proj);
             }

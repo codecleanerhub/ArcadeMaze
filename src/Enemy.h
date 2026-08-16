@@ -89,6 +89,13 @@ public:
     sf::Vector2f getPixelPos() const { return pos; }
     EnemyType getType() const { return type; }
 
+    // True se il nemico sta eseguendo l'animazione di morte (dyingTimer>0).
+    // Il nemico e' considerato "morto" per la logica di gioco (isDead()==true)
+    // quando health<=0, ma l'animazione di morte continua per dyingTimer ms.
+    bool isDying() const { return dyingTimer > 0; }
+    // True se l'animazione di morte e' conclusa (il nemico puo' essere rimosso).
+    bool isDeathAnimDone() const { return health <= 0 && dyingTimer == 0; }
+
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei nemici dalla cartella data. Da chiamare
     // una volta in Game::init(). I file mancanti vengono saltati
@@ -106,6 +113,8 @@ private:
     EnemyType type;
     uint32_t pathUpdateTimer;
     uint32_t shootCooldown;
+    uint32_t attackingTimer;  // >0 = animazione attacco in corso (ms simulati)
+    uint32_t dyingTimer;      // >0 = animazione morte in corso (ms simulati)
 
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);

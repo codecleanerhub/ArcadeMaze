@@ -22,6 +22,7 @@
 #include "Weapon.h"
 #include "Maze.h"
 #include "Utils.h"
+#include "SpriteSheet.h"
 #include <cstdint>
 
 class Player {
@@ -100,6 +101,15 @@ public:
     // Aggiunge una vita (premio dopo aver sconfitto un boss).
     void addLife() { lives++; }
 
+    // --- SpriteSheet management ---
+    // Carica lo sprite del giocatore da <basePath>.png + <basePath>.json.
+    // Se il file non esiste, resta unloaded e il render fa fallback alle
+    // primitive (Indiana Jones disegnato a mano).
+    // `basePath` e' il percorso senza estensione.
+    bool loadSprite(const std::string& basePath);
+    // True se lo sprite PNG e' caricato.
+    bool isSpriteLoaded() const { return sprite.isLoaded(); }
+
 private:
     sf::Vector2f pos;       // posizione in pixel (centro personaggio)
     // dx,dy: direzione di movimento corrente; nextDx,nextDy: direzione
@@ -113,11 +123,21 @@ private:
 
     // Timer in "ms simulati": il gioco decrementa di 16 ogni frame a 60 FPS.
     uint32_t jumpTimer, maxJumpTime, damageTimer, shootCooldown;
+    uint32_t shootAnimTimer;  // >0 = animazione attacco in corso
+    uint32_t animTime;        // tempo accumulato per animazioni idle/walk
     float jumpOffset;       // altezza visiva del salto (pixel)
+
+    // SpriteSheet del giocatore (1 solo player -> 1 sola istanza).
+    SpriteSheet sprite;
 
     // Tenta di muoversi nella direzione (tDx, tDy). Restituisce true se il
     // movimento e' possibile (la cella destinazione non e' muro).
     bool tryMove(int tDx, int tDy, Maze& maze);
+
+    // Disegna solo i proiettili del giocatore (forma diversa per tipo).
+    // Separato da render() perche' viene chiamato anche quando si usa lo
+    // sprite PNG (i proiettili non sono parte dello spritesheet).
+    void drawProjectiles(sf::RenderTarget& target);
 };
 
 #endif
