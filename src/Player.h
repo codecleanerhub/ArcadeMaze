@@ -102,12 +102,12 @@ public:
     void addLife() { lives++; }
 
     // --- SpriteSheet management ---
-    // Carica lo sprite del giocatore da <basePath>.png + <basePath>.json.
-    // Se il file non esiste, resta unloaded e il render fa fallback alle
-    // primitive (Indiana Jones disegnato a mano).
-    // `basePath` e' il percorso senza estensione.
+    // Carica lo sprite principale del giocatore + 2 frame di camminata.
+    // basePath = percorso senza estensione (es. "assets/sprites/player1")
+    // Cerca: <basePath>_sheet.png (idle/stand)
+    //        <basePath>_walk0_sheet.png (camminata frame 0)
+    //        <basePath>_walk1_sheet.png (camminata frame 1)
     bool loadSprite(const std::string& basePath);
-    // True se lo sprite PNG e' caricato.
     bool isSpriteLoaded() const { return sprite.isLoaded(); }
 
 private:
@@ -127,8 +127,11 @@ private:
     uint32_t animTime;        // tempo accumulato per animazioni idle/walk
     float jumpOffset;       // altezza visiva del salto (pixel)
 
-    // SpriteSheet del giocatore (1 solo player -> 1 sola istanza).
+    // SpriteSheet del giocatore: sprite principale (idle/stand)
     SpriteSheet sprite;
+    // 2 frame di camminata alternati (walk0, walk1)
+    SpriteSheet walkSprite0;
+    SpriteSheet walkSprite1;
 
     // Tenta di muoversi nella direzione (tDx, tDy). Restituisce true se il
     // movimento e' possibile (la cella destinazione non e' muro).

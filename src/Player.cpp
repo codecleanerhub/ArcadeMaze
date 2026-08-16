@@ -42,10 +42,13 @@ void Player::resetPosition() {
     jumpOffset = 0.0f;
 }
 
-// loadSprite: carica lo sprite del giocatore da basePath.png + basePath.json.
-// Restituisce true se il caricamento ha avuto successo.
+// loadSprite: carica sprite principale + 2 frame di camminata.
 bool Player::loadSprite(const std::string& basePath) {
-    return sprite.load(basePath);
+    bool mainOk = sprite.load(basePath);
+    // Carica i 2 frame di camminata (opzionali: se mancano, usa sprite principale)
+    walkSprite0.load(basePath + "_walk0");
+    walkSprite1.load(basePath + "_walk1");
+    return mainOk;
 }
 
 // Imposta posizione assoluta e ferma il movimento (usato in modalita' boss).
@@ -269,38 +272,19 @@ void Player::render(sf::RenderTarget& target) {
         } else if (animName == "idle") {
             bobY = sin(animTime * 0.004f) * 1.f;
         }
-        sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
 
-        // Leg animation: disegna 2 piccole gambe che si alternano sotto lo sprite.
-        // Queste si sovrappongono ai piedi dello sprite creando l'effetto movimento.
-        if (isWalking) {
-            // 2 frame alternati ad ~8 Hz (camminata)
-            int stepFrame = (animTime / 60) % 2;  // 0 o 1, cambia ogni ~60ms
-            sf::Color bootColor(40, 30, 20);  // stivali scuri
-            sf::Color outline(10, 10, 10);
-
-            // Posizione dei piedi: sotto il centro dello sprite
-            float footY = pos.y + 8.f + 24.f + bobY;  // 24 = metà sprite
-            float footL = px - 5.f;
-            float footR = px + 3.f;
-
+        // Se sta camminando e abbiamo 2 frame di camminata, alternali
+        if (isWalking && walkSprite0.isLoaded() && walkSprite1.isLoaded()) {
+            // Alterna i 2 frame ad ~8 Hz (cambia ogni ~60ms)
+            int stepFrame = (animTime / 60) % 2;
             if (stepFrame == 0) {
-                // Frame 0: gamba sinistra avanti, destra indietro
-                sf::RectangleShape legL(sf::Vector2f(4.f, 6.f));
-                legL.setFillColor(bootColor); legL.setOutlineThickness(1.f); legL.setOutlineColor(outline);
-                legL.setPosition(footL, footY); target.draw(legL);
-                sf::RectangleShape legR(sf::Vector2f(4.f, 4.f));
-                legR.setFillColor(bootColor); legR.setOutlineThickness(1.f); legR.setOutlineColor(outline);
-                legR.setPosition(footR, footY + 2.f); target.draw(legR);
+                walkSprite0.render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped);
             } else {
-                // Frame 1: gamba destra avanti, sinistra indietro
-                sf::RectangleShape legL(sf::Vector2f(4.f, 4.f));
-                legL.setFillColor(bootColor); legL.setOutlineThickness(1.f); legL.setOutlineColor(outline);
-                legL.setPosition(footL, footY + 2.f); target.draw(legL);
-                sf::RectangleShape legR(sf::Vector2f(4.f, 6.f));
-                legR.setFillColor(bootColor); legR.setOutlineThickness(1.f); legR.setOutlineColor(outline);
-                legR.setPosition(footR, footY); target.draw(legR);
+                walkSprite1.render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped);
             }
+        } else {
+            // Usa sprite principale (idle o attack)
+            sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
         }
 
         drawProjectiles(target);
