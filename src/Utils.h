@@ -1,43 +1,73 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+// ===========================================================================
+// Utils.h - Utility di base condivise dall'intero progetto ArcadeMazeFantasy.
+//
+// Questo header definisce:
+//   * Le costanti globali della finestra, della griglia del labirinto e
+//     dell'area UI in alto (tutta la logica di gioco assume questi valori).
+//   * Strutture dati leggere (Vec2, Config, Particle) usate in piu' moduli.
+//   * Le funzioni di disegno del testo bitmap: il gioco NON usa font SFML,
+//     ma un font 3x5 disegnato a mano tramite la tabella FONT in Utils.cpp.
+// ===========================================================================
+
 #include <SFML/Graphics.hpp>
 #include <string>
 #include <vector>
 
-const int WINDOW_WIDTH = 1024;
+// --- Dimensioni finestra e griglia di gioco -------------------------------
+// La finestra logica e' quadrata 1024x1024; l'area di gioco e' posta sotto
+// la barra UI di 80 px (UI_HEIGHT). Il labirinto occupa 21 colonne x 19 righe
+// di celle da 48 px: 21*48 = 1008 px (<= 1024), 19*48 = 912 px (<= 1024-80).
+const int WINDOW_WIDTH  = 1024;
 const int WINDOW_HEIGHT = 1024;
-const int TILE_SIZE = 48;
-const int MAZE_COLS = 21;
-const int MAZE_ROWS = 19;
-const int UI_HEIGHT = 80;
+const int TILE_SIZE     = 48;
+const int MAZE_COLS     = 21;
+const int MAZE_ROWS     = 19;
+const int UI_HEIGHT     = 80;
 
+// --- Vettore 2D intero (usato per coordinate di griglia del labirinto) ----
 struct Vec2 { int x, y; };
 
+// --- Configurazione comandi (tastiera + joystick) ------------------------
+// I valori di default rispecchiano le frecce direzionali e i tasti Space/Alt.
+// Vengono comunque sovrascritti da loadConfig() leggendo "config.ini".
 struct Config {
-    int key_up = sf::Keyboard::Up;
-    int key_down = sf::Keyboard::Down;
-    int key_left = sf::Keyboard::Left;
+    int key_up    = sf::Keyboard::Up;
+    int key_down  = sf::Keyboard::Down;
+    int key_left  = sf::Keyboard::Left;
     int key_right = sf::Keyboard::Right;
-    int key_jump = sf::Keyboard::Space;
-    int key_shoot = sf::Keyboard::LAlt;
-    
-    // Joystick
-    int joy_axis_x = 0;
-    int joy_axis_y = 1;
-    int joy_jump = 0;
-    int joy_shoot = 2;
+    int key_jump  = sf::Keyboard::Space;   // salto (salvato da `config.ini` come Alt sinistro)
+    int key_shoot = sf::Keyboard::LAlt;    // sparo
+
+    // Joystick: assi analogici e pulsanti (configurabili da menu').
+    int joy_axis_x = 0;   // asse orizzontale
+    int joy_axis_y = 1;   // asse verticale
+    int joy_jump   = 0;   // pulsante salto
+    int joy_shoot  = 2;   // pulsante sparo
 };
 
+// --- Particella generica --------------------------------------------------
+// Usata per effetti: sangue dei nemici, scintille del tesoro, ecc.
+// `life` e `maxLife` sono in frame (a 60 FPS), il colore e' sfumato in base
+// al rapporto life/maxLife durante il rendering.
 struct Particle {
     sf::Vector2f pos;
     sf::Vector2f vel;
     sf::Color color;
-    int life;
-    int maxLife;
+    int life;       // vita residua (frame)
+    int maxLife;    // vita iniziale (per calcolare l'alpha)
 };
 
+// Carica la configurazione dei comandi da un file INI semplice.
 Config loadConfig(const std::string& filename);
+
+// --- Funzioni di disegno testo (font bitmap 3x5) --------------------------
+// Il font e' definito in Utils.cpp come array di 37 glifi (A-Z, 0-9, spazio).
+// `scale` e' il fattore di ingrandimento di ogni pixel del glifo.
+// Le varianti "Outlined" disegnano 4 copie nere sfalsate dietro al testo
+// per creare un contorno che migliora la leggibiliita' su sfondi chiari.
 void drawText(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color);
 void drawTextCentered(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color);
 void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color);
