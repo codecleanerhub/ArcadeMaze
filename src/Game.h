@@ -71,6 +71,19 @@ struct SpeedBootsBonus {
     float bobOffset;  // oscillazione verticale per effetto fluttuante
 };
 
+// Porta di uscita dal labirinto: quando tutti i tesori sono raccolti,
+// appare una porta nel labirinto con animazione di apertura. Il player
+// deve raggiungerla e toccarla per passare alla stanza del boss.
+//   * state 0 = non esiste (tesori ancora da raccogliere)
+//   * state 1 = apparsa, animazione di apertura in corso (doorAnimTimer > 0)
+//   * state 2 = aperta, player puo' entrare (collisione -> startBossFight)
+struct ExitDoor {
+    sf::Vector2f pos;       // posizione in pixel (centro della cella)
+    bool active;            // true = la porta esiste nel labirinto
+    int animTimer;          // >0 = animazione apertura in corso (ms simulati)
+    float glowPulse;        // pulsazione dell'aura luminosa
+};
+
 class Game {
 public:
     Game();
@@ -97,6 +110,7 @@ private:
     std::vector<Projectile> enemyProjectiles;    // proiettili sparati dai nemici
     std::vector<BossRoomWeapon> bossRoomWeapons; // armi a terra nella stanza del boss
     SpeedBootsBonus speedBoots;                 // bonus scarpe alate (1 per boss fight)
+    ExitDoor exitDoor;                          // porta di uscita dal labirinto (post-tesori)
     std::vector<Particle> particles;             // particelle generiche (sangue, scintille)
     std::vector<Firework> fireworks;             // fuochi d'artificio (solo in WIN_STORY)
 

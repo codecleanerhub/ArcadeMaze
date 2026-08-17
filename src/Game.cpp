@@ -44,10 +44,9 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
 {
-    // La finestra e' gia' creata in fullscreen alla massima risoluzione
-    // disponibile (getDesktopMode + Style::Fullscreen). Non e' piu'
-    // selezionabile dal menu': il gioco usa sempre la risoluzione nativa
-    // dello schermo in modalita' fullscreen exclusive.
+    exitDoor.active = false;
+    exitDoor.animTimer = 0;
+    exitDoor.glowPulse = 0.f;
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
@@ -99,6 +98,8 @@ void Game::startLevel(int lvl) {
     }
     spawnEnemies();
     enemyProjectiles.clear();
+    exitDoor.active = false;
+    exitDoor.animTimer = 0;
     state = STATE_PLAYING;
     if (musicEnabled) audio.playLevelMusic(currentLevel, false);
 }
@@ -714,7 +715,51 @@ void Game::update() {
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
         }
-        if (maze.getRemainingTreasures() == 0) startBossFight();
+        // Quando tutti i tesori sono raccolti, appare una porta di uscita
+        // nel labirinto. Il player deve raggiungerla per passare al boss.
+        // La porta viene posizionata in una cella vuota lontana dal player
+        // (massima distanza Manhattan possibile).
+        if (maze.getRemainingTreasures() == 0 && !exitDoor.active) {
+            // Trova la cella vuota piu' lontana dal player
+            sf::Vector2f ppos = player.getPixelPos();
+            int pCol = (int)(ppos.x / TILE_SIZE);
+            int pRow = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+            int bestC = 1, bestR = 1, bestDist = -1;
+            for (int c = 1; c < MAZE_COLS - 1; c++) {
+                for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                    if (maze.getCellType(c, r) == CELL_EMPTY) {
+                        int d = abs(c - pCol) + abs(r - pRow);
+                        if (d > bestDist) {
+                            bestDist = d; bestC = c; bestR = r;
+                        }
+                    }
+                }
+            }
+            exitDoor.pos.x = bestC * TILE_SIZE + TILE_SIZE / 2.f;
+            exitDoor.pos.y = bestR * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            exitDoor.active = true;
+            exitDoor.animTimer = 800;  // 800ms di animazione di apertura
+            exitDoor.glowPulse = 0.f;
+            audio.playSound(SOUND_TREASURE);  // suono di apparizione
+        }
+
+        // Aggiornamento della porta di uscita
+        if (exitDoor.active) {
+            // Anima apertura (decrementa timer)
+            if (exitDoor.animTimer > 16) exitDoor.animTimer -= 16;
+            else exitDoor.animTimer = 0;
+            // Pulsazione aura
+            exitDoor.glowPulse += 0.016f;
+            // Collisione player-porta (solo se animazione completata)
+            if (exitDoor.animTimer == 0) {
+                float dx = player.getPixelPos().x - exitDoor.pos.x;
+                float dy = player.getPixelPos().y - exitDoor.pos.y;
+                if (dx * dx + dy * dy < 600) {  // ~24 px di raggio
+                    exitDoor.active = false;
+                    startBossFight();
+                }
+            }
+        }
 
 #ifdef TEST_MODE_FEATURE
         // --- TEST MODE: salta direttamente al boss premendo barra spaziatrice ---
@@ -1358,6 +1403,112 @@ void Game::render() {
             c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, 255 * p.life / p.maxLife));
             c.setPosition(p.pos.x - 4.f, p.pos.y - 4.f);
             window.draw(c);
+        }
+
+        // --- Rendering della porta di uscita (exit door) ---
+        // La porta appare dopo aver raccolto tutti i tesori. Ha:
+        //   * Una cornice di pietra (architrave + stipiti)
+        //   * Un'anta che si apre (animazione di 800ms)
+        //   * Una scala visibile all'interno (gradini scuri che scendono)
+        //   * Un'aura luminosa pulsante dorata
+        if (exitDoor.active) {
+            float dx = exitDoor.pos.x;
+            float dy = exitDoor.pos.y;
+            // Aura luminosa pulsante (dorata)
+            float pulse = 1.0f + sin(exitDoor.glowPulse * 3.f) * 0.15f;
+            float auraR = 32.f * pulse;
+            sf::CircleShape doorAura(auraR);
+            doorAura.setFillColor(sf::Color(255, 200, 80, 50));
+            doorAura.setPosition(dx - auraR, dy - auraR);
+            window.draw(doorAura);
+            sf::CircleShape doorAura2(auraR * 0.6f);
+            doorAura2.setFillColor(sf::Color(255, 220, 100, 80));
+            doorAura2.setPosition(dx - auraR * 0.6f, dy - auraR * 0.6f);
+            window.draw(doorAura2);
+
+            // Architrave (rettangolo orizzontale sopra la porta)
+            sf::RectangleShape lintel(sf::Vector2f(40.f, 6.f));
+            lintel.setFillColor(sf::Color(120, 100, 80));
+            lintel.setOutlineThickness(1.f); lintel.setOutlineColor(sf::Color(50, 40, 30));
+            lintel.setPosition(dx - 20.f, dy - 22.f);
+            window.draw(lintel);
+            // Decorazione architrave (simbolo)
+            sf::CircleShape doorSym(3.f);
+            doorSym.setFillColor(sf::Color(200, 160, 60));
+            doorSym.setOutlineThickness(0.8f); doorSym.setOutlineColor(sf::Color(100, 80, 30));
+            doorSym.setPosition(dx - 3.f, dy - 20.f);
+            window.draw(doorSym);
+
+            // Stipiti laterali (2 rettangoli verticali)
+            sf::RectangleShape leftJamb(sf::Vector2f(4.f, 40.f));
+            leftJamb.setFillColor(sf::Color(100, 85, 65));
+            leftJamb.setOutlineThickness(0.8f); leftJamb.setOutlineColor(sf::Color(40, 35, 25));
+            leftJamb.setPosition(dx - 20.f, dy - 16.f);
+            window.draw(leftJamb);
+            sf::RectangleShape rightJamb(sf::Vector2f(4.f, 40.f));
+            rightJamb.setFillColor(sf::Color(100, 85, 65));
+            rightJamb.setOutlineThickness(0.8f); rightJamb.setOutlineColor(sf::Color(40, 35, 25));
+            rightJamb.setPosition(dx + 16.f, dy - 16.f);
+            window.draw(rightJamb);
+
+            // Interna della porta (apertura buia con scala)
+            sf::RectangleShape opening(sf::Vector2f(32.f, 36.f));
+            opening.setFillColor(sf::Color(15, 10, 5));
+            opening.setPosition(dx - 16.f, dy - 14.f);
+            window.draw(opening);
+
+            // Gradini della scala (4 scalini che scendono)
+            for (int i = 0; i < 4; i++) {
+                float stepY = dy - 10.f + i * 7.f;
+                float stepW = 28.f - i * 3.f;
+                sf::RectangleShape step(sf::Vector2f(stepW, 3.f));
+                step.setFillColor(sf::Color(80 - i * 10, 65 - i * 8, 50 - i * 6));
+                step.setOutlineThickness(0.5f); step.setOutlineColor(sf::Color(30, 20, 10));
+                step.setPosition(dx - stepW / 2.f, stepY);
+                window.draw(step);
+            }
+
+            // Anta della porta (animazione di apertura: si apre verso destra)
+            // Durante l'animazione (animTimer > 0), l'anta si sposta verso
+            // destra rivelando la scala. Quando animTimer == 0, l'anta e'
+            // completamente aperta.
+            float openProgress = 1.0f - (float)exitDoor.animTimer / 800.f;
+            if (openProgress < 0.f) openProgress = 0.f;
+            if (openProgress > 1.f) openProgress = 1.f;
+            float doorWidth = 32.f * (1.0f - openProgress);
+            if (doorWidth > 0.5f) {
+                sf::RectangleShape doorPanel(sf::Vector2f(doorWidth, 36.f));
+                doorPanel.setFillColor(sf::Color(90, 60, 25));
+                doorPanel.setOutlineThickness(1.f);
+                doorPanel.setOutlineColor(sf::Color(40, 25, 10));
+                doorPanel.setPosition(dx - 16.f, dy - 14.f);
+                window.draw(doorPanel);
+                // Venature del legno
+                for (int i = 0; i < 3; i++) {
+                    if (doorWidth > 4 + i * 6) {
+                        sf::RectangleShape vein(sf::Vector2f(1.f, 30.f));
+                        vein.setFillColor(sf::Color(60, 35, 15));
+                        vein.setPosition(dx - 14.f + i * 6.f, dy - 12.f);
+                        window.draw(vein);
+                    }
+                }
+                // Maniglia (appare quando la porta e' quasi chiusa)
+                if (openProgress < 0.3f) {
+                    sf::CircleShape knob(1.5f);
+                    knob.setFillColor(sf::Color(220, 180, 60));
+                    knob.setOutlineThickness(0.4f);
+                    knob.setOutlineColor(sf::Color(100, 70, 20));
+                    knob.setPosition(dx + 8.f, dy + 1.f);
+                    window.draw(knob);
+                }
+            }
+
+            // Indicatore "ENTRA" sopra la porta quando e' aperta
+            if (exitDoor.animTimer == 0) {
+                float bobY = sin(exitDoor.glowPulse * 4.f) * 2.f;
+                drawTextCentered(window, "ENTRA", dx, dy - 30.f + bobY, 1,
+                                 sf::Color(255, 220, 80));
+            }
         }
 
         // Overlay GAME OVER (solo in STATE_LOSE)
