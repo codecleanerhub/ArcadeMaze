@@ -1451,22 +1451,78 @@ void Game::render() {
             rightJamb.setPosition(dx + 16.f, dy - 16.f);
             window.draw(rightJamb);
 
-            // Interna della porta (apertura buia con scala)
-            sf::RectangleShape opening(sf::Vector2f(32.f, 36.f));
-            opening.setFillColor(sf::Color(15, 10, 5));
-            opening.setPosition(dx - 16.f, dy - 14.f);
-            window.draw(opening);
+            // Interna della porta (apertura buia con gradiente verticale)
+            // Il buio e' piu' intenso in basso (dove la scala scende)
+            // per dare il senso di profondita'/discesa.
+            float doorH = 36.f;
+            for (int i = 0; i < 12; i++) {
+                float t = (float)i / 11.f;
+                float y0 = dy - 14.f + t * doorH;
+                sf::Uint8 darkR = (sf::Uint8)(20 - t * 18);  // 20 -> 2
+                sf::Uint8 darkG = (sf::Uint8)(14 - t * 12);  // 14 -> 2
+                sf::Uint8 darkB = (sf::Uint8)(8 - t * 7);    // 8 -> 1
+                sf::RectangleShape band(sf::Vector2f(32.f, doorH / 12.f + 1.f));
+                band.setFillColor(sf::Color(darkR, darkG, darkB));
+                band.setPosition(dx - 16.f, y0);
+                window.draw(band);
+            }
 
-            // Gradini della scala (4 scalini che scendono)
-            for (int i = 0; i < 4; i++) {
-                float stepY = dy - 10.f + i * 7.f;
-                float stepW = 28.f - i * 3.f;
+            // Gradini della scala che scendono (6 scalini con prospettiva)
+            // Il primo gradino (in alto) e' piu' largo e piu' chiaro,
+            // l'ultimo (in basso) e' piu' stretto e piu' scuro.
+            // Questo da' l'effetto di una scala che scende verso il basso.
+            int numSteps = 6;
+            float topStepY = dy - 12.f;
+            float stepSpacing = 5.f;
+            float topStepW = 30.f;
+            float botStepW = 14.f;
+            for (int i = 0; i < numSteps; i++) {
+                float t = (float)i / (float)(numSteps - 1);
+                float stepY = topStepY + i * stepSpacing;
+                float stepW = topStepW - (topStepW - botStepW) * t;
+                // Colore: piu' scuro andando verso il basso (profondita')
+                sf::Uint8 sr = (sf::Uint8)(100 - t * 70);  // 100 -> 30
+                sf::Uint8 sg = (sf::Uint8)(82 - t * 58);   // 82 -> 24
+                sf::Uint8 sb = (sf::Uint8)(64 - t * 46);   // 64 -> 18
+                // Gradino: rettangolo orizzontale (pianerottolo)
                 sf::RectangleShape step(sf::Vector2f(stepW, 3.f));
-                step.setFillColor(sf::Color(80 - i * 10, 65 - i * 8, 50 - i * 6));
-                step.setOutlineThickness(0.5f); step.setOutlineColor(sf::Color(30, 20, 10));
+                step.setFillColor(sf::Color(sr, sg, sb));
+                step.setOutlineThickness(0.6f);
+                step.setOutlineColor(sf::Color(sr / 2, sg / 2, sb / 2));
                 step.setPosition(dx - stepW / 2.f, stepY);
                 window.draw(step);
+                // Alzata del gradino (parte verticale scura sotto il pianerottolo)
+                if (i < numSteps - 1) {
+                    sf::RectangleShape riser(sf::Vector2f(stepW, stepSpacing - 3.f));
+                    sf::Uint8 rr = (sf::Uint8)(sr * 0.4f);
+                    sf::Uint8 rg = (sf::Uint8)(sg * 0.4f);
+                    sf::Uint8 rb = (sf::Uint8)(sb * 0.4f);
+                    riser.setFillColor(sf::Color(rr, rg, rb));
+                    riser.setPosition(dx - stepW / 2.f, stepY + 3.f);
+                    window.draw(riser);
+                }
+                // Highlight sul bordo superiore del gradino (riflesso luce)
+                sf::RectangleShape highlight(sf::Vector2f(stepW - 2.f, 0.8f));
+                highlight.setFillColor(sf::Color(
+                    (sf::Uint8)std::min(255, sr + 40),
+                    (sf::Uint8)std::min(255, sg + 35),
+                    (sf::Uint8)std::min(255, sb + 30), 200));
+                highlight.setPosition(dx - (stepW - 2.f) / 2.f, stepY);
+                window.draw(highlight);
             }
+
+            // Bagliore profondo in fondo alla scala (punto luce che attira)
+            float glowY = topStepY + (numSteps - 1) * stepSpacing + 2.f;
+            float glowPulse2 = sin(exitDoor.glowPulse * 2.f) * 0.3f + 0.7f;
+            sf::CircleShape deepGlow(4.f * glowPulse2);
+            deepGlow.setFillColor(sf::Color(200, 160, 60, 120));
+            deepGlow.setPosition(dx - 4.f * glowPulse2, glowY - 4.f * glowPulse2);
+            window.draw(deepGlow);
+            // Scintilla centrale
+            sf::CircleShape deepSpark(1.5f * glowPulse2);
+            deepSpark.setFillColor(sf::Color(255, 230, 120, 200));
+            deepSpark.setPosition(dx - 1.5f * glowPulse2, glowY - 1.5f * glowPulse2);
+            window.draw(deepSpark);
 
             // Anta della porta (animazione di apertura: si apre verso destra)
             // Durante l'animazione (animTimer > 0), l'anta si sposta verso
