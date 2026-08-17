@@ -74,17 +74,16 @@ std::string Enemy::getSpriteId(EnemyType t) {
         case ENEMY_WELL_SPIRIT:     return "monster_018";
         case ENEMY_CURSED_BOAR:     return "monster_019";
         case ENEMY_PREDATOR_FUNGUS: return "monster_020";
-        // 9 tipi originali senza sprite diretto nel file: riutilizzano
-        // sprite del bestiary piu' simile per coerenza visiva.
-        case ENEMY_ZOMBIE:          return "monster_001";  // ghoul = zombie-like
-        case ENEMY_BAT:             return "monster_015";  // crow = flying
-        case ENEMY_SLIME:           return "monster_020";  // fungus = blob
-        case ENEMY_DEMON:           return "monster_012";  // damned knight = dark
-        case ENEMY_ROBOT:           return "monster_010";  // bone golem = construct
-        case ENEMY_GOBLIN:          return "monster_006";  // rat = small creature
-        case ENEMY_ORC:             return "monster_019";  // boar = brute
-        case ENEMY_WRAITH:          return "monster_009";  // shadow = ghost
-        case ENEMY_IMP:             return "monster_003";  // wolf = small beast
+        // 9 tipi originali con sprite unico generato (monster_021..monster_029)
+        case ENEMY_ZOMBIE:          return "monster_021";  // cadavere putrefatto
+        case ENEMY_BAT:             return "monster_022";  // pipistrello con ali
+        case ENEMY_SLIME:           return "monster_023";  // blob gelatinoso verde
+        case ENEMY_DEMON:           return "monster_024";  // piccolo demone rosso
+        case ENEMY_ROBOT:           return "monster_025";  // costrutto metallico
+        case ENEMY_GOBLIN:          return "monster_026";  // umanoide verde con orecchie
+        case ENEMY_ORC:             return "monster_027";  // orco massiccio con ascia
+        case ENEMY_WRAITH:          return "monster_028";  // forma spettrale fluttuante
+        case ENEMY_IMP:             return "monster_029";  // diavoletto piccolo cornuto
         default: return "";
     }
 }
