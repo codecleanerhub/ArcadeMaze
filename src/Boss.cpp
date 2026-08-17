@@ -32,27 +32,28 @@ bool Boss::spritesLoaded = false;
 // ---------------------------------------------------------------------------
 // getSpriteId: mappa BossType -> ID file bestiary.
 //
-// Tutti i 17 tipi hanno match diretto col bestiary fantasy horror:
-//   BOSS_GHOUL_LORD         -> boss_021 (Signore dei Ghoul)
-//   BOSS_SPECTRAL_ALPHA     -> boss_023 (Lupo Alpha Spettrale)
-//   BOSS_CULT_HERALD        -> boss_024 (Araldo del Culto)
-//   BOSS_COLOSSAL_MIMIC     -> boss_025 (Mimic Colossale)
-//   BOSS_RAT_KING           -> boss_026 (Re dei Topi)
-//   BOSS_SUPREME_WITCH      -> boss_027 (Strega Suprema delle Paludi)
-//   BOSS_TWILIGHT_KNIGHT    -> boss_028 (Cavaliere del Crepuscolo)
-//   BOSS_VAMPIRE            -> boss_029 (Vescovo Vampiro)
-//   BOSS_KRAKEN             -> boss_030 (Guardiano delle Profondita')
+// Tutti i 17 tipi hanno sprite PNG unico dedicato (nessuna duplicazione):
 //
-// I 7 tipi originali senza match diretto nel file bestiary (GOLEM, LICH,
-// DEMON, ABOMINATION, DRAGON, WRAITH_LORD, BEHOLDER) sono stati rimappati
-// sui 7 nuovi tipi del file per allineamento totale:
-//   BOSS_GOLEM         -> boss_021 (Signore dei Ghoul, golem-like)
-//   BOSS_LICH          -> boss_024 (Araldo del Culto, caster undead)
-//   BOSS_DEMON         -> boss_025 (Mimic Colossale, big monster)
-//   BOSS_ABOMINATION   -> boss_026 (Re dei Topi, abomination-like)
-//   BOSS_DRAGON        -> boss_023 (Lupo Alpha, beast)
-//   BOSS_WRAITH_LORD   -> boss_028 (Cavaliere del Crepuscolo, wraith-like)
-//   BOSS_BEHOLDER      -> boss_027 (Strega Suprema, multi-eye caster)
+// 10 sprite del bestiary originale (boss_021..boss_030):
+//   BOSS_GHOUL_LORD         -> boss_021 (Signore dei Ghoul)
+//   BOSS_SPIDER              -> boss_022 (Ragno Regina)
+//   BOSS_SPECTRAL_ALPHA      -> boss_023 (Lupo Alpha Spettrale)
+//   BOSS_CULT_HERALD         -> boss_024 (Araldo del Culto)
+//   BOSS_COLOSSAL_MIMIC      -> boss_025 (Mimic Colossale)
+//   BOSS_RAT_KING            -> boss_026 (Re dei Topi)
+//   BOSS_SUPREME_WITCH       -> boss_027 (Strega Suprema delle Paludi)
+//   BOSS_TWILIGHT_KNIGHT     -> boss_028 (Cavaliere del Crepuscolo)
+//   BOSS_VAMPIRE             -> boss_029 (Vescovo Vampiro)
+//   BOSS_KRAKEN              -> boss_030 (Guardiano delle Profondita')
+//
+// 7 sprite generati da pixel art (boss_031..boss_037):
+//   BOSS_GOLEM              -> boss_031 (Golem di pietra)
+//   BOSS_LICH               -> boss_032 (Lich necromante con teschio)
+//   BOSS_DEMON              -> boss_033 (Demone con ali e corna)
+//   BOSS_ABOMINATION        -> boss_034 (Abominazione di Frankenstein)
+//   BOSS_DRAGON             -> boss_035 (Drago scheletro)
+//   BOSS_WRAITH_LORD        -> boss_036 (Signore dei Wraith)
+//   BOSS_BEHOLDER           -> boss_037 (Beholder con occhi satellite)
 // ---------------------------------------------------------------------------
 std::string Boss::getSpriteId(BossType t) {
     // Mappa ogni tipo di boss a UN file sprite unico. Ci sono 10 file
@@ -80,14 +81,14 @@ std::string Boss::getSpriteId(BossType t) {
     // completamente diversi per ciascuno):
     //   * GOLEM, LICH, DEMON, ABOMINATION, DRAGON, WRAITH_LORD, BEHOLDER
     switch(t) {
-        // 7 tipi originali senza sprite dedicato -> render procedurale
-        case BOSS_GOLEM:         return "";  // golem di pietra
-        case BOSS_LICH:          return "";  // teschio con mantello viola
-        case BOSS_DEMON:         return "";  // demone con ali e corna
-        case BOSS_ABOMINATION:   return "";  // abominazione di Frankenstein
-        case BOSS_DRAGON:        return "";  // drago scheletro
-        case BOSS_WRAITH_LORD:   return "";  // signore dei wraith con mantello
-        case BOSS_BEHOLDER:      return "";  // beholder con occhi satellite
+        // 7 tipi originali con sprite unico generato (boss_031..boss_037)
+        case BOSS_GOLEM:         return "boss_031";  // golem di pietra
+        case BOSS_LICH:          return "boss_032";  // teschio con mantello viola
+        case BOSS_DEMON:         return "boss_033";  // demone con ali e corna
+        case BOSS_ABOMINATION:   return "boss_034";  // abominazione di Frankenstein
+        case BOSS_DRAGON:        return "boss_035";  // drago scheletro
+        case BOSS_WRAITH_LORD:   return "boss_036";  // signore dei wraith con mantello
+        case BOSS_BEHOLDER:      return "boss_037";  // beholder con occhi satellite
         // 10 tipi con sprite unico
         case BOSS_SPIDER:        return "boss_022";
         case BOSS_KRAKEN:        return "boss_030";
