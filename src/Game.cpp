@@ -1452,15 +1452,15 @@ void Game::render() {
             window.draw(rightJamb);
 
             // Interna della porta (apertura buia con gradiente verticale)
-            // Il buio e' piu' intenso in basso (dove la scala scende)
-            // per dare il senso di profondita'/discesa.
+            // Il buio e' piu' intenso in alto (dove la scala sparisce in profondita')
+            // e piu' chiaro in basso (dove inizia la scala, vicino al pavimento).
             float doorH = 36.f;
             for (int i = 0; i < 12; i++) {
                 float t = (float)i / 11.f;
                 float y0 = dy - 14.f + t * doorH;
-                sf::Uint8 darkR = (sf::Uint8)(20 - t * 18);  // 20 -> 2
-                sf::Uint8 darkG = (sf::Uint8)(14 - t * 12);  // 14 -> 2
-                sf::Uint8 darkB = (sf::Uint8)(8 - t * 7);    // 8 -> 1
+                sf::Uint8 darkR = (sf::Uint8)(2 + t * 18);   // 2 -> 20
+                sf::Uint8 darkG = (sf::Uint8)(2 + t * 12);   // 2 -> 14
+                sf::Uint8 darkB = (sf::Uint8)(1 + t * 7);     // 1 -> 8
                 sf::RectangleShape band(sf::Vector2f(32.f, doorH / 12.f + 1.f));
                 band.setFillColor(sf::Color(darkR, darkG, darkB));
                 band.setPosition(dx - 16.f, y0);
@@ -1468,19 +1468,21 @@ void Game::render() {
             }
 
             // Gradini della scala che scendono (6 scalini con prospettiva)
-            // Il primo gradino (in alto) e' piu' largo e piu' chiaro,
-            // l'ultimo (in basso) e' piu' stretto e piu' scuro.
-            // Questo da' l'effetto di una scala che scende verso il basso.
+            // Il primo gradino (in basso, vicino al pavimento) e' piu' largo
+            // e piu' chiaro; l'ultimo (in alto, in profondita') e' piu' stretto
+            // e piu' scuro. Questo da' l'effetto di una scala che scende
+            // verso l'alto (prospettiva: ci si allontana verso il fondo).
             int numSteps = 6;
-            float topStepY = dy - 12.f;
+            float botStepY = dy + 16.f;   // partenza dal basso
             float stepSpacing = 5.f;
-            float topStepW = 30.f;
-            float botStepW = 14.f;
+            float botStepW = 30.f;         // gradino in basso: largo e chiaro
+            float topStepW = 14.f;         // gradino in alto: stretto e scuro
             for (int i = 0; i < numSteps; i++) {
                 float t = (float)i / (float)(numSteps - 1);
-                float stepY = topStepY + i * stepSpacing;
-                float stepW = topStepW - (topStepW - botStepW) * t;
-                // Colore: piu' scuro andando verso il basso (profondita')
+                // i=0 e' in basso (largo/chiaro), i=numSteps-1 e' in alto (stretto/scuro)
+                float stepY = botStepY - i * stepSpacing;
+                float stepW = botStepW - (botStepW - topStepW) * t;
+                // Colore: piu' scuro andando verso l'alto (profondita')
                 sf::Uint8 sr = (sf::Uint8)(100 - t * 70);  // 100 -> 30
                 sf::Uint8 sg = (sf::Uint8)(82 - t * 58);   // 82 -> 24
                 sf::Uint8 sb = (sf::Uint8)(64 - t * 46);   // 64 -> 18
@@ -1491,14 +1493,15 @@ void Game::render() {
                 step.setOutlineColor(sf::Color(sr / 2, sg / 2, sb / 2));
                 step.setPosition(dx - stepW / 2.f, stepY);
                 window.draw(step);
-                // Alzata del gradino (parte verticale scura sotto il pianerottolo)
+                // Alzata del gradino (parte verticale scura SOPRA il pianerottolo,
+                // perche' la scala sale verso l'alto in profondita')
                 if (i < numSteps - 1) {
                     sf::RectangleShape riser(sf::Vector2f(stepW, stepSpacing - 3.f));
                     sf::Uint8 rr = (sf::Uint8)(sr * 0.4f);
                     sf::Uint8 rg = (sf::Uint8)(sg * 0.4f);
                     sf::Uint8 rb = (sf::Uint8)(sb * 0.4f);
                     riser.setFillColor(sf::Color(rr, rg, rb));
-                    riser.setPosition(dx - stepW / 2.f, stepY + 3.f);
+                    riser.setPosition(dx - stepW / 2.f, stepY - (stepSpacing - 3.f));
                     window.draw(riser);
                 }
                 // Highlight sul bordo superiore del gradino (riflesso luce)
@@ -1511,8 +1514,8 @@ void Game::render() {
                 window.draw(highlight);
             }
 
-            // Bagliore profondo in fondo alla scala (punto luce che attira)
-            float glowY = topStepY + (numSteps - 1) * stepSpacing + 2.f;
+            // Bagliore profondo in fondo alla scala (in alto, punto luce che attira)
+            float glowY = botStepY - (numSteps - 1) * stepSpacing - 2.f;
             float glowPulse2 = sin(exitDoor.glowPulse * 2.f) * 0.3f + 0.7f;
             sf::CircleShape deepGlow(4.f * glowPulse2);
             deepGlow.setFillColor(sf::Color(200, 160, 60, 120));
