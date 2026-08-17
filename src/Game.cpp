@@ -15,8 +15,8 @@
 //         al boss.
 //      b. STATE_BOSS: scontro nella stanza del boss. Quando il boss muore
 //         si guadagna una vita e si passa al livello successivo; dopo il
-//         livello STORY_LEVELS_COUNT (34, 17 boss x 2 cicli) in modalita'
-//         story si vince.
+//         livello STORY_LEVELS_COUNT (17, un boss per tipo senza ripetizioni)
+//         in modalita' story si vince.
 //   3. STATE_LOSE: game over (Enter torna al menu').
 //   4. STATE_WIN_STORY: vittoria (con fuochi d'artificio).
 //

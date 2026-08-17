@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+#include <algorithm>
 
 // ===========================================================================
 // Boss.cpp - Implementazione dei boss.
@@ -122,12 +123,30 @@ void Boss::unloadAllSprites() {
 // ---------------------------------------------------------------------------
 Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTimer(0) {
     level = lvl; screenWidth = w; screenHeight = h;
-    size = 160 + lvl * 10;
+    // Size del boss: cresce col livello ma con un CAP massimo per evitare
+    // che ai livelli alti (infinite mode) il boss diventi cosi' grande
+    // da coprire tutto lo schermo. La crescita e' lineare fino al livello
+    // 10 (size 160..220), poi rallenta progressivamente con una formula
+    // asintotica che si stabilizza intorno a 260px (1/4 dello schermo 1024).
+    //   * Livello 1: 170
+    //   * Livello 5: 195
+    //   * Livello 10: 220
+    //   * Livello 17: 240
+    //   * Livello 25+: ~255 (cap asintotico)
+    if (lvl <= 10) {
+        size = 160 + lvl * 6;  // 166..220
+    } else {
+        // Oltre il livello 10, crescita dimezzata e cap a 255
+        size = 220 + std::min(35, (lvl - 10) * 3);
+    }
     // Posizione iniziale: centro orizzontale, sotto la UI
     pos.x = w / 2.0f; pos.y = UI_HEIGHT + 120.0f + size;
     // Direzione iniziale alternata per evitare pattern sempre uguali
     dx = (lvl % 2 == 0) ? 2 : -2; dy = (lvl % 3 == 0) ? 1 : -1;
     speed = 1 + lvl / 2;
+    // Speed cap: in infinite mode il livello puo' crescere molto, ma la
+    // velocita' del boss non deve diventare ingestibile. Cap a 8.
+    if (speed > 8) speed = 8;
     health = 50 + lvl * 20; maxHealth = health;
     // Tipo ciclico sui 17 tipi disponibili
     type = static_cast<BossType>((lvl - 1) % BOSS_TYPE_COUNT);

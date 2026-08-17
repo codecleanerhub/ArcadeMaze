@@ -10,7 +10,7 @@
 // che pilota sia il rendering sia la logica di update.
 //
 // Modalita' di gioco:
-//   * MODE_STORY: STORY_LEVELS_COUNT (30) livelli con boss crescenti, poi vittoria.
+//   * MODE_STORY: STORY_LEVELS_COUNT (17) livelli con boss crescenti, poi vittoria.
 //   * MODE_INFINITE: continua senza fine (il contatore currentLevel cresce).
 // ===========================================================================
 
@@ -42,12 +42,11 @@ enum GameMode { MODE_STORY, MODE_INFINITE };
 
 // Numero di livelli della modalita' STORY. Quando currentLevel supera
 // questo valore (dopo aver sconfitto il boss dell'ultimo livello), si
-// passa a STATE_WIN_STORY. Poiche' ci sono 17 tipi di boss distinti,
-// STORY_LEVELS_COUNT e' fissato a 34 (17 boss x 2 cicli): ogni tipo di
-// boss appare due volte nella modalita' story, con difficolta' crescente
-// (il secondo ciclo ha HP/velocita' maggiori grazie allo scaling gia'
-// presente in Boss::Boss per livello).
-constexpr int STORY_LEVELS_COUNT = 34;
+// passa a STATE_WIN_STORY. Ci sono 17 tipi di boss distinti: ogni livello
+// story ha un boss diverso (nessuna ripetizione). STORY_LEVELS_COUNT = 17
+// coincide con BOSS_TYPE_COUNT, cosi' ogni tipo appare una sola volta.
+// In modalita' infinite si continua oltre i 17 e i tipi ciclano.
+constexpr int STORY_LEVELS_COUNT = 17;
 
 // Arma casuale da posizionare nella stanza del boss: il giocatore puo'
 // raccoglierla per rimpiazzare la sua (le munizioni del boss sono 5).
