@@ -126,18 +126,19 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTime
     // Size del boss: cresce col livello ma con un CAP massimo per evitare
     // che ai livelli alti (infinite mode) il boss diventi cosi' grande
     // da coprire tutto lo schermo. La crescita e' lineare fino al livello
-    // 10 (size 160..220), poi rallenta progressivamente con una formula
-    // asintotica che si stabilizza intorno a 260px (1/4 dello schermo 1024).
-    //   * Livello 1: 170
-    //   * Livello 5: 195
-    //   * Livello 10: 220
-    //   * Livello 17: 240
-    //   * Livello 25+: ~255 (cap asintotico)
+    // 10, poi rallenta progressivamente con una formula asintotica.
+    // Dimensioni ridotte rispetto alla versione precedente per lasciare
+    // piu' spazio di manovra al player nella stanza del boss.
+    //   * Livello 1: 130
+    //   * Livello 5: 145
+    //   * Livello 10: 160
+    //   * Livello 17: 170
+    //   * Livello 25+: ~180 (cap asintotico)
     if (lvl <= 10) {
-        size = 160 + lvl * 6;  // 166..220
+        size = 120 + lvl * 4;  // 124..160
     } else {
-        // Oltre il livello 10, crescita dimezzata e cap a 255
-        size = 220 + std::min(35, (lvl - 10) * 3);
+        // Oltre il livello 10, crescita dimezzata e cap a 180
+        size = 160 + std::min(20, (lvl - 10) * 2);
     }
     // Posizione iniziale: centro orizzontale, sotto la UI
     pos.x = w / 2.0f; pos.y = UI_HEIGHT + 120.0f + size;
