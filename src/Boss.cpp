@@ -55,19 +55,43 @@ bool Boss::spritesLoaded = false;
 //   BOSS_BEHOLDER      -> boss_027 (Strega Suprema, multi-eye caster)
 // ---------------------------------------------------------------------------
 std::string Boss::getSpriteId(BossType t) {
+    // Mappa ogni tipo di boss a UN file sprite unico. Ci sono 10 file
+    // sprite disponibili (boss_021..boss_030) ma 17 tipi di boss: per
+    // evitare che due tipi diversi condividano lo stesso sprite (e quindi
+    // appaiano identici a schermo), i 7 tipi senza file dedicato restitui-
+    // scono stringa vuota. In questo caso il render fa fallback a
+    // renderPrimitives(), che per ciascun tipo ha un disegno completamente
+    // diverso (golem di pietra, lich con teschio, ragno con zampe, ecc.):
+    // nessun boss appare uguale a un altro.
+    //
+    // Assegnazione sprite (10 file assegnati ai 10 tipi piu' coerenti):
+    //   * boss_021 -> GHOUL_LORD (signore dei ghoul scheletrico)
+    //   * boss_022 -> SPIDER (ragno gigante)
+    //   * boss_023 -> SPECTRAL_ALPHA (lupo alpha spettrale)
+    //   * boss_024 -> CULT_HERALD (araldo del culto incappucciato)
+    //   * boss_025 -> COLOSSAL_MIMIC (forziere-mostro)
+    //   * boss_026 -> RAT_KING (groviglio di ratti)
+    //   * boss_027 -> SUPREME_WITCH (strega col cappello)
+    //   * boss_028 -> TWILIGHT_KNIGHT (cavaliere in armatura)
+    //   * boss_029 -> VAMPIRE (vescovo vampiro)
+    //   * boss_030 -> KRAKEN (guardiano abissale)
+    //
+    // Tipi senza sprite dedicato (fallback a renderPrimitives, disegni
+    // completamente diversi per ciascuno):
+    //   * GOLEM, LICH, DEMON, ABOMINATION, DRAGON, WRAITH_LORD, BEHOLDER
     switch(t) {
-        // 10 tipi originali - rimappati sui 7 nuovi + 3 esistenti
-        case BOSS_GOLEM:         return "boss_021";
-        case BOSS_LICH:          return "boss_024";
-        case BOSS_DEMON:         return "boss_025";
+        // 7 tipi originali senza sprite dedicato -> render procedurale
+        case BOSS_GOLEM:         return "";  // golem di pietra
+        case BOSS_LICH:          return "";  // teschio con mantello viola
+        case BOSS_DEMON:         return "";  // demone con ali e corna
+        case BOSS_ABOMINATION:   return "";  // abominazione di Frankenstein
+        case BOSS_DRAGON:        return "";  // drago scheletro
+        case BOSS_WRAITH_LORD:   return "";  // signore dei wraith con mantello
+        case BOSS_BEHOLDER:      return "";  // beholder con occhi satellite
+        // 10 tipi con sprite unico
         case BOSS_SPIDER:        return "boss_022";
-        case BOSS_ABOMINATION:   return "boss_026";
         case BOSS_KRAKEN:        return "boss_030";
-        case BOSS_DRAGON:        return "boss_023";
-        case BOSS_WRAITH_LORD:   return "boss_028";
         case BOSS_VAMPIRE:       return "boss_029";
-        case BOSS_BEHOLDER:      return "boss_027";
-        // 7 nuovi tipi (mappati 1:1 sul file)
         case BOSS_GHOUL_LORD:        return "boss_021";
         case BOSS_SPECTRAL_ALPHA:    return "boss_023";
         case BOSS_CULT_HERALD:       return "boss_024";
