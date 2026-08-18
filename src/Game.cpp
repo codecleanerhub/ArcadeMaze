@@ -967,7 +967,7 @@ void Game::update() {
             if (dx * dx + dy * dy < 400) {  // ~20px raggio
                 // Attiva la mina: inizia a rimbalzare
                 mine.bouncing = true;
-                mine.bounceTimer = 8000;  // 8 secondi
+                mine.bounceTimer = 30000;  // 30 secondi
                 // Direzione iniziale casuale
                 float angle = (rand() % 360) * (float)M_PI / 180.f;
                 mine.vel.x = cos(angle) * 6.f;
