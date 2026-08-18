@@ -74,14 +74,32 @@ struct SpeedBootsBonus {
 // Porta di uscita dal labirinto: quando tutti i tesori sono raccolti,
 // appare una porta nel labirinto con animazione di apertura. Il player
 // deve raggiungerla e toccarla per passare alla stanza del boss.
-//   * state 0 = non esiste (tesori ancora da raccogliere)
-//   * state 1 = apparsa, animazione di apertura in corso (doorAnimTimer > 0)
-//   * state 2 = aperta, player puo' entrare (collisione -> startBossFight)
 struct ExitDoor {
-    sf::Vector2f pos;       // posizione in pixel (centro della cella)
-    bool active;            // true = la porta esiste nel labirinto
-    int animTimer;          // >0 = animazione apertura in corso (ms simulati)
-    float glowPulse;        // pulsazione dell'aura luminosa
+    sf::Vector2f pos;
+    bool active;
+    int animTimer;
+    float glowPulse;
+};
+
+// Portale magico per respawn nemici: quando il 50% dei nemici viene ucciso,
+// appare un portale magico al centro del labirinto. Si apre con un'animazione,
+// fa uscire i nemici respawnati, poi si chiude. Avviene una sola volta per livello.
+struct MagicPortal {
+    sf::Vector2f pos;
+    bool active;            // true = portale attivo
+    int phase;              // 0=apertura, 1=spawn nemici, 2=chiusura, 3=inattivo
+    int phaseTimer;         // ms residui della fase corrente
+    float rotation;         // rotazione per animazione spirale
+    float glowPulse;
+};
+
+// Macchia di sangue temporanea sul pavimento dopo la morte di un nemico.
+struct BloodStain {
+    sf::Vector2f pos;
+    int life;               // vita residua in frame (60 FPS)
+    int maxLife;
+    float radius;
+    sf::Color color;
 };
 
 class Game {
@@ -111,6 +129,10 @@ private:
     std::vector<BossRoomWeapon> bossRoomWeapons; // armi a terra nella stanza del boss
     SpeedBootsBonus speedBoots;                 // bonus scarpe alate (1 per boss fight)
     ExitDoor exitDoor;                          // porta di uscita dal labirinto (post-tesori)
+    MagicPortal magicPortal;                    // portale magico per respawn nemici
+    bool portalUsed;                            // true = portale gia' usato questo livello
+    int initialEnemyCount;                      // numero nemici iniziali (per calcolo 50%)
+    std::vector<BloodStain> bloodStains;        // macchie di sangue temporanee
     std::vector<Particle> particles;             // particelle generiche (sangue, scintille)
     std::vector<Firework> fireworks;             // fuochi d'artificio (solo in WIN_STORY)
 

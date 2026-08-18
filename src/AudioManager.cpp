@@ -264,6 +264,92 @@ void AudioManager::playSound(SoundType type) {
             }
         }
     }
+    // --- Gameplay effects ---
+    else if (type == SOUND_PORTAL_OPEN) {
+        // 0.8s: fanfara epica ascendente - arpeggio + sweep + reverb
+        // 6 note ascendenti (Do-Mi-Sol-Do-Mi-Sol) con sweep di freq
+        int notes[] = {262, 330, 392, 523, 659, 784};
+        for(int n = 0; n < 6; n++) {
+            for(int i = 0; i < SR * 0.1; i++) {
+                double t = (double)i / SR;
+                double env = exp(-t * 8.0) * (1.0 - exp(-t * 30.0));
+                double s = 0.4 * pulseWave(t * notes[n], 0.5) +
+                           0.3 * triangleWave(t * notes[n] * 2) +
+                           0.3 * sawtoothWave(t * notes[n] * 0.5);
+                samples.push_back((sf::Int16)(2500 * s * env));
+            }
+        }
+        // Tail reverb (0.2s)
+        for(int i = 0; i < SR * 0.2; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 5.0);
+            double s = 0.3 * triangleWave(t * 784) + 0.2 * noiseGen();
+            samples.push_back((sf::Int16)(1500 * s * env));
+        }
+    }
+    else if (type == SOUND_PORTAL_CLOSE) {
+        // 0.6s: chiusura discendente - sweep inverso + impatto
+        for(int i = 0; i < SR * 0.6; i++) {
+            double t = (double)i / SR;
+            double freq = 600 * exp(-t * 4.0) + 80;  // discendente
+            double env = exp(-t * 3.0);
+            double s = 0.4 * pulseWave(t * freq, 0.3) +
+                       0.3 * triangleWave(t * freq * 0.5) +
+                       0.3 * noiseGen();
+            samples.push_back((sf::Int16)(2200 * s * env));
+        }
+        // Impatto finale (0.1s)
+        for(int i = 0; i < SR * 0.1; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 20.0);
+            double s = 0.6 * noiseGen() + 0.4 * pulseWave(t * 50, 0.5);
+            samples.push_back((sf::Int16)(3000 * s * env));
+        }
+    }
+    else if (type == SOUND_WEAPON_PICKUP) {
+        // 0.25s: chime argenteo (3 note ascendenti veloci + sparkle)
+        int notes[] = {1047, 1319, 1568};  // Do6, Mi6, Sol6
+        for(int n = 0; n < 3; n++) {
+            for(int i = 0; i < SR * 0.06; i++) {
+                double t = (double)i / SR;
+                double env = exp(-t * 15.0);
+                double s = 0.5 * pulseWave(t * notes[n], 0.25) +
+                           0.5 * triangleWave(t * notes[n] * 2);
+                samples.push_back((sf::Int16)(2000 * s * env));
+            }
+        }
+        // Sparkle tail
+        for(int i = 0; i < SR * 0.07; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 20.0);
+            double s = 0.3 * pulseWave(t * 2093, 0.1);  // Do7
+            samples.push_back((sf::Int16)(1200 * s * env));
+        }
+    }
+    else if (type == SOUND_ENEMY_EXPLODE) {
+        // 0.4s: boom esplosione (noise burst + basso discendente + debris)
+        for(int i = 0; i < SR * 0.4; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 6.0);
+            double freq = 120 * exp(-t * 5.0) + 30;
+            double s = 0.5 * noiseGen() +
+                       0.3 * pulseWave(t * freq, 0.3) +
+                       0.2 * sawtoothWave(t * freq * 2);
+            samples.push_back((sf::Int16)(2800 * s * env));
+        }
+    }
+    else if (type == SOUND_BLOOD_SPLAT) {
+        // 0.15s: impatto umido (basso + noise attenuato)
+        for(int i = 0; i < SR * 0.15; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 12.0);
+            double freq = 80 + 30 * exp(-t * 20.0);
+            double s = 0.4 * triangleWave(t * freq) +
+                       0.3 * noiseGen() * exp(-t * 25.0) +
+                       0.3 * sawtoothWave(t * freq * 0.5);
+            samples.push_back((sf::Int16)(2000 * s * env));
+        }
+    }
 
     if(!samples.empty()) {
         buffers[idx].loadFromSamples(&samples[0], samples.size(), 1, SR);

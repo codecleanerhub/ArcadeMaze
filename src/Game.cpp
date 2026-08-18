@@ -47,6 +47,13 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     exitDoor.active = false;
     exitDoor.animTimer = 0;
     exitDoor.glowPulse = 0.f;
+    magicPortal.active = false;
+    magicPortal.phase = 3;
+    magicPortal.phaseTimer = 0;
+    magicPortal.rotation = 0.f;
+    magicPortal.glowPulse = 0.f;
+    portalUsed = false;
+    initialEnemyCount = 0;
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
@@ -100,6 +107,11 @@ void Game::startLevel(int lvl) {
     enemyProjectiles.clear();
     exitDoor.active = false;
     exitDoor.animTimer = 0;
+    magicPortal.active = false;
+    magicPortal.phase = 3;
+    portalUsed = false;
+    initialEnemyCount = (int)enemies.size();
+    bloodStains.clear();
     state = STATE_PLAYING;
     if (musicEnabled) audio.playLevelMusic(currentLevel, false);
 }
@@ -579,10 +591,15 @@ void Game::update() {
                     if (enemy.isDead()) {
                         player.addScore(5000);
                         audio.playSound(SOUND_ENEMY_DEATH);
-                        // Effetto particellare: sangue rosso (20 particelle)
-                        for(int i=0; i<20; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(150, 0, 0), 40, 40});
+                        audio.playSound(SOUND_ENEMY_EXPLODE);
+                        audio.playSound(SOUND_BLOOD_SPLAT);
+                        // Esplosione: 25 particelle rosse + 10 scintille
+                        for(int i=0; i<25; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)}, sf::Color(150+rand()%50, 0, 0), 35, 35});
+                        for(int i=0; i<10; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(200, 100, 50), 25, 25});
+                        // Macchia di sangue temporanea (5 secondi = 300 frame)
+                        bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
                     }
-                    break;  // un proiettile colpisce un solo nemico
+                    break;
                 }
             }
         }
@@ -636,9 +653,13 @@ void Game::update() {
                         enemy.takeDamage(proj.power);
                         proj.active = false;
                         if (enemy.isDead()) {
-                            player2.addScore(5000);  // Bonus per uccisione
+                            player2.addScore(5000);
                             audio.playSound(SOUND_ENEMY_DEATH);
-                            for(int i=0; i<20; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(0, 150, 0), 40, 40});
+                            audio.playSound(SOUND_ENEMY_EXPLODE);
+                            audio.playSound(SOUND_BLOOD_SPLAT);
+                            for(int i=0; i<25; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)}, sf::Color(150+rand()%50, 0, 0), 35, 35});
+                            for(int i=0; i<10; i++) particles.push_back({enemy.getPixelPos(), {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(200, 100, 50), 25, 25});
+                            bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
                         }
                         break;
                     }
@@ -720,46 +741,118 @@ void Game::update() {
         // La porta viene posizionata in una cella vuota lontana dal player
         // (massima distanza Manhattan possibile).
         if (maze.getRemainingTreasures() == 0 && !exitDoor.active) {
-            // Trova la cella vuota piu' lontana dal player
-            sf::Vector2f ppos = player.getPixelPos();
-            int pCol = (int)(ppos.x / TILE_SIZE);
-            int pRow = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
-            int bestC = 1, bestR = 1, bestDist = -1;
+            // Trova una cella vuota CASUALE raggiungibile dal player
+            std::vector<Vec2> emptyCells;
             for (int c = 1; c < MAZE_COLS - 1; c++) {
                 for (int r = 1; r < MAZE_ROWS - 1; r++) {
                     if (maze.getCellType(c, r) == CELL_EMPTY) {
-                        int d = abs(c - pCol) + abs(r - pRow);
-                        if (d > bestDist) {
-                            bestDist = d; bestC = c; bestR = r;
-                        }
+                        emptyCells.push_back({c, r});
                     }
                 }
             }
-            exitDoor.pos.x = bestC * TILE_SIZE + TILE_SIZE / 2.f;
-            exitDoor.pos.y = bestR * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-            exitDoor.active = true;
-            exitDoor.animTimer = 800;  // 800ms di animazione di apertura
-            exitDoor.glowPulse = 0.f;
-            audio.playSound(SOUND_TREASURE);  // suono di apparizione
+            if (!emptyCells.empty()) {
+                Vec2 chosen = emptyCells[rand() % emptyCells.size()];
+                exitDoor.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
+                exitDoor.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                exitDoor.active = true;
+                exitDoor.animTimer = 800;
+                exitDoor.glowPulse = 0.f;
+                audio.playSound(SOUND_TREASURE);
+            }
         }
 
         // Aggiornamento della porta di uscita
         if (exitDoor.active) {
-            // Anima apertura (decrementa timer)
             if (exitDoor.animTimer > 16) exitDoor.animTimer -= 16;
             else exitDoor.animTimer = 0;
-            // Pulsazione aura
             exitDoor.glowPulse += 0.016f;
-            // Collisione player-porta (solo se animazione completata)
             if (exitDoor.animTimer == 0) {
                 float dx = player.getPixelPos().x - exitDoor.pos.x;
                 float dy = player.getPixelPos().y - exitDoor.pos.y;
-                if (dx * dx + dy * dy < 600) {  // ~24 px di raggio
+                if (dx * dx + dy * dy < 600) {
                     exitDoor.active = false;
                     startBossFight();
                 }
             }
         }
+
+        // --- Respawn nemici al 50% tramite portale magico ---
+        // Quando il 50% dei nemici iniziali e' stato ucciso e il portale
+        // non e' ancora stato usato, appare un portale magico al centro
+        // del labirinto. Il portale si apre (fase 0, 1000ms), fa uscire
+        // i nemici respawnati (fase 1, 500ms), poi si chiude (fase 2,
+        // 800ms). Una sola volta per livello.
+        if (!portalUsed && initialEnemyCount > 0) {
+            int aliveCount = 0;
+            for (const auto& e : enemies) if (!e.isDead()) aliveCount++;
+            if (aliveCount <= initialEnemyCount / 2 && aliveCount > 0) {
+                // Attiva il portale al centro del labirinto
+                magicPortal.pos.x = (MAZE_COLS / 2) * TILE_SIZE + TILE_SIZE / 2.f;
+                magicPortal.pos.y = (MAZE_ROWS / 2) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                magicPortal.active = true;
+                magicPortal.phase = 0;  // fase apertura
+                magicPortal.phaseTimer = 1000;
+                magicPortal.rotation = 0.f;
+                magicPortal.glowPulse = 0.f;
+                portalUsed = true;
+                audio.playSound(SOUND_PORTAL_OPEN);
+            }
+        }
+
+        // Aggiornamento del portale magico
+        if (magicPortal.active) {
+            magicPortal.rotation += 0.03f;
+            magicPortal.glowPulse += 0.016f;
+            if (magicPortal.phaseTimer > 16) magicPortal.phaseTimer -= 16;
+            else magicPortal.phaseTimer = 0;
+
+            if (magicPortal.phaseTimer == 0) {
+                if (magicPortal.phase == 0) {
+                    // Fase apertura completata -> spawn nemici
+                    magicPortal.phase = 1;
+                    magicPortal.phaseTimer = 500;
+                    // Respawn dei nemici uccisi (massimo 3, per non sovraccaricare)
+                    int respawned = 0;
+                    for (auto& e : enemies) {
+                        if (e.isDead() && e.isDeathAnimDone() && respawned < 3) {
+                            // Respawn: reimposta il nemico alla posizione del portale
+                            // Creiamo un nuovo nemico dello stesso tipo
+                            EnemyType et = e.getType();
+                            int pc = (int)(magicPortal.pos.x / TILE_SIZE);
+                            int pr = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
+                            // Trova una cella vuota vicino al portale
+                            for (int dc = -2; dc <= 2 && respawned < 3; dc++) {
+                                for (int dr = -2; dr <= 2 && respawned < 3; dr++) {
+                                    int nc = pc + dc, nr = pr + dr;
+                                    if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1
+                                        && !maze.isWall(nc, nr)) {
+                                        e = Enemy(et, nc, nr);
+                                        respawned++;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (magicPortal.phase == 1) {
+                    // Fase spawn completata -> chiusura
+                    magicPortal.phase = 2;
+                    magicPortal.phaseTimer = 800;
+                    audio.playSound(SOUND_PORTAL_CLOSE);
+                } else if (magicPortal.phase == 2) {
+                    // Fase chiusura completata -> inattivo
+                    magicPortal.phase = 3;
+                    magicPortal.active = false;
+                }
+            }
+        }
+
+        // --- Aggiornamento macchie di sangue ---
+        for (auto& bs : bloodStains) {
+            bs.life--;
+        }
+        bloodStains.erase(std::remove_if(bloodStains.begin(), bloodStains.end(),
+            [](const BloodStain& bs) { return bs.life <= 0; }), bloodStains.end());
 
 #ifdef TEST_MODE_FEATURE
         // --- TEST MODE: salta direttamente al boss premendo barra spaziatrice ---
@@ -868,7 +961,7 @@ void Game::update() {
         for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
             float dx = it->pos.x - player.getPixelPos().x;
             float dy = it->pos.y - player.getPixelPos().y;
-            if (dx*dx + dy*dy < 1000) { player.collectWeapon(it->w); it = bossRoomWeapons.erase(it); } else ++it;
+            if (dx*dx + dy*dy < 1000) { player.collectWeapon(it->w); audio.playSound(SOUND_WEAPON_PICKUP); it = bossRoomWeapons.erase(it); } else ++it;
         }
 
         // --- Raccolta bonus scarpe alate (speed boost) ---
@@ -899,7 +992,7 @@ void Game::update() {
             for (auto it = bossRoomWeapons.begin(); it != bossRoomWeapons.end(); ) {
                 float dx = it->pos.x - player2.getPixelPos().x;
                 float dy = it->pos.y - player2.getPixelPos().y;
-                if (dx*dx + dy*dy < 1000) { player2.collectWeapon(it->w); it = bossRoomWeapons.erase(it); } else ++it;
+                if (dx*dx + dy*dy < 1000) { player2.collectWeapon(it->w); audio.playSound(SOUND_WEAPON_PICKUP); it = bossRoomWeapons.erase(it); } else ++it;
             }
 
             // --- Collisioni player2 vs boss ---
@@ -1403,6 +1496,105 @@ void Game::render() {
             c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, 255 * p.life / p.maxLife));
             c.setPosition(p.pos.x - 4.f, p.pos.y - 4.f);
             window.draw(c);
+        }
+
+        // --- Macchie di sangue temporanee sul pavimento ---
+        for (const auto& bs : bloodStains) {
+            float alpha = 200.f * (float)bs.life / (float)bs.maxLife;
+            if (alpha < 0) alpha = 0;
+            // Macchia principale (irregolare)
+            sf::CircleShape stain(bs.radius);
+            stain.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)alpha));
+            stain.setPosition(bs.pos.x - bs.radius, bs.pos.y - bs.radius);
+            window.draw(stain);
+            // Schizzi più piccoli attorno
+            for (int i = 0; i < 4; i++) {
+                float angle = i * (float)M_PI / 2.f + 0.5f;
+                float dist = bs.radius * 1.5f;
+                float sx = bs.pos.x + cos(angle) * dist;
+                float sy = bs.pos.y + sin(angle) * dist;
+                float sr = bs.radius * 0.4f;
+                sf::CircleShape splash(sr);
+                splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
+                splash.setPosition(sx - sr, sy - sr);
+                window.draw(splash);
+            }
+        }
+
+        // --- Rendering del portale magico (respawn nemici) ---
+        if (magicPortal.active) {
+            float px = magicPortal.pos.x;
+            float py = magicPortal.pos.y;
+            float rot = magicPortal.rotation;
+            float pulse = sin(magicPortal.glowPulse * 4.f) * 0.15f + 1.f;
+
+            // Aura esterna pulsante (viola-blu)
+            float auraR = 40.f * pulse;
+            sf::CircleShape portalAura(auraR);
+            portalAura.setFillColor(sf::Color(120, 60, 220, 30));
+            portalAura.setPosition(px - auraR, py - auraR);
+            window.draw(portalAura);
+            sf::CircleShape portalAura2(auraR * 0.7f);
+            portalAura2.setFillColor(sf::Color(160, 80, 240, 50));
+            portalAura2.setPosition(px - auraR * 0.7f, py - auraR * 0.7f);
+            window.draw(portalAura2);
+
+            // Anelli rotanti del portale (3 anelli concentrici)
+            for (int ring = 0; ring < 3; ring++) {
+                float ringR = (12.f + ring * 6.f) * pulse;
+                sf::CircleShape ringShape(ringR);
+                ringShape.setFillColor(sf::Color(0, 0, 0, 0));
+                ringShape.setOutlineThickness(2.f - ring * 0.5f);
+                sf::Color ringCol = (ring == 0) ? sf::Color(200, 100, 255, 220) :
+                                    (ring == 1) ? sf::Color(150, 80, 220, 180) :
+                                                   sf::Color(100, 60, 180, 140);
+                ringShape.setOutlineColor(ringCol);
+                ringShape.setPosition(px - ringR, py - ringR);
+                window.draw(ringShape);
+            }
+
+            // Spirale di particelle rotanti
+            for (int i = 0; i < 8; i++) {
+                float a = rot * 2.f + i * (float)M_PI / 4.f;
+                float r = 10.f + sin(rot + i) * 5.f;
+                float sx = px + cos(a) * r;
+                float sy = py + sin(a) * r;
+                sf::CircleShape spark(2.f);
+                spark.setFillColor(sf::Color(220, 150, 255, 200));
+                spark.setPosition(sx - 2.f, sy - 2.f);
+                window.draw(spark);
+            }
+
+            // Centro del portale (nero/viola profondo)
+            sf::CircleShape center(8.f);
+            center.setFillColor(sf::Color(20, 5, 30, 200));
+            center.setPosition(px - 8.f, py - 8.f);
+            window.draw(center);
+
+            // Bagliore centrale (fase-dependent)
+            if (magicPortal.phase == 0) {
+                // Apertura: bagliore crescente
+                float openT = 1.f - (float)magicPortal.phaseTimer / 1000.f;
+                float glowR = 4.f + openT * 8.f;
+                sf::CircleShape innerGlow(glowR);
+                innerGlow.setFillColor(sf::Color(200, 100, 255, (sf::Uint8)(150 * openT)));
+                innerGlow.setPosition(px - glowR, py - glowR);
+                window.draw(innerGlow);
+            } else if (magicPortal.phase == 1) {
+                // Spawn: bagliore intenso
+                sf::CircleShape innerGlow(10.f);
+                innerGlow.setFillColor(sf::Color(255, 150, 255, 180));
+                innerGlow.setPosition(px - 10.f, py - 10.f);
+                window.draw(innerGlow);
+            } else if (magicPortal.phase == 2) {
+                // Chiusura: bagliore decrescente
+                float closeT = (float)magicPortal.phaseTimer / 800.f;
+                float glowR = 4.f + closeT * 6.f;
+                sf::CircleShape innerGlow(glowR);
+                innerGlow.setFillColor(sf::Color(150, 80, 200, (sf::Uint8)(120 * closeT)));
+                innerGlow.setPosition(px - glowR, py - glowR);
+                window.draw(innerGlow);
+            }
         }
 
         // --- Rendering della porta di uscita (exit door) ---
