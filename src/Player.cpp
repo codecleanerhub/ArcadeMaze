@@ -27,6 +27,7 @@ void Player::reset() {
     score = 0; nextLifeThreshold = 100000;   // 1 vita extra ogni 100k punti
     currentWeapon = Weapon::generate(WPN_PISTOL);
     projectiles.clear();
+    pickedWeaponThisFrame = false;
 }
 
 // Reset solo posizione/stato movimento (mantiene punteggio/vite). Usato
@@ -150,10 +151,7 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         } else if (maze.getCellType(col, row) == CELL_WEAPON) {
             Weapon w = maze.collectWeapon(col, row);
             collectWeapon(w);
-            // Effetto particellare per raccolta arma: scintille dorate
-            for(int i=0; i<15; i++) {
-                particles.push_back({pos, {(float)(rand()%8-4), (float)(rand()%8-4)}, sf::Color(255, 215, 0), 35, 35});
-            }
+            pickedWeaponThisFrame = true;
         }
     }
 

@@ -635,7 +635,11 @@ void Game::update() {
         // Tesori: rileva raccolta confrontando il conteggio prima/dopo update
         int treasuresBefore = maze.getRemainingTreasures();
         player.update(maze, false, particles);
-        if (numPlayers == 2) player2.update(maze, false, particles);
+        if (player.consumePickedWeapon()) audio.playSound(SOUND_WEAPON_PICKUP);
+        if (numPlayers == 2) {
+            player2.update(maze, false, particles);
+            if (player2.consumePickedWeapon()) audio.playSound(SOUND_WEAPON_PICKUP);
+        }
         if (maze.getRemainingTreasures() < treasuresBefore) audio.playSound(SOUND_TREASURE);
 
         // Aggiornamento nemici (passa pos giocatore per AI + sparo)

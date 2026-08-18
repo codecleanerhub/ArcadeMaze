@@ -89,6 +89,10 @@ public:
     // Cooldown fra un colpo e il successivo (in ms simulati: decrementato
     // di 16 per frame, quindi ~9 frame a 60 FPS).
     uint32_t getShootCooldown() const { return shootCooldown; }
+    // Flag: true se il player ha appena raccolto un'arma nel labirinto.
+    // Game::update lo controlla per riprodurre il suono di caricamento.
+    bool pickedWeaponThisFrame;
+    bool consumePickedWeapon() { bool v = pickedWeaponThisFrame; pickedWeaponThisFrame = false; return v; }
     void setShootCooldown(uint32_t cd) { shootCooldown = cd; }
 
     // Imposta la direzione desiderata (l'effettivo cambio avviene quando
