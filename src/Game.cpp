@@ -827,24 +827,28 @@ void Game::update() {
                     // Fase apertura completata -> spawn nemici
                     magicPortal.phase = 1;
                     magicPortal.phaseTimer = 500;
-                    // Respawn dei nemici uccisi (massimo 3, per non sovraccaricare)
+                    // Respawn del 50% dei nemici iniziali dal portale
+                    int respawnTarget = initialEnemyCount / 2;
+                    if (respawnTarget < 1) respawnTarget = 1;
                     int respawned = 0;
+                    int pc = (int)(magicPortal.pos.x / TILE_SIZE);
+                    int pr = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
                     for (auto& e : enemies) {
-                        if (e.isDead() && e.isDeathAnimDone() && respawned < 3) {
-                            // Respawn: reimposta il nemico alla posizione del portale
-                            // Creiamo un nuovo nemico dello stesso tipo
+                        if (e.isDead() && e.isDeathAnimDone() && respawned < respawnTarget) {
                             EnemyType et = e.getType();
-                            int pc = (int)(magicPortal.pos.x / TILE_SIZE);
-                            int pr = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
-                            // Trova una cella vuota vicino al portale
-                            for (int dc = -2; dc <= 2 && respawned < 3; dc++) {
-                                for (int dr = -2; dr <= 2 && respawned < 3; dr++) {
-                                    int nc = pc + dc, nr = pr + dr;
-                                    if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1
-                                        && !maze.isWall(nc, nr)) {
-                                        e = Enemy(et, nc, nr);
-                                        respawned++;
-                                        break;
+                            // Cerca una cella vuota in raggio sempre piu' largo
+                            bool placed = false;
+                            for (int radius = 1; radius <= 5 && !placed; radius++) {
+                                for (int dc = -radius; dc <= radius && !placed; dc++) {
+                                    for (int dr = -radius; dr <= radius && !placed; dr++) {
+                                        int nc = pc + dc, nr = pr + dr;
+                                        if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1
+                                            && !maze.isWall(nc, nr)
+                                            && maze.getCellType(nc, nr) == CELL_EMPTY) {
+                                            e = Enemy(et, nc, nr);
+                                            respawned++;
+                                            placed = true;
+                                        }
                                     }
                                 }
                             }

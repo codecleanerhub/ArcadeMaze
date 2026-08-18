@@ -169,10 +169,11 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTime
     pos.x = w / 2.0f; pos.y = UI_HEIGHT + 120.0f + size;
     // Direzione iniziale alternata per evitare pattern sempre uguali
     dx = (lvl % 2 == 0) ? 2 : -2; dy = (lvl % 3 == 0) ? 1 : -1;
-    speed = 1 + lvl / 2;
-    // Speed cap: in infinite mode il livello puo' crescere molto, ma la
-    // velocita' del boss non deve diventare ingestibile. Cap a 8.
-    if (speed > 8) speed = 8;
+    // Speed: crescita LENTA per non rendere i boss ingestibili.
+    // Livello 1: speed 1, Livello 17: speed 5, cap 5.
+    // (prima era 1 + lvl/2 = 9 al lvl 17, capped a 8: troppo veloce)
+    speed = 1 + lvl / 4;
+    if (speed > 5) speed = 5;
     health = 50 + lvl * 20; maxHealth = health;
     // Tipo ciclico sui 17 tipi disponibili
     type = static_cast<BossType>((lvl - 1) % BOSS_TYPE_COUNT);
