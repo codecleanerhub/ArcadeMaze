@@ -1322,9 +1322,11 @@ void Game::update() {
             int mc = (int)(mine.pos.x / TILE_SIZE);
             int mr = (int)((mine.pos.y - UI_HEIGHT) / TILE_SIZE);
             if (maze.isWall(mc, mr)) {
-                // Determina direzione di rimbalzo in base al muro
+                // Determina direzione di rimbalzo in base al muro.
+                // Calcola la colonna precedente (prima del movimento) per
+                // capire se il muro e' verticale (inversione X) o
+                // orizzontale (inversione Y).
                 int prevC = (int)((mine.pos.x - mine.vel.x) / TILE_SIZE);
-                int prevR = (int)((mine.pos.y - mine.vel.y - UI_HEIGHT) / TILE_SIZE);
                 if (maze.isWall(prevC, mr)) {
                     // Muro orizzontale: inverti Y
                     mine.vel.y = -mine.vel.y;

@@ -88,19 +88,27 @@ void Maze::generate(int level) {
     std::shuffle(emptyCells.begin(), emptyCells.end(), g);
 
     // Distanza minima tra tesori/armi (in celle Manhattan)
-    const int MIN_DIST_TREASURE = 4;  // tesori distanti almeno 4 celle
-    const int MIN_DIST_WEAPON = 5;   // armi distanti almeno 5 celle
-    const int MIN_DIST_TW = 3;       // tesori vs armi: almeno 3 celle
+    const int MIN_DIST_TREASURE = 4;  // tesori distanti almeno 4 celle tra loro
+    const int MIN_DIST_WEAPON = 5;    // armi distanti almeno 5 celle tra loro
+    const int MIN_DIST_TW = 3;        // tesori vs armi: almeno 3 celle
 
     std::vector<Vec2> placedItems;  // posizioni gia' occupate da tesori/armi
+    std::vector<Vec2> placedTreasures;  // solo tesori (per distanza tesori-armi)
 
     // Funzione lambda: verifica se una cella e' abbastanza lontana
-    auto isFarEnough = [&](const Vec2& candidate, int minDist) -> bool {
-        for (const auto& p : placedItems) {
+    // da TUTTE le posizioni in un vettore dato (distanza Manhattan).
+    auto isFarEnoughFrom = [](const Vec2& candidate,
+                              const std::vector<Vec2>& positions,
+                              int minDist) -> bool {
+        for (const auto& p : positions) {
             if (abs(p.x - candidate.x) + abs(p.y - candidate.y) < minDist)
                 return false;
         }
         return true;
+    };
+    // Compatibilita' con il vecchio nome (controlla placedItems).
+    auto isFarEnough = [&](const Vec2& candidate, int minDist) -> bool {
+        return isFarEnoughFrom(candidate, placedItems, minDist);
     };
 
     // 8 tesori distribuiti e distanti
@@ -111,15 +119,21 @@ void Maze::generate(int level) {
             grid[cell.x][cell.y].type = CELL_TREASURE;
             grid[cell.x][cell.y].treasure = static_cast<TreasureType>(rand() % 5);
             placedItems.push_back(cell);
+            placedTreasures.push_back(cell);
             treasuresPlaced++;
         }
     }
 
-    // 5 armi distribuite e distanti da tesori e tra loro
+    // 5 armi distribuite e distanti da tesori (MIN_DIST_TW) e tra loro
+    // (MIN_DIST_WEAPON). Questo implementa davvero la distanza tesori-armi
+    // che prima era solo dichiarata nel commento ma non applicata.
     int weaponsPlaced = 0;
     for (const auto& cell : emptyCells) {
         if (weaponsPlaced >= 5) break;
         if (grid[cell.x][cell.y].type != CELL_EMPTY) continue;
+        // Distanza da altri tesori (almeno MIN_DIST_TW celle)
+        if (!isFarEnoughFrom(cell, placedTreasures, MIN_DIST_TW)) continue;
+        // Distanza da altre armi (almeno MIN_DIST_WEAPON celle)
         if (isFarEnough(cell, MIN_DIST_WEAPON)) {
             grid[cell.x][cell.y].type = CELL_WEAPON;
             grid[cell.x][cell.y].weapon = Weapon::generateRandom();
