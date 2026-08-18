@@ -68,6 +68,12 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     chaliceUsed = false;
     playerInvincibleTimer = 0;
     player2InvincibleTimer = 0;
+    scepter.active = false;
+    scepter.triggered = false;
+    scepter.lightningsLeft = 0;
+    scepter.lightningTimer = 0;
+    scepterUsed = false;
+    lightnings.clear();
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
@@ -137,6 +143,12 @@ void Game::startLevel(int lvl) {
     chalice.active = false;
     playerInvincibleTimer = 0;
     player2InvincibleTimer = 0;
+    scepter.active = false;
+    scepter.triggered = false;
+    scepter.lightningsLeft = 0;
+    scepter.lightningTimer = 0;
+    scepterUsed = false;
+    lightnings.clear();
     // Spawna la mina in una cella vuota casuale del labirinto
     {
         std::vector<Vec2> mineCells;
@@ -186,6 +198,39 @@ void Game::startLevel(int lvl) {
             chalice.active = true;
             chalice.pulse = 0.f;
             chalice.bobOffset = 0.f;
+        }
+    }
+    // Spawna lo scettro magico in una cella vuota casuale (diverso da mina e calice)
+    {
+        std::vector<Vec2> scepterCells;
+        int mineC = (int)(mine.pos.x / TILE_SIZE);
+        int mineR = (int)((mine.pos.y - UI_HEIGHT) / TILE_SIZE);
+        int chalC = chalice.active ? (int)(chalice.pos.x / TILE_SIZE) : -1;
+        int chalR = chalice.active ? (int)((chalice.pos.y - UI_HEIGHT) / TILE_SIZE) : -1;
+        for (int c = 1; c < MAZE_COLS - 1; c++) {
+            for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                if (maze.getCellType(c, r) == CELL_EMPTY) {
+                    if (abs(c - mineC) + abs(r - mineR) >= 4 &&
+                        abs(c - chalC) + abs(r - chalR) >= 4) {
+                        sf::Vector2f ppos = player.getPixelPos();
+                        int pc = (int)(ppos.x / TILE_SIZE);
+                        int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                        if (abs(c - pc) + abs(r - pr) >= 5)
+                            scepterCells.push_back({c, r});
+                    }
+                }
+            }
+        }
+        if (!scepterCells.empty()) {
+            Vec2 chosen = scepterCells[rand() % scepterCells.size()];
+            scepter.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
+            scepter.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            scepter.active = true;
+            scepter.pulse = 0.f;
+            scepter.bobOffset = 0.f;
+            scepter.triggered = false;
+            scepter.lightningsLeft = 0;
+            scepter.lightningTimer = 0;
         }
     }
     state = STATE_PLAYING;
@@ -328,6 +373,17 @@ void Game::startBossFight(bool keepBossState) {
     }
     // Il calice NON appare nella stanza del boss
     chalice.active = false;
+    // Lo scettro magico appare anche nella stanza del boss (se non gia' raccolto)
+    if (!scepterUsed && !scepter.active && !scepter.triggered) {
+        scepter.pos.x = 200.f + (rand() % 600);
+        scepter.pos.y = UI_HEIGHT + 150.f + (rand() % 400);
+        scepter.active = true;
+        scepter.pulse = 0.f;
+        scepter.bobOffset = 0.f;
+        scepter.triggered = false;
+        scepter.lightningsLeft = 0;
+        scepter.lightningTimer = 0;
+    }
     if (musicEnabled) audio.playLevelMusic(currentLevel, true);
 }
 
@@ -1075,6 +1131,78 @@ void Game::update() {
         updateInvincible(player, playerInvincibleTimer);
         if (numPlayers == 2) updateInvincible(player2, player2InvincibleTimer);
 
+        // --- Aggiornamento dello scettro magico ---
+        if (scepter.active && !scepter.triggered) {
+            scepter.pulse += 0.016f;
+            scepter.bobOffset = sin(scepter.pulse * 3.f) * 4.f;
+            // Collisione con player1 o player2
+            float dx1 = player.getPixelPos().x - scepter.pos.x;
+            float dy1 = player.getPixelPos().y - scepter.pos.y;
+            bool p1Hit = (dx1 * dx1 + dy1 * dy1 < 500);
+            bool p2Hit = false;
+            if (numPlayers == 2) {
+                float dx2 = player2.getPixelPos().x - scepter.pos.x;
+                float dy2 = player2.getPixelPos().y - scepter.pos.y;
+                p2Hit = (dx2 * dx2 + dy2 * dy2 < 500);
+            }
+            if (p1Hit || p2Hit) {
+                scepter.active = false;
+                scepter.triggered = true;
+                scepterUsed = true;
+                scepter.lightningsLeft = 5;
+                scepter.lightningTimer = 200;  // primo fulmine tra 200ms
+                audio.playSound(SOUND_LIGHTNING);
+                for (int i = 0; i < 15; i++)
+                    particles.push_back({scepter.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
+                        sf::Color(180, 200, 255), 35, 35});
+            }
+        }
+
+        // --- Update fulmini (scettro magico) ---
+        if (scepter.triggered && scepter.lightningsLeft > 0) {
+            if (scepter.lightningTimer > 16) scepter.lightningTimer -= 16;
+            else scepter.lightningTimer = 0;
+            if (scepter.lightningTimer == 0) {
+                // Genera un fulmine in posizione casuale
+                float lx, ly;
+                if (state == STATE_BOSS) {
+                    lx = 100.f + (rand() % (WINDOW_WIDTH - 200));
+                    ly = UI_HEIGHT + 100.f + (rand() % (WINDOW_HEIGHT - UI_HEIGHT - 200));
+                } else {
+                    // Nel labirinto: posizione casuale
+                    lx = (1 + rand() % (MAZE_COLS - 2)) * TILE_SIZE + TILE_SIZE / 2.f;
+                    ly = UI_HEIGHT + (1 + rand() % (MAZE_ROWS - 2)) * TILE_SIZE + TILE_SIZE / 2.f;
+                }
+                lightnings.push_back({{lx, ly}, 15, 15, false, false});
+                audio.playSound(SOUND_LIGHTNING);
+                scepter.lightningsLeft--;
+                if (scepter.lightningsLeft > 0) {
+                    scepter.lightningTimer = 3000;  // 3 secondi al prossimo
+                }
+                // Danni ai nemici (50% HP)
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    float dx = enemy.getPixelPos().x - lx;
+                    float dy = enemy.getPixelPos().y - ly;
+                    if (dx * dx + dy * dy < 2500) {  // raggio 50px
+                        enemy.takeDamage(999);
+                        player.addScore(3000);
+                        audio.playSound(SOUND_ENEMY_DEATH);
+                        audio.playSound(SOUND_BLOOD_SPLAT);
+                        for (int i = 0; i < 20; i++)
+                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
+                                sf::Color(150+rand()%50, 0, 0), 30, 30});
+                        bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                        lightnings.back().hitEnemy = true;
+                    }
+                }
+            }
+        }
+        // Update fulmini attivi (visualizzazione)
+        for (auto& lt : lightnings) lt.life--;
+        lightnings.erase(std::remove_if(lightnings.begin(), lightnings.end(),
+            [](const Lightning& lt) { return lt.life <= 0; }), lightnings.end());
+
         // --- Aggiornamento della mina ---
         if (mine.active && !mine.bouncing) {
             // Mina ferma: controlla collisione con player1 o player2
@@ -1217,7 +1345,9 @@ void Game::update() {
                 float dx = mine.pos.x - boss->getPos().x;
                 float dy = mine.pos.y - boss->getPos().y;
                 if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
-                    boss->takeDamage(15);
+                    int dmg = boss->getMaxHealth() * 30 / 100;  // 30% HP massimo
+                    if (dmg < 1) dmg = 1;
+                    boss->takeDamage(dmg);
                     audio.playSound(SOUND_BOSS_HIT);
                     audio.playSound(SOUND_ENEMY_EXPLODE);
                     for (int i = 0; i < 20; i++)
@@ -1265,6 +1395,57 @@ void Game::update() {
                 }
             }
         }
+
+        // --- Update scettro/fulmini nella stanza del boss ---
+        if (scepter.active && !scepter.triggered) {
+            scepter.pulse += 0.016f;
+            scepter.bobOffset = sin(scepter.pulse * 3.f) * 4.f;
+            float dx1 = player.getPixelPos().x - scepter.pos.x;
+            float dy1 = player.getPixelPos().y - scepter.pos.y;
+            bool p1Hit = (dx1 * dx1 + dy1 * dy1 < 500);
+            bool p2Hit = false;
+            if (numPlayers == 2) {
+                float dx2 = player2.getPixelPos().x - scepter.pos.x;
+                float dy2 = player2.getPixelPos().y - scepter.pos.y;
+                p2Hit = (dx2 * dx2 + dy2 * dy2 < 500);
+            }
+            if (p1Hit || p2Hit) {
+                scepter.active = false;
+                scepter.triggered = true;
+                scepterUsed = true;
+                scepter.lightningsLeft = 5;
+                scepter.lightningTimer = 200;
+                audio.playSound(SOUND_LIGHTNING);
+                for (int i = 0; i < 15; i++)
+                    particles.push_back({scepter.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
+                        sf::Color(180, 200, 255), 35, 35});
+            }
+        }
+        if (scepter.triggered && scepter.lightningsLeft > 0) {
+            if (scepter.lightningTimer > 16) scepter.lightningTimer -= 16;
+            else scepter.lightningTimer = 0;
+            if (scepter.lightningTimer == 0) {
+                float lx = 100.f + (rand() % (WINDOW_WIDTH - 200));
+                float ly = UI_HEIGHT + 100.f + (rand() % (WINDOW_HEIGHT - UI_HEIGHT - 200));
+                lightnings.push_back({{lx, ly}, 15, 15, false, false});
+                audio.playSound(SOUND_LIGHTNING);
+                scepter.lightningsLeft--;
+                if (scepter.lightningsLeft > 0) scepter.lightningTimer = 3000;
+                // Danno al boss (15% HP massimo)
+                float dx = lx - boss->getPos().x;
+                float dy = ly - boss->getPos().y;
+                if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
+                    int dmg = boss->getMaxHealth() * 15 / 100;
+                    if (dmg < 1) dmg = 1;
+                    boss->takeDamage(dmg);
+                    audio.playSound(SOUND_BOSS_HIT);
+                    lightnings.back().hitBoss = true;
+                }
+            }
+        }
+        for (auto& lt : lightnings) lt.life--;
+        lightnings.erase(std::remove_if(lightnings.begin(), lightnings.end(),
+            [](const Lightning& lt) { return lt.life <= 0; }), lightnings.end());
 
         // --- Aggiornamento proiettili boss ---
         // Gestione comportamenti speciali:
@@ -1908,6 +2089,80 @@ void Game::render() {
                 splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
                 splash.setPosition(sx - sr, sy - sr);
                 window.draw(splash);
+            }
+        }
+
+        // --- Rendering dello scettro magico ---
+        if (scepter.active && !scepter.triggered) {
+            float sx = scepter.pos.x;
+            float sy = scepter.pos.y + scepter.bobOffset;
+            float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
+            // Aura azzurra pulsante
+            float auraR = 18.f * sPulse;
+            sf::CircleShape scepterAura(auraR);
+            scepterAura.setFillColor(sf::Color(100, 150, 255, 40));
+            scepterAura.setPosition(sx - auraR, sy - auraR);
+            window.draw(scepterAura);
+            // Bastone (rettangolo verticale marrone)
+            sf::RectangleShape staff(sf::Vector2f(3.f, 18.f));
+            staff.setFillColor(sf::Color(100, 70, 30));
+            staff.setOutlineThickness(0.5f); staff.setOutlineColor(sf::Color(50, 30, 10));
+            staff.setPosition(sx - 1.5f, sy - 2.f);
+            window.draw(staff);
+            // Gemma sulla cima (cerchio azzurro brillante)
+            float gemR = 4.f * sPulse;
+            sf::CircleShape gem(gemR);
+            gem.setFillColor(sf::Color(100, 200, 255));
+            gem.setOutlineThickness(1.f); gem.setOutlineColor(sf::Color(50, 100, 200));
+            gem.setPosition(sx - gemR, sy - 8.f);
+            window.draw(gem);
+            // Nucleo gemma (bianco)
+            sf::CircleShape gemCore(1.5f * sPulse);
+            gemCore.setFillColor(sf::Color(220, 240, 255));
+            gemCore.setPosition(sx - 1.5f, sy - 7.f);
+            window.draw(gemCore);
+            // Impugnatura (rettangolo più scuro)
+            sf::RectangleShape grip(sf::Vector2f(5.f, 4.f));
+            grip.setFillColor(sf::Color(60, 40, 15));
+            grip.setPosition(sx - 2.5f, sy + 12.f);
+            window.draw(grip);
+        }
+
+        // --- Rendering dei fulmini ---
+        for (const auto& lt : lightnings) {
+            float lx = lt.pos.x;
+            float ly = lt.pos.y;
+            float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
+            // Flash bianco al centro
+            sf::CircleShape flash(8.f);
+            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+            flash.setPosition(lx - 8.f, ly - 8.f);
+            window.draw(flash);
+            // Bagliore elettrico
+            sf::CircleShape glow(15.f);
+            glow.setFillColor(sf::Color(180, 200, 255, (sf::Uint8)(alpha * 0.4f)));
+            glow.setPosition(lx - 15.f, ly - 15.f);
+            window.draw(glow);
+            // Saetta verticale a zigzag (6 segmenti)
+            float segH = 6.f;
+            for (int i = 0; i < 6; i++) {
+                float y0 = ly - 36.f + i * segH;
+                float y1 = y0 + segH;
+                float xOff = (i % 2 == 0) ? -4.f : 4.f;
+                sf::RectangleShape bolt(sf::Vector2f(2.f, segH));
+                bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
+                bolt.setPosition(lx + xOff, y0);
+                bolt.rotate((rand() % 20) - 10);
+                window.draw(bolt);
+            }
+            // Scintille laterali
+            for (int i = 0; i < 4; i++) {
+                float a = i * (float)M_PI / 2.f;
+                float r = 10.f;
+                sf::CircleShape spark(1.5f);
+                spark.setFillColor(sf::Color(255, 255, 200, (sf::Uint8)(alpha * 0.8f)));
+                spark.setPosition(lx + cos(a) * r - 1.5f, ly + sin(a) * r - 1.5f);
+                window.draw(spark);
             }
         }
 
@@ -4647,6 +4902,60 @@ void Game::render() {
                     window.draw(proj);
                     break;
                 }
+            }
+        }
+
+        // --- Rendering scettro magico nella stanza del boss ---
+        if (scepter.active && !scepter.triggered) {
+            float sx = scepter.pos.x;
+            float sy = scepter.pos.y + scepter.bobOffset;
+            float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
+            float auraR = 18.f * sPulse;
+            sf::CircleShape scepterAura(auraR);
+            scepterAura.setFillColor(sf::Color(100, 150, 255, 40));
+            scepterAura.setPosition(sx - auraR, sy - auraR);
+            window.draw(scepterAura);
+            sf::RectangleShape staff(sf::Vector2f(3.f, 18.f));
+            staff.setFillColor(sf::Color(100, 70, 30));
+            staff.setOutlineThickness(0.5f); staff.setOutlineColor(sf::Color(50, 30, 10));
+            staff.setPosition(sx - 1.5f, sy - 2.f);
+            window.draw(staff);
+            float gemR = 4.f * sPulse;
+            sf::CircleShape gem(gemR);
+            gem.setFillColor(sf::Color(100, 200, 255));
+            gem.setOutlineThickness(1.f); gem.setOutlineColor(sf::Color(50, 100, 200));
+            gem.setPosition(sx - gemR, sy - 8.f);
+            window.draw(gem);
+            sf::CircleShape gemCore(1.5f * sPulse);
+            gemCore.setFillColor(sf::Color(220, 240, 255));
+            gemCore.setPosition(sx - 1.5f, sy - 7.f);
+            window.draw(gemCore);
+            sf::RectangleShape grip(sf::Vector2f(5.f, 4.f));
+            grip.setFillColor(sf::Color(60, 40, 15));
+            grip.setPosition(sx - 2.5f, sy + 12.f);
+            window.draw(grip);
+        }
+
+        // --- Rendering fulmini nella stanza del boss ---
+        for (const auto& lt : lightnings) {
+            float lx = lt.pos.x;
+            float ly = lt.pos.y;
+            float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
+            sf::CircleShape flash(8.f);
+            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+            flash.setPosition(lx - 8.f, ly - 8.f);
+            window.draw(flash);
+            sf::CircleShape glow(15.f);
+            glow.setFillColor(sf::Color(180, 200, 255, (sf::Uint8)(alpha * 0.4f)));
+            glow.setPosition(lx - 15.f, ly - 15.f);
+            window.draw(glow);
+            for (int i = 0; i < 6; i++) {
+                float y0 = ly - 36.f + i * 6.f;
+                float xOff = (i % 2 == 0) ? -4.f : 4.f;
+                sf::RectangleShape bolt(sf::Vector2f(2.f, 6.f));
+                bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
+                bolt.setPosition(lx + xOff, y0);
+                window.draw(bolt);
             }
         }
 

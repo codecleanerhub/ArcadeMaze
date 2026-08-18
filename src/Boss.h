@@ -70,6 +70,8 @@ public:
     sf::Vector2f getPos() const { return pos; }
     int getSize() const { return size; }
     BossType getType() const { return type; }
+    int getHealth() const { return health; }
+    int getMaxHealth() const { return maxHealth; }
 
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei boss dalla cartella data. Da chiamare una

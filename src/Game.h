@@ -121,14 +121,33 @@ struct Mine {
 };
 
 // Calice d'oro: pozione magica che appare in posizione casuale nel labirinto.
-// Se il player la raccoglie, beve la pozione (suono glug-glug) e diventa
-// immortale per 10 secondi: se tocca un nemico lo uccide.
-// NON appare nella stanza del boss. Non ha effetto sul player2.
 struct GoldenChalice {
     sf::Vector2f pos;
-    bool active;            // true = calice presente sul pavimento
-    float pulse;            // pulsazione visiva
-    float bobOffset;        // oscillazione verticale
+    bool active;
+    float pulse;
+    float bobOffset;
+};
+
+// Scettro magico: bastone con gemma. Se raccolto, scatena 5 fulmini
+// in posizioni casuali a 3 secondi di intervallo. I fulmini tolgono
+// 50% HP ai nemici e 15% HP al boss. Appare 1 volta per livello (anche nel boss).
+struct MagicScepter {
+    sf::Vector2f pos;
+    bool active;            // true = scettro presente sul pavimento
+    float pulse;
+    float bobOffset;
+    int lightningsLeft;     // fulmini ancora da generare
+    int lightningTimer;     // ms al prossimo fulmine (3000 = 3 secondi)
+    bool triggered;         // true = scettro raccolto, fulmini in corso
+};
+
+// Fulmine: visualizzato brevemente quando colpisce
+struct Lightning {
+    sf::Vector2f pos;       // posizione del fulmine
+    int life;               // vita residua in frame
+    int maxLife;
+    bool hitEnemy;          // true se ha colpito un nemico
+    bool hitBoss;           // true se ha colpito il boss
 };
 
 class Game {
@@ -167,6 +186,9 @@ private:
     bool chaliceUsed;                            // true = calice gia' raccolto questo livello
     int playerInvincibleTimer;                   // >0 = player1 immortale (ms residui)
     int player2InvincibleTimer;                  // >0 = player2 immortale (ms residui)
+    MagicScepter scepter;                        // scettro magico fulmini (1 per livello)
+    bool scepterUsed;                            // true = scettro gia' raccolto questo livello
+    std::vector<Lightning> lightnings;           // fulmini attivi (visualizzazione)
     std::vector<Particle> particles;             // particelle generiche (sangue, scintille)
     std::vector<Firework> fireworks;             // fuochi d'artificio (solo in WIN_STORY)
 

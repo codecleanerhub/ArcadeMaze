@@ -476,6 +476,44 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(1800 * s * env));
         }
     }
+    else if (type == SOUND_LIGHTNING) {
+        // 0.4s: fulmine (crack elettrico + boom + tuono)
+        // Fase 1 (0.02s): crack iniziale (noise burst acuto)
+        for(int i = 0; i < SR * 0.02; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 80.0);
+            double s = noiseGen();
+            samples.push_back((sf::Int16)(3200 * s * env));
+        }
+        // Fase 2 (0.1s): scarica elettrica (sweep acuto discendente + buzz)
+        for(int i = 0; i < SR * 0.1; i++) {
+            double t = (double)i / SR;
+            double freq = 3000 * exp(-t * 15.0) + 200;
+            double env = exp(-t * 12.0);
+            double s = 0.4 * pulseWave(t * freq, 0.1) +
+                       0.3 * noiseGen() * exp(-t * 10.0) +
+                       0.3 * sawtoothWave(t * freq * 0.3);
+            samples.push_back((sf::Int16)(2800 * s * env));
+        }
+        // Fase 3 (0.15s): boom (basso discendente)
+        for(int i = 0; i < SR * 0.15; i++) {
+            double t = (double)i / SR;
+            double freq = 100 * exp(-t * 5.0) + 30;
+            double env = exp(-t * 6.0);
+            double s = 0.5 * triangleWave(t * freq) +
+                       0.3 * pulseWave(t * freq, 0.3) +
+                       0.2 * noiseGen();
+            samples.push_back((sf::Int16)(2500 * s * env));
+        }
+        // Fase 4 (0.13s): tuono morente (rumore basso che sfuma)
+        for(int i = 0; i < SR * 0.13; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 8.0);
+            double s = 0.4 * noiseGen() * (1.0 - t / 0.13) +
+                       0.2 * triangleWave(t * 50);
+            samples.push_back((sf::Int16)(1800 * s * env));
+        }
+    }
 
     if(!samples.empty()) {
         buffers[idx].loadFromSamples(&samples[0], samples.size(), 1, SR);
