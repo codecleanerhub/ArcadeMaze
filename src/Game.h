@@ -200,6 +200,7 @@ private:
     int menuItemIndex;                         // voce menu' selezionata (0..5)
     bool musicEnabled;
     int lightningTimer;                        // durata residua del fulmine nel menu'
+    int screenFlashTimer;                      // ms residui del flash bianco schermo (fulmini)
     int configJoyStep;                         // step configurazione joystick (0/1)
     int continuesLeft;                         // crediti continues rimanenti (max 3)
     int continuesTimer;                        // conto alla rovescia 10-0 (secondi)

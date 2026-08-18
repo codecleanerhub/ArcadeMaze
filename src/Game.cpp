@@ -39,7 +39,7 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
@@ -1178,8 +1178,11 @@ void Game::update() {
                     lx = (1 + rand() % (MAZE_COLS - 2)) * TILE_SIZE + TILE_SIZE / 2.f;
                     ly = UI_HEIGHT + (1 + rand() % (MAZE_ROWS - 2)) * TILE_SIZE + TILE_SIZE / 2.f;
                 }
-                lightnings.push_back({{lx, ly}, 15, 15, false, false});
+                lightnings.push_back({{lx, ly}, 30, 30, false, false});
                 audio.playSound(SOUND_LIGHTNING);
+                // Flash bianco su tutto lo schermo per simulare il lampo
+                // del fulmine (effetto "illumination flash").
+                screenFlashTimer = 250;  // 250ms di flash decrescente
                 scepter.lightningsLeft--;
                 if (scepter.lightningsLeft > 0) {
                     scepter.lightningTimer = 3000;  // 3 secondi al prossimo
@@ -1432,8 +1435,11 @@ void Game::update() {
             if (scepter.lightningTimer == 0) {
                 float lx = 100.f + (rand() % (WINDOW_WIDTH - 200));
                 float ly = UI_HEIGHT + 100.f + (rand() % (WINDOW_HEIGHT - UI_HEIGHT - 200));
-                lightnings.push_back({{lx, ly}, 15, 15, false, false});
+                lightnings.push_back({{lx, ly}, 30, 30, false, false});
                 audio.playSound(SOUND_LIGHTNING);
+                // Flash bianco su tutto lo schermo per simulare il lampo
+                // del fulmine (effetto "illumination flash").
+                screenFlashTimer = 250;  // 250ms di flash decrescente
                 scepter.lightningsLeft--;
                 if (scepter.lightningsLeft > 0) scepter.lightningTimer = 3000;
                 // Danno al boss (15% HP massimo)
@@ -5139,6 +5145,23 @@ void Game::render() {
         drawTextCenteredOutlined(window, "COMPLIMENTI PER LA TENACIA", WINDOW_WIDTH/2, 500, 3, sf::Color::White);
         drawTextCenteredOutlined(window, "E GRAZIE PER AVER GIOCATO!", WINDOW_WIDTH/2, 580, 3, sf::Color::White);
         drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 800, 2, sf::Color::Red);
+    }
+
+    // --- Overlay flash bianco (effetto lampo fulmine) ---
+    // Quando un fulmine appare, screenFlashTimer viene impostato a 250ms.
+    // Decrementa ad ogni render (~16ms) e disegna un rettangolo bianco
+    // semi-trasparente su TUTTO lo schermo con alpha proporzionale al
+    // tempo residuo. Vale per STATE_PLAYING e STATE_BOSS.
+    if (screenFlashTimer > 0) {
+        if (screenFlashTimer > 16) screenFlashTimer -= 16;
+        else screenFlashTimer = 0;
+        // Alpha: parte da 180 e scende a 0 in 250ms
+        float ratio = (float)screenFlashTimer / 250.f;
+        sf::Uint8 flashAlpha = (sf::Uint8)(180.f * ratio);
+        sf::RectangleShape flashOverlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+        flashOverlay.setFillColor(sf::Color(255, 255, 255, flashAlpha));
+        flashOverlay.setPosition(0.f, 0.f);
+        window.draw(flashOverlay);
     }
 
     window.display();
