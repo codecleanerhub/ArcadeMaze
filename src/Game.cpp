@@ -828,8 +828,8 @@ void Game::update() {
                     magicPortal.phase = 1;
                     magicPortal.phaseTimer = 500;
                     // Respawn del 50% dei nemici iniziali dal portale
-                    int respawnTarget = initialEnemyCount / 2;
-                    if (respawnTarget < 1) respawnTarget = 1;
+                    int respawnTarget = 3;
+                    if (respawnTarget > initialEnemyCount) respawnTarget = initialEnemyCount;
                     int respawned = 0;
                     int pc = (int)(magicPortal.pos.x / TILE_SIZE);
                     int pr = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
