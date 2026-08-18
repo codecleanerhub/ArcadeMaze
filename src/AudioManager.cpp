@@ -396,15 +396,45 @@ void AudioManager::playSound(SoundType type) {
         }
     }
     else if (type == SOUND_BLOOD_SPLAT) {
-        // 0.15s: impatto umido (basso + noise attenuato)
+        // 0.5s: splatter gore (schizzo sangue + impatto carnoso + gocce)
+        // Fase 1 (0.05s): impatto carnoso iniziale (tonfo + noise burst)
+        for(int i = 0; i < SR * 0.05; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 30.0);
+            double s = 0.6 * noiseGen() + 0.4 * triangleWave(t * 60);
+            samples.push_back((sf::Int16)(3000 * s * env));
+        }
+        // Fase 2 (0.15s): schizzo liquido (sweep discendente + gorgoglio)
         for(int i = 0; i < SR * 0.15; i++) {
             double t = (double)i / SR;
-            double env = exp(-t * 12.0);
-            double freq = 80 + 30 * exp(-t * 20.0);
-            double s = 0.4 * triangleWave(t * freq) +
-                       0.3 * noiseGen() * exp(-t * 25.0) +
-                       0.3 * sawtoothWave(t * freq * 0.5);
-            samples.push_back((sf::Int16)(2000 * s * env));
+            double freq = 400 * exp(-t * 6.0) + 50;
+            double env = exp(-t * 8.0) * (1.0 - exp(-t * 50.0));
+            // Modulazione liquida (vibrazione del schizzo)
+            double mod = 1.0 + 0.4 * sin(t * 40.0);
+            double s = 0.4 * sawtoothWave(t * freq * mod) +
+                       0.3 * noiseGen() * exp(-t * 10.0) +
+                       0.3 * triangleWave(t * freq * 0.3);
+            samples.push_back((sf::Int16)(2800 * s * env));
+        }
+        // Fase 3 (0.1s): gocce che cadono (3 blip discendenti)
+        for(int g = 0; g < 3; g++) {
+            double gulpFreq = 200 - g * 50;
+            for(int i = 0; i < SR * 0.03; i++) {
+                double t = (double)i / SR;
+                double env = exp(-t * 40.0);
+                double s = 0.5 * triangleWave(t * gulpFreq) +
+                           0.3 * noiseGen() * exp(-t * 60.0);
+                samples.push_back((sf::Int16)(1800 * s * env));
+            }
+            // Pausa breve tra le gocce
+            for(int i = 0; i < SR * 0.015; i++) samples.push_back(0);
+        }
+        // Fase 4 (0.05s): dissolvenza bassa (pozza che si forma)
+        for(int i = 0; i < SR * 0.05; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 15.0);
+            double s = 0.4 * triangleWave(t * 40) + 0.2 * noiseGen();
+            samples.push_back((sf::Int16)(1500 * s * env));
         }
     }
     else if (type == SOUND_MINE_BOUNCE) {
