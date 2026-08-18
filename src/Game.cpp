@@ -360,8 +360,20 @@ void Game::startBossFight(bool keepBossState) {
     speedBoots.active = true;
     speedBoots.pos = sf::Vector2f(150.0f, 200.0f);
     speedBoots.bobOffset = 0.f;
-    // Spawn mina nella stanza del boss (posizione casuale, non al centro)
+    // --- Spawn mina nella stanza del boss ---
+    // IMPORTANTE: se la mina era attiva nel labirinto ma NON e' stata
+    // raccolta (mine.active=true, mine.inBossRoom=false), la rimuoviamo
+    // dal labirinto e ne spawniamo una NUOVA nella stanza del boss.
+    // Questo previene il bug in cui la mina del labirinto rimaneva
+    // "congelata" (non raccoglibile) nella stanza del boss perche'
+    // mine.inBossRoom era false e il blocco STATE_BOSS la ignorava.
+    if (mine.active && !mine.inBossRoom) {
+        // Mina del labirinto non raccolta: rimuovila
+        mine.active = false;
+        mine.bouncing = false;
+    }
     if (!mine.active) {
+        // Spawna mina nella stanza del boss (posizione casuale, non al centro)
         mine.pos.x = 200.f + (rand() % 600);
         mine.pos.y = UI_HEIGHT + 150.f + (rand() % 400);
         mine.active = true;
@@ -371,10 +383,46 @@ void Game::startBossFight(bool keepBossState) {
         mine.pulse = 0.f;
         mine.inBossRoom = true;
     }
+    // Se la mina era gia' stata attivata nel labirinto ed e' in fase di
+    // rimbalzo (mine.bouncing=true), la lasciamo continuare ma la
+    // marchiamo come inBossRoom perche' ora e' nella stanza del boss.
+    if (mine.bouncing) {
+        mine.inBossRoom = true;
+    }
     // Il calice NON appare nella stanza del boss
     chalice.active = false;
-    // Lo scettro magico appare anche nella stanza del boss (se non gia' raccolto)
-    if (!scepterUsed && !scepter.active && !scepter.triggered) {
+    // --- Scettro magico nella stanza del boss ---
+    // Lo scettro DEVE apparire nella stanza del boss SEMPRE, anche se e'
+    // stato gia' raccolto nel labirinto. Questo dava al giocatore 2 occasioni
+    // di usare i fulmini per livello (una nel labirinto, una nel boss).
+    //
+    // Logica:
+    //   * Se lo scettro NON e' stato raccolto nel labirinto (scepter.active
+    //     e' ancora true, posizione valida): lo lasciamo dove e' (verra'
+    //     visualizzato e raccoglibile nella stanza del boss).
+    //   * Se lo scettro e' stato raccolto nel labirinto (scepter.triggered
+    //     e' true, i fulmini sono gia' partiti o in corso): RESET completo
+    //     dello stato e spawn di un NUOVO scettro in posizione casuale nella
+    //     stanza del boss. I fulmini residui del labirinto continuano fino
+    //     a esaurirsi (non vengono cancellati), ma il nuovo scettro dara'
+    //     altri 5 fulmini quando raccolto.
+    //   * Se lo scettro non e' ancora apparso (nessuna delle due): spawn
+    //     normale in posizione casuale.
+    if (scepter.active && !scepter.triggered) {
+        // Scettro ancora a terra nel labirinto: riposizionalo casualmente
+        // nella stanza del boss (perche' la posizione del labirinto non e'
+        // valida nella stanza del boss).
+        scepter.pos.x = 200.f + (rand() % 600);
+        scepter.pos.y = UI_HEIGHT + 150.f + (rand() % 400);
+        // Mantieni active=true, pulse, bobOffset. Reset triggered/lightnings.
+        scepter.triggered = false;
+        scepter.lightningsLeft = 0;
+        scepter.lightningTimer = 0;
+    } else {
+        // Scettro gia' raccolto nel labirinto (triggered=true) OPPURE mai
+        // apparso: spawn di un NUOVO scettro nella stanza del boss.
+        // Reset completo dello stato per permettere il pickup e 5 nuovi
+        // fulmini anche se ce n'erano già altri in corso.
         scepter.pos.x = 200.f + (rand() % 600);
         scepter.pos.y = UI_HEIGHT + 150.f + (rand() % 400);
         scepter.active = true;
@@ -383,6 +431,9 @@ void Game::startBossFight(bool keepBossState) {
         scepter.triggered = false;
         scepter.lightningsLeft = 0;
         scepter.lightningTimer = 0;
+        // NOTA: NON resettiamo scepterUsed qui, perche' serve a tracciare
+        // se lo scettro e' stato usato ALMENO una volta nel livello corrente
+        // (per la minimappa e altre logiche). Verra' resettato in startLevel.
     }
     if (musicEnabled) audio.playLevelMusic(currentLevel, true);
 }
@@ -1413,9 +1464,20 @@ void Game::update() {
         if (mine.active && mine.inBossRoom) {
             mine.pulse += 0.016f;
             if (!mine.bouncing) {
-                float dx = player.getPixelPos().x - mine.pos.x;
-                float dy = player.getPixelPos().y - mine.pos.y;
-                if (dx * dx + dy * dy < 400) {
+                // Collisione con player1 OR player2 (entrambi possono
+                // raccogliere la mina nella stanza del boss). Prima il
+                // pickup controllava solo player1, causando il bug in cui
+                // in 2P il player2 non riusciva a raccogliere la mina.
+                float dx1 = player.getPixelPos().x - mine.pos.x;
+                float dy1 = player.getPixelPos().y - mine.pos.y;
+                bool p1Hit = (dx1 * dx1 + dy1 * dy1 < 400);
+                bool p2Hit = false;
+                if (numPlayers == 2) {
+                    float dx2 = player2.getPixelPos().x - mine.pos.x;
+                    float dy2 = player2.getPixelPos().y - mine.pos.y;
+                    p2Hit = (dx2 * dx2 + dy2 * dy2 < 400);
+                }
+                if (p1Hit || p2Hit) {
                     mine.bouncing = true;
                     mine.bounceTimer = 30000;
                     float angle = (rand() % 360) * (float)M_PI / 180.f;
@@ -1563,7 +1625,13 @@ void Game::update() {
                     if (dx * dx + dy * dy < bossR * bossR) bossHit = true;
                 }
                 if (bossHit) {
-                    int dmg = boss->getMaxHealth() * 15 / 100;
+                    // Danno al boss ridotto a 5% HP massimo (era 15%).
+                    // Con 5 fulmini che attraversano tutto lo schermo e
+                    // possono colpire il boss, 5% * 5 = 25% HP massimo totale.
+                    // Prima era 15% * 5 = 75%, troppo alto (uccideva il boss
+                    // quasi da solo solo con i fulmini). Ora e' bilanciato:
+                    // il fulmine e' un supporto, non l'arma principale.
+                    int dmg = boss->getMaxHealth() * 5 / 100;
                     if (dmg < 1) dmg = 1;
                     boss->takeDamage(dmg);
                     audio.playSound(SOUND_BOSS_HIT);
