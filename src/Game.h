@@ -141,13 +141,23 @@ struct MagicScepter {
     bool triggered;         // true = scettro raccolto, fulmini in corso
 };
 
-// Fulmine: visualizzato brevemente quando colpisce
+// Fulmine: visualizzato brevemente quando colpisce. Il fulmine ATTRAVERSA
+// TUTTO lo schermo: parte dal bordo superiore (o da un angolo) e scende fino
+// al punto di impatto (dove fa danno). Questo garantisce che il fulmine
+// attraversi tutto lo schermo e possa colpire nemici in qualsiasi posizione.
+//
+// La saetta e' composta da una lista di punti che formano un zigzag:
+// parte da `startPos` (alto) e arriva a `pos` (punto di impatto).
+// L'angolo puo' essere verticale, diagonale sinistra o diagonale destra.
 struct Lightning {
-    sf::Vector2f pos;       // posizione del fulmine
+    sf::Vector2f pos;       // posizione del fulmine (punto di impatto, basso)
+    sf::Vector2f startPos;  // posizione di partenza (bordo superiore o angolo)
     int life;               // vita residua in frame
     int maxLife;
     bool hitEnemy;          // true se ha colpito un nemico
     bool hitBoss;           // true se ha colpito il boss
+    // punti del zigzag (pre-calcolati per rendering stabile)
+    std::vector<sf::Vector2f> zigzagPoints;
 };
 
 class Game {
@@ -259,6 +269,23 @@ private:
     // centro del bastone (la gemma e' sopra, l'impugnatura sotto).
     // sPulse e' il fattore di pulsazione (>1 = piu' grande, effetto aura).
     void drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float sPulse);
+    // Genera i punti zigzag di un fulmine che parte da startPos (alto) e
+    // arriva a endPos (punto di impatto, basso). Il fulmine ha `numSegs`
+    // segmenti con oscillazione orizzontale casuale di ampiezza `jitter`.
+    // I punti sono pre-calcolati una tantum per rendering stabile.
+    std::vector<sf::Vector2f> generateLightningPath(sf::Vector2f startPos,
+                                                    sf::Vector2f endPos,
+                                                    int numSegs, float jitter);
+    // Crea un fulmine completo (Lightning) con path zigzag che attraversa
+    // tutto lo schermo. Sceglie casualmente un angolo di partenza:
+    // verticale, diagonale sinistra o diagonale destra. Imposta life,
+    // maxLife, hitEnemy=false, hitBoss=false, e pre-calcola zigzagPoints.
+    // endPoint e' il punto di impatto (dove il fulmine fa danno).
+    Lightning createFullScreenLightning(sf::Vector2f endPoint);
+    // Disegna un fulmine (con path zigzag gia' calcolato) sul target.
+    // Usa primitve SFML: segmenti larghi 4px con outline bianca, halo,
+    // glow, flash, ramificazioni e scintille. Stile 8-bit/16-bit.
+    void drawLightning(sf::RenderTarget& target, const Lightning& lt);
 };
 
 #endif

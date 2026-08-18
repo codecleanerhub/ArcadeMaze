@@ -1200,11 +1200,17 @@ void Game::update() {
         }
 
         // --- Update fulmini (scettro magico) ---
+        // Lo scettro genera 5 fulmini totali (scepter.lightningsLeft=5),
+        // ognuno a 3 secondi di distanza. Ogni fulmine ATTRAVERSA TUTTO lo
+        // schermo (dall'alto al punto di impatto) usando verticali e
+        // diagonali. Il danno viene calcolato lungo TUTTO il percorso del
+        // fulmine, cosi' i nemici vengono colpiti anche se il fulmine li
+        // attraversa in volo (non solo al punto di impatto).
         if (scepter.triggered && scepter.lightningsLeft > 0) {
             if (scepter.lightningTimer > 16) scepter.lightningTimer -= 16;
             else scepter.lightningTimer = 0;
             if (scepter.lightningTimer == 0) {
-                // Genera un fulmine in posizione casuale
+                // Genera un fulmine in posizione casuale (punto di impatto)
                 float lx, ly;
                 if (state == STATE_BOSS) {
                     lx = 100.f + (rand() % (WINDOW_WIDTH - 200));
@@ -1214,21 +1220,59 @@ void Game::update() {
                     lx = (1 + rand() % (MAZE_COLS - 2)) * TILE_SIZE + TILE_SIZE / 2.f;
                     ly = UI_HEIGHT + (1 + rand() % (MAZE_ROWS - 2)) * TILE_SIZE + TILE_SIZE / 2.f;
                 }
-                lightnings.push_back({{lx, ly}, 30, 30, false, false});
+                // Crea il fulmine che ATTRAVERSA TUTTO lo schermo (verticale
+                // o diagonale) con zigzag pre-calcolato. La saetta parte
+                // dal bordo superiore (o angolo) e arriva a (lx, ly).
+                lightnings.push_back(createFullScreenLightning(sf::Vector2f(lx, ly)));
                 audio.playSound(SOUND_LIGHTNING);
                 // Flash bianco su tutto lo schermo per simulare il lampo
-                // del fulmine (effetto "illumination flash").
-                screenFlashTimer = 250;  // 250ms di flash decrescente
+                // del fulmine (effetto "illumination flash"). Ridotto a
+                // 120ms (era 250ms) per non affaticare gli occhi.
+                screenFlashTimer = 120;
                 scepter.lightningsLeft--;
                 if (scepter.lightningsLeft > 0) {
                     scepter.lightningTimer = 3000;  // 3 secondi al prossimo
                 }
-                // Danni ai nemici (50% HP)
+                // --- Danni ai nemici lungo TUTTO il percorso del fulmine ---
+                // Per ogni nemico, controlla se uno dei segmenti del
+                // zigzag lo attraversa (distanza < 30px). Se si', il nemico
+                // prende 999 danni (morte istantanea). Questo garantisce
+                // che il fulmine possa colpire nemici in qualsiasi posizione
+                // dello schermo, anche lontani dal punto di impatto.
+                const std::vector<sf::Vector2f>& pts =
+                    lightnings.back().zigzagPoints;
                 for (auto& enemy : enemies) {
                     if (enemy.isDead()) continue;
-                    float dx = enemy.getPixelPos().x - lx;
-                    float dy = enemy.getPixelPos().y - ly;
-                    if (dx * dx + dy * dy < 2500) {  // raggio 50px
+                    sf::Vector2f epos = enemy.getPixelPos();
+                    bool hit = false;
+                    // Controlla distanza da ogni segmento del zigzag
+                    for (size_t i = 0; i + 1 < pts.size() && !hit; i++) {
+                        sf::Vector2f p0 = pts[i];
+                        sf::Vector2f p1 = pts[i + 1];
+                        // Distanza punto-segmento
+                        float segDx = p1.x - p0.x;
+                        float segDy = p1.y - p0.y;
+                        float segLen2 = segDx * segDx + segDy * segDy;
+                        if (segLen2 < 0.001f) continue;
+                        float t = ((epos.x - p0.x) * segDx +
+                                   (epos.y - p0.y) * segDy) / segLen2;
+                        if (t < 0.f) t = 0.f;
+                        if (t > 1.f) t = 1.f;
+                        float projX = p0.x + segDx * t;
+                        float projY = p0.y + segDy * t;
+                        float ddx = epos.x - projX;
+                        float ddy = epos.y - projY;
+                        if (ddx * ddx + ddy * ddy < 900.f) {  // raggio 30px
+                            hit = true;
+                        }
+                    }
+                    // Controlla anche distanza dal punto di impatto (50px)
+                    if (!hit) {
+                        float dx = epos.x - lx;
+                        float dy = epos.y - ly;
+                        if (dx * dx + dy * dy < 2500.f) hit = true;  // raggio 50px
+                    }
+                    if (hit) {
                         enemy.takeDamage(999);
                         player.addScore(3000);
                         audio.playSound(SOUND_ENEMY_DEATH);
@@ -1474,22 +1518,95 @@ void Game::update() {
             if (scepter.lightningTimer == 0) {
                 float lx = 100.f + (rand() % (WINDOW_WIDTH - 200));
                 float ly = UI_HEIGHT + 100.f + (rand() % (WINDOW_HEIGHT - UI_HEIGHT - 200));
-                lightnings.push_back({{lx, ly}, 30, 30, false, false});
+                // Crea fulmine che attraversa tutto lo schermo (verticale
+                // o diagonale) con zigzag pre-calcolato.
+                lightnings.push_back(createFullScreenLightning(sf::Vector2f(lx, ly)));
                 audio.playSound(SOUND_LIGHTNING);
-                // Flash bianco su tutto lo schermo per simulare il lampo
-                // del fulmine (effetto "illumination flash").
-                screenFlashTimer = 250;  // 250ms di flash decrescente
+                // Flash ridotto a 120ms per non affaticare gli occhi.
+                screenFlashTimer = 120;
                 scepter.lightningsLeft--;
                 if (scepter.lightningsLeft > 0) scepter.lightningTimer = 3000;
-                // Danno al boss (15% HP massimo)
-                float dx = lx - boss->getPos().x;
-                float dy = ly - boss->getPos().y;
-                if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
+                // --- Danno al boss lungo TUTTO il percorso del fulmine ---
+                // Controlla se uno dei segmenti del zigzag attraversa il
+                // boss. Se si', infligge 15% HP massimo. Inoltre controlla
+                // anche il punto di impatto (boss->getSize()/2 raggio).
+                const std::vector<sf::Vector2f>& pts =
+                    lightnings.back().zigzagPoints;
+                sf::Vector2f bpos = boss->getPos();
+                float bossR = boss->getSize() / 2.f;
+                bool bossHit = false;
+                for (size_t i = 0; i + 1 < pts.size() && !bossHit; i++) {
+                    sf::Vector2f p0 = pts[i];
+                    sf::Vector2f p1 = pts[i + 1];
+                    float segDx = p1.x - p0.x;
+                    float segDy = p1.y - p0.y;
+                    float segLen2 = segDx * segDx + segDy * segDy;
+                    if (segLen2 < 0.001f) continue;
+                    float t = ((bpos.x - p0.x) * segDx +
+                               (bpos.y - p0.y) * segDy) / segLen2;
+                    if (t < 0.f) t = 0.f;
+                    if (t > 1.f) t = 1.f;
+                    float projX = p0.x + segDx * t;
+                    float projY = p0.y + segDy * t;
+                    float ddx = bpos.x - projX;
+                    float ddy = bpos.y - projY;
+                    if (ddx * ddx + ddy * ddy < bossR * bossR) {
+                        bossHit = true;
+                    }
+                }
+                // Controlla anche il punto di impatto
+                if (!bossHit) {
+                    float dx = lx - bpos.x;
+                    float dy = ly - bpos.y;
+                    if (dx * dx + dy * dy < bossR * bossR) bossHit = true;
+                }
+                if (bossHit) {
                     int dmg = boss->getMaxHealth() * 15 / 100;
                     if (dmg < 1) dmg = 1;
                     boss->takeDamage(dmg);
                     audio.playSound(SOUND_BOSS_HIT);
                     lightnings.back().hitBoss = true;
+                }
+                // --- Danno ai nemici (se ci sono) lungo il percorso ---
+                // Anche nella stanza del boss potrebbero esserci nemici
+                // residuali (es. se provenienti da portale). Il fulmine li
+                // colpisce come in STATE_PLAYING.
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    sf::Vector2f epos = enemy.getPixelPos();
+                    bool hit = false;
+                    for (size_t i = 0; i + 1 < pts.size() && !hit; i++) {
+                        sf::Vector2f p0 = pts[i];
+                        sf::Vector2f p1 = pts[i + 1];
+                        float segDx = p1.x - p0.x;
+                        float segDy = p1.y - p0.y;
+                        float segLen2 = segDx * segDx + segDy * segDy;
+                        if (segLen2 < 0.001f) continue;
+                        float t = ((epos.x - p0.x) * segDx +
+                                   (epos.y - p0.y) * segDy) / segLen2;
+                        if (t < 0.f) t = 0.f;
+                        if (t > 1.f) t = 1.f;
+                        float projX = p0.x + segDx * t;
+                        float projY = p0.y + segDy * t;
+                        float ddx = epos.x - projX;
+                        float ddy = epos.y - projY;
+                        if (ddx * ddx + ddy * ddy < 900.f) hit = true;
+                    }
+                    if (!hit) {
+                        float dx = epos.x - lx;
+                        float dy = epos.y - ly;
+                        if (dx * dx + dy * dy < 2500.f) hit = true;
+                    }
+                    if (hit) {
+                        enemy.takeDamage(999);
+                        player.addScore(3000);
+                        audio.playSound(SOUND_ENEMY_DEATH);
+                        audio.playSound(SOUND_BLOOD_SPLAT);
+                        for (int i = 0; i < 20; i++)
+                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
+                                sf::Color(150+rand()%50, 0, 0), 30, 30});
+                        bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                    }
                 }
             }
         }
@@ -1769,39 +1886,56 @@ void Game::spawnFirework() {
 // sPulse e' il fattore di pulsazione (>1 = piu' grande per l'aura).
 // ---------------------------------------------------------------------------
 void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float sPulse) {
+    // Palette 16 colori OBBLIGATORIA (dal prompt originale del gioco):
+    // (12,12,12) (48,40,36) (96,80,72) (160,128,112)
+    // (200,180,160) (120,140,160) (80,120,100) (40,80,60)
+    // (160,40,40) (200,80,80) (220,160,40) (200,200,80)
+    // (120,200,200) (80,160,220) (160,120,200) (240,240,240)
+    // Lo scettro usa ESATTAMENTE questi colori per coerenza visiva con
+    // gli sprite PNG generati con la stessa palette.
+    const sf::Color COL_BLACK    (12, 12, 12);        // outline profondo
+    const sf::Color COL_DARK_WOOD(48, 40, 36);        // legno molto scuro
+    const sf::Color COL_MID_WOOD (96, 80, 72);        // legno medio
+    const sf::Color COL_LIT_WOOD (160, 128, 112);     // legno illuminato
+    const sf::Color COL_PALE     (200, 180, 160);     // venatura chiara
+    const sf::Color COL_GOLD     (220, 160, 40);      // oro (incastonatura)
+    const sf::Color COL_GEM       (80, 160, 220);      // gemma azzurra
+    const sf::Color COL_WHITE    (240, 240, 240);     // nucleo bianco
+    const sf::Color COL_SPARK    (200, 200, 80);      // scintille gialle
+    const sf::Color COL_PURPLE   (160, 120, 200);     // aura magica (variante)
+
     // --- Aura magica pulsante attorno alla gemma ---
-    // Aura piu' grande della vecchia: 22px (era 18) per dare piu' "presenza"
+    // Aura esterna grande: gemma azzurra semitrasparente
     float auraR = 22.f * sPulse;
     sf::CircleShape scepterAura(auraR);
-    scepterAura.setFillColor(sf::Color(120, 180, 255, 55));
+    scepterAura.setFillColor(sf::Color(COL_GEM.r, COL_GEM.g, COL_GEM.b, 55));
     scepterAura.setPosition(sx - auraR, sy - 18.f - auraR);
     target.draw(scepterAura);
-    // Aura interna piu' intensa (bianco-azzurra)
+    // Aura interna piu' intensa (bianca-azzurra)
     float auraR2 = 12.f * sPulse;
     sf::CircleShape scepterAura2(auraR2);
-    scepterAura2.setFillColor(sf::Color(200, 220, 255, 80));
+    scepterAura2.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 80));
     scepterAura2.setPosition(sx - auraR2, sy - 18.f - auraR2);
     target.draw(scepterAura2);
 
-    // --- Bastone lungo (legno grezzo grigio-marrone) ---
-    // Lunghezza 32px (era 18), larghezza 4px (era 3) per renderlo visibile
-    // come un vero bastone e non un fiammifero. Colore grigio cenere (stile
-    // Gandalf il Grigio) con sfumature marroni per dare texture di legno.
-    // Strato base: legno scuro
+    // --- Bastone lungo (legno grezzo) ---
+    // 3 strati per texture legno: base medio, venatura chiara, ombra scura.
+    // Tutti i colori sono della palette 16 colori.
+    // Strato base: legno medio (96,80,72)
     sf::RectangleShape staffBase(sf::Vector2f(4.f, 32.f));
-    staffBase.setFillColor(sf::Color(80, 70, 55));     // grigio cenere-marrone
+    staffBase.setFillColor(COL_MID_WOOD);
     staffBase.setOutlineThickness(0.5f);
-    staffBase.setOutlineColor(sf::Color(40, 30, 20));
+    staffBase.setOutlineColor(COL_BLACK);
     staffBase.setPosition(sx - 2.f, sy - 4.f);
     target.draw(staffBase);
-    // Strato chiaro (venatura del legno)
+    // Strato chiaro (venatura del legno) - 160,128,112
     sf::RectangleShape staffVein(sf::Vector2f(1.2f, 32.f));
-    staffVein.setFillColor(sf::Color(130, 115, 90));    // legno piu' chiaro
+    staffVein.setFillColor(COL_LIT_WOOD);
     staffVein.setPosition(sx - 1.5f, sy - 4.f);
     target.draw(staffVein);
-    // Strato scuro (ombra venatura)
+    // Strato scuro (ombra venatura) - 48,40,36
     sf::RectangleShape staffShade(sf::Vector2f(0.8f, 32.f));
-    staffShade.setFillColor(sf::Color(50, 40, 30));
+    staffShade.setFillColor(COL_DARK_WOOD);
     staffShade.setPosition(sx + 0.8f, sy - 4.f);
     target.draw(staffShade);
 
@@ -1810,12 +1944,12 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     for (int n = 0; n < 3; n++) {
         float ny = sy - 2.f + n * 11.f;
         sf::CircleShape knot(1.2f);
-        knot.setFillColor(sf::Color(40, 30, 20));
+        knot.setFillColor(COL_DARK_WOOD);
         knot.setPosition(sx - 1.2f, ny);
         target.draw(knot);
-        // Highlight del nodo (effetto 3D)
+        // Highlight del nodo (effetto 3D) - legno illuminato
         sf::CircleShape knotHigh(0.5f);
-        knotHigh.setFillColor(sf::Color(110, 95, 75));
+        knotHigh.setFillColor(COL_PALE);
         knotHigh.setPosition(sx - 0.8f, ny - 0.3f);
         target.draw(knotHigh);
     }
@@ -1824,16 +1958,15 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     // 4 raggi dorati che partono dalla cima del bastone verso la gemma,
     // simulando le "rifle" metalliche che tengono il cristallo (come nel
     // bastone di Gandalf nei film di Peter Jackson).
-    sf::Color goldColor(200, 160, 50);
     for (int i = 0; i < 4; i++) {
         float angle = i * (M_PI / 2.f) + (M_PI / 4.f);  // 45, 135, 225, 315°
         // Posizione di partenza: cima del bastone (sx, sy-4)
         // Posizione di arrivo: lati della gemma (sx+/-5, sy-18+/-5)
         // Disegna il raggio come piccolo rettangolo inclinato
         sf::RectangleShape prong(sf::Vector2f(1.2f, 16.f));
-        prong.setFillColor(goldColor);
+        prong.setFillColor(COL_GOLD);
         prong.setOutlineThickness(0.3f);
-        prong.setOutlineColor(sf::Color(140, 100, 30));
+        prong.setOutlineColor(COL_DARK_WOOD);
         prong.setPosition(sx - 0.6f, (sy - 4.f) - 16.f);
         float rotDeg = (angle - M_PI / 2.f) * 180.f / M_PI;
         prong.rotate(rotDeg);
@@ -1844,20 +1977,20 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     // Un anello dorato alla base della gemma (dove il cristallo si inserisce
     // nel bastone). Da' il senso di "gemma incastonata" come negli anelli.
     sf::CircleShape gemBase(5.5f);
-    gemBase.setFillColor(sf::Color(180, 140, 40));  // oro scuro
+    gemBase.setFillColor(COL_GOLD);
     gemBase.setOutlineThickness(1.f);
-    gemBase.setOutlineColor(sf::Color(120, 80, 20));
+    gemBase.setOutlineColor(COL_DARK_WOOD);
     gemBase.setPosition(sx - 5.5f, sy - 18.f - 5.5f);
     target.draw(gemBase);
 
     // --- Gemma cristallina luminosa (centro del bastone di Gandalf) ---
     // Gemma grande (6px di raggio, era 4) per renderla visibile e "magica".
-    // Colore bianco-azzurro brillante (luce magica di Gandalf).
+    // Colore gemma azzurra della palette (80,160,220).
     float gemR = 6.f * sPulse;
     sf::CircleShape gem(gemR);
-    gem.setFillColor(sf::Color(180, 220, 255));     // azzurro chiaro
+    gem.setFillColor(COL_GEM);
     gem.setOutlineThickness(1.2f);
-    gem.setOutlineColor(sf::Color(220, 180, 60));   // outline oro
+    gem.setOutlineColor(COL_GOLD);
     gem.setPosition(sx - gemR, sy - 18.f - gemR);
     target.draw(gem);
 
@@ -1866,22 +1999,22 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     // come la gemma di Gandalf che brilla nel buio.
     float coreR = 2.5f * sPulse;
     sf::CircleShape gemCore(coreR);
-    gemCore.setFillColor(sf::Color(255, 255, 255));
+    gemCore.setFillColor(COL_WHITE);
     gemCore.setPosition(sx - coreR, sy - 18.f - coreR);
     target.draw(gemCore);
     // Riflesso "specchiato" (piccolo puntino bianco in alto a sinistra)
     sf::CircleShape gemSpec(0.8f);
-    gemSpec.setFillColor(sf::Color(255, 255, 255, 220));
+    gemSpec.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 220));
     gemSpec.setPosition(sx - 2.f, sy - 18.f - 3.f);
     target.draw(gemSpec);
 
     // --- Raggi di luce dalla gemma (4 raggi verso l'esterno) ---
-    // Simula la luce magica che emana dal cristallo.
+    // Simula la luce magica che emana dal cristallo. Colore bianco-azzurro.
     for (int i = 0; i < 4; i++) {
         float angle = i * (M_PI / 2.f) + sPulse * 0.3f;  // rotazione lenta
         float rayLen = 10.f * sPulse;
         sf::RectangleShape ray(sf::Vector2f(1.f, rayLen));
-        ray.setFillColor(sf::Color(220, 240, 255, 120));
+        ray.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 120));
         ray.setOrigin(0.5f, rayLen);
         ray.setPosition(sx, sy - 18.f);
         ray.setRotation(angle * 180.f / M_PI - 90.f);
@@ -1893,35 +2026,257 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     // Posizione: parte bassa del bastone (sy + 18.f).
     // 1. Anello metallico superiore (oro)
     sf::RectangleShape gripTop(sf::Vector2f(6.f, 1.5f));
-    gripTop.setFillColor(sf::Color(200, 160, 50));
+    gripTop.setFillColor(COL_GOLD);
     gripTop.setOutlineThickness(0.4f);
-    gripTop.setOutlineColor(sf::Color(120, 80, 20));
+    gripTop.setOutlineColor(COL_DARK_WOOD);
     gripTop.setPosition(sx - 3.f, sy + 16.f);
     target.draw(gripTop);
-    // 2. Cuoio avvolto (3 strisce diagonali)
+    // 2. Cuoio avvolto (3 strisce) - legno scuro
     for (int i = 0; i < 3; i++) {
         sf::RectangleShape leather(sf::Vector2f(5.5f, 1.5f));
-        leather.setFillColor(sf::Color(60, 40, 20));    // cuoio scuro
+        leather.setFillColor(COL_DARK_WOOD);
         leather.setOutlineThickness(0.2f);
-        leather.setOutlineColor(sf::Color(30, 20, 10));
+        leather.setOutlineColor(COL_BLACK);
         leather.setPosition(sx - 2.75f, sy + 18.f + i * 1.8f);
         target.draw(leather);
     }
     // 3. Anello metallico inferiore (oro)
     sf::RectangleShape gripBot(sf::Vector2f(6.f, 1.5f));
-    gripBot.setFillColor(sf::Color(200, 160, 50));
+    gripBot.setFillColor(COL_GOLD);
     gripBot.setOutlineThickness(0.4f);
-    gripBot.setOutlineColor(sf::Color(120, 80, 20));
+    gripBot.setOutlineColor(COL_DARK_WOOD);
     gripBot.setPosition(sx - 3.f, sy + 24.f);
     target.draw(gripBot);
 
     // --- Ombra del bastone sul pavimento ---
     // Da' profondita' e ancoraggio visivo al bastone.
     sf::CircleShape shadow(4.f);
-    shadow.setFillColor(sf::Color(0, 0, 0, 80));
+    shadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, 80));
     shadow.setScale(1.5f, 0.5f);
     shadow.setPosition(sx - 4.f, sy + 28.f);
     target.draw(shadow);
+}
+
+// ---------------------------------------------------------------------------
+// generateLightningPath: genera i punti zigzag di un fulmine che parte da
+// startPos (alto) e arriva a endPos (punto di impatto, basso).
+//
+// Il fulmine e' composto da `numSegs` segmenti. Tra un segmento e l'altro
+// c'e' un'oscillazione casuale (jitter) per dare l'effetto "saetta zigzag".
+// I punti sono pre-calcolati una tantum e memorizzati in `zigzagPoints`
+// perche' il rendering sia stabile (non fluttua ad ogni frame).
+//
+// Il primo punto e' startPos, l'ultimo e' endPos. Quindi numSegs segmenti
+// corrispondono a numSegs+1 punti.
+// ---------------------------------------------------------------------------
+std::vector<sf::Vector2f> Game::generateLightningPath(sf::Vector2f startPos,
+                                                      sf::Vector2f endPos,
+                                                      int numSegs, float jitter) {
+    std::vector<sf::Vector2f> points;
+    points.push_back(startPos);
+    float dx = endPos.x - startPos.x;
+    float dy = endPos.y - startPos.y;
+    for (int i = 1; i < numSegs; i++) {
+        float t = (float)i / (float)numSegs;
+        // Posizione interpolata linearmente tra start ed end
+        float px = startPos.x + dx * t;
+        float py = startPos.y + dy * t;
+        // Aggiungi jitter perpendicolare alla direzione principale
+        // Per un fulmine prevalentemente verticale, il jitter e' su X.
+        // Per un fulmine diagonale, il jitter e' perpendicolare alla direzione.
+        float dirLen = sqrtf(dx * dx + dy * dy);
+        if (dirLen > 0.001f) {
+            // Vettore perpendicolare: (-dy/dirLen, dx/dirLen)
+            float perpX = -dy / dirLen;
+            float perpY =  dx / dirLen;
+            // Jitter casuale: ridotto agli estremi (inizio e fine) per
+            // mantenere il fulmine ancorato a start/end
+            float edgeFade = sinf(t * (float)M_PI);  // 0 agli estremi, 1 al centro
+            float jit = ((rand() % 200) - 100) / 100.f * jitter * edgeFade;
+            px += perpX * jit;
+            py += perpY * jit;
+        }
+        points.push_back(sf::Vector2f(px, py));
+    }
+    points.push_back(endPos);
+    return points;
+}
+
+// ---------------------------------------------------------------------------
+// createFullScreenLightning: crea un fulmine che ATTRAVERSA TUTTO lo schermo.
+//
+// Sceglie casualmente 3 modalita' di partenza:
+//   * 0 (verticale): parte dal bordo superiore sopra al punto di impatto
+//   * 1 (diagonale sx): parte dall'angolo in alto a sinistra
+//   * 2 (diagonale dx): parte dall'angolo in alto a destra
+//
+// In tutti i casi, il fulmine arriva al `endPoint` (dove fa danno).
+// Pre-calcola zigzagPoints con 18 segmenti e jitter 35px per zigzag visibile.
+//
+// 5 fulmini totali vengono generati dallo scettro (scepter.lightningsLeft=5),
+// ognuno a 3 secondi di distanza. Ogni fulmine attraversa tutto lo schermo
+// e puo' colpire nemici in qualsiasi posizione.
+// ---------------------------------------------------------------------------
+Lightning Game::createFullScreenLightning(sf::Vector2f endPoint) {
+    Lightning lt;
+    lt.pos = endPoint;
+    lt.life = 30;        // ~0.5s a 60 FPS
+    lt.maxLife = 30;
+    lt.hitEnemy = false;
+    lt.hitBoss = false;
+
+    // Scegli modalita' di partenza: 0=verticale, 1=diag sx, 2=diag dx
+    int mode = rand() % 3;
+    if (mode == 0) {
+        // Verticale: parte dal bordo superiore sopra al punto di impatto
+        lt.startPos = sf::Vector2f(endPoint.x, (float)UI_HEIGHT);
+    } else if (mode == 1) {
+        // Diagonale sinistra: parte dall'angolo in alto a sinistra
+        lt.startPos = sf::Vector2f(20.f, (float)UI_HEIGHT);
+    } else {
+        // Diagonale destra: parte dall'angolo in alto a destra
+        lt.startPos = sf::Vector2f((float)(WINDOW_WIDTH - 20), (float)UI_HEIGHT);
+    }
+
+    // Genera zigzag con 18 segmenti e jitter 35px
+    lt.zigzagPoints = generateLightningPath(lt.startPos, endPoint, 18, 35.f);
+    return lt;
+}
+
+// ---------------------------------------------------------------------------
+// drawLightning: disegna un fulmine con path zigzag gia' calcolato.
+//
+// Elementi renderizzati (in ordine dal piu' lontano al piu' vicino):
+//   1. Halo esterno grande (60px) - bagliore attorno al punto di impatto
+//   2. Glow medio (30px) - bagliore elettrico
+//   3. Saetta zigzag: 18 segmenti che attraversano tutto lo schermo,
+//      larghezza 4px con outline bianca, colore azzurro-bianco
+//   4. Glow attorno ad ogni segmento (effetto "elettrico")
+//   5. Flash centrale (14px) al punto di impatto
+//   6. 3 ramificazioni laterali casuali
+//   7. 8 scintille radiali attorno al punto di impatto
+//   8. Onda d'urto circolare (shockwave) che si espande
+//
+// Tutti gli elementi sfumano con alpha proporzionale a life/maxLife.
+// ---------------------------------------------------------------------------
+void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
+    float lx = lt.pos.x;
+    float ly = lt.pos.y;
+    float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
+
+    // Palette 16 colori OBBLIGATORIA (dal prompt originale del gioco):
+    //  (12,12,12) (48,40,36) (96,80,72) (160,128,112)
+    //  (200,180,160) (120,140,160) (80,120,100) (40,80,60)
+    //  (160,40,40) (200,80,80) (220,160,40) (200,200,80)
+    //  (120,200,200) (80,160,220) (160,120,200) (240,240,240)
+    // Il fulmine usa: gemma azzurra (80,160,220) per il bagliore,
+    // bianco (240,240,240) per la saetta e il flash, giallo (200,200,80)
+    // per le scintille. Tutti colori della palette.
+    const sf::Color COL_GEM_BLUE(80, 160, 220);   // halo/glow
+    const sf::Color COL_WHITE    (240, 240, 240); // saetta + flash
+    const sf::Color COL_YELLOW   (200, 200, 80);  // scintille
+
+    // --- 1. Halo esterno (bagliore grande attorno al punto di impatto) ---
+    float haloR = 60.f;
+    sf::CircleShape halo(haloR);
+    halo.setFillColor(sf::Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b,
+                                (sf::Uint8)(alpha * 0.18f)));
+    halo.setPosition(lx - haloR, ly - haloR);
+    target.draw(halo);
+
+    // --- 2. Glow medio ---
+    sf::CircleShape glow(30.f);
+    glow.setFillColor(sf::Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b,
+                                (sf::Uint8)(alpha * 0.45f)));
+    glow.setPosition(lx - 30.f, ly - 30.f);
+    target.draw(glow);
+
+    // --- 3. Saetta zigzag (attraversa tutto lo schermo) ---
+    // Disegna ogni segmento del path zigzag come rettangolo inclinato.
+    // Larghezza 4px con outline bianca per massima visibilita'.
+    const std::vector<sf::Vector2f>& pts = lt.zigzagPoints;
+    for (size_t i = 0; i + 1 < pts.size(); i++) {
+        sf::Vector2f p0 = pts[i];
+        sf::Vector2f p1 = pts[i + 1];
+        float segDx = p1.x - p0.x;
+        float segDy = p1.y - p0.y;
+        float segLen = sqrtf(segDx * segDx + segDy * segDy);
+        if (segLen < 0.001f) continue;
+        sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
+        bolt.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                    (sf::Uint8)alpha));
+        bolt.setOutlineThickness(0.5f);
+        bolt.setOutlineColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                        (sf::Uint8)alpha));
+        bolt.setOrigin(2.f, 0.f);
+        bolt.setPosition(p0.x, p0.y);
+        float angle = atan2f(segDx, segDy) * 180.f / (float)M_PI;
+        bolt.rotate(angle);
+        target.draw(bolt);
+        // --- 4. Glow attorno al segmento ---
+        sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
+        boltGlow.setFillColor(sf::Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g,
+                                         COL_GEM_BLUE.b,
+                                         (sf::Uint8)(alpha * 0.25f)));
+        boltGlow.setOrigin(4.f, 0.f);
+        boltGlow.setPosition(p0.x, p0.y);
+        boltGlow.rotate(angle);
+        target.draw(boltGlow);
+    }
+
+    // --- 5. Flash centrale al punto di impatto ---
+    sf::CircleShape flash(14.f);
+    flash.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                  (sf::Uint8)alpha));
+    flash.setPosition(lx - 14.f, ly - 14.f);
+    target.draw(flash);
+
+    // --- 6. Ramificazioni laterali (3 rami casuali lungo il path) ---
+    for (int b = 0; b < 3; b++) {
+        if (pts.size() < 4) break;
+        int segIdx = 1 + (rand() % (int)(pts.size() - 2));
+        sf::Vector2f bCur = pts[segIdx];
+        // 4 segmenti brevi per ogni ramo
+        for (int s = 0; s < 4; s++) {
+            float bx = bCur.x + ((rand() % 17) - 8);
+            float by = bCur.y + 4.f + (rand() % 6);
+            float blen = sqrtf((bx - bCur.x) * (bx - bCur.x) +
+                               (by - bCur.y) * (by - bCur.y));
+            sf::RectangleShape branch(sf::Vector2f(2.f, blen));
+            branch.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g,
+                                          COL_WHITE.b,
+                                          (sf::Uint8)(alpha * 0.7f)));
+            branch.setOrigin(1.f, 0.f);
+            branch.setPosition(bCur.x, bCur.y);
+            float bang = atan2f(bx - bCur.x, by - bCur.y) * 180.f / (float)M_PI;
+            branch.rotate(bang);
+            target.draw(branch);
+            bCur = sf::Vector2f(bx, by);
+        }
+    }
+
+    // --- 7. Scintille radiali attorno al punto di impatto ---
+    for (int i = 0; i < 8; i++) {
+        float a = (i / 8.f) * 2.f * (float)M_PI;
+        float r = 12.f + (rand() % 10);
+        sf::CircleShape spark(1.8f);
+        spark.setFillColor(sf::Color(COL_YELLOW.r, COL_YELLOW.g,
+                                     COL_YELLOW.b,
+                                     (sf::Uint8)(alpha * 0.85f)));
+        spark.setPosition(lx + cos(a) * r - 1.8f,
+                          ly + sin(a) * r - 1.8f);
+        target.draw(spark);
+    }
+
+    // --- 8. Onda d'urto circolare (shockwave che si espande) ---
+    float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
+    sf::CircleShape shock(shockR);
+    shock.setFillColor(sf::Color(0, 0, 0, 0));
+    shock.setOutlineThickness(2.f);
+    shock.setOutlineColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                     (sf::Uint8)(alpha * 0.5f)));
+    shock.setPosition(lx - shockR, ly - shockR);
+    target.draw(shock);
 }
 
 // ---------------------------------------------------------------------------
@@ -2346,143 +2701,102 @@ void Game::render() {
         // -Bagliore esterno semitrasparente
         // -Flash bianco centrale
         for (const auto& lt : lightnings) {
-            float lx = lt.pos.x;
-            float ly = lt.pos.y;
-            float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
-            // --- Fulmine che ATTRAVERSA lo schermo verticalmente ---
-            // Il fulmine scende dall'alto dello schermo fino al punto di
-            // impatto (ly), con 14 segmenti alti ~21px ciascuno (altezza
-            // totale ~300px). Molto piu' imponente del vecchio fulmine 36px
-            // che era quasi invisibile.
-            float boltTop = std::max((float)UI_HEIGHT, ly - 300.f);
-            float boltH = ly - boltTop;
-            int numSegs = 14;
-            float segH = boltH / numSegs;
-            // --- Bagliore elettrico esterno (halo grande) ---
-            float haloR = 60.f;
-            sf::CircleShape halo(haloR);
-            halo.setFillColor(sf::Color(150, 180, 255, (sf::Uint8)(alpha * 0.18f)));
-            halo.setPosition(lx - haloR, ly - haloR);
-            window.draw(halo);
-            // --- Bagliore elettrico medio ---
-            sf::CircleShape glow(30.f);
-            glow.setFillColor(sf::Color(180, 220, 255, (sf::Uint8)(alpha * 0.45f)));
-            glow.setPosition(lx - 30.f, ly - 30.f);
-            window.draw(glow);
-            // --- Flash bianco centrale (punto di impatto) ---
-            sf::CircleShape flash(14.f);
-            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-            flash.setPosition(lx - 14.f, ly - 14.f);
-            window.draw(flash);
-            // --- Saetta verticale a zigzag (14 segmenti) ---
-            // Larghezza 4px (era 2) per renderla ben visibile.
-            float xCur = lx;
-            for (int i = 0; i < numSegs; i++) {
-                float y0 = boltTop + i * segH;
-                float y1 = y0 + segH;
-                float xOff = ((rand() % 17) - 8);
-                float xNext = xCur + xOff;
-                if (i == numSegs - 1) xNext = lx;
-                float dx = xNext - xCur;
-                float dy = y1 - y0;
-                float segLen = sqrtf(dx * dx + dy * dy);
-                sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
-                bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
-                bolt.setOutlineThickness(0.5f);
-                bolt.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-                bolt.setOrigin(2.f, 0.f);
-                bolt.setPosition(xCur, y0);
-                float angle = atan2f(dx, dy) * 180.f / (float)M_PI;
-                bolt.rotate(angle);
-                window.draw(bolt);
-                // Glow attorno al segmento
-                sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
-                boltGlow.setFillColor(sf::Color(150, 200, 255, (sf::Uint8)(alpha * 0.25f)));
-                boltGlow.setOrigin(4.f, 0.f);
-                boltGlow.setPosition(xCur, y0);
-                boltGlow.rotate(angle);
-                window.draw(boltGlow);
-                xCur = xNext;
-            }
-            // --- Ramificazioni laterali (3 rami casuali) ---
-            for (int b = 0; b < 3; b++) {
-                float branchY = boltTop + (rand() % (int)boltH);
-                float bCurX = lx, bCurY = branchY;
-                for (int s = 0; s < 4; s++) {
-                    float bx = bCurX + ((rand() % 9) - 4);
-                    float by = bCurY + 4.f + (rand() % 4);
-                    float blen = sqrtf((bx - bCurX) * (bx - bCurX) +
-                                       (by - bCurY) * (by - bCurY));
-                    sf::RectangleShape branch(sf::Vector2f(2.f, blen));
-                    branch.setFillColor(sf::Color(220, 240, 255,
-                        (sf::Uint8)(alpha * 0.7f)));
-                    branch.setOrigin(1.f, 0.f);
-                    branch.setPosition(bCurX, bCurY);
-                    float bang = atan2f(bx - bCurX, by - bCurY) * 180.f / (float)M_PI;
-                    branch.rotate(bang);
-                    window.draw(branch);
-                    bCurX = bx; bCurY = by;
-                }
-            }
-            // --- Scintille radiali attorno al punto di impatto ---
-            for (int i = 0; i < 8; i++) {
-                float a = (i / 8.f) * 2.f * (float)M_PI;
-                float r = 12.f + (rand() % 10);
-                sf::CircleShape spark(1.8f);
-                spark.setFillColor(sf::Color(255, 255, 200,
-                    (sf::Uint8)(alpha * 0.85f)));
-                spark.setPosition(lx + cos(a) * r - 1.8f,
-                                  ly + sin(a) * r - 1.8f);
-                window.draw(spark);
-            }
-            // --- Onda d'urto circolare (shockwave) ---
-            float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
-            sf::CircleShape shock(shockR);
-            shock.setFillColor(sf::Color(0, 0, 0, 0));
-            shock.setOutlineThickness(2.f);
-            shock.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)(alpha * 0.5f)));
-            shock.setPosition(lx - shockR, ly - shockR);
-            window.draw(shock);
+            drawLightning(window, lt);
         }
 
         // --- Rendering del calice d'oro (pozione magica) ---
+        // Calice dettagliato stile fantasy: coppa d'oro lavorata con gemma
+        // rossa incastonata, stelo decorato, base larga. Colori della palette
+        // 16 colori OBBLIGATORIA (220,160,40)=oro, (160,40,40)=rosso scuro,
+        // (200,80,80)=rosso chiaro, (240,240,240)=riflesso bianco, (48,40,36)=ombra.
         if (chalice.active) {
             float cx = chalice.pos.x;
             float cy = chalice.pos.y + chalice.bobOffset;
             float pulse = sin(chalice.pulse * 4.f) * 0.15f + 1.f;
+            // Colori palette 16
+            const sf::Color COL_GOLD   (220, 160, 40);   // oro principale
+            const sf::Color COL_RED_D  (160, 40, 40);    // rosso scuro (gemma)
+            const sf::Color COL_RED_L  (200, 80, 80);    // rosso chiaro (highlight gemma)
+            const sf::Color COL_WHITE  (240, 240, 240);   // riflesso
+            const sf::Color COL_DARK   (48, 40, 36);      // outline/ombra
             // Aura dorata pulsante
             float auraR = 20.f * pulse;
             sf::CircleShape chaliceAura(auraR);
-            chaliceAura.setFillColor(sf::Color(255, 215, 0, 40));
+            chaliceAura.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 50));
             chaliceAura.setPosition(cx - auraR, cy - auraR);
             window.draw(chaliceAura);
-            // Coppa d'oro
-            sf::RectangleShape cup(sf::Vector2f(12.f, 10.f));
-            cup.setFillColor(sf::Color(255, 215, 0));
-            cup.setOutlineThickness(1.f); cup.setOutlineColor(sf::Color(180, 130, 30));
-            cup.setPosition(cx - 6.f, cy - 4.f);
+            // Coppa d'oro (forma trapezoidale con ConvexShape per realismo)
+            sf::ConvexShape cup;
+            cup.setPointCount(6);
+            cup.setPoint(0, sf::Vector2f(cx - 6.f, cy - 4.f));  // alto-sx
+            cup.setPoint(1, sf::Vector2f(cx + 6.f, cy - 4.f));  // alto-dx
+            cup.setPoint(2, sf::Vector2f(cx + 5.f, cy + 2.f));  // basso-dx
+            cup.setPoint(3, sf::Vector2f(cx + 3.f, cy + 5.f));  // medio-dx
+            cup.setPoint(4, sf::Vector2f(cx - 3.f, cy + 5.f));  // medio-sx
+            cup.setPoint(5, sf::Vector2f(cx - 5.f, cy + 2.f));  // basso-sx
+            cup.setFillColor(COL_GOLD);
+            cup.setOutlineThickness(1.f);
+            cup.setOutlineColor(COL_DARK);
             window.draw(cup);
-            // Stelo
-            sf::RectangleShape stem(sf::Vector2f(4.f, 5.f));
-            stem.setFillColor(sf::Color(200, 160, 40));
-            stem.setPosition(cx - 2.f, cy + 5.f);
-            window.draw(stem);
-            // Base
-            sf::RectangleShape base(sf::Vector2f(14.f, 3.f));
-            base.setFillColor(sf::Color(255, 215, 0));
-            base.setOutlineThickness(0.8f); base.setOutlineColor(sf::Color(180, 130, 30));
-            base.setPosition(cx - 7.f, cy + 9.f);
-            window.draw(base);
-            // Gemma rossa centrale
-            sf::CircleShape gem(2.f);
-            gem.setFillColor(sf::Color(220, 30, 30));
-            gem.setPosition(cx - 2.f, cy - 1.f);
+            // Bordo superiore della coppa (ellisse per dare "profondita'")
+            sf::CircleShape rim(6.f);
+            rim.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 200));
+            rim.setOutlineThickness(0.8f);
+            rim.setOutlineColor(COL_DARK);
+            rim.setScale(1.f, 0.35f);
+            rim.setPosition(cx - 6.f, cy - 6.f);
+            window.draw(rim);
+            // Gemma rossa centrale (incastonata)
+            float gemR = 2.5f * pulse;
+            sf::CircleShape gem(gemR);
+            gem.setFillColor(COL_RED_D);
+            gem.setOutlineThickness(0.5f);
+            gem.setOutlineColor(COL_DARK);
+            gem.setPosition(cx - gemR, cy - 2.f);
             window.draw(gem);
-            // Riflesso
-            sf::RectangleShape ref(sf::Vector2f(3.f, 1.f));
-            ref.setFillColor(sf::Color(255, 245, 150));
-            ref.setPosition(cx - 5.f, cy - 3.f);
+            // Highlight gemma (riflesso rosso chiaro)
+            sf::CircleShape gemHigh(0.8f);
+            gemHigh.setFillColor(COL_RED_L);
+            gemHigh.setPosition(cx - 1.5f, cy - 3.f);
+            window.draw(gemHigh);
+            // Stelo decorato (con anello centrale)
+            sf::RectangleShape stem(sf::Vector2f(3.f, 6.f));
+            stem.setFillColor(COL_GOLD);
+            stem.setOutlineThickness(0.4f);
+            stem.setOutlineColor(COL_DARK);
+            stem.setPosition(cx - 1.5f, cy + 5.f);
+            window.draw(stem);
+            // Anello decorativo stelo (nodo centrale)
+            sf::CircleShape stemNode(1.5f);
+            stemNode.setFillColor(COL_GOLD);
+            stemNode.setOutlineThickness(0.4f);
+            stemNode.setOutlineColor(COL_DARK);
+            stemNode.setPosition(cx - 1.5f, cy + 7.f);
+            window.draw(stemNode);
+            // Base larga (rettangolo + ellisse per profondita')
+            sf::RectangleShape base(sf::Vector2f(14.f, 2.5f));
+            base.setFillColor(COL_GOLD);
+            base.setOutlineThickness(0.8f);
+            base.setOutlineColor(COL_DARK);
+            base.setPosition(cx - 7.f, cy + 11.f);
+            window.draw(base);
+            // Base ellisse inferiore (ombra)
+            sf::CircleShape baseShadow(7.f);
+            baseShadow.setFillColor(sf::Color(COL_DARK.r, COL_DARK.g, COL_DARK.b, 150));
+            baseShadow.setScale(1.f, 0.3f);
+            baseShadow.setPosition(cx - 7.f, cy + 12.f);
+            window.draw(baseShadow);
+            // Riflesso luce sulla coppa (linea bianca verticale)
+            sf::RectangleShape ref(sf::Vector2f(1.f, 4.f));
+            ref.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 200));
+            ref.setPosition(cx - 4.f, cy - 2.f);
             window.draw(ref);
+            // Ombra del calice sul pavimento
+            sf::CircleShape shadow(6.f);
+            shadow.setFillColor(sf::Color(COL_DARK.r, COL_DARK.g, COL_DARK.b, 80));
+            shadow.setScale(1.5f, 0.4f);
+            shadow.setPosition(cx - 6.f, cy + 14.f);
+            window.draw(shadow);
         }
 
         // --- Aura di invincibilità attorno al player1 ---
@@ -4690,103 +5004,7 @@ void Game::render() {
 
         // --- Rendering dei fulmini (nella stanza del boss) ---
         for (const auto& lt : lightnings) {
-            float lx = lt.pos.x;
-            float ly = lt.pos.y;
-            float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
-            // --- Fulmine che ATTRAVERSA lo schermo verticalmente ---
-            // Il fulmine scende dall'alto dello schermo fino al punto di
-            // impatto (ly), con 14 segmenti alti ~21px ciascuno (altezza
-            // totale ~300px). Molto piu' imponente del vecchio fulmine 36px
-            // che era quasi invisibile.
-            float boltTop = std::max((float)UI_HEIGHT, ly - 300.f);
-            float boltH = ly - boltTop;
-            int numSegs = 14;
-            float segH = boltH / numSegs;
-            // --- Bagliore elettrico esterno (halo grande) ---
-            float haloR = 60.f;
-            sf::CircleShape halo(haloR);
-            halo.setFillColor(sf::Color(150, 180, 255, (sf::Uint8)(alpha * 0.18f)));
-            halo.setPosition(lx - haloR, ly - haloR);
-            window.draw(halo);
-            // --- Bagliore elettrico medio ---
-            sf::CircleShape glow(30.f);
-            glow.setFillColor(sf::Color(180, 220, 255, (sf::Uint8)(alpha * 0.45f)));
-            glow.setPosition(lx - 30.f, ly - 30.f);
-            window.draw(glow);
-            // --- Flash bianco centrale (punto di impatto) ---
-            sf::CircleShape flash(14.f);
-            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-            flash.setPosition(lx - 14.f, ly - 14.f);
-            window.draw(flash);
-            // --- Saetta verticale a zigzag (14 segmenti) ---
-            // Larghezza 4px (era 2) per renderla ben visibile.
-            float xCur = lx;
-            for (int i = 0; i < numSegs; i++) {
-                float y0 = boltTop + i * segH;
-                float y1 = y0 + segH;
-                float xOff = ((rand() % 17) - 8);
-                float xNext = xCur + xOff;
-                if (i == numSegs - 1) xNext = lx;
-                float dx = xNext - xCur;
-                float dy = y1 - y0;
-                float segLen = sqrtf(dx * dx + dy * dy);
-                sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
-                bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
-                bolt.setOutlineThickness(0.5f);
-                bolt.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-                bolt.setOrigin(2.f, 0.f);
-                bolt.setPosition(xCur, y0);
-                float angle = atan2f(dx, dy) * 180.f / (float)M_PI;
-                bolt.rotate(angle);
-                window.draw(bolt);
-                // Glow attorno al segmento
-                sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
-                boltGlow.setFillColor(sf::Color(150, 200, 255, (sf::Uint8)(alpha * 0.25f)));
-                boltGlow.setOrigin(4.f, 0.f);
-                boltGlow.setPosition(xCur, y0);
-                boltGlow.rotate(angle);
-                window.draw(boltGlow);
-                xCur = xNext;
-            }
-            // --- Ramificazioni laterali (3 rami casuali) ---
-            for (int b = 0; b < 3; b++) {
-                float branchY = boltTop + (rand() % (int)boltH);
-                float bCurX = lx, bCurY = branchY;
-                for (int s = 0; s < 4; s++) {
-                    float bx = bCurX + ((rand() % 9) - 4);
-                    float by = bCurY + 4.f + (rand() % 4);
-                    float blen = sqrtf((bx - bCurX) * (bx - bCurX) +
-                                       (by - bCurY) * (by - bCurY));
-                    sf::RectangleShape branch(sf::Vector2f(2.f, blen));
-                    branch.setFillColor(sf::Color(220, 240, 255,
-                        (sf::Uint8)(alpha * 0.7f)));
-                    branch.setOrigin(1.f, 0.f);
-                    branch.setPosition(bCurX, bCurY);
-                    float bang = atan2f(bx - bCurX, by - bCurY) * 180.f / (float)M_PI;
-                    branch.rotate(bang);
-                    window.draw(branch);
-                    bCurX = bx; bCurY = by;
-                }
-            }
-            // --- Scintille radiali attorno al punto di impatto ---
-            for (int i = 0; i < 8; i++) {
-                float a = (i / 8.f) * 2.f * (float)M_PI;
-                float r = 12.f + (rand() % 10);
-                sf::CircleShape spark(1.8f);
-                spark.setFillColor(sf::Color(255, 255, 200,
-                    (sf::Uint8)(alpha * 0.85f)));
-                spark.setPosition(lx + cos(a) * r - 1.8f,
-                                  ly + sin(a) * r - 1.8f);
-                window.draw(spark);
-            }
-            // --- Onda d'urto circolare (shockwave) ---
-            float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
-            sf::CircleShape shock(shockR);
-            shock.setFillColor(sf::Color(0, 0, 0, 0));
-            shock.setOutlineThickness(2.f);
-            shock.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)(alpha * 0.5f)));
-            shock.setPosition(lx - shockR, ly - shockR);
-            window.draw(shock);
+            drawLightning(window, lt);
         }
         player.render(window);
         if (numPlayers == 2) player2.render(window);
@@ -5309,75 +5527,7 @@ void Game::render() {
 
         // --- Rendering fulmini nella stanza del boss (effetto traversante) ---
         for (const auto& lt : lightnings) {
-            float lx = lt.pos.x;
-            float ly = lt.pos.y;
-            float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
-            // Fulmine che attraversa lo schermo verticalmente (dall'alto a ly)
-            float boltTop = std::max((float)UI_HEIGHT, ly - 300.f);
-            float boltH = ly - boltTop;
-            int numSegs = 14;
-            float segH = boltH / numSegs;
-            // Halo esterno
-            float haloR = 60.f;
-            sf::CircleShape halo(haloR);
-            halo.setFillColor(sf::Color(150, 180, 255, (sf::Uint8)(alpha * 0.18f)));
-            halo.setPosition(lx - haloR, ly - haloR);
-            window.draw(halo);
-            // Glow medio
-            sf::CircleShape glow(30.f);
-            glow.setFillColor(sf::Color(180, 220, 255, (sf::Uint8)(alpha * 0.45f)));
-            glow.setPosition(lx - 30.f, ly - 30.f);
-            window.draw(glow);
-            // Flash centrale
-            sf::CircleShape flash(14.f);
-            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-            flash.setPosition(lx - 14.f, ly - 14.f);
-            window.draw(flash);
-            // Saetta verticale a zigzag (14 segmenti)
-            float xCur = lx;
-            for (int i = 0; i < numSegs; i++) {
-                float y0 = boltTop + i * segH;
-                float y1 = y0 + segH;
-                float xOff = ((rand() % 17) - 8);
-                float xNext = xCur + xOff;
-                if (i == numSegs - 1) xNext = lx;
-                float dx = xNext - xCur;
-                float dy = y1 - y0;
-                float segLen = sqrtf(dx * dx + dy * dy);
-                sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
-                bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
-                bolt.setOutlineThickness(0.5f);
-                bolt.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-                bolt.setOrigin(2.f, 0.f);
-                bolt.setPosition(xCur, y0);
-                float angle = atan2f(dx, dy) * 180.f / (float)M_PI;
-                bolt.rotate(angle);
-                window.draw(bolt);
-                sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
-                boltGlow.setFillColor(sf::Color(150, 200, 255, (sf::Uint8)(alpha * 0.25f)));
-                boltGlow.setOrigin(4.f, 0.f);
-                boltGlow.setPosition(xCur, y0);
-                boltGlow.rotate(angle);
-                window.draw(boltGlow);
-                xCur = xNext;
-            }
-            // Scintille radiali
-            for (int i = 0; i < 8; i++) {
-                float a = (i / 8.f) * 2.f * (float)M_PI;
-                float r = 12.f + (rand() % 10);
-                sf::CircleShape spark(1.8f);
-                spark.setFillColor(sf::Color(255, 255, 200, (sf::Uint8)(alpha * 0.85f)));
-                spark.setPosition(lx + cos(a) * r - 1.8f, ly + sin(a) * r - 1.8f);
-                window.draw(spark);
-            }
-            // Onda d'urto circolare (shockwave)
-            float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
-            sf::CircleShape shock(shockR);
-            shock.setFillColor(sf::Color(0, 0, 0, 0));
-            shock.setOutlineThickness(2.f);
-            shock.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)(alpha * 0.5f)));
-            shock.setPosition(lx - shockR, ly - shockR);
-            window.draw(shock);
+            drawLightning(window, lt);
         }
 
         // --- Rendering mina nella stanza del boss ---
@@ -5478,16 +5628,22 @@ void Game::render() {
     }
 
     // --- Overlay flash bianco (effetto lampo fulmine) ---
-    // Quando un fulmine appare, screenFlashTimer viene impostato a 250ms.
+    // Quando un fulmine appare, screenFlashTimer viene impostato a 120ms.
     // Decrementa ad ogni render (~16ms) e disegna un rettangolo bianco
     // semi-trasparente su TUTTO lo schermo con alpha proporzionale al
     // tempo residuo. Vale per STATE_PLAYING e STATE_BOSS.
+    //
+    // NOTA: il flash e' stato reso MOLTO PIU' SOTTILE per non affaticare
+    // gli occhi (l'utente aveva segnalato fastidio). Durata ridotta da
+    // 250ms a 120ms e alpha massimo ridotto da 180 a 80. Il fulmine resta
+    // visibile grazie al suo glow e alle scintille, non serve un flash
+    // bianco cosi' intenso.
     if (screenFlashTimer > 0) {
         if (screenFlashTimer > 16) screenFlashTimer -= 16;
         else screenFlashTimer = 0;
-        // Alpha: parte da 180 e scende a 0 in 250ms
-        float ratio = (float)screenFlashTimer / 250.f;
-        sf::Uint8 flashAlpha = (sf::Uint8)(180.f * ratio);
+        // Alpha: parte da 80 (era 180) e scende a 0 in 120ms (era 250ms)
+        float ratio = (float)screenFlashTimer / 120.f;
+        sf::Uint8 flashAlpha = (sf::Uint8)(80.f * ratio);
         sf::RectangleShape flashOverlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
         flashOverlay.setFillColor(sf::Color(255, 255, 255, flashAlpha));
         flashOverlay.setPosition(0.f, 0.f);
