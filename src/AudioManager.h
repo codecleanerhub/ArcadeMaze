@@ -14,10 +14,18 @@
 //   * Noise -> percussioni (kick/snare/hihat) e effetti
 //
 // Contenuto:
-//   * 16 effetti sonori (SoundType) - chiptune brevi e secchi
-//   * 5 tracce musicali (4 livelli + 1 boss), loop perfetto
-//     - Livelli: drammatici, oscuri, misteriosi, atmosfera dungeon
-//     - Boss: epici, aggressivi, ritmo veloce, battaglia finale
+//   * 25 effetti sonori (SoundType) - chiptune brevi e secchi
+//   * 9 tracce musicali:
+//     - 0..3 = livelli 1..4 (drammatici, oscuri, mood dungeon)
+//     - 4    = boss (epico, aggressivo, 130 BPM)
+//     - 5    = portale magico (mistico, lento)
+//     - 6    = MUSICA EPICA CALICE (fanfara eroica, dorata, maestosa)
+//     - 7    = MUSICA EPICA SCETTRO (mistica, arcana, tensione magica)
+//     - 8    = MUSICA MENU' PRINCIPALE (corale fantasy, drammatica, eterea)
+//   Le ultime 3 tracce sono DISTINTE tra loro e DISTINTE dalle musiche
+//   di gioco: ognuna usa scale, BPM e orchestrazione dedicati.
+//   I jingle epici (calice/scettro) sono riprodotti su un canale SEPARATO
+//   (`epicSound`) cosi' non interrompono la musica di sottofondo.
 // ===========================================================================
 
 #include <SFML/Audio.hpp>
@@ -52,6 +60,16 @@ enum SoundType {
 // Numero totale di SFX (usato per dimensionare i buffer).
 constexpr int SOUND_TYPE_COUNT = 25;
 
+// Indici delle tracce musicali nel buffer (uso simbolico, non enum).
+// 0..3 livelli, 4 boss, 5 portale, 6 calice epica, 7 scettro epica, 8 menu'.
+constexpr int TRACK_LEVEL_BASE   = 0;  // livelli 0..3
+constexpr int TRACK_BOSS         = 4;
+constexpr int TRACK_PORTAL       = 5;
+constexpr int TRACK_EPIC_CHALICE = 6;   // musica epica per pickup calice
+constexpr int TRACK_EPIC_SCEPTER = 7;   // musica epica per pickup scettro
+constexpr int TRACK_MENU         = 8;   // musica menu' principale (diversa)
+constexpr int MUSIC_TRACK_COUNT  = 9;
+
 class AudioManager {
 public:
     AudioManager();
@@ -68,17 +86,34 @@ public:
     // Boss: usa la traccia 4 (piu' aggressiva e veloce).
     void playLevelMusic(int level, bool isBoss);
 
+    // Avvia un jingle epico DEDICATO su un canale SEPARATO (epicSound).
+    // Non interferisce con la musica di gioco di sottofondo (che resta
+    // attiva sul canale `music`). trackIdx = TRACK_EPIC_CHALICE o
+    // TRACK_EPIC_SCEPTER. Il jingle e' pensato per una durata ~5-7 secondi:
+    // si auto-ferma al termine (loop=false).
+    void playEpicMusic(int trackIdx);
+    // Ferma il jingle epico (se in riproduzione).
+    void stopEpicMusic();
+    // Avvia la traccia DEDICATA del menu' principale (corale fantasy).
+    // Sostituisce la musica di gioco quando si e' nel menu'. Loop infinito.
+    // DIVERSA da tutte le musiche di gioco (vedi generateMenuTrack).
+    void playMenuMusic();
     // True se la musica e' in riproduzione.
     bool isMusicPlaying() { return music.getStatus() == sf::Sound::Playing; }
 private:
     // Pool di buffer per effetti sonori.
     std::vector<sf::SoundBuffer> buffers;
-    // Pool di istanze sf::Sound per riproduzione polifonica (20 voci).
+    // Pool di istanze sf::Sound per riproduzione polifonica (30 voci).
     std::vector<sf::Sound> sounds;
 
-    // 6 tracce musicali pre-generate: indici 0..3 = livelli, 4 = boss, 5 = portale.
-    sf::SoundBuffer musicBuffers[6];
-    sf::Sound music;
+    // 9 tracce musicali pre-generate:
+    //   0..3 = livelli, 4 = boss, 5 = portale,
+    //   6 = calice epica, 7 = scettro epica, 8 = menu' principale.
+    sf::SoundBuffer musicBuffers[MUSIC_TRACK_COUNT];
+    sf::Sound music;          // canale musica di gioco (livelli/boss/portale)
+    sf::Sound epicSound;      // canale SEPARATO per jingle epici (calice/scettro)
+    // flag: se true, il jingle epico e' in riproduzione (per evitare restart).
+    bool epicPlaying;
 
     // Trova uno slot audio libero (o il primo se tutti occupati).
     int findFreeSound();
@@ -86,6 +121,10 @@ private:
     void preGenerateSound(SoundType type);
     // Sintetizza una traccia musicale completa nel buffer musicBuffers[idx].
     // idx 0..3 = livello (drammatico/oscura), idx 4 = boss (epico/aggressivo).
+    // idx 5 = portale (mistico, lento).
+    // idx 6 = jingle epico calice (fanfara eroica dorata, maestosa, ~6s).
+    // idx 7 = jingle epico scettro (arcano, magico, tensione, ~7s).
+    // idx 8 = musica menu' principale (corale fantasy drammatica, loop).
     void generateTrack(int trackIdx);
 
     // --- Sintetizzatori di forme d'onda chiptune ---
@@ -97,6 +136,20 @@ private:
     static double sawtoothWave(double phase);
     // Noise (percussioni).
     static double noiseGen();
+
+    // --- Generatori di tracce epiche dedicate (jingle) ---
+    // Fanfara eroica per il pickup del calice d'oro. Maestosa, dorata,
+    // ~6 secondi, accordi maggiori brillanti (Do magg. -> Sol magg.),
+    // orchestrazione a 3 voci (lead pulse + pad saw + basso triangolare).
+    void generateEpicChaliceTrack();
+    // Jingle magico-arcano per il pickup dello scettro. Mistico, teso,
+    // ~7 secondi, accordi sospesi (tritono Do-Fa#), shimmer acuto,
+    // pad sawtooth + arpeggi veloci + basso profondo.
+    void generateEpicScepterTrack();
+    // Musica del menu' principale: corale fantasy drammatica, eterea,
+    // loop, ~80 BPM, minore armonica, pad sawtooth ampio + lead pulse
+    // lento + arpeggi cristallini + basso triangolare.
+    void generateMenuTrack();
 };
 
 #endif

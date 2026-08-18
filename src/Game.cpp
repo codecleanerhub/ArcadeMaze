@@ -452,7 +452,16 @@ void Game::handleEvents() {
             if (key == sf::Keyboard::Escape) {
                 if (state == STATE_CONFIG_JOY || state == STATE_CONFIG_JOY_2) state = STATE_MENU;
                 else if (state == STATE_MENU) isRunning = false;
-                else { state = STATE_MENU; currentLevel = 1; }
+                else {
+                    // Torna al menu': ferma la musica di gioco e (se l'opzione
+                    // musica e' attiva) riprende la traccia DEDICATA del menu'
+                    // (corale fantasy, diversa dalle musiche di gioco).
+                    state = STATE_MENU;
+                    currentLevel = 1;
+                    audio.stopEpicMusic();  // ferma eventuali jingle epici
+                    if (musicEnabled) audio.playMenuMusic();
+                    else audio.stopMusic();
+                }
             }
 
             // Navigazione menu'
@@ -464,7 +473,14 @@ void Game::handleEvents() {
                 else if (key == sf::Keyboard::Left) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
                     if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
-                    if (menuItemIndex == 2) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+                    if (menuItemIndex == 2) {
+                        musicEnabled = !musicEnabled;
+                        // Nel menu' principale: usa la traccia DEDICATA del menu'
+                        // (corale fantasy drammatica), DISTINTA dalle musiche
+                        // di gioco. Suona sul canale principale in loop.
+                        if (musicEnabled) audio.playMenuMusic();
+                        else audio.stopMusic();
+                    }
 #ifdef TEST_MODE_FEATURE
                     if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
 #endif
@@ -472,7 +488,11 @@ void Game::handleEvents() {
                 else if (key == sf::Keyboard::Right) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
                     if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
-                    if (menuItemIndex == 2) { musicEnabled = !musicEnabled; if(musicEnabled) audio.playLevelMusic(1, false); else audio.stopMusic(); }
+                    if (menuItemIndex == 2) {
+                        musicEnabled = !musicEnabled;
+                        if (musicEnabled) audio.playMenuMusic();
+                        else audio.stopMusic();
+                    }
 #ifdef TEST_MODE_FEATURE
                     if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
 #endif
@@ -521,6 +541,11 @@ void Game::handleEvents() {
                     state = STATE_MENU;
                     currentLevel = 1;
                     continuesLeft = 3;  // reset crediti per nuova partita
+                    // Ferma eventuali musiche/jingle e riprende la traccia
+                    // DEDICATA del menu' se l'opzione musica e' attiva.
+                    audio.stopEpicMusic();
+                    if (musicEnabled) audio.playMenuMusic();
+                    else audio.stopMusic();
                 }
             }
         }
@@ -1101,6 +1126,12 @@ void Game::update() {
                 if (p1Hit) playerInvincibleTimer = 10000;
                 if (p2Hit) player2InvincibleTimer = 10000;
                 audio.playSound(SOUND_POTION_DRINK);
+                // Avvia il jingle epico DEDICATO del calice (fanfara eroica
+                // dorata, ~6s). Suona su un canale SEPARATO (epicSound), NON
+                // interrompe la musica di gioco di sottofondo. DISTINTA dal
+                // jingle dello scettro (che e' mistico/arcano) e dalle musiche
+                // di gioco.
+                audio.playEpicMusic(TRACK_EPIC_CHALICE);
                 for (int i = 0; i < 20; i++)
                     particles.push_back({chalice.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
                         sf::Color(255, 215, 0), 40, 40});
@@ -1157,6 +1188,11 @@ void Game::update() {
                 scepter.lightningsLeft = 5;
                 scepter.lightningTimer = 200;  // primo fulmine tra 200ms
                 audio.playSound(SOUND_SCEPTER_PICKUP);  // "oh-oh-oh" magico evocativo
+                // Avvia il jingle epico DEDICATO dello scettro (arcano, mistico,
+                // ~7s, tritono sospeso). Suona su un canale SEPARATO (epicSound),
+                // NON interrompe la musica di gioco. DISTINTA dal jingle del
+                // calice (che e' eroico/dorato) e dalle musiche di gioco.
+                audio.playEpicMusic(TRACK_EPIC_SCEPTER);
                 for (int i = 0; i < 15; i++)
                     particles.push_back({scepter.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
                         sf::Color(180, 200, 255), 35, 35});
@@ -1424,6 +1460,9 @@ void Game::update() {
                 scepter.lightningsLeft = 5;
                 scepter.lightningTimer = 200;
                 audio.playSound(SOUND_SCEPTER_PICKUP);  // "oh-oh-oh" magico evocativo
+                // Avvia il jingle epico DEDICATO dello scettro (arcano, ~7s).
+                // Su un canale SEPARATO, non interrompe la musica di gioco.
+                audio.playEpicMusic(TRACK_EPIC_SCEPTER);
                 for (int i = 0; i < 15; i++)
                     particles.push_back({scepter.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
                         sf::Color(180, 200, 255), 35, 35});
@@ -1699,6 +1738,190 @@ void Game::spawnFirework() {
         float angle = i * (M_PI * 2 / 30);  // 30 particelle uniformi su 360°
         fireworks.push_back({sf::Vector2f(x, y), sf::Vector2f(cos(angle)*4, sin(angle)*4), col, 60});
     }
+}
+
+// ---------------------------------------------------------------------------
+// drawMagicScepter: disegna lo scettro magico in stile "Gandalf il Grigio"
+// (dal Signore degli Anelli).
+//
+// Caratteristiche del bastone di Gandalf:
+//   * Bastone LUNGO di legno intagliato (grigio-marrone scuro, ruvido)
+//   * Gemma cristallina in cima tenuta da FBI/raffiche metalliche
+//   * La gemma brilla di luce bianco-azzurra (luce magica)
+//   * Impugnatura lavorata con nodi del legno (grip texturizzato)
+//   * Lunghezza totale ~36px (gemma inclusa), molto piu' imponente
+//     del vecchio bastoncino 18px che sembrava un fiammifero.
+//
+// Il rendering e' sviluppato con primitive SFML:
+//   1. Aura magica pulsante (azzurro chiaro) attorno alla gemma
+//   2. Bastone: rettangolo verticale lungo con texture "legno grezzo"
+//      ottenuta con piu' rettangoli sfalsati di toni di grigio-marrone
+//   3. Nodi del legno: piccoli cerchi scuri lungo il bastone (effetto legno)
+//   4. FBI/gabbia metallica che trattiene la gemma: 4 piccoli raggi
+//      dorati che partono dalla cima del bastone verso la gemma
+//   5. Gemma cristallina: cerchio grande azzurro-bianco brillante con
+//      outline dorata (cornice metallica), nucleo bianco luminoso
+//   6. Impugnatura: fascia dorata (anello metallico) + cuoio scuro
+//      avvolto attorno al bastone (rettangoli sfalsati)
+//   7. Glow raggio di luce dalla gemma (cone di luce verso il basso)
+//
+// (sx, sy) e' il centro del bastone (gemma ~sy-18, impugnatura ~sy+12).
+// sPulse e' il fattore di pulsazione (>1 = piu' grande per l'aura).
+// ---------------------------------------------------------------------------
+void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float sPulse) {
+    // --- Aura magica pulsante attorno alla gemma ---
+    // Aura piu' grande della vecchia: 22px (era 18) per dare piu' "presenza"
+    float auraR = 22.f * sPulse;
+    sf::CircleShape scepterAura(auraR);
+    scepterAura.setFillColor(sf::Color(120, 180, 255, 55));
+    scepterAura.setPosition(sx - auraR, sy - 18.f - auraR);
+    target.draw(scepterAura);
+    // Aura interna piu' intensa (bianco-azzurra)
+    float auraR2 = 12.f * sPulse;
+    sf::CircleShape scepterAura2(auraR2);
+    scepterAura2.setFillColor(sf::Color(200, 220, 255, 80));
+    scepterAura2.setPosition(sx - auraR2, sy - 18.f - auraR2);
+    target.draw(scepterAura2);
+
+    // --- Bastone lungo (legno grezzo grigio-marrone) ---
+    // Lunghezza 32px (era 18), larghezza 4px (era 3) per renderlo visibile
+    // come un vero bastone e non un fiammifero. Colore grigio cenere (stile
+    // Gandalf il Grigio) con sfumature marroni per dare texture di legno.
+    // Strato base: legno scuro
+    sf::RectangleShape staffBase(sf::Vector2f(4.f, 32.f));
+    staffBase.setFillColor(sf::Color(80, 70, 55));     // grigio cenere-marrone
+    staffBase.setOutlineThickness(0.5f);
+    staffBase.setOutlineColor(sf::Color(40, 30, 20));
+    staffBase.setPosition(sx - 2.f, sy - 4.f);
+    target.draw(staffBase);
+    // Strato chiaro (venatura del legno)
+    sf::RectangleShape staffVein(sf::Vector2f(1.2f, 32.f));
+    staffVein.setFillColor(sf::Color(130, 115, 90));    // legno piu' chiaro
+    staffVein.setPosition(sx - 1.5f, sy - 4.f);
+    target.draw(staffVein);
+    // Strato scuro (ombra venatura)
+    sf::RectangleShape staffShade(sf::Vector2f(0.8f, 32.f));
+    staffShade.setFillColor(sf::Color(50, 40, 30));
+    staffShade.setPosition(sx + 0.8f, sy - 4.f);
+    target.draw(staffShade);
+
+    // --- Nodi del legno (effetto texture ruvida) ---
+    // 3 nodi scuri lungo il bastone per dare "carattere" di legno grezzo
+    for (int n = 0; n < 3; n++) {
+        float ny = sy - 2.f + n * 11.f;
+        sf::CircleShape knot(1.2f);
+        knot.setFillColor(sf::Color(40, 30, 20));
+        knot.setPosition(sx - 1.2f, ny);
+        target.draw(knot);
+        // Highlight del nodo (effetto 3D)
+        sf::CircleShape knotHigh(0.5f);
+        knotHigh.setFillColor(sf::Color(110, 95, 75));
+        knotHigh.setPosition(sx - 0.8f, ny - 0.3f);
+        target.draw(knotHigh);
+    }
+
+    // --- FBI/gabbia metallica che trattiene la gemma ---
+    // 4 raggi dorati che partono dalla cima del bastone verso la gemma,
+    // simulando le "rifle" metalliche che tengono il cristallo (come nel
+    // bastone di Gandalf nei film di Peter Jackson).
+    sf::Color goldColor(200, 160, 50);
+    for (int i = 0; i < 4; i++) {
+        float angle = i * (M_PI / 2.f) + (M_PI / 4.f);  // 45, 135, 225, 315°
+        // Posizione di partenza: cima del bastone (sx, sy-4)
+        // Posizione di arrivo: lati della gemma (sx+/-5, sy-18+/-5)
+        // Disegna il raggio come piccolo rettangolo inclinato
+        sf::RectangleShape prong(sf::Vector2f(1.2f, 16.f));
+        prong.setFillColor(goldColor);
+        prong.setOutlineThickness(0.3f);
+        prong.setOutlineColor(sf::Color(140, 100, 30));
+        prong.setPosition(sx - 0.6f, (sy - 4.f) - 16.f);
+        float rotDeg = (angle - M_PI / 2.f) * 180.f / M_PI;
+        prong.rotate(rotDeg);
+        target.draw(prong);
+    }
+
+    // --- Cornice metallica dorata attorno alla gemma (anello) ---
+    // Un anello dorato alla base della gemma (dove il cristallo si inserisce
+    // nel bastone). Da' il senso di "gemma incastonata" come negli anelli.
+    sf::CircleShape gemBase(5.5f);
+    gemBase.setFillColor(sf::Color(180, 140, 40));  // oro scuro
+    gemBase.setOutlineThickness(1.f);
+    gemBase.setOutlineColor(sf::Color(120, 80, 20));
+    gemBase.setPosition(sx - 5.5f, sy - 18.f - 5.5f);
+    target.draw(gemBase);
+
+    // --- Gemma cristallina luminosa (centro del bastone di Gandalf) ---
+    // Gemma grande (6px di raggio, era 4) per renderla visibile e "magica".
+    // Colore bianco-azzurro brillante (luce magica di Gandalf).
+    float gemR = 6.f * sPulse;
+    sf::CircleShape gem(gemR);
+    gem.setFillColor(sf::Color(180, 220, 255));     // azzurro chiaro
+    gem.setOutlineThickness(1.2f);
+    gem.setOutlineColor(sf::Color(220, 180, 60));   // outline oro
+    gem.setPosition(sx - gemR, sy - 18.f - gemR);
+    target.draw(gem);
+
+    // --- Nucleo bianco luminoso della gemma (centro) ---
+    // Piccolo nucleo bianco pulsante: da' il senso di "luce interna"
+    // come la gemma di Gandalf che brilla nel buio.
+    float coreR = 2.5f * sPulse;
+    sf::CircleShape gemCore(coreR);
+    gemCore.setFillColor(sf::Color(255, 255, 255));
+    gemCore.setPosition(sx - coreR, sy - 18.f - coreR);
+    target.draw(gemCore);
+    // Riflesso "specchiato" (piccolo puntino bianco in alto a sinistra)
+    sf::CircleShape gemSpec(0.8f);
+    gemSpec.setFillColor(sf::Color(255, 255, 255, 220));
+    gemSpec.setPosition(sx - 2.f, sy - 18.f - 3.f);
+    target.draw(gemSpec);
+
+    // --- Raggi di luce dalla gemma (4 raggi verso l'esterno) ---
+    // Simula la luce magica che emana dal cristallo.
+    for (int i = 0; i < 4; i++) {
+        float angle = i * (M_PI / 2.f) + sPulse * 0.3f;  // rotazione lenta
+        float rayLen = 10.f * sPulse;
+        sf::RectangleShape ray(sf::Vector2f(1.f, rayLen));
+        ray.setFillColor(sf::Color(220, 240, 255, 120));
+        ray.setOrigin(0.5f, rayLen);
+        ray.setPosition(sx, sy - 18.f);
+        ray.setRotation(angle * 180.f / M_PI - 90.f);
+        target.draw(ray);
+    }
+
+    // --- Impugnatura (grip) ---
+    // Fascia dorata (anello metallico) + cuoio scuro avvolto.
+    // Posizione: parte bassa del bastone (sy + 18.f).
+    // 1. Anello metallico superiore (oro)
+    sf::RectangleShape gripTop(sf::Vector2f(6.f, 1.5f));
+    gripTop.setFillColor(sf::Color(200, 160, 50));
+    gripTop.setOutlineThickness(0.4f);
+    gripTop.setOutlineColor(sf::Color(120, 80, 20));
+    gripTop.setPosition(sx - 3.f, sy + 16.f);
+    target.draw(gripTop);
+    // 2. Cuoio avvolto (3 strisce diagonali)
+    for (int i = 0; i < 3; i++) {
+        sf::RectangleShape leather(sf::Vector2f(5.5f, 1.5f));
+        leather.setFillColor(sf::Color(60, 40, 20));    // cuoio scuro
+        leather.setOutlineThickness(0.2f);
+        leather.setOutlineColor(sf::Color(30, 20, 10));
+        leather.setPosition(sx - 2.75f, sy + 18.f + i * 1.8f);
+        target.draw(leather);
+    }
+    // 3. Anello metallico inferiore (oro)
+    sf::RectangleShape gripBot(sf::Vector2f(6.f, 1.5f));
+    gripBot.setFillColor(sf::Color(200, 160, 50));
+    gripBot.setOutlineThickness(0.4f);
+    gripBot.setOutlineColor(sf::Color(120, 80, 20));
+    gripBot.setPosition(sx - 3.f, sy + 24.f);
+    target.draw(gripBot);
+
+    // --- Ombra del bastone sul pavimento ---
+    // Da' profondita' e ancoraggio visivo al bastone.
+    sf::CircleShape shadow(4.f);
+    shadow.setFillColor(sf::Color(0, 0, 0, 80));
+    shadow.setScale(1.5f, 0.5f);
+    shadow.setPosition(sx - 4.f, sy + 28.f);
+    target.draw(shadow);
 }
 
 // ---------------------------------------------------------------------------
@@ -2103,78 +2326,123 @@ void Game::render() {
             }
         }
 
-        // --- Rendering dello scettro magico ---
+        // --- Rendering dello scettro magico (stile Gandalf) ---
+        // Disegna il bastone di Gandalf: legno intagliato lungo, gemma
+        // cristallina luminosa in cima tenuta da raggi dorati, impugnatura
+        // con anelli metallici e cuoio. Implementazione centralizzata in
+        // drawMagicScepter() per evitare duplicazione tra i 3 stati.
         if (scepter.active && !scepter.triggered) {
             float sx = scepter.pos.x;
             float sy = scepter.pos.y + scepter.bobOffset;
             float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
-            // Aura azzurra pulsante
-            float auraR = 18.f * sPulse;
-            sf::CircleShape scepterAura(auraR);
-            scepterAura.setFillColor(sf::Color(100, 150, 255, 40));
-            scepterAura.setPosition(sx - auraR, sy - auraR);
-            window.draw(scepterAura);
-            // Bastone (rettangolo verticale marrone)
-            sf::RectangleShape staff(sf::Vector2f(3.f, 18.f));
-            staff.setFillColor(sf::Color(100, 70, 30));
-            staff.setOutlineThickness(0.5f); staff.setOutlineColor(sf::Color(50, 30, 10));
-            staff.setPosition(sx - 1.5f, sy - 2.f);
-            window.draw(staff);
-            // Gemma sulla cima (cerchio azzurro brillante)
-            float gemR = 4.f * sPulse;
-            sf::CircleShape gem(gemR);
-            gem.setFillColor(sf::Color(100, 200, 255));
-            gem.setOutlineThickness(1.f); gem.setOutlineColor(sf::Color(50, 100, 200));
-            gem.setPosition(sx - gemR, sy - 8.f);
-            window.draw(gem);
-            // Nucleo gemma (bianco)
-            sf::CircleShape gemCore(1.5f * sPulse);
-            gemCore.setFillColor(sf::Color(220, 240, 255));
-            gemCore.setPosition(sx - 1.5f, sy - 7.f);
-            window.draw(gemCore);
-            // Impugnatura (rettangolo più scuro)
-            sf::RectangleShape grip(sf::Vector2f(5.f, 4.f));
-            grip.setFillColor(sf::Color(60, 40, 15));
-            grip.setPosition(sx - 2.5f, sy + 12.f);
-            window.draw(grip);
+            drawMagicScepter(window, sx, sy, sPulse);
         }
 
-        // --- Rendering dei fulmini ---
+        // --- Rendering dei fulmini (scettro magico) ---
+        // Il fulmine attraversa VERTICALMENTE lo schermo (dall'alto al
+        // basso), e' molto piu' visibile del vecchio fulmine 6-segmenti:
+        // -12 segmenti alti 25px ciascuno (altezza totale 300px)
+        // -Larghezza 3px (era 2) con outline bianca
+        // -Bagliore esterno semitrasparente
+        // -Flash bianco centrale
         for (const auto& lt : lightnings) {
             float lx = lt.pos.x;
             float ly = lt.pos.y;
             float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
-            // Flash bianco al centro
-            sf::CircleShape flash(8.f);
-            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-            flash.setPosition(lx - 8.f, ly - 8.f);
-            window.draw(flash);
-            // Bagliore elettrico
-            sf::CircleShape glow(15.f);
-            glow.setFillColor(sf::Color(180, 200, 255, (sf::Uint8)(alpha * 0.4f)));
-            glow.setPosition(lx - 15.f, ly - 15.f);
+            // --- Fulmine che ATTRAVERSA lo schermo verticalmente ---
+            // Il fulmine scende dall'alto dello schermo fino al punto di
+            // impatto (ly), con 14 segmenti alti ~21px ciascuno (altezza
+            // totale ~300px). Molto piu' imponente del vecchio fulmine 36px
+            // che era quasi invisibile.
+            float boltTop = std::max((float)UI_HEIGHT, ly - 300.f);
+            float boltH = ly - boltTop;
+            int numSegs = 14;
+            float segH = boltH / numSegs;
+            // --- Bagliore elettrico esterno (halo grande) ---
+            float haloR = 60.f;
+            sf::CircleShape halo(haloR);
+            halo.setFillColor(sf::Color(150, 180, 255, (sf::Uint8)(alpha * 0.18f)));
+            halo.setPosition(lx - haloR, ly - haloR);
+            window.draw(halo);
+            // --- Bagliore elettrico medio ---
+            sf::CircleShape glow(30.f);
+            glow.setFillColor(sf::Color(180, 220, 255, (sf::Uint8)(alpha * 0.45f)));
+            glow.setPosition(lx - 30.f, ly - 30.f);
             window.draw(glow);
-            // Saetta verticale a zigzag (6 segmenti)
-            float segH = 6.f;
-            for (int i = 0; i < 6; i++) {
-                float y0 = ly - 36.f + i * segH;
+            // --- Flash bianco centrale (punto di impatto) ---
+            sf::CircleShape flash(14.f);
+            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+            flash.setPosition(lx - 14.f, ly - 14.f);
+            window.draw(flash);
+            // --- Saetta verticale a zigzag (14 segmenti) ---
+            // Larghezza 4px (era 2) per renderla ben visibile.
+            float xCur = lx;
+            for (int i = 0; i < numSegs; i++) {
+                float y0 = boltTop + i * segH;
                 float y1 = y0 + segH;
-                float xOff = (i % 2 == 0) ? -4.f : 4.f;
-                sf::RectangleShape bolt(sf::Vector2f(2.f, segH));
+                float xOff = ((rand() % 17) - 8);
+                float xNext = xCur + xOff;
+                if (i == numSegs - 1) xNext = lx;
+                float dx = xNext - xCur;
+                float dy = y1 - y0;
+                float segLen = sqrtf(dx * dx + dy * dy);
+                sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
                 bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
-                bolt.setPosition(lx + xOff, y0);
-                bolt.rotate((rand() % 20) - 10);
+                bolt.setOutlineThickness(0.5f);
+                bolt.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+                bolt.setOrigin(2.f, 0.f);
+                bolt.setPosition(xCur, y0);
+                float angle = atan2f(dx, dy) * 180.f / (float)M_PI;
+                bolt.rotate(angle);
                 window.draw(bolt);
+                // Glow attorno al segmento
+                sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
+                boltGlow.setFillColor(sf::Color(150, 200, 255, (sf::Uint8)(alpha * 0.25f)));
+                boltGlow.setOrigin(4.f, 0.f);
+                boltGlow.setPosition(xCur, y0);
+                boltGlow.rotate(angle);
+                window.draw(boltGlow);
+                xCur = xNext;
             }
-            // Scintille laterali
-            for (int i = 0; i < 4; i++) {
-                float a = i * (float)M_PI / 2.f;
-                float r = 10.f;
-                sf::CircleShape spark(1.5f);
-                spark.setFillColor(sf::Color(255, 255, 200, (sf::Uint8)(alpha * 0.8f)));
-                spark.setPosition(lx + cos(a) * r - 1.5f, ly + sin(a) * r - 1.5f);
+            // --- Ramificazioni laterali (3 rami casuali) ---
+            for (int b = 0; b < 3; b++) {
+                float branchY = boltTop + (rand() % (int)boltH);
+                float bCurX = lx, bCurY = branchY;
+                for (int s = 0; s < 4; s++) {
+                    float bx = bCurX + ((rand() % 9) - 4);
+                    float by = bCurY + 4.f + (rand() % 4);
+                    float blen = sqrtf((bx - bCurX) * (bx - bCurX) +
+                                       (by - bCurY) * (by - bCurY));
+                    sf::RectangleShape branch(sf::Vector2f(2.f, blen));
+                    branch.setFillColor(sf::Color(220, 240, 255,
+                        (sf::Uint8)(alpha * 0.7f)));
+                    branch.setOrigin(1.f, 0.f);
+                    branch.setPosition(bCurX, bCurY);
+                    float bang = atan2f(bx - bCurX, by - bCurY) * 180.f / (float)M_PI;
+                    branch.rotate(bang);
+                    window.draw(branch);
+                    bCurX = bx; bCurY = by;
+                }
+            }
+            // --- Scintille radiali attorno al punto di impatto ---
+            for (int i = 0; i < 8; i++) {
+                float a = (i / 8.f) * 2.f * (float)M_PI;
+                float r = 12.f + (rand() % 10);
+                sf::CircleShape spark(1.8f);
+                spark.setFillColor(sf::Color(255, 255, 200,
+                    (sf::Uint8)(alpha * 0.85f)));
+                spark.setPosition(lx + cos(a) * r - 1.8f,
+                                  ly + sin(a) * r - 1.8f);
                 window.draw(spark);
             }
+            // --- Onda d'urto circolare (shockwave) ---
+            float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
+            sf::CircleShape shock(shockR);
+            shock.setFillColor(sf::Color(0, 0, 0, 0));
+            shock.setOutlineThickness(2.f);
+            shock.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)(alpha * 0.5f)));
+            shock.setPosition(lx - shockR, ly - shockR);
+            window.draw(shock);
         }
 
         // --- Rendering del calice d'oro (pozione magica) ---
@@ -4406,46 +4674,18 @@ void Game::render() {
             window.draw(aura);
         }
 
-        // --- Rendering dello scettro magico (nella stanza del boss) ---
-        // Duplicato del blocco in STATE_PLAYING: lo scettro può apparire anche
-        // nella stanza del boss (vedi startBossFight riga 377), e se il player
-        // lo raccoglie li' deve vederlo. Inoltre i fulmini devono essere
-        // renderizzati nel boss anche se lo scettro e' stato raccolto nel
-        // labirinto (i 5 fulmini a intervalli di 3 secondi continuano nella
-        // stanza del boss se il player ci entra prima che finiscano).
+        // --- Rendering dello scettro magico (nella stanza del boss, stile Gandalf) ---
+        // Lo scettro può apparire anche nella stanza del boss (vedi
+        // startBossFight riga 377), e se il player lo raccoglie li' deve
+        // vederlo. Inoltre i fulmini devono essere renderizzati nel boss
+        // anche se lo scettro e' stato raccolto nel labirinto (i 5 fulmini
+        // a intervalli di 3 secondi continuano nella stanza del boss se il
+        // player ci entra prima che finiscano).
         if (scepter.active && !scepter.triggered) {
             float sx = scepter.pos.x;
             float sy = scepter.pos.y + scepter.bobOffset;
             float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
-            // Aura azzurra pulsante
-            float auraR = 18.f * sPulse;
-            sf::CircleShape scepterAura(auraR);
-            scepterAura.setFillColor(sf::Color(100, 150, 255, 40));
-            scepterAura.setPosition(sx - auraR, sy - auraR);
-            window.draw(scepterAura);
-            // Bastone (rettangolo verticale marrone)
-            sf::RectangleShape staff(sf::Vector2f(3.f, 18.f));
-            staff.setFillColor(sf::Color(100, 70, 30));
-            staff.setOutlineThickness(0.5f); staff.setOutlineColor(sf::Color(50, 30, 10));
-            staff.setPosition(sx - 1.5f, sy - 2.f);
-            window.draw(staff);
-            // Gemma sulla cima (cerchio azzurro brillante)
-            float gemR = 4.f * sPulse;
-            sf::CircleShape gem(gemR);
-            gem.setFillColor(sf::Color(100, 200, 255));
-            gem.setOutlineThickness(1.f); gem.setOutlineColor(sf::Color(50, 100, 200));
-            gem.setPosition(sx - gemR, sy - 8.f);
-            window.draw(gem);
-            // Nucleo gemma (bianco)
-            sf::CircleShape gemCore(1.5f * sPulse);
-            gemCore.setFillColor(sf::Color(220, 240, 255));
-            gemCore.setPosition(sx - 1.5f, sy - 7.f);
-            window.draw(gemCore);
-            // Impugnatura (rettangolo più scuro)
-            sf::RectangleShape grip(sf::Vector2f(5.f, 4.f));
-            grip.setFillColor(sf::Color(60, 40, 15));
-            grip.setPosition(sx - 2.5f, sy + 12.f);
-            window.draw(grip);
+            drawMagicScepter(window, sx, sy, sPulse);
         }
 
         // --- Rendering dei fulmini (nella stanza del boss) ---
@@ -4453,37 +4693,100 @@ void Game::render() {
             float lx = lt.pos.x;
             float ly = lt.pos.y;
             float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
-            // Flash bianco al centro
-            sf::CircleShape flash(8.f);
-            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-            flash.setPosition(lx - 8.f, ly - 8.f);
-            window.draw(flash);
-            // Bagliore elettrico
-            sf::CircleShape glow(15.f);
-            glow.setFillColor(sf::Color(180, 200, 255, (sf::Uint8)(alpha * 0.4f)));
-            glow.setPosition(lx - 15.f, ly - 15.f);
+            // --- Fulmine che ATTRAVERSA lo schermo verticalmente ---
+            // Il fulmine scende dall'alto dello schermo fino al punto di
+            // impatto (ly), con 14 segmenti alti ~21px ciascuno (altezza
+            // totale ~300px). Molto piu' imponente del vecchio fulmine 36px
+            // che era quasi invisibile.
+            float boltTop = std::max((float)UI_HEIGHT, ly - 300.f);
+            float boltH = ly - boltTop;
+            int numSegs = 14;
+            float segH = boltH / numSegs;
+            // --- Bagliore elettrico esterno (halo grande) ---
+            float haloR = 60.f;
+            sf::CircleShape halo(haloR);
+            halo.setFillColor(sf::Color(150, 180, 255, (sf::Uint8)(alpha * 0.18f)));
+            halo.setPosition(lx - haloR, ly - haloR);
+            window.draw(halo);
+            // --- Bagliore elettrico medio ---
+            sf::CircleShape glow(30.f);
+            glow.setFillColor(sf::Color(180, 220, 255, (sf::Uint8)(alpha * 0.45f)));
+            glow.setPosition(lx - 30.f, ly - 30.f);
             window.draw(glow);
-            // Saetta verticale a zigzag (6 segmenti)
-            float segH = 6.f;
-            for (int i = 0; i < 6; i++) {
-                float y0 = ly - 36.f + i * segH;
+            // --- Flash bianco centrale (punto di impatto) ---
+            sf::CircleShape flash(14.f);
+            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+            flash.setPosition(lx - 14.f, ly - 14.f);
+            window.draw(flash);
+            // --- Saetta verticale a zigzag (14 segmenti) ---
+            // Larghezza 4px (era 2) per renderla ben visibile.
+            float xCur = lx;
+            for (int i = 0; i < numSegs; i++) {
+                float y0 = boltTop + i * segH;
                 float y1 = y0 + segH;
-                float xOff = (i % 2 == 0) ? -4.f : 4.f;
-                sf::RectangleShape bolt(sf::Vector2f(2.f, segH));
+                float xOff = ((rand() % 17) - 8);
+                float xNext = xCur + xOff;
+                if (i == numSegs - 1) xNext = lx;
+                float dx = xNext - xCur;
+                float dy = y1 - y0;
+                float segLen = sqrtf(dx * dx + dy * dy);
+                sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
                 bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
-                bolt.setPosition(lx + xOff, y0);
-                bolt.rotate((rand() % 20) - 10);
+                bolt.setOutlineThickness(0.5f);
+                bolt.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+                bolt.setOrigin(2.f, 0.f);
+                bolt.setPosition(xCur, y0);
+                float angle = atan2f(dx, dy) * 180.f / (float)M_PI;
+                bolt.rotate(angle);
                 window.draw(bolt);
+                // Glow attorno al segmento
+                sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
+                boltGlow.setFillColor(sf::Color(150, 200, 255, (sf::Uint8)(alpha * 0.25f)));
+                boltGlow.setOrigin(4.f, 0.f);
+                boltGlow.setPosition(xCur, y0);
+                boltGlow.rotate(angle);
+                window.draw(boltGlow);
+                xCur = xNext;
             }
-            // Scintille laterali
-            for (int i = 0; i < 4; i++) {
-                float a = i * (float)M_PI / 2.f;
-                float r = 10.f;
-                sf::CircleShape spark(1.5f);
-                spark.setFillColor(sf::Color(255, 255, 200, (sf::Uint8)(alpha * 0.8f)));
-                spark.setPosition(lx + cos(a) * r - 1.5f, ly + sin(a) * r - 1.5f);
+            // --- Ramificazioni laterali (3 rami casuali) ---
+            for (int b = 0; b < 3; b++) {
+                float branchY = boltTop + (rand() % (int)boltH);
+                float bCurX = lx, bCurY = branchY;
+                for (int s = 0; s < 4; s++) {
+                    float bx = bCurX + ((rand() % 9) - 4);
+                    float by = bCurY + 4.f + (rand() % 4);
+                    float blen = sqrtf((bx - bCurX) * (bx - bCurX) +
+                                       (by - bCurY) * (by - bCurY));
+                    sf::RectangleShape branch(sf::Vector2f(2.f, blen));
+                    branch.setFillColor(sf::Color(220, 240, 255,
+                        (sf::Uint8)(alpha * 0.7f)));
+                    branch.setOrigin(1.f, 0.f);
+                    branch.setPosition(bCurX, bCurY);
+                    float bang = atan2f(bx - bCurX, by - bCurY) * 180.f / (float)M_PI;
+                    branch.rotate(bang);
+                    window.draw(branch);
+                    bCurX = bx; bCurY = by;
+                }
+            }
+            // --- Scintille radiali attorno al punto di impatto ---
+            for (int i = 0; i < 8; i++) {
+                float a = (i / 8.f) * 2.f * (float)M_PI;
+                float r = 12.f + (rand() % 10);
+                sf::CircleShape spark(1.8f);
+                spark.setFillColor(sf::Color(255, 255, 200,
+                    (sf::Uint8)(alpha * 0.85f)));
+                spark.setPosition(lx + cos(a) * r - 1.8f,
+                                  ly + sin(a) * r - 1.8f);
                 window.draw(spark);
             }
+            // --- Onda d'urto circolare (shockwave) ---
+            float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
+            sf::CircleShape shock(shockR);
+            shock.setFillColor(sf::Color(0, 0, 0, 0));
+            shock.setOutlineThickness(2.f);
+            shock.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)(alpha * 0.5f)));
+            shock.setPosition(lx - shockR, ly - shockR);
+            window.draw(shock);
         }
         player.render(window);
         if (numPlayers == 2) player2.render(window);
@@ -4996,58 +5299,85 @@ void Game::render() {
             }
         }
 
-        // --- Rendering scettro magico nella stanza del boss ---
+        // --- Rendering scettro magico nella stanza del boss (stile Gandalf) ---
         if (scepter.active && !scepter.triggered) {
             float sx = scepter.pos.x;
             float sy = scepter.pos.y + scepter.bobOffset;
             float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
-            float auraR = 18.f * sPulse;
-            sf::CircleShape scepterAura(auraR);
-            scepterAura.setFillColor(sf::Color(100, 150, 255, 40));
-            scepterAura.setPosition(sx - auraR, sy - auraR);
-            window.draw(scepterAura);
-            sf::RectangleShape staff(sf::Vector2f(3.f, 18.f));
-            staff.setFillColor(sf::Color(100, 70, 30));
-            staff.setOutlineThickness(0.5f); staff.setOutlineColor(sf::Color(50, 30, 10));
-            staff.setPosition(sx - 1.5f, sy - 2.f);
-            window.draw(staff);
-            float gemR = 4.f * sPulse;
-            sf::CircleShape gem(gemR);
-            gem.setFillColor(sf::Color(100, 200, 255));
-            gem.setOutlineThickness(1.f); gem.setOutlineColor(sf::Color(50, 100, 200));
-            gem.setPosition(sx - gemR, sy - 8.f);
-            window.draw(gem);
-            sf::CircleShape gemCore(1.5f * sPulse);
-            gemCore.setFillColor(sf::Color(220, 240, 255));
-            gemCore.setPosition(sx - 1.5f, sy - 7.f);
-            window.draw(gemCore);
-            sf::RectangleShape grip(sf::Vector2f(5.f, 4.f));
-            grip.setFillColor(sf::Color(60, 40, 15));
-            grip.setPosition(sx - 2.5f, sy + 12.f);
-            window.draw(grip);
+            drawMagicScepter(window, sx, sy, sPulse);
         }
 
-        // --- Rendering fulmini nella stanza del boss ---
+        // --- Rendering fulmini nella stanza del boss (effetto traversante) ---
         for (const auto& lt : lightnings) {
             float lx = lt.pos.x;
             float ly = lt.pos.y;
             float alpha = 255.f * (float)lt.life / (float)lt.maxLife;
-            sf::CircleShape flash(8.f);
-            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
-            flash.setPosition(lx - 8.f, ly - 8.f);
-            window.draw(flash);
-            sf::CircleShape glow(15.f);
-            glow.setFillColor(sf::Color(180, 200, 255, (sf::Uint8)(alpha * 0.4f)));
-            glow.setPosition(lx - 15.f, ly - 15.f);
+            // Fulmine che attraversa lo schermo verticalmente (dall'alto a ly)
+            float boltTop = std::max((float)UI_HEIGHT, ly - 300.f);
+            float boltH = ly - boltTop;
+            int numSegs = 14;
+            float segH = boltH / numSegs;
+            // Halo esterno
+            float haloR = 60.f;
+            sf::CircleShape halo(haloR);
+            halo.setFillColor(sf::Color(150, 180, 255, (sf::Uint8)(alpha * 0.18f)));
+            halo.setPosition(lx - haloR, ly - haloR);
+            window.draw(halo);
+            // Glow medio
+            sf::CircleShape glow(30.f);
+            glow.setFillColor(sf::Color(180, 220, 255, (sf::Uint8)(alpha * 0.45f)));
+            glow.setPosition(lx - 30.f, ly - 30.f);
             window.draw(glow);
-            for (int i = 0; i < 6; i++) {
-                float y0 = ly - 36.f + i * 6.f;
-                float xOff = (i % 2 == 0) ? -4.f : 4.f;
-                sf::RectangleShape bolt(sf::Vector2f(2.f, 6.f));
+            // Flash centrale
+            sf::CircleShape flash(14.f);
+            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+            flash.setPosition(lx - 14.f, ly - 14.f);
+            window.draw(flash);
+            // Saetta verticale a zigzag (14 segmenti)
+            float xCur = lx;
+            for (int i = 0; i < numSegs; i++) {
+                float y0 = boltTop + i * segH;
+                float y1 = y0 + segH;
+                float xOff = ((rand() % 17) - 8);
+                float xNext = xCur + xOff;
+                if (i == numSegs - 1) xNext = lx;
+                float dx = xNext - xCur;
+                float dy = y1 - y0;
+                float segLen = sqrtf(dx * dx + dy * dy);
+                sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
                 bolt.setFillColor(sf::Color(220, 240, 255, (sf::Uint8)alpha));
-                bolt.setPosition(lx + xOff, y0);
+                bolt.setOutlineThickness(0.5f);
+                bolt.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)alpha));
+                bolt.setOrigin(2.f, 0.f);
+                bolt.setPosition(xCur, y0);
+                float angle = atan2f(dx, dy) * 180.f / (float)M_PI;
+                bolt.rotate(angle);
                 window.draw(bolt);
+                sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
+                boltGlow.setFillColor(sf::Color(150, 200, 255, (sf::Uint8)(alpha * 0.25f)));
+                boltGlow.setOrigin(4.f, 0.f);
+                boltGlow.setPosition(xCur, y0);
+                boltGlow.rotate(angle);
+                window.draw(boltGlow);
+                xCur = xNext;
             }
+            // Scintille radiali
+            for (int i = 0; i < 8; i++) {
+                float a = (i / 8.f) * 2.f * (float)M_PI;
+                float r = 12.f + (rand() % 10);
+                sf::CircleShape spark(1.8f);
+                spark.setFillColor(sf::Color(255, 255, 200, (sf::Uint8)(alpha * 0.85f)));
+                spark.setPosition(lx + cos(a) * r - 1.8f, ly + sin(a) * r - 1.8f);
+                window.draw(spark);
+            }
+            // Onda d'urto circolare (shockwave)
+            float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
+            sf::CircleShape shock(shockR);
+            shock.setFillColor(sf::Color(0, 0, 0, 0));
+            shock.setOutlineThickness(2.f);
+            shock.setOutlineColor(sf::Color(255, 255, 255, (sf::Uint8)(alpha * 0.5f)));
+            shock.setPosition(lx - shockR, ly - shockR);
+            window.draw(shock);
         }
 
         // --- Rendering mina nella stanza del boss ---

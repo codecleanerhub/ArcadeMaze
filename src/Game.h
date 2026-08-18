@@ -252,6 +252,13 @@ private:
     void drawConfigJoy2();
     // Genera un fuoco d'artificio esploso in posizione casuale.
     void spawnFirework();
+    // Disegna lo scettro magico in stile "Gandalf" (bastone di Gandalf
+    // grigio con gemma cristallina luminosa sulla cima). e' chiamato da
+    // STATE_PLAYING, STATE_BOSS e dalla minimappa. Centralizza il rendering
+    // per evitare duplicazione di codice tra i 3 stati. (sx, sy) e' il
+    // centro del bastone (la gemma e' sopra, l'impugnatura sotto).
+    // sPulse e' il fattore di pulsazione (>1 = piu' grande, effetto aura).
+    void drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float sPulse);
 };
 
 #endif
