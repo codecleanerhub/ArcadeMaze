@@ -1151,7 +1151,7 @@ void Game::update() {
                 scepterUsed = true;
                 scepter.lightningsLeft = 5;
                 scepter.lightningTimer = 200;  // primo fulmine tra 200ms
-                audio.playSound(SOUND_LIGHTNING);
+                audio.playSound(SOUND_SCEPTER_PICKUP);  // "oh-oh-oh" magico evocativo
                 for (int i = 0; i < 15; i++)
                     particles.push_back({scepter.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
                         sf::Color(180, 200, 255), 35, 35});

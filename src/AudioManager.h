@@ -45,11 +45,12 @@ enum SoundType {
     SOUND_BLOOD_SPLAT,   // sangue che schizza (wet impact)
     SOUND_MINE_BOUNCE,   // rimbalzo mina (boing metallico)
     SOUND_POTION_DRINK,  // ingestione pozione (glug-glug)
-    SOUND_LIGHTNING      // fulmine (crack elettrico + boom)
+    SOUND_LIGHTNING,     // fulmine (crack elettrico + boom)
+    SOUND_SCEPTER_PICKUP // raccolta scettro magico (oh-oh-oh evocativo fantasy, suspense)
 };
 
 // Numero totale di SFX (usato per dimensionare i buffer).
-constexpr int SOUND_TYPE_COUNT = 24;
+constexpr int SOUND_TYPE_COUNT = 25;
 
 class AudioManager {
 public:

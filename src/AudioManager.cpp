@@ -514,6 +514,92 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(1800 * s * env));
         }
     }
+    else if (type == SOUND_SCEPTER_PICKUP) {
+        // ~1.7s: "oh-oh-oh" magico, evocativo fantasy, suspense
+        // Come se stesse per accadere qualcosa di epico.
+        //
+        // Struttura:
+        //   * 3 esclamazioni "oh" discendenti (vocal-like, vibrato)
+        //   - Frequenze: 392 (Sol4) -> 349 (Fa4) -> 311 (Eb4)
+        //     Intervallo calante = senso di suspense / attesa
+        //   - Forma d'onda: triangle (timbro vocale) + pulse filter (formanti)
+        //   - Attack morbido (non percussivo): onset "oh" con exe(-t*k)
+        //   - Vibrato 5.5 Hz (LFO sulla frequenza, depth 8 cent ~ +-=6Hz)
+        //   * Layer shimmer magico: pulse 1200-2000Hz sweep + noise filtered
+        //   * Sottofondo pad: saw 130 Hz (Do3 minore) per mood fantasy
+        //   * Finale: accordo sospeso (tritono Do-Fa#) che NON risolve
+        //     - Do3 (130.8) + Fa#3 (185.0) = intervallo instabile, tensione
+        //     - Fade out lento (2.5s exp) per "lasciare appesi"
+
+        const int totalDur = (int)(SR * 1.7);
+        // Pad di fondo (Do minore basso, sawtooth tremolato)
+        // Lo generiamo in un buffer separato e lo sommiamo
+        std::vector<double> pad(totalDur, 0.0);
+        for (int i = 0; i < totalDur; i++) {
+            double t = (double)i / SR;
+            double env = (1.0 - exp(-t * 4.0)) * exp(-t * 1.4);  // attacco lento, decadimento lungo
+            // Tritono sospeso: Do3 (130.81) + Fa#3 (185.00)
+            double do3  = sawtoothWave(t * 130.81);
+            double fis3 = sawtoothWave(t * 185.00);
+            // Tremolo lento (LFO 3 Hz)
+            double trem = 0.85 + 0.15 * sin(t * 2.0 * M_PI * 3.0);
+            pad[i] = 0.18 * (do3 + 0.8 * fis3) * env * trem;
+        }
+
+        // 3 esclamazioni "oh" discendenti
+        // Posizionamento nel tempo: 0.0-0.35, 0.4-0.75, 0.8-1.2 secondi
+        const double ohStart[3]  = {0.00, 0.40, 0.80};
+        const double ohDur[3]    = {0.35, 0.35, 0.40};
+        const double ohFreq[3]   = {392.0, 349.23, 311.13};  // Sol4, Fa4, Eb4
+        // Per ogni "oh", buffer locale con attacco morbido + decadimento
+        std::vector<double> ohLayer(totalDur, 0.0);
+        for (int k = 0; k < 3; k++) {
+            int start = (int)(SR * ohStart[k]);
+            int len   = (int)(SR * ohDur[k]);
+            for (int i = 0; i < len && (start + i) < totalDur; i++) {
+                double t = (double)i / SR;
+                // Envelope "oh": attack 0.06s + sustain + release 0.15s
+                double attack  = 1.0 - exp(-t * 30.0);
+                double release = exp(-t * 6.0);
+                double env = attack * release;
+                // Vibrato: LFO 5.5 Hz, depth 6 Hz
+                double vib = 6.0 * sin(t * 2.0 * M_PI * 5.5);
+                double f = ohFreq[k] + vib;
+                // Timbro vocale: triangle (fondamentale) + pulse 2a/3a armonica (formanti)
+                double fundamental = 0.55 * triangleWave(t * f);
+                double formant1    = 0.20 * pulseWave(t * f * 2.0, 0.35);  // 2a armonica
+                double formant2    = 0.12 * pulseWave(t * f * 3.0, 0.25);  // 3a armonica
+                // Filtro approssimato: attenua in base alla fase "oh"
+                // Il "oh" ha apertura->chiusura: attenua le alte verso la fine
+                double openFilter = exp(-t * 4.0);  // 1 all'inizio, 0.x alla fine
+                double s = fundamental + formant1 * openFilter + formant2 * openFilter;
+                ohLayer[start + i] += 0.55 * s * env;
+            }
+        }
+
+        // Layer shimmer magico: sweep pulse acuto + noise filtered
+        std::vector<double> shimmer(totalDur, 0.0);
+        for (int i = 0; i < totalDur; i++) {
+            double t = (double)i / SR;
+            double env = (1.0 - exp(-t * 8.0)) * exp(-t * 1.8);
+            // Sweep: 1200 -> 2000 Hz in 1.7s
+            double freq = 1200.0 + 800.0 * (t / 1.7);
+            // Pulse molto duty-cycle stretto (0.1) = timbro "magico/cristallino"
+            double shimmerWave = 0.18 * pulseWave(t * freq, 0.1);
+            // Noise "scintillio" attenuato e modulato
+            double sparkle = 0.08 * noiseGen() * (0.5 + 0.5 * sin(t * 2.0 * M_PI * 7.0));
+            shimmer[i] = (shimmerWave + sparkle) * env;
+        }
+
+        // Mix finale
+        for (int i = 0; i < totalDur; i++) {
+            double s = pad[i] + ohLayer[i] + shimmer[i];
+            // Soft clip per evitare clipping netto
+            if (s > 1.0) s = 1.0 - 0.3 * (1.0 - 1.0 / s);
+            if (s < -1.0) s = -1.0 + 0.3 * (1.0 + 1.0 / s);
+            samples.push_back((sf::Int16)(2600 * s));
+        }
+    }
 
     if(!samples.empty()) {
         buffers[idx].loadFromSamples(&samples[0], samples.size(), 1, SR);
