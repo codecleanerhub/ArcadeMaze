@@ -419,6 +419,33 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(2200 * s * env));
         }
     }
+    else if (type == SOUND_POTION_DRINK) {
+        // 0.7s: glug-glug (ingestione liquido)
+        // 3 fasi: glug basso, pausa, glug piu' acuto, pausa, deglutizione
+        for (int gulp = 0; gulp < 3; gulp++) {
+            double gulpFreq = 120 + gulp * 40;  // ogni glug piu' acuto
+            double gulpDur = 0.12;
+            for (int i = 0; i < SR * gulpDur; i++) {
+                double t = (double)i / SR;
+                double env = exp(-t * 10.0) * (1.0 - exp(-t * 40.0));
+                // Modulazione: vibrazione della gola
+                double mod = 1.0 + 0.3 * sin(t * 30.0);
+                double s = 0.4 * triangleWave(t * gulpFreq * mod) +
+                           0.3 * sawtoothWave(t * gulpFreq * 0.7 * mod) +
+                           0.2 * noiseGen() * exp(-t * 15.0);  // bubbles
+                samples.push_back((sf::Int16)(2200 * s * env));
+            }
+            // Pausa breve tra un glug e l'altro
+            for (int i = 0; i < SR * 0.06; i++) samples.push_back(0);
+        }
+        // Deglutizione finale (tonfo basso)
+        for (int i = 0; i < SR * 0.1; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 15.0);
+            double s = 0.5 * triangleWave(t * 90) + 0.3 * pulseWave(t * 60, 0.5);
+            samples.push_back((sf::Int16)(1800 * s * env));
+        }
+    }
 
     if(!samples.empty()) {
         buffers[idx].loadFromSamples(&samples[0], samples.size(), 1, SR);

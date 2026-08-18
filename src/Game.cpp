@@ -61,6 +61,12 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     mine.bounceTimer = 0;
     mine.rotation = 0.f;
     mine.pulse = 0.f;
+    mine.inBossRoom = false;
+    chalice.active = false;
+    chalice.pulse = 0.f;
+    chalice.bobOffset = 0.f;
+    chaliceUsed = false;
+    playerInvincibleTimer = 0;
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
@@ -125,12 +131,16 @@ void Game::startLevel(int lvl) {
     mine.bounceTimer = 0;
     mine.rotation = 0.f;
     mine.pulse = 0.f;
+    mine.inBossRoom = false;
+    chaliceUsed = false;
+    chalice.active = false;
+    playerInvincibleTimer = 0;
+    // Spawna la mina in una cella vuota casuale del labirinto
     {
         std::vector<Vec2> mineCells;
         for (int c = 1; c < MAZE_COLS - 1; c++) {
             for (int r = 1; r < MAZE_ROWS - 1; r++) {
                 if (maze.getCellType(c, r) == CELL_EMPTY) {
-                    // Non vicino al player (almeno 5 celle)
                     sf::Vector2f ppos = player.getPixelPos();
                     int pc = (int)(ppos.x / TILE_SIZE);
                     int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
@@ -145,6 +155,35 @@ void Game::startLevel(int lvl) {
             mine.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
             mine.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
             mine.active = true;
+        }
+    }
+    // Spawna il calice d'oro in una cella vuota casuale (diversa dalla mina)
+    {
+        std::vector<Vec2> chaliceCells;
+        for (int c = 1; c < MAZE_COLS - 1; c++) {
+            for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                if (maze.getCellType(c, r) == CELL_EMPTY) {
+                    sf::Vector2f ppos = player.getPixelPos();
+                    int pc = (int)(ppos.x / TILE_SIZE);
+                    int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                    if (abs(c - pc) + abs(r - pr) >= 5) {
+                        // Non troppo vicino alla mina
+                        int mc = (int)(mine.pos.x / TILE_SIZE);
+                        int mr = (int)((mine.pos.y - UI_HEIGHT) / TILE_SIZE);
+                        if (abs(c - mc) + abs(r - mr) >= 4) {
+                            chaliceCells.push_back({c, r});
+                        }
+                    }
+                }
+            }
+        }
+        if (!chaliceCells.empty()) {
+            Vec2 chosen = chaliceCells[rand() % chaliceCells.size()];
+            chalice.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
+            chalice.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            chalice.active = true;
+            chalice.pulse = 0.f;
+            chalice.bobOffset = 0.f;
         }
     }
     state = STATE_PLAYING;
@@ -274,6 +313,19 @@ void Game::startBossFight(bool keepBossState) {
     speedBoots.active = true;
     speedBoots.pos = sf::Vector2f(150.0f, 200.0f);
     speedBoots.bobOffset = 0.f;
+    // Spawn mina nella stanza del boss (posizione casuale, non al centro)
+    if (!mine.active) {
+        mine.pos.x = 200.f + (rand() % 600);
+        mine.pos.y = UI_HEIGHT + 150.f + (rand() % 400);
+        mine.active = true;
+        mine.bouncing = false;
+        mine.bounceTimer = 0;
+        mine.rotation = 0.f;
+        mine.pulse = 0.f;
+        mine.inBossRoom = true;
+    }
+    // Il calice NON appare nella stanza del boss
+    chalice.active = false;
     if (musicEnabled) audio.playLevelMusic(currentLevel, true);
 }
 
@@ -958,6 +1010,50 @@ void Game::update() {
         bloodStains.erase(std::remove_if(bloodStains.begin(), bloodStains.end(),
             [](const BloodStain& bs) { return bs.life <= 0; }), bloodStains.end());
 
+        // --- Aggiornamento del calice d'oro (pozione magica) ---
+        if (chalice.active) {
+            chalice.pulse += 0.016f;
+            chalice.bobOffset = sin(chalice.pulse * 3.f) * 4.f;
+            // Collisione con player1 (NON player2)
+            float dx = player.getPixelPos().x - chalice.pos.x;
+            float dy = player.getPixelPos().y - chalice.pos.y;
+            if (dx * dx + dy * dy < 500) {
+                chalice.active = false;
+                chaliceUsed = true;
+                playerInvincibleTimer = 10000;  // 10 secondi
+                audio.playSound(SOUND_POTION_DRINK);
+                // Effetto particellare dorato
+                for (int i = 0; i < 20; i++)
+                    particles.push_back({chalice.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
+                        sf::Color(255, 215, 0), 40, 40});
+            }
+        }
+
+        // --- Aggiornamento invincibilità player1 (pozione) ---
+        if (playerInvincibleTimer > 0) {
+            if (playerInvincibleTimer > 16) playerInvincibleTimer -= 16;
+            else playerInvincibleTimer = 0;
+            // Se invincibile, uccide i nemici al tocco
+            if (playerInvincibleTimer > 0) {
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    float dx = player.getPixelPos().x - enemy.getPixelPos().x;
+                    float dy = player.getPixelPos().y - enemy.getPixelPos().y;
+                    if (dx * dx + dy * dy < 600) {
+                        enemy.takeDamage(999);
+                        player.addScore(5000);
+                        audio.playSound(SOUND_ENEMY_DEATH);
+                        audio.playSound(SOUND_ENEMY_EXPLODE);
+                        audio.playSound(SOUND_BLOOD_SPLAT);
+                        for (int i = 0; i < 25; i++)
+                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
+                                sf::Color(150+rand()%50, 0, 0), 35, 35});
+                        bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                    }
+                }
+            }
+        }
+
         // --- Aggiornamento della mina ---
         if (mine.active && !mine.bouncing) {
             // Mina ferma: controlla collisione con il player
@@ -1068,6 +1164,69 @@ void Game::update() {
         player.update(maze, true, particles);
         if (numPlayers == 2) player2.update(maze, true, particles);
         boss->update(player.getPixelPos().x, player.getPixelPos().y, bossProjectiles);
+
+        // --- Update mina nella stanza del boss ---
+        if (mine.active && mine.inBossRoom) {
+            mine.pulse += 0.016f;
+            if (!mine.bouncing) {
+                float dx = player.getPixelPos().x - mine.pos.x;
+                float dy = player.getPixelPos().y - mine.pos.y;
+                if (dx * dx + dy * dy < 400) {
+                    mine.bouncing = true;
+                    mine.bounceTimer = 30000;
+                    float angle = (rand() % 360) * (float)M_PI / 180.f;
+                    mine.vel.x = cos(angle) * 6.f;
+                    mine.vel.y = sin(angle) * 6.f;
+                    audio.playSound(SOUND_MINE_BOUNCE);
+                }
+            } else {
+                mine.rotation += 0.08f;
+                mine.pos += mine.vel;
+                // Rimbalzo sui bordi della stanza del boss
+                if (mine.pos.x < 30) { mine.pos.x = 30; mine.vel.x = -mine.vel.x; audio.playSound(SOUND_MINE_BOUNCE); }
+                if (mine.pos.x > WINDOW_WIDTH - 30) { mine.pos.x = WINDOW_WIDTH - 30; mine.vel.x = -mine.vel.x; audio.playSound(SOUND_MINE_BOUNCE); }
+                if (mine.pos.y < UI_HEIGHT + 30) { mine.pos.y = UI_HEIGHT + 30; mine.vel.y = -mine.vel.y; audio.playSound(SOUND_MINE_BOUNCE); }
+                if (mine.pos.y > WINDOW_HEIGHT - 30) { mine.pos.y = WINDOW_HEIGHT - 30; mine.vel.y = -mine.vel.y; audio.playSound(SOUND_MINE_BOUNCE); }
+                // Collisione con il boss
+                float dx = mine.pos.x - boss->getPos().x;
+                float dy = mine.pos.y - boss->getPos().y;
+                if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
+                    boss->takeDamage(15);
+                    audio.playSound(SOUND_BOSS_HIT);
+                    audio.playSound(SOUND_ENEMY_EXPLODE);
+                    for (int i = 0; i < 20; i++)
+                        particles.push_back({mine.pos, {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(255, 200, 50), 30, 30});
+                    mine.active = false;
+                    mine.bouncing = false;
+                }
+                // Timer
+                if (mine.bouncing) {
+                    if (mine.bounceTimer > 16) mine.bounceTimer -= 16;
+                    else mine.bounceTimer = 0;
+                    if (mine.bounceTimer == 0) {
+                        for (int i = 0; i < 10; i++)
+                            particles.push_back({mine.pos, {(float)(rand()%6-3), (float)(rand()%6-3)}, sf::Color(180, 150, 50), 20, 20});
+                        mine.active = false;
+                        mine.bouncing = false;
+                    }
+                }
+            }
+        }
+
+        // --- Update invincibilità player1 nella stanza del boss ---
+        if (playerInvincibleTimer > 0) {
+            if (playerInvincibleTimer > 16) playerInvincibleTimer -= 16;
+            else playerInvincibleTimer = 0;
+            // Se invincibile, danneggia il boss al tocco
+            if (playerInvincibleTimer > 0) {
+                float dx = player.getPixelPos().x - boss->getPos().x;
+                float dy = player.getPixelPos().y - boss->getPos().y;
+                if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
+                    boss->takeDamage(1);
+                    audio.playSound(SOUND_BOSS_HIT);
+                }
+            }
+        }
 
         // --- Aggiornamento proiettili boss ---
         // Gestione comportamenti speciali:
@@ -1710,6 +1869,64 @@ void Game::render() {
                 splash.setPosition(sx - sr, sy - sr);
                 window.draw(splash);
             }
+        }
+
+        // --- Rendering del calice d'oro (pozione magica) ---
+        if (chalice.active) {
+            float cx = chalice.pos.x;
+            float cy = chalice.pos.y + chalice.bobOffset;
+            float pulse = sin(chalice.pulse * 4.f) * 0.15f + 1.f;
+            // Aura dorata pulsante
+            float auraR = 20.f * pulse;
+            sf::CircleShape chaliceAura(auraR);
+            chaliceAura.setFillColor(sf::Color(255, 215, 0, 40));
+            chaliceAura.setPosition(cx - auraR, cy - auraR);
+            window.draw(chaliceAura);
+            // Coppa d'oro
+            sf::RectangleShape cup(sf::Vector2f(12.f, 10.f));
+            cup.setFillColor(sf::Color(255, 215, 0));
+            cup.setOutlineThickness(1.f); cup.setOutlineColor(sf::Color(180, 130, 30));
+            cup.setPosition(cx - 6.f, cy - 4.f);
+            window.draw(cup);
+            // Stelo
+            sf::RectangleShape stem(sf::Vector2f(4.f, 5.f));
+            stem.setFillColor(sf::Color(200, 160, 40));
+            stem.setPosition(cx - 2.f, cy + 5.f);
+            window.draw(stem);
+            // Base
+            sf::RectangleShape base(sf::Vector2f(14.f, 3.f));
+            base.setFillColor(sf::Color(255, 215, 0));
+            base.setOutlineThickness(0.8f); base.setOutlineColor(sf::Color(180, 130, 30));
+            base.setPosition(cx - 7.f, cy + 9.f);
+            window.draw(base);
+            // Gemma rossa centrale
+            sf::CircleShape gem(2.f);
+            gem.setFillColor(sf::Color(220, 30, 30));
+            gem.setPosition(cx - 2.f, cy - 1.f);
+            window.draw(gem);
+            // Riflesso
+            sf::RectangleShape ref(sf::Vector2f(3.f, 1.f));
+            ref.setFillColor(sf::Color(255, 245, 150));
+            ref.setPosition(cx - 5.f, cy - 3.f);
+            window.draw(ref);
+        }
+
+        // --- Aura di invincibilità attorno al player1 ---
+        if (playerInvincibleTimer > 0) {
+            sf::Vector2f ppos = player.getPixelPos();
+            float invPulse = sin(playerInvincibleTimer * 0.01f) * 0.2f + 1.f;
+            float auraR = 25.f * invPulse;
+            sf::CircleShape invAura(auraR);
+            // Lampeggio dorato
+            sf::Uint8 alpha = (playerInvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
+            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
+            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
+            window.draw(invAura);
+            // Scudo interno
+            sf::CircleShape invShield(15.f * invPulse);
+            invShield.setFillColor(sf::Color(255, 235, 100, 40));
+            invShield.setPosition(ppos.x - 15.f * invPulse, ppos.y - 15.f * invPulse);
+            window.draw(invShield);
         }
 
         // --- Rendering della mina ---
@@ -4376,6 +4593,68 @@ void Game::render() {
                 }
             }
         }
+
+        // --- Rendering mina nella stanza del boss ---
+        if (mine.active) {
+            float mx = mine.pos.x;
+            float my = mine.pos.y;
+            float mPulse = sin(mine.pulse * 5.f) * 0.2f + 1.f;
+            float auraR = 18.f * mPulse;
+            sf::CircleShape mineAura(auraR);
+            mineAura.setFillColor(sf::Color(200, 50, 20, 50));
+            mineAura.setPosition(mx - auraR, my - auraR);
+            window.draw(mineAura);
+            float bodyR = 7.f * mPulse;
+            sf::CircleShape mineBody(bodyR);
+            mineBody.setFillColor(sf::Color(80, 70, 60));
+            mineBody.setOutlineThickness(1.5f);
+            mineBody.setOutlineColor(sf::Color(30, 25, 20));
+            mineBody.setPosition(mx - bodyR, my - bodyR);
+            window.draw(mineBody);
+            for (int i = 0; i < 4; i++) {
+                float a = mine.rotation + i * (float)M_PI / 2.f;
+                float spikeLen = 5.f;
+                sf::ConvexShape spike;
+                spike.setPointCount(3);
+                spike.setFillColor(sf::Color(100, 85, 70));
+                spike.setOutlineThickness(0.5f);
+                spike.setOutlineColor(sf::Color(30, 25, 20));
+                float tipX = mx + cos(a) * (bodyR + spikeLen);
+                float tipY = my + sin(a) * (bodyR + spikeLen);
+                float perpX = -sin(a) * 3.f;
+                float perpY = cos(a) * 3.f;
+                float baseX = mx + cos(a) * bodyR;
+                float baseY = my + sin(a) * bodyR;
+                spike.setPoint(0, sf::Vector2f(tipX, tipY));
+                spike.setPoint(1, sf::Vector2f(baseX + perpX, baseY + perpY));
+                spike.setPoint(2, sf::Vector2f(baseX - perpX, baseY - perpY));
+                window.draw(spike);
+            }
+            float ledR = 2.f * mPulse;
+            sf::CircleShape led(ledR);
+            led.setFillColor(sf::Color(255, 50 + (sf::Uint8)(sin(mine.pulse * 8.f) * 50), 30, 240));
+            led.setPosition(mx - ledR, my - ledR);
+            window.draw(led);
+            if (mine.bouncing) {
+                sf::CircleShape trail(3.f);
+                trail.setFillColor(sf::Color(255, 150, 50, 100));
+                trail.setPosition(mx - mine.vel.x - 3.f, my - mine.vel.y - 3.f);
+                window.draw(trail);
+            }
+        }
+
+        // --- Rendering aura invincibilità player1 nella stanza boss ---
+        if (playerInvincibleTimer > 0) {
+            sf::Vector2f ppos = player.getPixelPos();
+            float invPulse = sin(playerInvincibleTimer * 0.01f) * 0.2f + 1.f;
+            float auraR = 25.f * invPulse;
+            sf::CircleShape invAura(auraR);
+            sf::Uint8 alpha = (playerInvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
+            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
+            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
+            window.draw(invAura);
+        }
+
         // Etichetta del livello boss in alto
         drawTextCenteredOutlined(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
     }

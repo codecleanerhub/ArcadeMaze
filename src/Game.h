@@ -106,19 +106,29 @@ struct BloodStain {
     sf::Color color;
 };
 
-// Mina: oggetto sul pavimento del labirinto che, se calpestato dal player,
-// si attiva e rimbalza per 8 secondi. Se colpisce un nemico lo uccide
-// e scompare. Se non colpisce nessuno, scompare dopo 8 secondi.
-// Una sola mina per livello, in posizione casuale.
-// Puo' comparire anche nella stanza del boss.
+// Mina: oggetto sul pavimento che, se calpestato dal player, si attiva
+// e rimbalza. Se colpisce un nemico lo uccide e scompare.
+// Una sola mina per livello. Appare nel labirinto E nella stanza del boss.
 struct Mine {
     sf::Vector2f pos;
-    bool active;            // true = mina presente sul pavimento
-    bool bouncing;          // true = mina attivata e in movimento
-    sf::Vector2f vel;       // velocita' di rimbalzo (px/frame)
-    int bounceTimer;        // ms residui di rimbalzo (8000 = 8 secondi)
-    float rotation;         // rotazione per animazione
+    bool active;
+    bool bouncing;
+    sf::Vector2f vel;
+    int bounceTimer;
+    float rotation;
+    float pulse;
+    bool inBossRoom;        // true = mina nella stanza del boss
+};
+
+// Calice d'oro: pozione magica che appare in posizione casuale nel labirinto.
+// Se il player la raccoglie, beve la pozione (suono glug-glug) e diventa
+// immortale per 10 secondi: se tocca un nemico lo uccide.
+// NON appare nella stanza del boss. Non ha effetto sul player2.
+struct GoldenChalice {
+    sf::Vector2f pos;
+    bool active;            // true = calice presente sul pavimento
     float pulse;            // pulsazione visiva
+    float bobOffset;        // oscillazione verticale
 };
 
 class Game {
@@ -153,6 +163,9 @@ private:
     int initialEnemyCount;                      // numero nemici iniziali (per calcolo 50%)
     std::vector<BloodStain> bloodStains;        // macchie di sangue temporanee
     Mine mine;                                   // mina sul pavimento (1 per livello)
+    GoldenChalice chalice;                       // calice d'oro pozione magica (1 per livello)
+    bool chaliceUsed;                            // true = calice gia' raccolto questo livello
+    int playerInvincibleTimer;                   // >0 = player1 immortale (ms residui)
     std::vector<Particle> particles;             // particelle generiche (sangue, scintille)
     std::vector<Firework> fireworks;             // fuochi d'artificio (solo in WIN_STORY)
 

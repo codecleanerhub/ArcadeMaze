@@ -43,11 +43,12 @@ enum SoundType {
     SOUND_WEAPON_PICKUP, // raccolta arma (caricamento fucile)
     SOUND_ENEMY_EXPLODE, // esplosione nemico (boom + debris)
     SOUND_BLOOD_SPLAT,   // sangue che schizza (wet impact)
-    SOUND_MINE_BOUNCE    // rimbalzo mina (boing metallico)
+    SOUND_MINE_BOUNCE,   // rimbalzo mina (boing metallico)
+    SOUND_POTION_DRINK   // ingestione pozione (glug-glug)
 };
 
 // Numero totale di SFX (usato per dimensionare i buffer).
-constexpr int SOUND_TYPE_COUNT = 22;
+constexpr int SOUND_TYPE_COUNT = 23;
 
 class AudioManager {
 public:
