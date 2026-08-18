@@ -786,16 +786,32 @@ void Game::update() {
             int aliveCount = 0;
             for (const auto& e : enemies) if (!e.isDead()) aliveCount++;
             if (aliveCount <= initialEnemyCount / 2 && aliveCount > 0) {
-                // Attiva il portale al centro del labirinto
-                magicPortal.pos.x = (MAZE_COLS / 2) * TILE_SIZE + TILE_SIZE / 2.f;
-                magicPortal.pos.y = (MAZE_ROWS / 2) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-                magicPortal.active = true;
-                magicPortal.phase = 0;  // fase apertura
-                magicPortal.phaseTimer = 1000;
-                magicPortal.rotation = 0.f;
-                magicPortal.glowPulse = 0.f;
-                portalUsed = true;
-                audio.playSound(SOUND_PORTAL_OPEN);
+                // Attiva il portale: cerca la cella vuota piu' vicina al
+                // centro del labirinto (il centro esatto potrebbe essere un muro)
+                int targetC = MAZE_COLS / 2;
+                int targetR = MAZE_ROWS / 2;
+                int bestC = -1, bestR = -1, bestDist = 999;
+                for (int c = 1; c < MAZE_COLS - 1; c++) {
+                    for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                        if (maze.getCellType(c, r) == CELL_EMPTY) {
+                            int d = abs(c - targetC) + abs(r - targetR);
+                            if (d < bestDist) {
+                                bestDist = d; bestC = c; bestR = r;
+                            }
+                        }
+                    }
+                }
+                if (bestC >= 0) {
+                    magicPortal.pos.x = bestC * TILE_SIZE + TILE_SIZE / 2.f;
+                    magicPortal.pos.y = bestR * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                    magicPortal.active = true;
+                    magicPortal.phase = 0;
+                    magicPortal.phaseTimer = 1000;
+                    magicPortal.rotation = 0.f;
+                    magicPortal.glowPulse = 0.f;
+                    portalUsed = true;
+                    audio.playSound(SOUND_PORTAL_OPEN);
+                }
             }
         }
 
@@ -1526,58 +1542,64 @@ void Game::render() {
             float px = magicPortal.pos.x;
             float py = magicPortal.pos.y;
             float rot = magicPortal.rotation;
-            float pulse = sin(magicPortal.glowPulse * 4.f) * 0.15f + 1.f;
+            float pulse = sin(magicPortal.glowPulse * 4.f) * 0.2f + 1.f;
 
-            // Aura esterna pulsante (viola-blu)
-            float auraR = 40.f * pulse;
+            // Aura esterna pulsante (viola-blu) - GRANDE per essere visibile
+            float auraR = 55.f * pulse;
             sf::CircleShape portalAura(auraR);
-            portalAura.setFillColor(sf::Color(120, 60, 220, 30));
+            portalAura.setFillColor(sf::Color(120, 60, 220, 40));
             portalAura.setPosition(px - auraR, py - auraR);
             window.draw(portalAura);
-            sf::CircleShape portalAura2(auraR * 0.7f);
-            portalAura2.setFillColor(sf::Color(160, 80, 240, 50));
-            portalAura2.setPosition(px - auraR * 0.7f, py - auraR * 0.7f);
+            sf::CircleShape portalAura2(auraR * 0.65f);
+            portalAura2.setFillColor(sf::Color(160, 80, 240, 60));
+            portalAura2.setPosition(px - auraR * 0.65f, py - auraR * 0.65f);
             window.draw(portalAura2);
+            sf::CircleShape portalAura3(auraR * 0.4f);
+            portalAura3.setFillColor(sf::Color(200, 100, 255, 80));
+            portalAura3.setPosition(px - auraR * 0.4f, py - auraR * 0.4f);
+            window.draw(portalAura3);
 
-            // Anelli rotanti del portale (3 anelli concentrici)
-            for (int ring = 0; ring < 3; ring++) {
-                float ringR = (12.f + ring * 6.f) * pulse;
+            // Anelli rotanti del portale (4 anelli concentrici)
+            for (int ring = 0; ring < 4; ring++) {
+                float ringR = (16.f + ring * 8.f) * pulse;
                 sf::CircleShape ringShape(ringR);
                 ringShape.setFillColor(sf::Color(0, 0, 0, 0));
-                ringShape.setOutlineThickness(2.f - ring * 0.5f);
-                sf::Color ringCol = (ring == 0) ? sf::Color(200, 100, 255, 220) :
-                                    (ring == 1) ? sf::Color(150, 80, 220, 180) :
-                                                   sf::Color(100, 60, 180, 140);
+                ringShape.setOutlineThickness(3.f - ring * 0.5f);
+                sf::Color ringCol = (ring == 0) ? sf::Color(220, 120, 255, 240) :
+                                    (ring == 1) ? sf::Color(180, 90, 240, 200) :
+                                    (ring == 2) ? sf::Color(140, 70, 210, 160) :
+                                                   sf::Color(100, 50, 180, 120);
                 ringShape.setOutlineColor(ringCol);
                 ringShape.setPosition(px - ringR, py - ringR);
                 window.draw(ringShape);
             }
 
-            // Spirale di particelle rotanti
-            for (int i = 0; i < 8; i++) {
-                float a = rot * 2.f + i * (float)M_PI / 4.f;
-                float r = 10.f + sin(rot + i) * 5.f;
+            // Spirale di particelle rotanti (12 particelle)
+            for (int i = 0; i < 12; i++) {
+                float a = rot * 2.f + i * (float)M_PI / 6.f;
+                float r = 14.f + sin(rot + i) * 8.f;
                 float sx = px + cos(a) * r;
                 float sy = py + sin(a) * r;
-                sf::CircleShape spark(2.f);
-                spark.setFillColor(sf::Color(220, 150, 255, 200));
-                spark.setPosition(sx - 2.f, sy - 2.f);
+                float sparkSize = 2.5f + sin(rot * 3.f + i) * 1.f;
+                sf::CircleShape spark(sparkSize);
+                spark.setFillColor(sf::Color(230, 160, 255, 220));
+                spark.setPosition(sx - sparkSize, sy - sparkSize);
                 window.draw(spark);
             }
 
             // Centro del portale (nero/viola profondo)
-            sf::CircleShape center(8.f);
-            center.setFillColor(sf::Color(20, 5, 30, 200));
-            center.setPosition(px - 8.f, py - 8.f);
+            sf::CircleShape center(12.f);
+            center.setFillColor(sf::Color(15, 5, 25, 220));
+            center.setPosition(px - 12.f, py - 12.f);
             window.draw(center);
 
             // Bagliore centrale (fase-dependent)
             if (magicPortal.phase == 0) {
                 // Apertura: bagliore crescente
                 float openT = 1.f - (float)magicPortal.phaseTimer / 1000.f;
-                float glowR = 4.f + openT * 8.f;
+                float glowR = 6.f + openT * 12.f;
                 sf::CircleShape innerGlow(glowR);
-                innerGlow.setFillColor(sf::Color(200, 100, 255, (sf::Uint8)(150 * openT)));
+                innerGlow.setFillColor(sf::Color(200, 100, 255, (sf::Uint8)(180 * openT)));
                 innerGlow.setPosition(px - glowR, py - glowR);
                 window.draw(innerGlow);
             } else if (magicPortal.phase == 1) {
