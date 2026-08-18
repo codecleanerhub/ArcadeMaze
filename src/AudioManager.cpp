@@ -55,8 +55,8 @@ AudioManager::AudioManager() {
     buffers.resize(SOUND_TYPE_COUNT);
     sounds.resize(30);  // 30 voci per gestire piu' suoni simultanei
     for(auto& s : sounds) s.setVolume(70);
-    // Pre-genera le 5 tracce musicali (una tantum)
-    for(int i = 0; i < 5; ++i) generateTrack(i);
+    // Pre-genera le 6 tracce musicali (una tantum)
+    for(int i = 0; i < 6; ++i) generateTrack(i);
     // Pre-sintetizza TUTTI i suoni nei buffer (evita lag durante il gioco)
     for(int i = 0; i < SOUND_TYPE_COUNT; ++i) {
         preGenerateSound(static_cast<SoundType>(i));
@@ -66,7 +66,11 @@ AudioManager::AudioManager() {
 // --- Music management ---
 
 void AudioManager::playLevelMusic(int level, bool isBoss) {
-    int trackIdx = isBoss ? 4 : ((level - 1) % 4);
+    // level=0 e isBoss=false -> traccia 5 (portale magico: evocativa fantasy)
+    int trackIdx;
+    if (level == 0 && !isBoss) trackIdx = 5;       // portale magico
+    else if (isBoss) trackIdx = 4;                  // boss
+    else trackIdx = (level - 1) % 4;                // livello normale
     music.stop();
     music.setBuffer(musicBuffers[trackIdx]);
     music.setLoop(true);
@@ -334,23 +338,49 @@ void AudioManager::playSound(SoundType type) {
         }
     }
     else if (type == SOUND_WEAPON_PICKUP) {
-        // 0.25s: chime argenteo (3 note ascendenti veloci + sparkle)
-        int notes[] = {1047, 1319, 1568};  // Do6, Mi6, Sol6
-        for(int n = 0; n < 3; n++) {
-            for(int i = 0; i < SR * 0.06; i++) {
-                double t = (double)i / SR;
-                double env = exp(-t * 15.0);
-                double s = 0.5 * pulseWave(t * notes[n], 0.25) +
-                           0.5 * triangleWave(t * notes[n] * 2);
-                samples.push_back((sf::Int16)(2000 * s * env));
-            }
-        }
-        // Sparkle tail
-        for(int i = 0; i < SR * 0.07; i++) {
+        // 0.6s: caricamento fucile (click-click-clack meccanico)
+        // Fase 1: click metallico secco (0.05s)
+        for(int i = 0; i < SR * 0.05; i++) {
             double t = (double)i / SR;
-            double env = exp(-t * 20.0);
-            double s = 0.3 * pulseWave(t * 2093, 0.1);  // Do7
-            samples.push_back((sf::Int16)(1200 * s * env));
+            double env = exp(-t * 50.0);
+            double s = 0.6 * noiseGen() + 0.4 * pulseWave(t * 2000, 0.1);
+            samples.push_back((sf::Int16)(2500 * s * env));
+        }
+        // Pausa (0.05s silenzio)
+        for(int i = 0; i < SR * 0.05; i++) samples.push_back(0);
+        // Fase 2: secondo click (0.05s)
+        for(int i = 0; i < SR * 0.05; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 50.0);
+            double s = 0.5 * noiseGen() + 0.5 * pulseWave(t * 1500, 0.1);
+            samples.push_back((sf::Int16)(2200 * s * env));
+        }
+        // Pausa (0.05s silenzio)
+        for(int i = 0; i < SR * 0.05; i++) samples.push_back(0);
+        // Fase 3: clack di caricamento (0.15s) - slide meccanico grave
+        for(int i = 0; i < SR * 0.15; i++) {
+            double t = (double)i / SR;
+            double freq = 300 - t * 800;  // sweep discendente
+            if (freq < 80) freq = 80;
+            double env = exp(-t * 12.0) * (1.0 - exp(-t * 30.0));
+            double s = 0.4 * pulseWave(t * freq, 0.3) +
+                       0.3 * sawtoothWave(t * freq * 0.5) +
+                       0.3 * noiseGen();
+            samples.push_back((sf::Int16)(2500 * s * env));
+        }
+        // Fase 4: click finale di chiusura (0.05s)
+        for(int i = 0; i < SR * 0.05; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 40.0);
+            double s = 0.7 * noiseGen() + 0.3 * pulseWave(t * 1800, 0.1);
+            samples.push_back((sf::Int16)(2800 * s * env));
+        }
+        // Fase 5: tonfo basso di conferma (0.1s)
+        for(int i = 0; i < SR * 0.1; i++) {
+            double t = (double)i / SR;
+            double env = exp(-t * 15.0);
+            double s = 0.5 * triangleWave(t * 100) + 0.3 * pulseWave(t * 50, 0.5);
+            samples.push_back((sf::Int16)(2000 * s * env));
         }
     }
     else if (type == SOUND_ENEMY_EXPLODE) {
@@ -427,6 +457,7 @@ void AudioManager::generateTrack(int trackIdx) {
     else if (trackIdx == 1) { root = 130.81; harmonic = true; }   // Do minore armonica
     else if (trackIdx == 2) { root = 123.47; harmonic = false; }  // Si minore
     else if (trackIdx == 3) { root = 82.41; harmonic = true; }    // Mi minore armonica
+    else if (trackIdx == 5) { root = 110.0; harmonic = true; tempo = 70.0; }  // La minore armonica (portale: lento, mistico)
     else { root = 87.31; harmonic = true; tempo = 130.0; }        // Fa minore armonica (boss)
 
     int nat[] = {0, 2, 3, 5, 7, 8, 10};
@@ -455,6 +486,13 @@ void AudioManager::generateTrack(int trackIdx) {
         kick[3] = 1; kick[7] = 1; kick[11] = 1; kick[15] = 1;
         snare[6] = 1; snare[14] = 1;
         for(int i = 0; i < 16; i++) hihat[i] = 1;  // tutti i sixteenth
+    }
+    // Per il portale: pattern molto morbido, mistico, ethereal
+    if (trackIdx == 5) {
+        // Kick solo sul beat 1, niente snare, hihat raro
+        for(int i = 0; i < 16; i++) { kick[i] = 0; snare[i] = 0; hihat[i] = 0; }
+        kick[0] = 1;  // solo sul beat 1
+        hihat[0] = 1; hihat[8] = 1;  // ogni 2 beat
     }
 
     std::vector<sf::Int16> trackSamples;

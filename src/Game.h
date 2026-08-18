@@ -83,14 +83,18 @@ struct ExitDoor {
 
 // Portale magico per respawn nemici: quando il 50% dei nemici viene ucciso,
 // appare un portale magico al centro del labirinto. Si apre con un'animazione,
-// fa uscire i nemici respawnati, poi si chiude. Avviene una sola volta per livello.
+// fa uscire i nemici respawnati uno alla volta (4 secondi di intervallo),
+// poi si chiude. Avviene una sola volta per livello.
 struct MagicPortal {
     sf::Vector2f pos;
-    bool active;            // true = portale attivo
-    int phase;              // 0=apertura, 1=spawn nemici, 2=chiusura, 3=inattivo
+    bool active;
+    int phase;              // 0=apertura, 1=spawn nemici (con intervalli), 2=chiusura, 3=inattivo
     int phaseTimer;         // ms residui della fase corrente
-    float rotation;         // rotazione per animazione spirale
+    float rotation;
     float glowPulse;
+    int enemiesToSpawn;     // nemici ancora da spawnare
+    int spawnTimer;         // ms residui al prossimo spawn (4000ms = 4 secondi)
+    std::vector<int> deadEnemyIndices;  // indici dei nemici morti da respawnare
 };
 
 // Macchia di sangue temporanea sul pavimento dopo la morte di un nemico.
@@ -169,6 +173,8 @@ private:
 
     // Genera 5 nemici in posizioni casuali del labirinto.
     void spawnEnemies();
+    // Spawna un nemico dal portale magico (1 alla volta).
+    void spawnEnemyFromPortal();
     // Inizia un nuovo livello: rigenera maze, resetta posizione giocatore,
     // spawn nemici, riproduce musica.
     void startLevel(int lvl);

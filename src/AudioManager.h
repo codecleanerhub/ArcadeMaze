@@ -72,8 +72,8 @@ private:
     // Pool di istanze sf::Sound per riproduzione polifonica (20 voci).
     std::vector<sf::Sound> sounds;
 
-    // 5 tracce musicali pre-generate: indici 0..3 = livelli, 4 = boss.
-    sf::SoundBuffer musicBuffers[5];
+    // 6 tracce musicali pre-generate: indici 0..3 = livelli, 4 = boss, 5 = portale.
+    sf::SoundBuffer musicBuffers[6];
     sf::Sound music;
 
     // Trova uno slot audio libero (o il primo se tutti occupati).

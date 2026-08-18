@@ -52,6 +52,8 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     magicPortal.phaseTimer = 0;
     magicPortal.rotation = 0.f;
     magicPortal.glowPulse = 0.f;
+    magicPortal.enemiesToSpawn = 0;
+    magicPortal.spawnTimer = 0;
     portalUsed = false;
     initialEnemyCount = 0;
 }
@@ -156,7 +158,51 @@ void Game::spawnEnemies() {
 }
 
 // ---------------------------------------------------------------------------
-// startBossFight: transizione alla stanza del boss.
+// spawnEnemyFromPortal: spawna un nemico dal portale magico. Prende il
+// primo nemico morto dalla lista deadEnemyIndices, lo respawn vicino al
+// portale in una cella vuota, e riproduce il suono di uscita.
+// ---------------------------------------------------------------------------
+void Game::spawnEnemyFromPortal() {
+    if (magicPortal.enemiesToSpawn <= 0 || magicPortal.deadEnemyIndices.empty()) {
+        magicPortal.enemiesToSpawn = 0;
+        return;
+    }
+    // Prendi il primo nemico morto dalla lista
+    int idx = magicPortal.deadEnemyIndices.back();
+    magicPortal.deadEnemyIndices.pop_back();
+
+    if (idx < 0 || idx >= (int)enemies.size()) {
+        magicPortal.enemiesToSpawn--;
+        return;
+    }
+
+    EnemyType et = enemies[idx].getType();
+    int pc = (int)(magicPortal.pos.x / TILE_SIZE);
+    int pr = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
+
+    // Cerca una cella vuota in raggio crescente dal portale
+    bool placed = false;
+    for (int radius = 1; radius <= 5 && !placed; radius++) {
+        for (int dc = -radius; dc <= radius && !placed; dc++) {
+            for (int dr = -radius; dr <= radius && !placed; dr++) {
+                int nc = pc + dc, nr = pr + dr;
+                if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1
+                    && !maze.isWall(nc, nr)
+                    && maze.getCellType(nc, nr) == CELL_EMPTY) {
+                    enemies[idx] = Enemy(et, nc, nr);
+                    placed = true;
+                    // Effetto particellare di uscita dal portale
+                    for (int i = 0; i < 10; i++) {
+                        particles.push_back({magicPortal.pos,
+                            {(float)(rand()%6-3), (float)(rand()%6-3)},
+                            sf::Color(200, 100, 255), 25, 25});
+                    }
+                }
+            }
+        }
+    }
+    magicPortal.enemiesToSpawn--;
+}
 // Crea il boss (allocato dinamicamente: il precedente viene deallocato),
 // posiziona il giocatore in fondo alla stanza, pulisce proiettili e fa
 // spawn di 3 armi casuali a terra (cosi' il giocatore ha munizioni fresche).
@@ -809,8 +855,21 @@ void Game::update() {
                     magicPortal.phaseTimer = 1000;
                     magicPortal.rotation = 0.f;
                     magicPortal.glowPulse = 0.f;
+                    magicPortal.enemiesToSpawn = 3;
+                    if (magicPortal.enemiesToSpawn > initialEnemyCount)
+                        magicPortal.enemiesToSpawn = initialEnemyCount;
+                    magicPortal.spawnTimer = 0;
+                    magicPortal.deadEnemyIndices.clear();
+                    // Raccogli gli indici dei nemici morti da respawnare
+                    for (int i = 0; i < (int)enemies.size(); i++) {
+                        if (enemies[i].isDead() && enemies[i].isDeathAnimDone()) {
+                            magicPortal.deadEnemyIndices.push_back(i);
+                        }
+                    }
                     portalUsed = true;
                     audio.playSound(SOUND_PORTAL_OPEN);
+                    // Avvia musica evocativa fantasy per la durata del portale
+                    if (musicEnabled) audio.playLevelMusic(0, false);  // traccia speciale
                 }
             }
         }
@@ -824,45 +883,33 @@ void Game::update() {
 
             if (magicPortal.phaseTimer == 0) {
                 if (magicPortal.phase == 0) {
-                    // Fase apertura completata -> spawn nemici
+                    // Fase apertura completata -> inizio fase spawn (con intervalli)
                     magicPortal.phase = 1;
-                    magicPortal.phaseTimer = 500;
-                    // Respawn del 50% dei nemici iniziali dal portale
-                    int respawnTarget = 3;
-                    if (respawnTarget > initialEnemyCount) respawnTarget = initialEnemyCount;
-                    int respawned = 0;
-                    int pc = (int)(magicPortal.pos.x / TILE_SIZE);
-                    int pr = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
-                    for (auto& e : enemies) {
-                        if (e.isDead() && e.isDeathAnimDone() && respawned < respawnTarget) {
-                            EnemyType et = e.getType();
-                            // Cerca una cella vuota in raggio sempre piu' largo
-                            bool placed = false;
-                            for (int radius = 1; radius <= 5 && !placed; radius++) {
-                                for (int dc = -radius; dc <= radius && !placed; dc++) {
-                                    for (int dr = -radius; dr <= radius && !placed; dr++) {
-                                        int nc = pc + dc, nr = pr + dr;
-                                        if (nc > 0 && nc < MAZE_COLS - 1 && nr > 0 && nr < MAZE_ROWS - 1
-                                            && !maze.isWall(nc, nr)
-                                            && maze.getCellType(nc, nr) == CELL_EMPTY) {
-                                            e = Enemy(et, nc, nr);
-                                            respawned++;
-                                            placed = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (magicPortal.phase == 1) {
-                    // Fase spawn completata -> chiusura
-                    magicPortal.phase = 2;
-                    magicPortal.phaseTimer = 800;
-                    audio.playSound(SOUND_PORTAL_CLOSE);
+                    magicPortal.spawnTimer = 500;  // primo spawn dopo 500ms
+                    // Spawna il primo nemico subito
+                    spawnEnemyFromPortal();
                 } else if (magicPortal.phase == 2) {
                     // Fase chiusura completata -> inattivo
                     magicPortal.phase = 3;
                     magicPortal.active = false;
+                    // Ripristina musica del livello
+                    if (musicEnabled) audio.playLevelMusic(currentLevel, false);
+                }
+            }
+
+            // Fase 1: spawn nemici con intervallo di 4 secondi
+            if (magicPortal.phase == 1) {
+                if (magicPortal.spawnTimer > 16) magicPortal.spawnTimer -= 16;
+                else magicPortal.spawnTimer = 0;
+                if (magicPortal.spawnTimer == 0 && magicPortal.enemiesToSpawn > 0) {
+                    spawnEnemyFromPortal();
+                    magicPortal.spawnTimer = 4000;  // 4 secondi al prossimo
+                }
+                // Se tutti i nemici sono spawnati, passa alla chiusura
+                if (magicPortal.enemiesToSpawn == 0) {
+                    magicPortal.phase = 2;
+                    magicPortal.phaseTimer = 800;
+                    audio.playSound(SOUND_PORTAL_CLOSE);
                 }
             }
         }
