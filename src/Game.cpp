@@ -1023,8 +1023,10 @@ void Game::update() {
                     }
                     portalUsed = true;
                     audio.playSound(SOUND_PORTAL_OPEN);
-                    // Avvia musica evocativa fantasy per la durata del portale
-                    if (musicEnabled) audio.playLevelMusic(0, false);  // traccia speciale
+                    // Avvia musica evocativa fantasy per la durata del portale.
+                    // Questa traccia e' un jingle evento (non musica di sottofondo):
+                    // suona SEMPRE, anche se l'opzione "musica" del menu e' OFF.
+                    audio.playLevelMusic(0, false);  // traccia speciale
                 }
             }
         }
@@ -1047,8 +1049,11 @@ void Game::update() {
                     // Fase chiusura completata -> inattivo
                     magicPortal.phase = 3;
                     magicPortal.active = false;
-                    // Ripristina musica del livello
+                    // Ripristina lo stato sonoro precedente al portale:
+                    // - se la musica di sottofondo era attiva, riprendi la traccia del livello
+                    // - se era disattivata, ferma tutto (silenzio come prima del portale)
                     if (musicEnabled) audio.playLevelMusic(currentLevel, false);
+                    else audio.stopMusic();
                 }
             }
 
