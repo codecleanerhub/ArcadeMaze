@@ -982,7 +982,7 @@ void Maze::render(sf::RenderTarget& target) {
                 });
             // Seleziona mantenendo distanza minima di 3 celle tra le
             // torce scelte, per evitare raggruppamenti.
-            const int minDist = 5;
+            const int minDist = 8;
             for (const Vec2& cand : candidates) {
                 if ((int)out.size() >= 2) break;
                 bool tooClose = false;
@@ -1180,7 +1180,7 @@ void Maze::render(sf::RenderTarget& target) {
                     return cellHash(a.x + 1111, a.y + 2222) >
                            cellHash(b.x + 1111, b.y + 2222);
                 });
-            const int minDist = 5;
+            const int minDist = 8;
             for (const Vec2& cand : in) {
                 if ((int)out.size() >= 2) break;
                 bool tooClose = false;
