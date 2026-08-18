@@ -15,5 +15,7 @@ public:
     // Disegna l'intera barra HUD. `remainingTreasures` viene passato dal
     // Game perche' e' lui a tenere il riferimento al labirinto.
     void render(sf::RenderTarget& target, Player& player, int remainingTreasures);
+    // Overload per 2 giocatori: mostra anche le stats del player2.
+    void render(sf::RenderTarget& target, Player& player1, Player& player2, int remainingTreasures);
 };
 #endif

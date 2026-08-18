@@ -67,6 +67,7 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     chalice.bobOffset = 0.f;
     chaliceUsed = false;
     playerInvincibleTimer = 0;
+    player2InvincibleTimer = 0;
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
@@ -135,6 +136,7 @@ void Game::startLevel(int lvl) {
     chaliceUsed = false;
     chalice.active = false;
     playerInvincibleTimer = 0;
+    player2InvincibleTimer = 0;
     // Spawna la mina in una cella vuota casuale del labirinto
     {
         std::vector<Vec2> mineCells;
@@ -902,9 +904,17 @@ void Game::update() {
             else exitDoor.animTimer = 0;
             exitDoor.glowPulse += 0.016f;
             if (exitDoor.animTimer == 0) {
-                float dx = player.getPixelPos().x - exitDoor.pos.x;
-                float dy = player.getPixelPos().y - exitDoor.pos.y;
-                if (dx * dx + dy * dy < 600) {
+                // Player1 o player2 possono attivare la scala
+                bool p1Hit = false, p2Hit = false;
+                float dx1 = player.getPixelPos().x - exitDoor.pos.x;
+                float dy1 = player.getPixelPos().y - exitDoor.pos.y;
+                if (dx1 * dx1 + dy1 * dy1 < 600) p1Hit = true;
+                if (numPlayers == 2) {
+                    float dx2 = player2.getPixelPos().x - exitDoor.pos.x;
+                    float dy2 = player2.getPixelPos().y - exitDoor.pos.y;
+                    if (dx2 * dx2 + dy2 * dy2 < 600) p2Hit = true;
+                }
+                if (p1Hit || p2Hit) {
                     exitDoor.active = false;
                     startBossFight();
                 }
@@ -1014,57 +1024,73 @@ void Game::update() {
         if (chalice.active) {
             chalice.pulse += 0.016f;
             chalice.bobOffset = sin(chalice.pulse * 3.f) * 4.f;
-            // Collisione con player1 (NON player2)
-            float dx = player.getPixelPos().x - chalice.pos.x;
-            float dy = player.getPixelPos().y - chalice.pos.y;
-            if (dx * dx + dy * dy < 500) {
+            // Collisione con player1 o player2
+            float dx1 = player.getPixelPos().x - chalice.pos.x;
+            float dy1 = player.getPixelPos().y - chalice.pos.y;
+            bool p1Hit = (dx1 * dx1 + dy1 * dy1 < 500);
+            bool p2Hit = false;
+            if (numPlayers == 2) {
+                float dx2 = player2.getPixelPos().x - chalice.pos.x;
+                float dy2 = player2.getPixelPos().y - chalice.pos.y;
+                p2Hit = (dx2 * dx2 + dy2 * dy2 < 500);
+            }
+            if (p1Hit || p2Hit) {
                 chalice.active = false;
                 chaliceUsed = true;
-                playerInvincibleTimer = 10000;  // 10 secondi
+                if (p1Hit) playerInvincibleTimer = 10000;
+                if (p2Hit) player2InvincibleTimer = 10000;
                 audio.playSound(SOUND_POTION_DRINK);
-                // Effetto particellare dorato
                 for (int i = 0; i < 20; i++)
                     particles.push_back({chalice.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
                         sf::Color(255, 215, 0), 40, 40});
             }
         }
 
-        // --- Aggiornamento invincibilità player1 (pozione) ---
-        if (playerInvincibleTimer > 0) {
-            if (playerInvincibleTimer > 16) playerInvincibleTimer -= 16;
-            else playerInvincibleTimer = 0;
-            // Se invincibile, uccide i nemici al tocco
-            if (playerInvincibleTimer > 0) {
-                for (auto& enemy : enemies) {
-                    if (enemy.isDead()) continue;
-                    float dx = player.getPixelPos().x - enemy.getPixelPos().x;
-                    float dy = player.getPixelPos().y - enemy.getPixelPos().y;
-                    if (dx * dx + dy * dy < 600) {
-                        enemy.takeDamage(999);
-                        player.addScore(5000);
-                        audio.playSound(SOUND_ENEMY_DEATH);
-                        audio.playSound(SOUND_ENEMY_EXPLODE);
-                        audio.playSound(SOUND_BLOOD_SPLAT);
-                        for (int i = 0; i < 25; i++)
-                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
-                                sf::Color(150+rand()%50, 0, 0), 35, 35});
-                        bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+        // --- Aggiornamento invincibilità (pozione) per entrambi i player ---
+        // Lambda per evitare duplicazione
+        auto updateInvincible = [this](Player& p, int& timer) {
+            if (timer > 0) {
+                if (timer > 16) timer -= 16;
+                else timer = 0;
+                if (timer > 0) {
+                    for (auto& enemy : enemies) {
+                        if (enemy.isDead()) continue;
+                        float dx = p.getPixelPos().x - enemy.getPixelPos().x;
+                        float dy = p.getPixelPos().y - enemy.getPixelPos().y;
+                        if (dx * dx + dy * dy < 600) {
+                            enemy.takeDamage(999);
+                            p.addScore(5000);
+                            audio.playSound(SOUND_ENEMY_DEATH);
+                            audio.playSound(SOUND_ENEMY_EXPLODE);
+                            audio.playSound(SOUND_BLOOD_SPLAT);
+                            for (int i = 0; i < 25; i++)
+                                particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
+                                    sf::Color(150+rand()%50, 0, 0), 35, 35});
+                            bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                        }
                     }
                 }
             }
-        }
+        };
+        updateInvincible(player, playerInvincibleTimer);
+        if (numPlayers == 2) updateInvincible(player2, player2InvincibleTimer);
 
         // --- Aggiornamento della mina ---
         if (mine.active && !mine.bouncing) {
-            // Mina ferma: controlla collisione con il player
+            // Mina ferma: controlla collisione con player1 o player2
             mine.pulse += 0.016f;
-            float dx = player.getPixelPos().x - mine.pos.x;
-            float dy = player.getPixelPos().y - mine.pos.y;
-            if (dx * dx + dy * dy < 400) {  // ~20px raggio
-                // Attiva la mina: inizia a rimbalzare
+            float dx1 = player.getPixelPos().x - mine.pos.x;
+            float dy1 = player.getPixelPos().y - mine.pos.y;
+            bool p1Hit = (dx1 * dx1 + dy1 * dy1 < 400);
+            bool p2Hit = false;
+            if (numPlayers == 2) {
+                float dx2 = player2.getPixelPos().x - mine.pos.x;
+                float dy2 = player2.getPixelPos().y - mine.pos.y;
+                p2Hit = (dx2 * dx2 + dy2 * dy2 < 400);
+            }
+            if (p1Hit || p2Hit) {
                 mine.bouncing = true;
-                mine.bounceTimer = 30000;  // 30 secondi
-                // Direzione iniziale casuale
+                mine.bounceTimer = 30000;
                 float angle = (rand() % 360) * (float)M_PI / 180.f;
                 mine.vel.x = cos(angle) * 6.f;
                 mine.vel.y = sin(angle) * 6.f;
@@ -1217,10 +1243,22 @@ void Game::update() {
         if (playerInvincibleTimer > 0) {
             if (playerInvincibleTimer > 16) playerInvincibleTimer -= 16;
             else playerInvincibleTimer = 0;
-            // Se invincibile, danneggia il boss al tocco
             if (playerInvincibleTimer > 0) {
                 float dx = player.getPixelPos().x - boss->getPos().x;
                 float dy = player.getPixelPos().y - boss->getPos().y;
+                if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
+                    boss->takeDamage(1);
+                    audio.playSound(SOUND_BOSS_HIT);
+                }
+            }
+        }
+        // --- Update invincibilità player2 nella stanza del boss ---
+        if (player2InvincibleTimer > 0) {
+            if (player2InvincibleTimer > 16) player2InvincibleTimer -= 16;
+            else player2InvincibleTimer = 0;
+            if (player2InvincibleTimer > 0) {
+                float dx = player2.getPixelPos().x - boss->getPos().x;
+                float dy = player2.getPixelPos().y - boss->getPos().y;
                 if (dx * dx + dy * dy < (boss->getSize() / 2) * (boss->getSize() / 2)) {
                     boss->takeDamage(1);
                     audio.playSound(SOUND_BOSS_HIT);
@@ -1373,12 +1411,11 @@ void Game::update() {
             }
         }
 
-        // Se entrambi i giocatori hanno finito le munizioni e non ci sono armi
-        // a terra, ne spawniamo altre 3 (evita soft-lock: il boss diventerebbe
-        // invincibile se nessuno puo' piu' attaccare).
-        if (player.getCurrentWeapon().ammo <= 0
-            && (numPlayers == 1 || player2.getCurrentWeapon().ammo <= 0)
-            && bossRoomWeapons.empty()) {
+        // Se ANCHE SOLO UN giocatore ha finito le munizioni e non ci sono armi
+        // a terra, ne spawniamo altre 3 (evita soft-lock).
+        bool p1Empty = player.getCurrentWeapon().ammo <= 0;
+        bool p2Empty = (numPlayers == 2) ? (player2.getCurrentWeapon().ammo <= 0) : false;
+        if ((p1Empty || p2Empty) && bossRoomWeapons.empty()) {
             spawnBossRoomWeapons();
         }
         // In 1P: GAME OVER quando il player 1 muore.
@@ -1823,7 +1860,10 @@ void Game::render() {
     else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE) {
         // Rendering comune per gameplay/schermate finali
         maze.render(window);
-        ui.render(window, player, maze.getRemainingTreasures());
+        if (numPlayers == 2)
+            ui.render(window, player, player2, maze.getRemainingTreasures());
+        else
+            ui.render(window, player, maze.getRemainingTreasures());
         player.render(window);
         if (numPlayers == 2) player2.render(window);
         // Render dei nemici: inclusi quelli in animazione di morte (isDying)
@@ -1917,12 +1957,25 @@ void Game::render() {
             float invPulse = sin(playerInvincibleTimer * 0.01f) * 0.2f + 1.f;
             float auraR = 25.f * invPulse;
             sf::CircleShape invAura(auraR);
-            // Lampeggio dorato
             sf::Uint8 alpha = (playerInvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
             invAura.setFillColor(sf::Color(255, 215, 0, alpha));
             invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
             window.draw(invAura);
-            // Scudo interno
+            sf::CircleShape invShield(15.f * invPulse);
+            invShield.setFillColor(sf::Color(255, 235, 100, 40));
+            invShield.setPosition(ppos.x - 15.f * invPulse, ppos.y - 15.f * invPulse);
+            window.draw(invShield);
+        }
+        // --- Aura di invincibilità attorno al player2 ---
+        if (numPlayers == 2 && player2InvincibleTimer > 0) {
+            sf::Vector2f ppos = player2.getPixelPos();
+            float invPulse = sin(player2InvincibleTimer * 0.01f) * 0.2f + 1.f;
+            float auraR = 25.f * invPulse;
+            sf::CircleShape invAura(auraR);
+            sf::Uint8 alpha = (player2InvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
+            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
+            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
+            window.draw(invAura);
             sf::CircleShape invShield(15.f * invPulse);
             invShield.setFillColor(sf::Color(255, 235, 100, 40));
             invShield.setPosition(ppos.x - 15.f * invPulse, ppos.y - 15.f * invPulse);
@@ -4047,7 +4100,10 @@ void Game::render() {
         }
 
         // UI senza tesori (passiamo 0)
-        ui.render(window, player, 0);
+        if (numPlayers == 2)
+            ui.render(window, player, player2, 0);
+        else
+            ui.render(window, player, 0);
         // Armi a terra (raccoglibili)
         for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
         // Bonus scarpe alate (se attivo, disegna sprite + aura)
@@ -4650,6 +4706,17 @@ void Game::render() {
             float auraR = 25.f * invPulse;
             sf::CircleShape invAura(auraR);
             sf::Uint8 alpha = (playerInvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
+            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
+            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
+            window.draw(invAura);
+        }
+        // --- Rendering aura invincibilità player2 nella stanza boss ---
+        if (numPlayers == 2 && player2InvincibleTimer > 0) {
+            sf::Vector2f ppos = player2.getPixelPos();
+            float invPulse = sin(player2InvincibleTimer * 0.01f) * 0.2f + 1.f;
+            float auraR = 25.f * invPulse;
+            sf::CircleShape invAura(auraR);
+            sf::Uint8 alpha = (player2InvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
             invAura.setFillColor(sf::Color(255, 215, 0, alpha));
             invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
             window.draw(invAura);

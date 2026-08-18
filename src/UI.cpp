@@ -97,3 +97,62 @@ void UI::render(sf::RenderTarget& target, Player& player, int remainingTreasures
     drawTextOutlined(target, "TRES", 700, 10, 2, sf::Color::White);
     drawTextOutlined(target, std::to_string(remainingTreasures), 700, 30, 2, sf::Color::Yellow);
 }
+
+// ---------------------------------------------------------------------------
+// render (2 giocatori): disegna la barra HUD con stats di entrambi i player.
+// Player1 a sinistra, player2 a destra, tesori al centro.
+// ---------------------------------------------------------------------------
+void UI::render(sf::RenderTarget& target, Player& player1, Player& player2, int remainingTreasures) {
+    // Sfondo della barra
+    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, UI_HEIGHT));
+    bg.setFillColor(sf::Color(20, 20, 20));
+    target.draw(bg);
+
+    // === PLAYER 1 (sinistra) ===
+    // P1 SCORE
+    drawTextOutlined(target, "P1", 10, 10, 2, sf::Color(100, 200, 255));
+    drawTextOutlined(target, std::to_string(player1.getScore()), 10, 30, 2, sf::Color::Yellow);
+    // P1 LIVES
+    drawTextOutlined(target, "LIFE", 80, 10, 2, sf::Color::White);
+    for(int i = 0; i < player1.getLives(); ++i) {
+        drawDetailedHeart(target, 90 + i * 16, 35, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+    }
+    // P1 ENERGY
+    drawTextOutlined(target, "EN", 180, 10, 2, sf::Color::White);
+    sf::RectangleShape en1Bg(sf::Vector2f(60.f, 14.f)); en1Bg.setFillColor(sf::Color(100, 100, 100));
+    en1Bg.setOutlineThickness(1.5f); en1Bg.setOutlineColor(sf::Color(60, 60, 60));
+    en1Bg.setPosition(180, 32); target.draw(en1Bg);
+    sf::RectangleShape en1Fg(sf::Vector2f(60.f * player1.getEnergy() / player1.getMaxEnergy(), 14.f));
+    en1Fg.setFillColor(sf::Color(255, 0, 255));
+    en1Fg.setPosition(180, 32); target.draw(en1Fg);
+    // P1 WPN + AMMO
+    Weapon w1 = player1.getCurrentWeapon();
+    drawTextOutlined(target, w1.getName(), 250, 10, 2, w1.getColor());
+    drawTextOutlined(target, std::to_string(w1.ammo), 250, 30, 2, sf::Color::Yellow);
+
+    // === TESORI (centro) ===
+    drawTextOutlined(target, "TRES", 470, 10, 2, sf::Color::White);
+    drawTextOutlined(target, std::to_string(remainingTreasures), 470, 30, 2, sf::Color::Yellow);
+
+    // === PLAYER 2 (destra) ===
+    // P2 SCORE
+    drawTextOutlined(target, "P2", 560, 10, 2, sf::Color(255, 150, 100));
+    drawTextOutlined(target, std::to_string(player2.getScore()), 560, 30, 2, sf::Color::Yellow);
+    // P2 LIVES
+    drawTextOutlined(target, "LIFE", 640, 10, 2, sf::Color::White);
+    for(int i = 0; i < player2.getLives(); ++i) {
+        drawDetailedHeart(target, 650 + i * 16, 35, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+    }
+    // P2 ENERGY
+    drawTextOutlined(target, "EN", 740, 10, 2, sf::Color::White);
+    sf::RectangleShape en2Bg(sf::Vector2f(60.f, 14.f)); en2Bg.setFillColor(sf::Color(100, 100, 100));
+    en2Bg.setOutlineThickness(1.5f); en2Bg.setOutlineColor(sf::Color(60, 60, 60));
+    en2Bg.setPosition(740, 32); target.draw(en2Bg);
+    sf::RectangleShape en2Fg(sf::Vector2f(60.f * player2.getEnergy() / player2.getMaxEnergy(), 14.f));
+    en2Fg.setFillColor(sf::Color(255, 0, 255));
+    en2Fg.setPosition(740, 32); target.draw(en2Fg);
+    // P2 WPN + AMMO
+    Weapon w2 = player2.getCurrentWeapon();
+    drawTextOutlined(target, w2.getName(), 820, 10, 2, w2.getColor());
+    drawTextOutlined(target, std::to_string(w2.ammo), 820, 30, 2, sf::Color::Yellow);
+}

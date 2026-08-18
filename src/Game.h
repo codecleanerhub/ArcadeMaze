@@ -166,6 +166,7 @@ private:
     GoldenChalice chalice;                       // calice d'oro pozione magica (1 per livello)
     bool chaliceUsed;                            // true = calice gia' raccolto questo livello
     int playerInvincibleTimer;                   // >0 = player1 immortale (ms residui)
+    int player2InvincibleTimer;                  // >0 = player2 immortale (ms residui)
     std::vector<Particle> particles;             // particelle generiche (sangue, scintille)
     std::vector<Firework> fireworks;             // fuochi d'artificio (solo in WIN_STORY)
 
