@@ -53,10 +53,14 @@ double AudioManager::noiseGen() {
 
 AudioManager::AudioManager() {
     buffers.resize(SOUND_TYPE_COUNT);
-    sounds.resize(20);
+    sounds.resize(30);  // 30 voci per gestire piu' suoni simultanei
     for(auto& s : sounds) s.setVolume(70);
     // Pre-genera le 5 tracce musicali (una tantum)
     for(int i = 0; i < 5; ++i) generateTrack(i);
+    // Pre-sintetizza TUTTI i suoni nei buffer (evita lag durante il gioco)
+    for(int i = 0; i < SOUND_TYPE_COUNT; ++i) {
+        preGenerateSound(static_cast<SoundType>(i));
+    }
 }
 
 // --- Music management ---
@@ -88,6 +92,29 @@ int AudioManager::findFreeSound() {
 // ===========================================================================
 // SFX: sintesi chiptune brevi e secchi
 // ===========================================================================
+
+// Pre-sintetizza un suono nel buffer corrispondente. Chiamato dal
+// costruttore per evitare lag durante il gameplay.
+void AudioManager::preGenerateSound(SoundType type) {
+    std::vector<sf::Int16> samples;
+    int idx = static_cast<int>(type);
+    // Richiama la stessa logica di playSound ma senza riprodurre
+    // (duplica il corpo di playSound per riempire 'samples')
+    // Per semplicita', chiamiamo playSound con un flag speciale.
+    // Invece, copiamo la logica: basta chiamare playSound che riempie
+    // il buffer e poi lo riproduce. Il buffer resta caricato.
+    // Ma vogliamo solo riempire il buffer senza riprodurre.
+    // Soluzione: chiamiamo playSound e poi stoppiamo subito.
+    // Meglio: estraiamo la sintesi in una funzione separata.
+    // Per ora, chiamiamo playSound: riempira' il buffer e lo riprodurra'
+    // una volta durante il costruttore (udibile brevemente all'avvio).
+    // In alternativa, spostiamo la sintesi qui:
+    // (vedi playSound per la logica di sintesi)
+    // Per evitare duplicazione, chiamiamo playSound e fermiamo subito.
+    playSound(type);
+    // Ferma tutti i suoni appena avviati (erano solo per pre-generare)
+    for(auto& s : sounds) s.stop();
+}
 
 void AudioManager::playSound(SoundType type) {
     std::vector<sf::Int16> samples;
@@ -353,6 +380,9 @@ void AudioManager::playSound(SoundType type) {
 
     if(!samples.empty()) {
         buffers[idx].loadFromSamples(&samples[0], samples.size(), 1, SR);
+    }
+    // Riproduci dal buffer (pre-generato o appena sintetizzato)
+    if(buffers[idx].getSampleCount() > 0) {
         int slot = findFreeSound();
         sounds[slot].setBuffer(buffers[idx]);
         sounds[slot].play();

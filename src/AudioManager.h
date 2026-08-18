@@ -78,6 +78,8 @@ private:
 
     // Trova uno slot audio libero (o il primo se tutti occupati).
     int findFreeSound();
+    // Pre-sintetizza un suono nel buffer (chiamato dal costruttore).
+    void preGenerateSound(SoundType type);
     // Sintetizza una traccia musicale completa nel buffer musicBuffers[idx].
     // idx 0..3 = livello (drammatico/oscura), idx 4 = boss (epico/aggressivo).
     void generateTrack(int trackIdx);
