@@ -73,10 +73,11 @@ void Maze::generate(int level) {
         if (grid[c][r].type == CELL_WALL && countNeighboringWalls(c, r) == 2) grid[c][r].type = CELL_EMPTY;
     }
 
-    // 4) Posiziona tesori e armi in celle vuote casuali.
-    //    Raccogliamo tutte le celle vuote in un vettore, lo mischiamo con
-    //    un PRNG (mt19937 + random_device) per avere una distribuzione
-    //    uniforme, e preleviamo dai primi elementi.
+    // 4) Posiziona tesori e armi in celle vuote, DISTANTI tra loro.
+    //    Raccogliamo tutte le celle vuote, poi posizioniamo tesori e armi
+    //    scegliendo posizioni che abbiano una distanza minima (Manhattan)
+    //    da tutti gli altri tesori/armi gia' posizionati. Questo evita
+    //    che tesori o armi siano ammassati in una zona del labirinto.
     std::vector<Vec2> emptyCells;
     for (int c = 1; c < MAZE_COLS - 1; ++c)
         for (int r = 1; r < MAZE_ROWS - 1; ++r)
@@ -86,17 +87,45 @@ void Maze::generate(int level) {
     std::mt19937 g(rd());
     std::shuffle(emptyCells.begin(), emptyCells.end(), g);
 
-    // 8 tesori, tipo casuale (solo estetica).
-    for(int i=0; i<8 && !emptyCells.empty(); i++) {
-        Vec2 p = emptyCells.back(); emptyCells.pop_back();
-        grid[p.x][p.y].type = CELL_TREASURE;
-        grid[p.x][p.y].treasure = static_cast<TreasureType>(rand() % 5);
+    // Distanza minima tra tesori/armi (in celle Manhattan)
+    const int MIN_DIST_TREASURE = 4;  // tesori distanti almeno 4 celle
+    const int MIN_DIST_WEAPON = 5;   // armi distanti almeno 5 celle
+    const int MIN_DIST_TW = 3;       // tesori vs armi: almeno 3 celle
+
+    std::vector<Vec2> placedItems;  // posizioni gia' occupate da tesori/armi
+
+    // Funzione lambda: verifica se una cella e' abbastanza lontana
+    auto isFarEnough = [&](const Vec2& candidate, int minDist) -> bool {
+        for (const auto& p : placedItems) {
+            if (abs(p.x - candidate.x) + abs(p.y - candidate.y) < minDist)
+                return false;
+        }
+        return true;
+    };
+
+    // 8 tesori distribuiti e distanti
+    int treasuresPlaced = 0;
+    for (const auto& cell : emptyCells) {
+        if (treasuresPlaced >= 8) break;
+        if (isFarEnough(cell, MIN_DIST_TREASURE)) {
+            grid[cell.x][cell.y].type = CELL_TREASURE;
+            grid[cell.x][cell.y].treasure = static_cast<TreasureType>(rand() % 5);
+            placedItems.push_back(cell);
+            treasuresPlaced++;
+        }
     }
-    // 5 armi casuali (potere e munizioni decisi dalla factory di Weapon).
-    for(int i=0; i<5 && !emptyCells.empty(); i++) {
-        Vec2 p = emptyCells.back(); emptyCells.pop_back();
-        grid[p.x][p.y].type = CELL_WEAPON;
-        grid[p.x][p.y].weapon = Weapon::generateRandom();
+
+    // 5 armi distribuite e distanti da tesori e tra loro
+    int weaponsPlaced = 0;
+    for (const auto& cell : emptyCells) {
+        if (weaponsPlaced >= 5) break;
+        if (grid[cell.x][cell.y].type != CELL_EMPTY) continue;
+        if (isFarEnough(cell, MIN_DIST_WEAPON)) {
+            grid[cell.x][cell.y].type = CELL_WEAPON;
+            grid[cell.x][cell.y].weapon = Weapon::generateRandom();
+            placedItems.push_back(cell);
+            weaponsPlaced++;
+        }
     }
 
     // 5) Colori: ogni livello ha una palette tematica diversa per dare
@@ -953,9 +982,9 @@ void Maze::render(sf::RenderTarget& target) {
                 });
             // Seleziona mantenendo distanza minima di 3 celle tra le
             // torce scelte, per evitare raggruppamenti.
-            const int minDist = 3;
+            const int minDist = 5;
             for (const Vec2& cand : candidates) {
-                if ((int)out.size() >= 3) break;
+                if ((int)out.size() >= 2) break;
                 bool tooClose = false;
                 for (const Vec2& s : out) {
                     int dx = std::abs(cand.x - s.x);
@@ -1151,9 +1180,9 @@ void Maze::render(sf::RenderTarget& target) {
                     return cellHash(a.x + 1111, a.y + 2222) >
                            cellHash(b.x + 1111, b.y + 2222);
                 });
-            const int minDist = 3;
+            const int minDist = 5;
             for (const Vec2& cand : in) {
-                if ((int)out.size() >= 3) break;
+                if ((int)out.size() >= 2) break;
                 bool tooClose = false;
                 for (const Vec2& s : out) {
                     if (std::abs(cand.x - s.x) + std::abs(cand.y - s.y) < minDist) {

@@ -407,6 +407,18 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(2000 * s * env));
         }
     }
+    else if (type == SOUND_MINE_BOUNCE) {
+        // 0.12s: boing metallico (sweep discendente rapido + noise)
+        for(int i = 0; i < SR * 0.12; i++) {
+            double t = (double)i / SR;
+            double freq = 800 * exp(-t * 8.0) + 200;
+            double env = exp(-t * 18.0) * (1.0 - exp(-t * 50.0));
+            double s = 0.5 * pulseWave(t * freq, 0.3) +
+                       0.3 * triangleWave(t * freq * 1.5) +
+                       0.2 * noiseGen();
+            samples.push_back((sf::Int16)(2200 * s * env));
+        }
+    }
 
     if(!samples.empty()) {
         buffers[idx].loadFromSamples(&samples[0], samples.size(), 1, SR);

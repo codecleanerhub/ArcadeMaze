@@ -56,6 +56,11 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     magicPortal.spawnTimer = 0;
     portalUsed = false;
     initialEnemyCount = 0;
+    mine.active = false;
+    mine.bouncing = false;
+    mine.bounceTimer = 0;
+    mine.rotation = 0.f;
+    mine.pulse = 0.f;
 }
 
 // init: imposta framerate, view iniziale e carica la configurazione comandi.
@@ -114,6 +119,34 @@ void Game::startLevel(int lvl) {
     portalUsed = false;
     initialEnemyCount = (int)enemies.size();
     bloodStains.clear();
+    // Spawna la mina in una cella vuota casuale del labirinto
+    mine.active = false;
+    mine.bouncing = false;
+    mine.bounceTimer = 0;
+    mine.rotation = 0.f;
+    mine.pulse = 0.f;
+    {
+        std::vector<Vec2> mineCells;
+        for (int c = 1; c < MAZE_COLS - 1; c++) {
+            for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                if (maze.getCellType(c, r) == CELL_EMPTY) {
+                    // Non vicino al player (almeno 5 celle)
+                    sf::Vector2f ppos = player.getPixelPos();
+                    int pc = (int)(ppos.x / TILE_SIZE);
+                    int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                    if (abs(c - pc) + abs(r - pr) >= 5) {
+                        mineCells.push_back({c, r});
+                    }
+                }
+            }
+        }
+        if (!mineCells.empty()) {
+            Vec2 chosen = mineCells[rand() % mineCells.size()];
+            mine.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
+            mine.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            mine.active = true;
+        }
+    }
     state = STATE_PLAYING;
     if (musicEnabled) audio.playLevelMusic(currentLevel, false);
 }
@@ -921,6 +954,93 @@ void Game::update() {
         bloodStains.erase(std::remove_if(bloodStains.begin(), bloodStains.end(),
             [](const BloodStain& bs) { return bs.life <= 0; }), bloodStains.end());
 
+        // --- Aggiornamento della mina ---
+        if (mine.active && !mine.bouncing) {
+            // Mina ferma: controlla collisione con il player
+            mine.pulse += 0.016f;
+            float dx = player.getPixelPos().x - mine.pos.x;
+            float dy = player.getPixelPos().y - mine.pos.y;
+            if (dx * dx + dy * dy < 400) {  // ~20px raggio
+                // Attiva la mina: inizia a rimbalzare
+                mine.bouncing = true;
+                mine.bounceTimer = 8000;  // 8 secondi
+                // Direzione iniziale casuale
+                float angle = (rand() % 360) * (float)M_PI / 180.f;
+                mine.vel.x = cos(angle) * 6.f;
+                mine.vel.y = sin(angle) * 6.f;
+                audio.playSound(SOUND_MINE_BOUNCE);
+            }
+        }
+        if (mine.bouncing) {
+            // Mina in movimento: aggiorna posizione
+            mine.rotation += 0.08f;
+            mine.pulse += 0.03f;
+            mine.pos += mine.vel;
+            // Rimbalzo sui muri del labirinto
+            int mc = (int)(mine.pos.x / TILE_SIZE);
+            int mr = (int)((mine.pos.y - UI_HEIGHT) / TILE_SIZE);
+            if (maze.isWall(mc, mr)) {
+                // Determina direzione di rimbalzo in base al muro
+                int prevC = (int)((mine.pos.x - mine.vel.x) / TILE_SIZE);
+                int prevR = (int)((mine.pos.y - mine.vel.y - UI_HEIGHT) / TILE_SIZE);
+                if (maze.isWall(prevC, mr)) {
+                    // Muro orizzontale: inverti Y
+                    mine.vel.y = -mine.vel.y;
+                } else {
+                    // Muro verticale: inverti X
+                    mine.vel.x = -mine.vel.x;
+                }
+                // Sposta fuori dal muro
+                mine.pos += mine.vel;
+                audio.playSound(SOUND_MINE_BOUNCE);
+            }
+            // Rimbalzo sui bordi della finestra
+            if (mine.pos.x < 16) { mine.pos.x = 16; mine.vel.x = -mine.vel.x; audio.playSound(SOUND_MINE_BOUNCE); }
+            if (mine.pos.x > WINDOW_WIDTH - 16) { mine.pos.x = WINDOW_WIDTH - 16; mine.vel.x = -mine.vel.x; audio.playSound(SOUND_MINE_BOUNCE); }
+            if (mine.pos.y < UI_HEIGHT + 16) { mine.pos.y = UI_HEIGHT + 16; mine.vel.y = -mine.vel.y; audio.playSound(SOUND_MINE_BOUNCE); }
+            if (mine.pos.y > WINDOW_HEIGHT - 16) { mine.pos.y = WINDOW_HEIGHT - 16; mine.vel.y = -mine.vel.y; audio.playSound(SOUND_MINE_BOUNCE); }
+
+            // Controlla collisione con nemici
+            for (auto& enemy : enemies) {
+                if (enemy.isDead()) continue;
+                float dx = mine.pos.x - enemy.getPixelPos().x;
+                float dy = mine.pos.y - enemy.getPixelPos().y;
+                if (dx * dx + dy * dy < 500) {
+                    // Uccide il nemico!
+                    enemy.takeDamage(999);
+                    player.addScore(5000);
+                    audio.playSound(SOUND_ENEMY_DEATH);
+                    audio.playSound(SOUND_ENEMY_EXPLODE);
+                    audio.playSound(SOUND_BLOOD_SPLAT);
+                    // Esplosione + sangue
+                    for (int i = 0; i < 25; i++)
+                        particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)}, sf::Color(150+rand()%50, 0, 0), 35, 35});
+                    for (int i = 0; i < 10; i++)
+                        particles.push_back({enemy.getPixelPos(), {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(200, 100, 50), 25, 25});
+                    bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                    // Esplosione mina
+                    for (int i = 0; i < 20; i++)
+                        particles.push_back({mine.pos, {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(255, 200, 50), 30, 30});
+                    mine.active = false;
+                    mine.bouncing = false;
+                    break;
+                }
+            }
+
+            // Timer: dopo 8 secondi senza colpire nemici, scompare
+            if (mine.bouncing) {
+                if (mine.bounceTimer > 16) mine.bounceTimer -= 16;
+                else mine.bounceTimer = 0;
+                if (mine.bounceTimer == 0) {
+                    // Scompare con piccola esplosione
+                    for (int i = 0; i < 10; i++)
+                        particles.push_back({mine.pos, {(float)(rand()%6-3), (float)(rand()%6-3)}, sf::Color(180, 150, 50), 20, 20});
+                    mine.active = false;
+                    mine.bouncing = false;
+                }
+            }
+        }
+
 #ifdef TEST_MODE_FEATURE
         // --- TEST MODE: salta direttamente al boss premendo barra spaziatrice ---
         // Se testModeEnabled e' true e il player preme Space, salta tutta la
@@ -1585,6 +1705,65 @@ void Game::render() {
                 splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
                 splash.setPosition(sx - sr, sy - sr);
                 window.draw(splash);
+            }
+        }
+
+        // --- Rendering della mina ---
+        if (mine.active) {
+            float mx = mine.pos.x;
+            float my = mine.pos.y;
+            float pulse = sin(mine.pulse * 5.f) * 0.2f + 1.f;
+
+            // Aura rossa pulsante
+            float auraR = 18.f * pulse;
+            sf::CircleShape mineAura(auraR);
+            mineAura.setFillColor(sf::Color(200, 50, 20, 50));
+            mineAura.setPosition(mx - auraR, my - auraR);
+            window.draw(mineAura);
+
+            // Corpo della mina (cerchio metallico scuro)
+            float bodyR = 7.f * pulse;
+            sf::CircleShape mineBody(bodyR);
+            mineBody.setFillColor(sf::Color(80, 70, 60));
+            mineBody.setOutlineThickness(1.5f);
+            mineBody.setOutlineColor(sf::Color(30, 25, 20));
+            mineBody.setPosition(mx - bodyR, my - bodyR);
+            window.draw(mineBody);
+
+            // Spunzoni (4 piccoli triangoli attorno al corpo)
+            for (int i = 0; i < 4; i++) {
+                float a = mine.rotation + i * (float)M_PI / 2.f;
+                float spikeLen = 5.f;
+                sf::ConvexShape spike;
+                spike.setPointCount(3);
+                spike.setFillColor(sf::Color(100, 85, 70));
+                spike.setOutlineThickness(0.5f);
+                spike.setOutlineColor(sf::Color(30, 25, 20));
+                float tipX = mx + cos(a) * (bodyR + spikeLen);
+                float tipY = my + sin(a) * (bodyR + spikeLen);
+                float perpX = -sin(a) * 3.f;
+                float perpY = cos(a) * 3.f;
+                float baseX = mx + cos(a) * bodyR;
+                float baseY = my + sin(a) * bodyR;
+                spike.setPoint(0, sf::Vector2f(tipX, tipY));
+                spike.setPoint(1, sf::Vector2f(baseX + perpX, baseY + perpY));
+                spike.setPoint(2, sf::Vector2f(baseX - perpX, baseY - perpY));
+                window.draw(spike);
+            }
+
+            // LED rosso pulsante al centro
+            float ledR = 2.f * pulse;
+            sf::CircleShape led(ledR);
+            led.setFillColor(sf::Color(255, 50 + (sf::Uint8)(sin(mine.pulse * 8.f) * 50), 30, 240));
+            led.setPosition(mx - ledR, my - ledR);
+            window.draw(led);
+
+            // Scia quando rimbalza
+            if (mine.bouncing) {
+                sf::CircleShape trail(3.f);
+                trail.setFillColor(sf::Color(255, 150, 50, 100));
+                trail.setPosition(mx - mine.vel.x - 3.f, my - mine.vel.y - 3.f);
+                window.draw(trail);
             }
         }
 

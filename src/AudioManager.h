@@ -37,16 +37,17 @@ enum SoundType {
     SOUND_TRAP,          // attivazione trappola
     SOUND_MENU_SELECT,   // selezione nel menu (spostamento cursore)
     SOUND_MENU_CONFIRM,  // conferma nel menu (invio)
-    // Gameplay effects (5)
+    // Gameplay effects (6)
     SOUND_PORTAL_OPEN,   // apertura portale magico (epico ascendente)
     SOUND_PORTAL_CLOSE,  // chiusura portale (discendente)
-    SOUND_WEAPON_PICKUP, // raccolta arma (chime)
+    SOUND_WEAPON_PICKUP, // raccolta arma (caricamento fucile)
     SOUND_ENEMY_EXPLODE, // esplosione nemico (boom + debris)
-    SOUND_BLOOD_SPLAT    // sangue che schizza (wet impact)
+    SOUND_BLOOD_SPLAT,   // sangue che schizza (wet impact)
+    SOUND_MINE_BOUNCE    // rimbalzo mina (boing metallico)
 };
 
 // Numero totale di SFX (usato per dimensionare i buffer).
-constexpr int SOUND_TYPE_COUNT = 21;
+constexpr int SOUND_TYPE_COUNT = 22;
 
 class AudioManager {
 public:
