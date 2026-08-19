@@ -1325,33 +1325,85 @@ void Game::update() {
                     // Il mini-boss appare SOLO quando il portale magico si
                     // attiva (50% nemici uccisi). 1 per livello, tipo unico
                     // basato sul livello corrente (17 tipi che ciclano).
+                    //
+                    // FIX: in precedenza lo spawn cercava la cella PIU'
+                    // LONTANA dal player (che essendo partito da (1,1) ->
+                    // angolo in alto a sinistra -> il mini-boss spuntava
+                    // nell'angolo IN BASSO A DESTRA, opposto allo schermo).
+                    // Inoltre il mini-boss sembrava "sbucato dal nulla" in
+                    // un punto scollegato dal portale.
+                    //
+                    // Ora cerchiamo una cella vuota VICINO al portale (raggio
+                    // 1-4), cosi' il mini-boss appare DRAMMATICAMENTE dal
+                    // portale insieme ai nemici respawnati. Se il portale non
+                    // ha celle libere vicine, facciamo fallback alla cella
+                    // piu' lontana dal player (comportamento precedente).
                     if (!miniBossSpawned && !miniBoss) {
-                        // Trova una cella vuota lontana dal player
-                        sf::Vector2f ppos = player.getPixelPos();
-                        int pc = (int)(ppos.x / TILE_SIZE);
-                        int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                        int portalC = (int)(magicPortal.pos.x / TILE_SIZE);
+                        int portalR = (int)((magicPortal.pos.y - UI_HEIGHT) / TILE_SIZE);
                         int mbC = -1, mbR = -1;
-                        int bestDist = -1;
-                        for (int c = 1; c < MAZE_COLS - 1; c++) {
-                            for (int r = 1; r < MAZE_ROWS - 1; r++) {
-                                if (maze.getCellType(c, r) == CELL_EMPTY &&
-                                    !maze.isWall(c, r)) {
-                                    int dist = abs(c - pc) + abs(r - pr);
-                                    // Almeno 6 celle dal player, piu' lontano possibile
-                                    if (dist >= 6 && dist > bestDist) {
-                                        bestDist = dist;
-                                        mbC = c;
-                                        mbR = r;
+
+                        // Cerca cella vuota in raggio crescente dal portale
+                        // (raggio 1 = adiacente al portale, 4 = ~2 celle distanza)
+                        for (int radius = 1; radius <= 4 && mbC < 0; radius++) {
+                            for (int dc = -radius; dc <= radius && mbC < 0; dc++) {
+                                for (int dr = -radius; dr <= radius && mbC < 0; dr++) {
+                                    int nc = portalC + dc;
+                                    int nr = portalR + dr;
+                                    if (nc <= 0 || nc >= MAZE_COLS - 1) continue;
+                                    if (nr <= 0 || nr >= MAZE_ROWS - 1) continue;
+                                    if (maze.isWall(nc, nr)) continue;
+                                    if (maze.getCellType(nc, nr) != CELL_EMPTY) continue;
+                                    // Non spawnare esattamente sopra il portale
+                                    if (nc == portalC && nr == portalR) continue;
+                                    mbC = nc;
+                                    mbR = nr;
+                                }
+                            }
+                        }
+
+                        // Fallback: se non trova cella vicino al portale,
+                        // usa la vecchia logica "cella piu' lontana dal player"
+                        if (mbC < 0) {
+                            sf::Vector2f ppos = player.getPixelPos();
+                            int pc = (int)(ppos.x / TILE_SIZE);
+                            int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                            int bestDist = -1;
+                            for (int c = 1; c < MAZE_COLS - 1; c++) {
+                                for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                                    if (maze.getCellType(c, r) == CELL_EMPTY &&
+                                        !maze.isWall(c, r)) {
+                                        int dist = abs(c - pc) + abs(r - pr);
+                                        if (dist >= 6 && dist > bestDist) {
+                                            bestDist = dist;
+                                            mbC = c;
+                                            mbR = r;
+                                        }
                                     }
                                 }
                             }
                         }
+
                         if (mbC >= 0) {
                             // Tipo basato sul livello (17 tipi che ciclano)
                             MiniBossType mbType = (MiniBossType)(
                                 (currentLevel - 1) % MINIBOSS_TYPE_COUNT);
                             miniBoss = new MiniBoss(mbType, currentLevel, mbC, mbR);
                             miniBossSpawned = true;
+                            // Effetto particellare di "esplosione" all'uscita
+                            // del mini-boss dal portale (molto piu' intenso dei
+                            // nemici normali: 25 particelle dorate invece di 10
+                            // viola).
+                            for (int i = 0; i < 25; i++) {
+                                float ang = (rand() % 360) * (float)M_PI / 180.f;
+                                float speed = 3.f + (rand() % 30) / 10.f;
+                                particles.push_back(makeParticle(
+                                    sf::Vector2f(miniBoss->getPixelPos().x,
+                                                 miniBoss->getPixelPos().y),
+                                    sf::Vector2f(cosf(ang) * speed, sinf(ang) * speed - 1.f),
+                                    sf::Color(220, 160, 40),  // oro
+                                    35, 35, 4.f, 0));
+                            }
                         }
                     }
 

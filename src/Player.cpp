@@ -65,6 +65,34 @@ sf::Color getPlayerTint(int playerNum) {
     return sf::Color(255, 255, 255);
 }
 
+// Restituisce true se lo sprite di default del personaggio e' rivolto verso
+// DESTRA. Questo decide la logica di flip:
+//   * default RIGHT (true):  flipped = (lastDx < 0) -> specchia quando muove LEFT
+//   * default LEFT  (false): flipped = (lastDx > 0) -> specchia quando muove RIGHT
+//
+// Mappatura determinata combinando:
+//   1. VLM (vision model) su confronti side-by-side originale vs specchiato
+//   2. Feedback utente: HERO_M (player1) e' RIGHT-default (test reale ha
+//      confermato che con flipped=(lastDx>0) si girava al contrario)
+//
+// Le sprite "originali" (player1, player2) e i char_* (nuovi personaggi)
+// hanno orientamenti INCONSISTENTI tra loro, da qui la necessita' di
+// questa tabella per-character.
+bool spriteDefaultFacesRight(CharacterType ct) {
+    switch (ct) {
+        case CHAR_HERO_M:   return true;   // user-verified: default RIGHT
+        case CHAR_HERO_F:   return false;  // VLM: default LEFT
+        case CHAR_MAGE:     return true;   // VLM: default RIGHT
+        case CHAR_ORC:      return false;  // VLM: default LEFT
+        case CHAR_ELF:      return false;  // VLM: default LEFT
+        case CHAR_KNIGHT:   return false;  // VLM: default LEFT
+        case CHAR_GOLEM:    return false;  // VLM: default LEFT
+        case CHAR_DRAGON:   return true;   // VLM: default RIGHT
+        case CHAR_VAMPIRE:  return true;   // VLM: default RIGHT
+    }
+    return true;
+}
+
 // Reset completo (nuova partita): oltre alla posizione, resetta vite,
 // energia, punteggio, soglia prossima vita e arma iniziale (pistola).
 void Player::reset() {
@@ -317,13 +345,16 @@ void Player::render(sf::RenderTarget& target) {
         std::string animName = "idle";
         int frameDuration = 200;
         int frame = 0;
-        // FIX: inverteremo la logica di flip perche' gli sprite PNG
-        // dei personaggi hanno orientamento di default verso SINISTRA.
-        //   * lastDx > 0 (muove a destra): flipped=true  -> specchia -> guarda DESTRA
-        //   * lastDx < 0 (muove a sinistra): flipped=false -> originale -> guarda SINISTRA
-        //   * lastDx == 0 (fermo): usa ultima direzione valida (lastDx)
-        //     in modo che il personaggio continui a guardare dove guardava.
-        bool flipped = (lastDx > 0);
+        // FIX: logica di flip per-character. Gli sprite PNG dei personaggi
+        // hanno orientamenti INCONSISTENTI tra loro (alcuni guardano a destra
+        // di default, altri a sinistra). spriteDefaultFacesRight() restituisce
+        // la direzione di default per il characterType corrente:
+        //   * default RIGHT: flipped = (lastDx < 0) -> specchia quando muove LEFT
+        //   * default LEFT:  flipped = (lastDx > 0) -> specchia quando muove RIGHT
+        // In questo modo il personaggio si gira SEMPRE nella direzione di
+        // movimento, indipendentemente dall'orientamento di default dello sprite.
+        bool defaultRight = spriteDefaultFacesRight(characterType);
+        bool flipped = defaultRight ? (lastDx < 0) : (lastDx > 0);
         if (shootAnimTimer > 0 && sprite.getFrameCount("attack") > 0) {
             animName = "attack";
             frameDuration = 50;  // 6 frame in 300 ms
@@ -407,10 +438,9 @@ void Player::render(sf::RenderTarget& target) {
     // dedicati per ognuno (i 2 originali hanno sprite, gli altri 6 usano
     // questo fallback che li disegna in stile coerente).
     {
-        // FIX: stessa logica di flip dello sprite PNG (vedi sopra).
-        //   lastDx > 0 -> guardare destra (flipped=true per specchiare default LEFT)
-        //   lastDx < 0 -> guardare sinistra (default, no flip)
-        bool flipped = (lastDx > 0);
+        // FIX: stessa logica di flip per-character dello sprite PNG (vedi sopra).
+        bool defaultRight = spriteDefaultFacesRight(characterType);
+        bool flipped = defaultRight ? (lastDx < 0) : (lastDx > 0);
         bool walking = (dx != 0 || dy != 0);
         float bobY = 0.f;
         if (walking) {

@@ -23,7 +23,8 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
     : pos(), dx(0), dy(0), speed(0), health(0), maxHealth(0),
       type(t), weapon(getWeaponForType(t)),
       pathUpdateTimer(0), attackCooldown(0), attackingTimer(0), dyingTimer(0),
-      animTime(0.f), size(0), spriteLoaded(false) {
+      animTime(0.f), size(0), spriteLoaded(false),
+      targetPos(), hasTarget(false) {
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.f;
     pos.y = startRow * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
     maxHealth = getBaseHealth(t) + (level - 1) * 3;  // scala col livello
@@ -117,29 +118,32 @@ int MiniBoss::getBaseHealth(MiniBossType t) {
     return 22;
 }
 
-// Velocita': PIU' LENTA del player (player=2.5px/frame circa).
-// Mini-boss: 0.8-1.5 px/frame (lenti, ma inesorabili).
+// Velocita': PIU' LENTA del player (player=2px/frame circa).
+// Mini-boss: 1-2 px/frame (lenti, ma inesorabili).
+// FIX: in precedenza 5 tipi avevano speed=0 (CAVE_TROLL, OGRE_BRUTE, CAVE_GIANT,
+// ETTIN, FOMORIAN), il che li rendeva completamente IMMOBILI. Ora tutti i tipi
+// hanno almeno speed=1. I tipi "lenti" restano a 1, gli altri a 2.
 int MiniBoss::getBaseSpeed(MiniBossType t) {
     switch (t) {
-        case MB_GOBLIN_CHIEFTAIN: return 1;  // veloce (per un goblin)
-        case MB_CAVE_TROLL:       return 0;  // molto lento
-        case MB_ORC_BERSERKER:    return 1;  // veloce quando insegue
-        case MB_WARG_RIDER:       return 1;  // warg e' veloce
-        case MB_URUK_HAI:         return 1;
-        case MB_NAZGUL:           return 1;
-        case MB_OGRE_BRUTE:       return 0;  // lento
-        case MB_GNOLL_PACKLORD:   return 1;
-        case MB_BUGBEAR_CHIEF:    return 1;
-        case MB_MINOTAUR:          return 1;
-        case MB_WIGHT_LORD:        return 1;
-        case MB_CAVE_GIANT:        return 0;  // gigante lento
-        case MB_DEATH_KNIGHT:      return 1;
-        case MB_ILLITHID:          return 1;
-        case MB_ETTIN:             return 0;  // lento ma potente
-        case MB_FOMORIAN:          return 0;
-        case MB_BALROG_CULTIST:    return 1;
+        case MB_GOBLIN_CHIEFTAIN: return 2;  // veloce (per un goblin)
+        case MB_CAVE_TROLL:       return 1;  // molto lento (era 0 -> immobile)
+        case MB_ORC_BERSERKER:    return 2;  // veloce quando insegue
+        case MB_WARG_RIDER:       return 2;  // warg e' veloce
+        case MB_URUK_HAI:         return 2;
+        case MB_NAZGUL:           return 2;
+        case MB_OGRE_BRUTE:       return 1;  // lento (era 0)
+        case MB_GNOLL_PACKLORD:   return 2;
+        case MB_BUGBEAR_CHIEF:    return 2;
+        case MB_MINOTAUR:          return 2;
+        case MB_WIGHT_LORD:        return 2;
+        case MB_CAVE_GIANT:        return 1;  // gigante lento (era 0)
+        case MB_DEATH_KNIGHT:      return 2;
+        case MB_ILLITHID:          return 2;
+        case MB_ETTIN:             return 1;  // lento ma potente (era 0)
+        case MB_FOMORIAN:          return 1;  // (era 0)
+        case MB_BALROG_CULTIST:    return 2;
     }
-    return 1;
+    return 2;
 }
 
 // Dimensioni: 32-40px (TILE_SIZE=48, deve passare nei corridoi).
@@ -260,6 +264,11 @@ void MiniBoss::moveGreedy(Maze& maze, const Vec2& target) {
 }
 
 // --- Update ---
+// FIX: il movimento ora viene applicato OGNI frame verso targetPos, non solo
+// quando il BFS gira (ogni ~300ms). In precedenza il movimento era inside il
+// blocco BFS, il che rendeva il mini-boss praticamente fermo (1 px ogni 300ms
+// = ~3 px/secondo). Ora il BFS calcola solo il target (centro cella) e lo
+// salva in targetPos; il movimento vero e proprio avviene fuori dal blocco.
 void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
                        const sf::Vector2f& playerPixelPos,
                        std::vector<Particle>& particles) {
@@ -271,40 +280,67 @@ void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
         return;
     }
 
+    // Decrementa timer
+    if (pathUpdateTimer > 16) pathUpdateTimer -= 16;
+    else pathUpdateTimer = 0;
+    if (attackCooldown > 0) attackCooldown -= 16;
+    if (attackingTimer > 0) attackingTimer -= 16;
+
     // --- AI inseguitamento (BFS) ---
-    // Ricalcola il path ogni ~300ms per performance.
-    if (pathUpdateTimer > 0) pathUpdateTimer -= 16;
-    else {
-        pathUpdateTimer = 300;
+    // Ricalcola il path ogni ~300ms per performance, OPPURE se abbiamo
+    // gia' raggiunto il target intermedio corrente (cosi' il mini-boss non
+    // resta fermo ad aspettare il prossimo ciclo di BFS quando arriva al
+    // centro della cella target).
+    bool needRepath = (pathUpdateTimer == 0);
+    if (hasTarget) {
+        float dxT = targetPos.x - pos.x;
+        float dyT = targetPos.y - pos.y;
+        // Se siamo entro ~2px dal target, considera il passo completato e
+        // richiedi subito un nuovo pathfinding (non aspettare il timer).
+        if (dxT * dxT + dyT * dyT < 4.f) {
+            needRepath = true;
+        }
+    }
+
+    if (needRepath) {
+        pathUpdateTimer = 300;  // prossimo pathfinding tra 300ms
         Vec2 myGrid{ (int)(pos.x / TILE_SIZE), (int)((pos.y - UI_HEIGHT) / TILE_SIZE) };
         Vec2 nextStep;
         if (bfsPath(maze, myGrid, playerGridPos, nextStep)) {
-            // Muovi verso nextStep
-            float targetX = nextStep.x * TILE_SIZE + TILE_SIZE / 2.f;
-            float targetY = nextStep.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-            float moveDx = targetX - pos.x;
-            float moveDy = targetY - pos.y;
-            float dist = sqrtf(moveDx*moveDx + moveDy*moveDy);
-            if (dist > 0.1f) {
-                pos.x += (moveDx / dist) * (float)speed;
-                pos.y += (moveDy / dist) * (float)speed;
-                // Aggiorna dx/dy membri per il flip dello sprite
-                // (dx > 0 = muove a destra, dx < 0 = muove a sinistra)
-                if (moveDx > 0.1f) dx = 1;
-                else if (moveDx < -0.1f) dx = -1;
-                // dy non usata per flip, ma aggiorniamo per coerenza
-                if (moveDy > 0.1f) dy = 1;
-                else if (moveDy < -0.1f) dy = -1;
-            }
+            // Salva il target (centro della prossima cella) ma NON muoverti qui:
+            // il movimento e' applicato fuori dal blocco, ogni frame.
+            targetPos.x = nextStep.x * TILE_SIZE + TILE_SIZE / 2.f;
+            targetPos.y = nextStep.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+            hasTarget = true;
+            // Aggiorna dx/dy membri per il flip dello sprite e per la scelta
+            // dell'animazione (walk vs idle).
+            float moveDx = targetPos.x - pos.x;
+            float moveDy = targetPos.y - pos.y;
+            if (moveDx > 0.1f) dx = 1;
+            else if (moveDx < -0.1f) dx = -1;
+            if (moveDy > 0.1f) dy = 1;
+            else if (moveDy < -0.1f) dy = -1;
         } else {
+            // Nessun path trovato: fallback greedy (muove subito di 1 step)
             moveGreedy(maze, playerGridPos);
+            hasTarget = false;
+        }
+    }
+
+    // --- Movimento: applicato OGNI frame verso targetPos (FIX: prima era
+    //     dentro il blocco BFS e muoveva solo ogni 300ms).
+    if (hasTarget && speed > 0) {
+        float moveDx = targetPos.x - pos.x;
+        float moveDy = targetPos.y - pos.y;
+        float dist = sqrtf(moveDx * moveDx + moveDy * moveDy);
+        if (dist > 0.5f) {
+            // Movimento normalizzato verso il target, alla velocita' del mini-boss
+            pos.x += (moveDx / dist) * (float)speed;
+            pos.y += (moveDy / dist) * (float)speed;
         }
     }
 
     // --- Attacco meele ---
-    if (attackCooldown > 0) attackCooldown -= 16;
-    if (attackingTimer > 0) attackingTimer -= 16;
-
     float atkDx = playerPixelPos.x - pos.x;
     float atkDy = playerPixelPos.y - pos.y;
     float atkDist = sqrtf(atkDx*atkDx + atkDy*atkDy);
@@ -666,18 +702,60 @@ void MiniBoss::renderPrimitives(sf::RenderTarget& target) const {
 }
 
 // --- render ---
+// FIX 1: prima lo sprite era sempre "idle" frame 0 -> sembrava glitched
+//        (statico, non reagiva allo stato). Ora usa animazioni proper:
+//        death > attack > walk > idle, con frame basato su animTime/stato.
+// FIX 2: prima lo scale era size/64 = 0.5-0.625 (mezzo sprite) -> sembrava
+//        "piccolo". Ora lo scale e' almeno 1.0 (sprite nativo 64x64),
+//        mantenendo size come collisione.
 void MiniBoss::render(sf::RenderTarget& target) const {
     // Se lo sprite PNG e' caricato, usalo (stile boss/nemici, dettagliato).
     // Altrimenti fallback a primitive SFML (renderPrimitives).
     if (spriteLoaded && sprite.isLoaded()) {
-        // Scala lo sprite 64x64 alla dimensione del mini-boss (32-40px).
-        // size e' la dimensione target; lo sprite e' 64x64 con anchor (32,56).
+        // Scala minima 1.0: sprite nativo 64x64. In precedenza era size/64
+        // (0.5-0.625) che rendeva il mini-boss microscopico a schermo.
+        // Ora usiamo max(1.0, size/64) per garantire visibilita' minima.
         float scale = (float)size / 64.f;
+        if (scale < 1.0f) scale = 1.0f;
         // Bob effect leggero per dare "vita"
         float bobY = sinf(animTime * 3.f) * 1.f;
         // Flipped se rivolto a sinistra (dx < 0)
         bool flipped = (dx < 0);
-        sprite.render(target, "idle", 0, pos.x, pos.y + 8.f + bobY, scale, flipped);
+
+        // --- Selezione animazione in base allo stato ---
+        // (stessa logica di Enemy::render per coerenza visiva)
+        std::string animName = "idle";
+        int frame = 0;
+        int frameDuration = 200;
+        if (dyingTimer > 0 && sprite.getFrameCount("death") > 0) {
+            animName = "death";
+            frameDuration = 120;
+            // dyingTimer parte da 600 e decrementa; elapsed = 600 - residuo
+            int elapsed = 600 - (int)dyingTimer;
+            int frameCount = sprite.getFrameCount("death");
+            frame = elapsed / frameDuration;
+            if (frame >= frameCount) frame = frameCount - 1;
+        } else if (attackingTimer > 0 && sprite.getFrameCount("attack") > 0) {
+            animName = "attack";
+            frameDuration = 50;  // 400ms / 8 frame ~ 50ms
+            int elapsed = 400 - (int)attackingTimer;
+            int frameCount = sprite.getFrameCount("attack");
+            frame = elapsed / frameDuration;
+            if (frame >= frameCount) frame = frameCount - 1;
+        } else if ((dx != 0 || dy != 0) && sprite.getFrameCount("walk") > 0) {
+            animName = "walk";
+            frameDuration = 100;
+            int frameCount = sprite.getFrameCount("walk");
+            frame = ((int)(animTime * 1000.f) / frameDuration) % frameCount;
+        } else if (sprite.getFrameCount("idle") > 0) {
+            animName = "idle";
+            frameDuration = 200;
+            int frameCount = sprite.getFrameCount("idle");
+            frame = ((int)(animTime * 1000.f) / frameDuration) % frameCount;
+        }
+
+        sprite.render(target, animName, frame, pos.x, pos.y + 8.f + bobY,
+                      scale, flipped);
 
         // --- Aura pulsante (colore accent in base al tipo) ---
         const sf::Color COL_GOLD(220, 160, 40);
@@ -705,7 +783,8 @@ void MiniBoss::render(sf::RenderTarget& target) const {
             case MB_BALROG_CULTIST:   accentColor = COL_GOLD; break;
             default: accentColor = COL_GOLD;
         }
-        float auraR = (float)size * 0.7f + sinf(animTime * 2.f) * 2.f;
+        // Aura piu' grande ora che lo sprite e' piu' grande (scale >= 1.0)
+        float auraR = (float)size * 0.7f * scale + sinf(animTime * 2.f) * 2.f;
         sf::CircleShape aura(auraR);
         aura.setFillColor(sf::Color(accentColor.r, accentColor.g, accentColor.b, 40));
         aura.setPosition(pos.x - auraR, pos.y - auraR);
@@ -713,9 +792,10 @@ void MiniBoss::render(sf::RenderTarget& target) const {
 
         // --- Barra HP (sopra la testa) ---
         if (health < maxHealth) {
-            float barW = (float)size * 0.8f;
+            // Barra piu' larga per adattarsi allo sprite piu' grande
+            float barW = (float)size * 0.8f * scale;
             float barH = 3.f;
-            float barY = pos.y - (float)size / 2.f - 8.f;
+            float barY = pos.y - (float)size * scale / 2.f - 8.f;
             sf::RectangleShape bg(sf::Vector2f(barW, barH));
             bg.setFillColor(sf::Color(12, 12, 12));
             bg.setPosition(pos.x - barW / 2.f, barY);
@@ -731,10 +811,11 @@ void MiniBoss::render(sf::RenderTarget& target) const {
         }
 
         // --- Ombra sul pavimento ---
-        sf::CircleShape shadow((float)size * 0.4f);
+        sf::CircleShape shadow((float)size * 0.4f * scale);
         shadow.setFillColor(sf::Color(12, 12, 12, 80));
         shadow.setScale(1.3f, 0.4f);
-        shadow.setPosition(pos.x - (float)size * 0.4f, pos.y + (float)size / 2.f);
+        shadow.setPosition(pos.x - (float)size * 0.4f * scale,
+                           pos.y + (float)size * scale / 2.f);
         target.draw(shadow);
     } else {
         // Fallback: rendering procedurale (se sprite non caricato)

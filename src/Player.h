@@ -63,6 +63,15 @@ std::string getCharacterName(CharacterType ct);
 // playerNum: 1 o 2.
 sf::Color getPlayerTint(int playerNum);
 
+// Restituisce true se lo sprite PNG di default del personaggio e' rivolto
+// verso DESTRA. Serve per decidere la logica di flip nel rendering:
+//   * default RIGHT: flipped = (lastDx < 0)  -> specchia quando muove a sinistra
+//   * default LEFT:  flipped = (lastDx > 0)  -> specchia quando muove a destra
+// I valori sono stati verificati tramite VLM (vision model) su confronti
+// side-by-side originale vs specchiato, integrando anche il feedback utente
+// per HERO_M (player1) che e' stato corretto da LEFT a RIGHT dopo test reali.
+bool spriteDefaultFacesRight(CharacterType ct);
+
 class Player {
 public:
     Player();

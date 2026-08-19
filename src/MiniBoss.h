@@ -125,6 +125,15 @@ private:
     float animTime;
     int size;                    // dimensione sprite (32-40px)
 
+    // --- FIX: target di movimento persistente tra un pathfinding BFS e il
+    // successivo. In precedenza il movimento era INSIDE il blocco BFS che
+    // gira ogni ~300ms, quindi il mini-boss si muoveva solo 1 volta ogni
+    // 18 frame -> sembrava congelato. Ora il BFS calcola solo il target
+    // (centro della prossima cella) e il movimento viene applicato OGNI
+    // frame verso targetPos, dando movimento fluido.
+    sf::Vector2f targetPos;      // centro della cella verso cui muovere
+    bool hasTarget;              // true se targetPos e' valido
+
     // SpriteSheet del mini-boss (caricato da assets/sprites/miniboss_XX)
     SpriteSheet sprite;
     bool spriteLoaded;
