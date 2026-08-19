@@ -1,0 +1,33 @@
+{
+  "image": "miniboss_09_sheet.png",
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "columns": 1,
+  "rows": 1,
+  "anchor": {
+    "x": 32,
+    "y": 56
+  },
+  "animations": {
+    "idle": {
+      "row": 0,
+      "frames": 1,
+      "frameDuration": 200
+    },
+    "walk": {
+      "row": 0,
+      "frames": 1,
+      "frameDuration": 100
+    },
+    "attack": {
+      "row": 0,
+      "frames": 1,
+      "frameDuration": 100
+    },
+    "death": {
+      "row": 0,
+      "frames": 1,
+      "frameDuration": 120
+    }
+  }
+}

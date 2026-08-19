@@ -52,7 +52,7 @@ CHARACTERS = [
         "base": "char_mage",
         "desc": "wizard mage character, long blue robe with gold trim, pointed blue cone hat with star, white beard, holding wooden staff with glowing crystal, old man",
         "poses": {
-            "idle":  "standing idle pose, facing right, staff in right hand, robe hanging straight",
+            "":      "standing idle pose, facing right, staff in right hand, robe hanging straight",
             "walk0": "walking pose frame 1, right leg forward, left leg back, robe swaying",
             "walk1": "walking pose frame 2, legs together mid-step, robe shifted",
             "walk2": "walking pose frame 3, left leg forward, right leg back, robe swaying",
@@ -64,7 +64,7 @@ CHARACTERS = [
         "base": "char_orc",
         "desc": "orc warrior character, green skin, large tusks, pointed ears, muscular build, dark leather armor, holding heavy axe, brutal warrior",
         "poses": {
-            "idle":  "standing idle pose, facing right, axe in right hand, menacing stance",
+            "":      "standing idle pose, facing right, axe in right hand, menacing stance",
             "walk0": "walking pose frame 1, right leg forward, left leg back, axe swaying",
             "walk1": "walking pose frame 2, legs together mid-step",
             "walk2": "walking pose frame 3, left leg forward, right leg back",
@@ -76,7 +76,7 @@ CHARACTERS = [
         "base": "char_elf",
         "desc": "elf ranger character, blonde hair, long pointed ears, green hooded cloak, leather armor, holding bow, agile elf",
         "poses": {
-            "idle":  "standing idle pose, facing right, bow in left hand, graceful stance",
+            "":      "standing idle pose, facing right, bow in left hand, graceful stance",
             "walk0": "walking pose frame 1, right leg forward, left leg back, cloak flowing",
             "walk1": "walking pose frame 2, legs together mid-step",
             "walk2": "walking pose frame 3, left leg forward, right leg back",
@@ -88,7 +88,7 @@ CHARACTERS = [
         "base": "char_knight",
         "desc": "knight warrior character, silver plate armor, helmet with visor and red plume, holding longsword, noble knight",
         "poses": {
-            "idle":  "standing idle pose, facing right, sword in right hand, armored stance",
+            "":      "standing idle pose, facing right, sword in right hand, armored stance",
             "walk0": "walking pose frame 1, right leg forward, left leg back, armor clanking",
             "walk1": "walking pose frame 2, legs together mid-step",
             "walk2": "walking pose frame 3, left leg forward, right leg back",
@@ -100,7 +100,7 @@ CHARACTERS = [
         "base": "char_golem",
         "desc": "stone golem character, gray rock body with cracks, glowing cyan eyes, mossy patches, bulky stone construct, no weapon, massive fists",
         "poses": {
-            "idle":  "standing idle pose, facing right, fists at sides, rocky stance",
+            "":      "standing idle pose, facing right, fists at sides, rocky stance",
             "walk0": "walking pose frame 1, right leg forward, left leg back, body tilting",
             "walk1": "walking pose frame 2, legs together mid-step",
             "walk2": "walking pose frame 3, left leg forward, right leg back",
@@ -112,7 +112,7 @@ CHARACTERS = [
         "base": "char_dragon",
         "desc": "dragon man character, red scales, dragon wings folded, pointed tail, horned head, holding fiery sword, half-dragon warrior",
         "poses": {
-            "idle":  "standing idle pose, facing right, sword in right hand, wings folded",
+            "":      "standing idle pose, facing right, sword in right hand, wings folded",
             "walk0": "walking pose frame 1, right leg forward, left leg back, tail swaying",
             "walk1": "walking pose frame 2, legs together mid-step",
             "walk2": "walking pose frame 3, left leg forward, right leg back",
@@ -124,7 +124,7 @@ CHARACTERS = [
         "base": "char_vampire",
         "desc": "vampire lord character, pale skin, black cape with red lining, slicked black hair, fangs, noble vampire suit, holding cane",
         "poses": {
-            "idle":  "standing idle pose, facing right, cane in left hand, cape draped",
+            "":      "standing idle pose, facing right, cane in left hand, cape draped",
             "walk0": "walking pose frame 1, right leg forward, left leg back, cape flowing",
             "walk1": "walking pose frame 2, legs together mid-step",
             "walk2": "walking pose frame 3, left leg forward, right leg back",
@@ -270,13 +270,14 @@ def process_frame(base, frame_name, desc, pose):
     # Fix fringe "core-color check" (2 passate)
     final = fix_fringe_core_color(final)
 
-    # Salva PNG 64x64
-    out_path = SPRITES_DIR / f"{base}_{frame_name}_sheet.png"
+    # Salva PNG 64x64 (nome: <base>[_<frame>]_sheet.png)
+    suffix = f"_{frame_name}" if frame_name else ""
+    out_path = SPRITES_DIR / f"{base}{suffix}_sheet.png"
     Image.fromarray(final, 'RGBA').save(out_path)
 
     # Salva JSON meta
     meta = {
-        "image": f"{base}_{frame_name}_sheet.png",
+        "image": f"{base}{suffix}_sheet.png",
         "frameWidth": SPRITE_SIZE, "frameHeight": SPRITE_SIZE,
         "columns": 1, "rows": 1,
         "anchor": {"x": 32, "y": 56},
@@ -287,12 +288,12 @@ def process_frame(base, frame_name, desc, pose):
             "death":  {"row": 0, "frames": 1, "frameDuration": 120}
         }
     }
-    meta_path = SPRITES_DIR / f"{base}_{frame_name}_meta.json"
+    meta_path = SPRITES_DIR / f"{base}{suffix}_meta.json"
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
 
     opachi = np.sum(final[..., 3] > 0)
-    print(f"  [DONE] {base}_{frame_name}: 64x64, opachi={opachi}/{SPRITE_SIZE*SPRITE_SIZE}")
+    print(f"  [DONE] {base}{suffix}: 64x64, opachi={opachi}/{SPRITE_SIZE*SPRITE_SIZE}")
     return True
 
 

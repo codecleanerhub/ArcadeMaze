@@ -125,12 +125,21 @@ private:
     float animTime;
     int size;                    // dimensione sprite (32-40px)
 
+    // SpriteSheet del mini-boss (caricato da assets/sprites/miniboss_XX)
+    SpriteSheet sprite;
+    bool spriteLoaded;
+
     // BFS pathfinding (come Enemy::bfsPath)
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
 
-    // Render a primitive SFML (fallback se niente sprite)
+    // Render a primitive SFML (fallback se sprite non disponibile)
     void renderPrimitives(sf::RenderTarget& target) const;
+
+    // Mappa tipo -> ID file sprite (miniboss_01, miniboss_02, ecc.)
+    static std::string getSpriteId(MiniBossType t);
+    // Carica lo sprite per il tipo corrente
+    void loadSprite();
 
     // Mappa tipo -> arma
     static MiniBossWeapon getWeaponForType(MiniBossType t);

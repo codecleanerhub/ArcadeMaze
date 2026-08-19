@@ -23,7 +23,7 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
     : pos(), dx(0), dy(0), speed(0), health(0), maxHealth(0),
       type(t), weapon(getWeaponForType(t)),
       pathUpdateTimer(0), attackCooldown(0), attackingTimer(0), dyingTimer(0),
-      animTime(0.f), size(0) {
+      animTime(0.f), size(0), spriteLoaded(false) {
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.f;
     pos.y = startRow * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
     maxHealth = getBaseHealth(t) + (level - 1) * 3;  // scala col livello
@@ -32,6 +32,40 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
     size = getBaseSize(t);
     dx = (rand() % 2) ? 1 : -1;
     dy = (rand() % 2) ? 1 : -1;
+    // Carica lo sprite PNG (assets/sprites/miniboss_XX_sheet.png)
+    loadSprite();
+}
+
+// --- Caricamento sprite ---
+// Restituisce l'ID del file sprite associato al tipo (miniboss_01..17).
+std::string MiniBoss::getSpriteId(MiniBossType t) {
+    static const char* ids[MINIBOSS_TYPE_COUNT] = {
+        "miniboss_01",  // MB_GOBLIN_CHIEFTAIN
+        "miniboss_02",  // MB_CAVE_TROLL
+        "miniboss_03",  // MB_ORC_BERSERKER
+        "miniboss_04",  // MB_WARG_RIDER
+        "miniboss_05",  // MB_URUK_HAI
+        "miniboss_06",  // MB_NAZGUL
+        "miniboss_07",  // MB_OGRE_BRUTE
+        "miniboss_08",  // MB_GNOLL_PACKLORD
+        "miniboss_09",  // MB_BUGBEAR_CHIEF
+        "miniboss_10",  // MB_MINOTAUR
+        "miniboss_11",  // MB_WIGHT_LORD
+        "miniboss_12",  // MB_CAVE_GIANT
+        "miniboss_13",  // MB_DEATH_KNIGHT
+        "miniboss_14",  // MB_ILLITHID
+        "miniboss_15",  // MB_ETTIN
+        "miniboss_16",  // MB_FOMORIAN
+        "miniboss_17",  // MB_BALROG_CULTIST
+    };
+    int idx = (int)t;
+    if (idx < 0 || idx >= MINIBOSS_TYPE_COUNT) return "miniboss_01";
+    return ids[idx];
+}
+
+void MiniBoss::loadSprite() {
+    std::string basePath = "assets/sprites/" + getSpriteId(type);
+    spriteLoaded = sprite.load(basePath);
 }
 
 // --- Statistiche per tipo ---
@@ -618,7 +652,77 @@ void MiniBoss::renderPrimitives(sf::RenderTarget& target) const {
 
 // --- render ---
 void MiniBoss::render(sf::RenderTarget& target) const {
-    // Per ora usiamo sempre primitive (nessuno sprite esterno per mini-boss).
-    // In futuro si potrebbero aggiungere sprite dedicati.
-    renderPrimitives(target);
+    // Se lo sprite PNG e' caricato, usalo (stile boss/nemici, dettagliato).
+    // Altrimenti fallback a primitive SFML (renderPrimitives).
+    if (spriteLoaded && sprite.isLoaded()) {
+        // Scala lo sprite 64x64 alla dimensione del mini-boss (32-40px).
+        // size e' la dimensione target; lo sprite e' 64x64 con anchor (32,56).
+        float scale = (float)size / 64.f;
+        // Bob effect leggero per dare "vita"
+        float bobY = sinf(animTime * 3.f) * 1.f;
+        // Flipped se rivolto a sinistra (dx < 0)
+        bool flipped = (dx < 0);
+        sprite.render(target, "idle", 0, pos.x, pos.y + 8.f + bobY, scale, flipped);
+
+        // --- Aura pulsante (colore accent in base al tipo) ---
+        const sf::Color COL_GOLD(220, 160, 40);
+        const sf::Color COL_RED(160, 40, 40);
+        const sf::Color COL_CYAN(120, 200, 200);
+        const sf::Color COL_PURPLE(160, 120, 200);
+        sf::Color accentColor;
+        switch (type) {
+            case MB_GOBLIN_CHIEFTAIN: accentColor = COL_GOLD; break;
+            case MB_CAVE_TROLL:       accentColor = sf::Color(200, 180, 160); break;
+            case MB_ORC_BERSERKER:    accentColor = COL_RED; break;
+            case MB_WARG_RIDER:       accentColor = sf::Color(200, 180, 160); break;
+            case MB_URUK_HAI:         accentColor = sf::Color(200, 80, 80); break;
+            case MB_NAZGUL:           accentColor = COL_RED; break;
+            case MB_OGRE_BRUTE:       accentColor = sf::Color(160, 128, 112); break;
+            case MB_GNOLL_PACKLORD:   accentColor = COL_GOLD; break;
+            case MB_BUGBEAR_CHIEF:    accentColor = sf::Color(48, 40, 36); break;
+            case MB_MINOTAUR:         accentColor = COL_GOLD; break;
+            case MB_WIGHT_LORD:       accentColor = COL_CYAN; break;
+            case MB_CAVE_GIANT:       accentColor = sf::Color(200, 180, 160); break;
+            case MB_DEATH_KNIGHT:     accentColor = COL_CYAN; break;
+            case MB_ILLITHID:         accentColor = COL_PURPLE; break;
+            case MB_ETTIN:            accentColor = COL_RED; break;
+            case MB_FOMORIAN:         accentColor = sf::Color(48, 40, 36); break;
+            case MB_BALROG_CULTIST:   accentColor = COL_GOLD; break;
+            default: accentColor = COL_GOLD;
+        }
+        float auraR = (float)size * 0.7f + sinf(animTime * 2.f) * 2.f;
+        sf::CircleShape aura(auraR);
+        aura.setFillColor(sf::Color(accentColor.r, accentColor.g, accentColor.b, 40));
+        aura.setPosition(pos.x - auraR, pos.y - auraR);
+        target.draw(aura);
+
+        // --- Barra HP (sopra la testa) ---
+        if (health < maxHealth) {
+            float barW = (float)size * 0.8f;
+            float barH = 3.f;
+            float barY = pos.y - (float)size / 2.f - 8.f;
+            sf::RectangleShape bg(sf::Vector2f(barW, barH));
+            bg.setFillColor(sf::Color(12, 12, 12));
+            bg.setPosition(pos.x - barW / 2.f, barY);
+            target.draw(bg);
+            float hpRatio = (float)health / (float)maxHealth;
+            sf::Color hpColor = (hpRatio > 0.5f) ? sf::Color(80, 120, 100) :
+                                (hpRatio > 0.25f) ? sf::Color(220, 160, 40) :
+                                                    sf::Color(160, 40, 40);
+            sf::RectangleShape hp(sf::Vector2f(barW * hpRatio, barH));
+            hp.setFillColor(hpColor);
+            hp.setPosition(pos.x - barW / 2.f, barY);
+            target.draw(hp);
+        }
+
+        // --- Ombra sul pavimento ---
+        sf::CircleShape shadow((float)size * 0.4f);
+        shadow.setFillColor(sf::Color(12, 12, 12, 80));
+        shadow.setScale(1.3f, 0.4f);
+        shadow.setPosition(pos.x - (float)size * 0.4f, pos.y + (float)size / 2.f);
+        target.draw(shadow);
+    } else {
+        // Fallback: rendering procedurale (se sprite non caricato)
+        renderPrimitives(target);
+    }
 }
