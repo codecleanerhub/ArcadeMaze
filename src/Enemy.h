@@ -96,6 +96,27 @@ public:
     // True se l'animazione di morte e' conclusa (il nemico puo' essere rimosso).
     bool isDeathAnimDone() const { return health <= 0 && dyingTimer == 0; }
 
+    // --- STATO BURNING (bruciatura da player invincibile) ---
+    // Quando il player invincibile (calice) tocca il nemico, questo NON muore
+    // istantaneamente: entra in stato "burning" per `burningTimer` frame.
+    // Durante questo stato:
+    //   * Il nemico e' visible (non morto), ma e' fermo (non si muove)
+    //   * Sopra di esso viene disegnato un overlay di fiamme (sprite PNG
+    //     effect_fireaura scalato + poche particelle di fumo/scintille)
+    //   * NON ci sono piu' le 40+15 particelle triangolari della vecchia
+    //     "esplosione di triangoli gialli/rossi"
+    // A fine burning (burningTimer == 0), il nemico muore: viene chiamato
+    // takeDamage(999) e viene creato il mucchio di cenere + un piccolo
+    // FireBurst finale (lampo di transizione).
+    bool isBurning() const { return burningTimer > 0; }
+    void startBurning(int frames = 50);  // accende il nemico per `frames` frame
+    // True se il nemico e' appena uscito dallo stato burning (burningTimer
+    // scaduto ma ancora non morto). Usato da Game per finalizzare la morte
+    // (cenere + FireBurst). Il flag viene settato a true da startBurning e
+    // resettato da clearBurnedFlag() dopo che Game ha gestito la transizione.
+    bool wasBurned() const { return burnedFlag; }
+    void clearBurnedFlag() { burnedFlag = false; }
+
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei nemici dalla cartella data. Da chiamare
     // una volta in Game::init(). I file mancanti vengono saltati
@@ -115,6 +136,9 @@ private:
     uint32_t shootCooldown;
     uint32_t attackingTimer;  // >0 = animazione attacco in corso (ms simulati)
     uint32_t dyingTimer;      // >0 = animazione morte in corso (ms simulati)
+    uint32_t burningTimer;    // >0 = nemico che brucia (player invincibile)
+    uint32_t burnAnimTime;    // tempo accumulato per animazione fiamme overlay
+    bool burnedFlag;          // true se e' stato in burning (per finalizzazione morte)
 
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);

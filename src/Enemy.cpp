@@ -176,7 +176,7 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0) {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false) {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
@@ -281,6 +281,17 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
     if (attackingTimer > 16) attackingTimer -= 16; else attackingTimer = 0;
     if (dyingTimer > 16) dyingTimer -= 16; else dyingTimer = 0;
 
+    // --- STATO BURNING: nemico che brucia (player invincibile) ---
+    // Decrementa burningTimer. Mentre brucia, il nemico e' FERMO (non si
+    // muove, non spara) e sopra di lui viene disegnato un overlay di fiamme.
+    if (burningTimer > 0) {
+        if (burningTimer > 1) burningTimer--;
+        else burningTimer = 0;
+        burnAnimTime += 16;
+        // Blocca movimento e sparo mentre brucia
+        return;
+    }
+
     // Se il nemico sta morendo (animazione morte in corso), blocca movimento
     // e sparo: lascia solo scorrere il timer.
     if (dyingTimer > 0) return;
@@ -333,6 +344,20 @@ void Enemy::takeDamage(int dmg) {
         health = 0;
         dyingTimer = 600;  // ~600 ms di animazione death (6 frame x 120 ms)
     }
+}
+
+// startBurning: fa entrare il nemico in stato "burning" per `frames` frame.
+// Durante lo stato burning, il nemico e' fermo (non si muove, non spara) e
+// sopra di esso viene disegnato un overlay di fiamme (vedi render). A fine
+// burning, il nemico muore (takeDamage(999) chiamato da Game quando
+// burningTimer arriva a 0).
+// Imposta anche burnedFlag = true: sara' usato da Game per rilevare la
+// transizione burning -> morte (cenere + FireBurst finale).
+void Enemy::startBurning(int frames) {
+    if (dyingTimer > 0 || burningTimer > 0) return;  // gia' morente o gia' bruciando
+    burningTimer = (uint32_t)frames;
+    burnAnimTime = 0;
+    burnedFlag = true;
 }
 
 Vec2 Enemy::getGridPos() const { return { (int)(pos.x / TILE_SIZE), (int)((pos.y - UI_HEIGHT) / TILE_SIZE) }; }
@@ -440,6 +465,139 @@ void Enemy::render(sf::RenderTarget& target) const {
         hbFg.setFillColor(hpColor);
         hbFg.setPosition(px - 18.f, py - 56.f);
         target.draw(hbFg);
+    }
+
+    // --- OVERLAY FIAMME quando il nemico sta bruciando (player invincibile) ---
+    // Sostituisce la vecchia "esplosione di triangoli gialli/rossi" con un
+    // overlay di fiamme che copre il nemico: si vede il nemico AVVOLTO dalle
+    // fiamme, non una nuvola di triangoli sparsi.
+    //
+    // Composto da:
+    //   1. Sprite PNG effect_fireaura (animato) centrato sul nemico
+    //   2. Glow radiale multistrato (oro/rosso/oro centrale) per "colore fuoco"
+    //   3. Poche fiamme procedurali (6, non 40) che lambiscono il nemico
+    //   4. 3 scintille bianche che salgono (effetto "faville")
+    //   5. Tint rossastro applicato allo sprite del nemico (sotto l'overlay)
+    //      per dare l'effetto "carbonizzato" - ma non e' facile senza
+    //      modificare SpriteSheet, quindi omettiamo e usiamo solo l'overlay.
+    if (burningTimer > 0) {
+        // Palette
+        const sf::Color COL_GOLD  (220, 160, 40);
+        const sf::Color COL_RED_L (200, 80, 80);
+        const sf::Color COL_RED_D (160, 40, 40);
+        const sf::Color COL_WHITE (240, 240, 240);
+        const sf::Color COL_ORANGE(255, 100, 0);
+
+        // Intensita' in base al tempo di bruciatura:
+        // - primi 20% frame: build-up (cresce da 0.5 a 1.0)
+        // - 20-80%: massimo (1.0)
+        // - ultimi 20%: fade-out (da 1.0 a 0.7) prima di morire
+        float burnProgress = 1.0f - (float)burningTimer / 50.f;  // 0 = inizio, 1 = fine
+        float intensity = 1.0f;
+        if (burnProgress < 0.2f) intensity = 0.5f + burnProgress * 2.5f;
+        else if (burnProgress > 0.8f) intensity = 1.0f - (burnProgress - 0.8f) * 1.5f;
+        if (intensity < 0.3f) intensity = 0.3f;
+
+        float pulse = 1.0f + sin(burnAnimTime * 0.02f) * 0.1f;
+
+        // 1. Glow radiale multistrato (sotto lo sprite PNG per dare profondita')
+        float outerR = 22.f * pulse;
+        sf::CircleShape glowOuter(outerR);
+        glowOuter.setFillColor(sf::Color(COL_ORANGE.r, COL_ORANGE.g, COL_ORANGE.b,
+                                          (sf::Uint8)(90 * intensity)));
+        glowOuter.setPosition(px - outerR, py - 8.f - outerR);
+        target.draw(glowOuter);
+
+        float midR = 16.f * pulse;
+        sf::CircleShape glowMid(midR);
+        glowMid.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
+                                        (sf::Uint8)(120 * intensity)));
+        glowMid.setPosition(px - midR, py - 8.f - midR);
+        target.draw(glowMid);
+
+        float innerR = 10.f * pulse;
+        sf::CircleShape glowInner(innerR);
+        glowInner.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                          (sf::Uint8)(160 * intensity)));
+        glowInner.setPosition(px - innerR, py - 8.f - innerR);
+        target.draw(glowInner);
+
+        // 2. Sprite PNG effect_fireaura (overlay fiamme animato)
+        // Caricato staticamente una tantum per non ricaricare ad ogni frame.
+        static SpriteSheet fireOverlaySprite;
+        static bool fireOverlayLoaded = false;
+        if (!fireOverlayLoaded) {
+            fireOverlayLoaded = true;
+            fireOverlaySprite.load("assets/sprites/effect_fireaura");
+        }
+        if (fireOverlaySprite.isLoaded()) {
+            int frameDuration = 80;
+            int frameCount = fireOverlaySprite.getFrameCount("idle");
+            if (frameCount <= 0) frameCount = 6;
+            int frame = ((int)burnAnimTime / frameDuration) % frameCount;
+            // Scala 1.1x (copre il nemico 64x64 con un po' di margine)
+            float overlayScale = 1.1f * pulse;
+            // Tint con fade alpha in base all'intensita'
+            sf::Color tint(255, 255, 255, (sf::Uint8)(200 * intensity));
+            // Anchor del fireaura e' (32,32) centro, quindi posizione (px, py - 8)
+            // per allineare al centro del nemico (che ha anchor piedi)
+            fireOverlaySprite.render(target, "idle", frame,
+                                      px, py - 8.f, overlayScale, false, tint);
+        }
+
+        // 3. Poche fiamme procedurali (6) attorno al nemico - non 40 come prima
+        // Danno dynamism senza diventare una "nuvola di triangoli".
+        for (int i = 0; i < 6; i++) {
+            float angle = (i / 6.f) * 2.f * (float)M_PI + burnAnimTime * 0.005f;
+            float ringR = 14.f;
+            float fx = px + cos(angle) * ringR;
+            float fy = py - 8.f + sin(angle) * ringR;
+            float flameH = (8.f + sin(burnAnimTime * 0.02f + i * 0.7f) * 4.f + 4.f) * intensity;
+            float flameW = 3.f;
+            sf::ConvexShape flame;
+            flame.setPointCount(3);
+            flame.setPoint(0, sf::Vector2f(fx - flameW, fy));
+            flame.setPoint(1, sf::Vector2f(fx + flameW, fy));
+            flame.setPoint(2, sf::Vector2f(fx + sin(burnAnimTime * 0.02f + i) * 2.f,
+                                            fy - flameH));
+            flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                          (sf::Uint8)(200 * intensity)));
+            target.draw(flame);
+            // Apice rosso
+            sf::ConvexShape flameTip;
+            flameTip.setPointCount(3);
+            flameTip.setPoint(0, sf::Vector2f(fx - flameW * 0.6f, fy - flameH * 0.4f));
+            flameTip.setPoint(1, sf::Vector2f(fx + flameW * 0.6f, fy - flameH * 0.4f));
+            flameTip.setPoint(2, sf::Vector2f(fx + sin(burnAnimTime * 0.02f + i) * 2.f,
+                                               fy - flameH * 1.3f));
+            flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
+                                              (sf::Uint8)(220 * intensity)));
+            target.draw(flameTip);
+        }
+
+        // 4. 3 scintille bianche che salgono (faville)
+        for (int i = 0; i < 3; i++) {
+            float sparkX = px + sin(burnAnimTime * 0.015f + i * 1.2f) * 10.f;
+            float sparkY = py - 18.f - ((int)(burnAnimTime * 0.2f + i * 8) % 25);
+            float sparkR = 1.f;
+            sf::CircleShape spark(sparkR);
+            spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                           (sf::Uint8)(220 * intensity)));
+            spark.setPosition(sparkX - sparkR, sparkY - sparkR);
+            target.draw(spark);
+        }
+
+        // 5. Fumo grigio che sale (il nemico sta bruciando, fa fumo)
+        for (int i = 0; i < 2; i++) {
+            float smokeX = px + sin(burnAnimTime * 0.01f + i * 2.f) * 6.f;
+            float smokeY = py - 20.f - ((int)(burnAnimTime * 0.15f + i * 15) % 35);
+            float smokeR = 2.f + (i * 0.5f);
+            sf::CircleShape smoke(smokeR);
+            smoke.setFillColor(sf::Color(180, 170, 160,
+                                           (sf::Uint8)(100 * intensity)));
+            smoke.setPosition(smokeX - smokeR, smokeY - smokeR);
+            target.draw(smoke);
+        }
     }
 }
 

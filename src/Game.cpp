@@ -1522,80 +1522,30 @@ void Game::update() {
         // Quando il giocatore e' invincibile (calice dell'immortalita'), i
         // nemici che tocca BRUCIANO: non c'e' sangue, ma fiammate + cenere.
         // Lambda per evitare duplicazione.
+        //
+        // FIX: il nemico NON muore istantaneamente. Ora entra in stato
+        // "burning" (enemy.startBurning(50)) per 50 frame (~0.8s). Durante
+        // questo stato, sopra il nemico viene disegnato un overlay di fiamme
+        // (vedi Enemy::render). Quando burningTimer arriva a 0, il nemico
+        // muore davvero (gestito sotto: takeDamage(999) + cenere + FireBurst).
         auto updateInvincible = [this](Player& p, int& timer) {
             if (timer > 0) {
                 if (timer > 16) timer -= 16;
                 else timer = 0;
                 if (timer > 0) {
                     for (auto& enemy : enemies) {
-                        if (enemy.isDead()) continue;
+                        // Skip se gia' morto, gia' morente, o gia' bruciando
+                        if (enemy.isDead() || enemy.isDying() || enemy.isBurning()) continue;
                         float dx = p.getPixelPos().x - enemy.getPixelPos().x;
                         float dy = p.getPixelPos().y - enemy.getPixelPos().y;
                         if (dx * dx + dy * dy < 600) {
-                            enemy.takeDamage(999);
+                            // Accende il nemico: entra in stato burning per 50 frame.
+                            // Il nemico sara' visualmente coperto da fiamme.
+                            enemy.startBurning(50);
+                            // Punteggio subito (percezione immediata del danno)
                             p.addScore(5000);
-                            audio.playSound(SOUND_ENEMY_DEATH);
+                            // Suono di accensione (fuoco che prende)
                             audio.playSound(SOUND_ENEMY_EXPLODE);
-                            // --- FIAMME VISCIBILI sul nemico (particelle tipo 1) ---
-                            // Triangoli (fiamme) GRANDI (10-14px) con glow,
-                            // durata 90 frame (~1.5s) per effetto prolungato.
-                            // Colori palette 16: (220,160,40) oro, (200,80,80)
-                            // rosso, (240,240,240) scintille bianche.
-                            for (int i = 0; i < 40; i++) {
-                                float ang = (rand() % 360) * (float)M_PI / 180.f;
-                                float spd = 1.5f + (rand() % 4);
-                                sf::Vector2f vel(cos(ang) * spd,
-                                                  sin(ang) * spd - 3.5f);  // -3.5 = salgono veloci
-                                // Colore: 25% scintille bianche, 40% oro, 35% rosso
-                                sf::Color fireCol;
-                                int fireVar = rand() % 20;
-                                if (fireVar < 5) fireCol = sf::Color(240, 240, 240);  // scintilla
-                                else if (fireVar < 13) fireCol = sf::Color(220, 160, 40);  // oro
-                                else fireCol = sf::Color(200, 80, 80);  // rosso
-                                // size 10-14px (era 5), type 1 = fiamma triangolare
-                                float psize = 10.f + (rand() % 5);
-                                particles.push_back(makeParticle(
-                                    enemy.getPixelPos(), vel, fireCol,
-                                    90, 90, psize, 1));  // durata 90 frame, type 1
-                            }
-                            // --- Esplosione di fuoco centrale (15 fiamme grandi oro) ---
-                            for (int i = 0; i < 15; i++) {
-                                float ang = (rand() % 360) * (float)M_PI / 180.f;
-                                float spd = 0.8f + (rand() % 2);
-                                sf::Vector2f vel(cos(ang) * spd, sin(ang) * spd - 1.5f);
-                                particles.push_back(makeParticle(
-                                    enemy.getPixelPos(), vel,
-                                    sf::Color(220, 160, 40),  // oro
-                                    60, 60, 12.f, 1));  // size 12, durata 60
-                            }
-                            // --- Scintille bianche che salgono (10 piccole) ---
-                            for (int i = 0; i < 10; i++) {
-                                float ang = (rand() % 360) * (float)M_PI / 180.f;
-                                float spd = 2.f + (rand() % 5);
-                                sf::Vector2f vel(cos(ang) * spd, sin(ang) * spd - 4.f);
-                                particles.push_back(makeParticle(
-                                    enemy.getPixelPos(), vel,
-                                    sf::Color(240, 240, 240),  // bianco
-                                    70, 70, 6.f, 0));  // size 6, type 0 (cerchio)
-                            }
-                            // --- MUCCHIO DI CENERE sul pavimento ---
-                            // Sostituisce la macchia di sangue. Forma a mucchio
-                            // (irregolare) colore grigio-beige chiaro, con
-                            // particelle di cenere che si sollevano lentamente.
-                            // Diverso visualmente dal BloodStain (macchia piatta).
-                            ashPiles.push_back({enemy.getPixelPos(), 500, 500,
-                                12.f + (rand()%6), 0.f});  // raggio 12-17, durata ~8.3s
-
-                            // --- ESPLOSIONE DI FUOCO (FireBurst) ---
-                            // NUOVO: aggiunge un effetto FireBurst che renderizza
-                            // lo spritesheet PNG (effect_fireburst) + glow radiale
-                            // multistrato. Vive 60 frame (1s). Sostituisce
-                            // visivamente la "nuvola di triangoli" che era poco
-                            // realistica. Le particelle triangolari sopra restano
-                            // come scintille secondarie, ma l'effetto principale
-                            // e' ora lo spritesheet PNG.
-                            fireBursts.push_back({enemy.getPixelPos(), 60, 60,
-                                0.f, 1.5f});  // pos, life=60, maxLife=60, animTime=0, scale=1.5
                         }
                     }
                 }
@@ -1603,6 +1553,36 @@ void Game::update() {
         };
         updateInvincible(player, playerInvincibleTimer);
         if (numPlayers == 2) updateInvincible(player2, player2InvincibleTimer);
+
+        // --- Gestione morte nemici bruciati (burning -> ash) ---
+        // Quando un nemico in stato burning arriva a burningTimer == 0, muore:
+        // takeDamage(999), suono di morte, creazione mucchio di cenere e
+        // piccolo FireBurst finale (lampo di transizione). Nessuna esplosione
+        // di triangoli gialli/rossi: la vecchia nuvola di 40+15 particelle
+        // triangolari e' stata eliminata. Ora si vede solo:
+        //   1. Il nemico AVVOLTO da fiamme per 50 frame (overlay in Enemy::render)
+        //   2. Un lampo finale breve (FireBurst scale 0.9, vita 30 frame = 0.5s)
+        //   3. Il mucchio di cenere che resta sul pavimento
+        for (auto& enemy : enemies) {
+            // Rileva la transizione: era burning (burnAnimTime > 0) ma ora
+            // burningTimer == 0 e non e' ancora morto (health > 0).
+            // In questo caso, finalizziamo la morte da bruciatura.
+            if (enemy.isBurning() == false && enemy.isDead() == false &&
+                enemy.isDying() == false && enemy.wasBurned()) {
+                // Il nemico muore: takeDamage(999) triggera dyingTimer
+                enemy.takeDamage(999);
+                enemy.clearBurnedFlag();  // resetta wasBurned per evitare re-trigger
+                audio.playSound(SOUND_ENEMY_DEATH);
+                // Mucchio di cenere sul pavimento (dove era il nemico)
+                ashPiles.push_back({enemy.getPixelPos(), 500, 500,
+                    12.f + (rand()%6), 0.f});  // raggio 12-17, durata ~8.3s
+                // Piccolo FireBurst finale (lampo di transizione, non esplosione)
+                // Scale 0.9 (piu' piccolo del FireBurst normale che era 1.5),
+                // vita 30 frame (0.5s, piu' breve del normale che era 60).
+                fireBursts.push_back({enemy.getPixelPos(), 30, 30,
+                    0.f, 0.9f});  // pos, life=30, maxLife=30, animTime=0, scale=0.9
+            }
+        }
 
         // --- Aggiornamento dello scettro magico ---
         if (scepter.active && !scepter.triggered) {
