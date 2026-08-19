@@ -207,15 +207,15 @@ void SpriteSheet::render(sf::RenderTarget& target, const std::string& animName,
     sf::IntRect rect(sx, sy, frameW, frameH);
 
     sf::Sprite sprite(texture, rect);
-    // Ancora scalata: (32, 56) su frame 64x64 -> (32*scale, 56*scale)
-    float ox = frameW * 0.5f * scale;
-    float oy = frameH * (56.f / 64.f) * scale;
-    sprite.setOrigin(ox / scale, oy / scale);  // origin in coordinate frame
+    // Anchor a coordinate frame (32, 56).
+    // Per flip corretto: se flipped, anchor speculare (frameW - centerX).
+    float ox = frameW * 0.5f;
+    float oy = frameH * (56.f / 64.f);
+    if (flipped) ox = frameW - ox;
+    sprite.setOrigin(ox, oy);
     sprite.setPosition(x, y);
-    sprite.setScale(scale, scale);
-    if (flipped) {
-        sprite.scale(-1.f, 1.f);
-    }
+    float scaleX = flipped ? -scale : scale;
+    sprite.setScale(scaleX, scale);
     target.draw(sprite);
 }
 
@@ -240,14 +240,22 @@ void SpriteSheet::render(sf::RenderTarget& target, const std::string& animName,
     sf::IntRect rect(sx, sy, frameW, frameH);
 
     sf::Sprite sprite(texture, rect);
-    float ox = frameW * 0.5f * scale;
-    float oy = frameH * (56.f / 64.f) * scale;
-    sprite.setOrigin(ox / scale, oy / scale);
-    sprite.setPosition(x, y);
-    sprite.setScale(scale, scale);
+    // Anchor a coordinate frame (32, 56) - NON dividere per scale.
+    // L'anchor e' il punto del frame che coincide con (x, y).
+    // Per flip corretto: se flipped, l'anchor X deve essere specchiato
+    // rispetto al centro del frame (frameW - 32 invece di 32).
+    float ox = frameW * 0.5f;
+    float oy = frameH * (56.f / 64.f);
     if (flipped) {
-        sprite.scale(-1.f, 1.f);
+        // Quando flippiamo, l'anchor speculare e' (frameW - centerX).
+        // In modalita' coordinate frame, e' (frameW - ox).
+        ox = frameW - ox;
     }
-    sprite.setColor(tint);  // applica tint moltiplicativo
+    sprite.setOrigin(ox, oy);
+    sprite.setPosition(x, y);
+    // Scale combinato: se flipped, scaleX = -scale, altrimenti +scale
+    float scaleX = flipped ? -scale : scale;
+    sprite.setScale(scaleX, scale);
+    sprite.setColor(tint);
     target.draw(sprite);
 }

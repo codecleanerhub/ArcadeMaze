@@ -359,19 +359,19 @@ void Player::render(sf::RenderTarget& target) {
             // Disegna lo sprite idle con scale modificato e sollevato (+ tint)
             sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped, tint);
         }
-        // Se sta camminando e abbiamo 4 frame, cicla walk0->walk1->walk2->walk3
-        else if (isWalking && walkSprites[0].isLoaded() && walkSprites[1].isLoaded()) {
-            int stepFrame = (animTime / 80) % 4;
-            int availableFrames = 0;
-            for (int i = 0; i < 4; i++) {
-                if (walkSprites[i].isLoaded()) availableFrames++;
-            }
-            if (availableFrames >= 2) {
-                stepFrame = stepFrame % availableFrames;
-                walkSprites[stepFrame].render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
-            } else {
-                sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
-            }
+        // --- Camminata: usa SEMPRE lo sprite idle con bob effect ---
+        // NON usiamo walkSprites[0..3] perche' i frame walk dei nuovi personaggi
+        // sono immagini AI indipendenti (non coordinate) - l'effetto sarebbe
+        // una "gif animata con immagini slegate". Invece usiamo lo sprite idle
+        // (1 sola immagine coerente) con un effetto bob verticale per simulare
+        // la camminata. Questo da un risultato fluido e coordinato per tutti
+        // i personaggi (originali e nuovi).
+        else if (isWalking) {
+            // Bob effect piu' pronunciato quando cammina (effetto passo)
+            float walkBob = sin(animTime * 0.012f) * 3.f;
+            // Leggera inclinazione orizzontale per simulare il dondolio
+            float scaleX = 1.0f + sin(animTime * 0.024f) * 0.05f;
+            sprite.render(target, "idle", 0, px, pos.y + 8.f + walkBob, scaleX, flipped, tint);
         }
         // Altrimenti usa sprite principale (idle o attack)
         else {
