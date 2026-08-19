@@ -1243,28 +1243,43 @@ void Game::update() {
                             audio.playSound(SOUND_ENEMY_EXPLODE);
                             // --- Fiammate (particelle di fuoco) ---
                             // Sostituiscono il sangue: colore arancione/rosso
-                            // fuoco con movemento verso l'alto (leggerita').
+                            // fuoco con movemento verso l'alto. Durata 60 frame
+                            // (~1s, era 35) per dare tempo di vedere l'effetto.
+                            // 50 particelle (era 30) per un effetto piu' denso.
                             // Palette 16 colori: (220,160,40) oro-fuoco,
                             // (200,80,80) rosso chiaro, (240,240,240) cenere.
-                            for (int i = 0; i < 30; i++) {
+                            for (int i = 0; i < 50; i++) {
                                 float ang = (rand() % 360) * (float)M_PI / 180.f;
                                 float spd = 2.f + (rand() % 6);
                                 sf::Vector2f vel(cos(ang) * spd,
-                                                  sin(ang) * spd - 2.f);  // -2 = verso alto
-                                // Colore fuoco: giallo->arancione->rosso
+                                                  sin(ang) * spd - 3.f);  // -3 = verso alto (era -2)
+                                // Colore fuoco: la maggior parte oro/rosso,
+                                // poche bianche (scintille calde)
                                 sf::Color fireCol;
-                                int fireVar = rand() % 3;
-                                if (fireVar == 0) fireCol = sf::Color(240, 240, 240);  // cenere bianca (core)
-                                else if (fireVar == 1) fireCol = sf::Color(220, 160, 40);  // oro-fuoco
-                                else fireCol = sf::Color(200, 80, 80);  // rosso fuoco
-                                particles.push_back({enemy.getPixelPos(), vel, fireCol, 35, 35});
+                                int fireVar = rand() % 10;
+                                if (fireVar < 2) fireCol = sf::Color(240, 240, 240);  // scintilla bianca (20%)
+                                else if (fireVar < 6) fireCol = sf::Color(220, 160, 40);  // oro-fuoco (40%)
+                                else fireCol = sf::Color(200, 80, 80);  // rosso fuoco (40%)
+                                particles.push_back({enemy.getPixelPos(), vel, fireCol, 60, 60});  // durata 60 frame
+                            }
+                            // --- Esplosione di fuoco centrale (effetto flash) ---
+                            // 15 particelle grandi al centro del nemico
+                            for (int i = 0; i < 15; i++) {
+                                float ang = (rand() % 360) * (float)M_PI / 180.f;
+                                float spd = 1.f + (rand() % 3);
+                                sf::Vector2f vel(cos(ang) * spd, sin(ang) * spd - 1.f);
+                                particles.push_back({enemy.getPixelPos(), vel,
+                                    sf::Color(220, 160, 40), 45, 45});  // oro, durata media
                             }
                             // --- Cenere sul pavimento (sostituisce sangue) ---
-                            // Macchia grigia scura invece di rossa, simula
-                            // i resti bruciati del nemico.
-                            bloodStains.push_back({enemy.getPixelPos(), 300, 300,
-                                8.f + (rand()%6),
-                                sf::Color(60, 50, 45, 200)});  // cenere grigio scura
+                            // Macchia GRIGIO CHIARA (non scura, altrimenti si
+                            // confonde con il pavimento scuro del labirinto).
+                            // Colore (200,180,160) della palette 16 = beige
+                            // chiaro, ben visibile sul pavimento scuro.
+                            // Durata 400 frame (~6.6s) per dare tempo di vederla.
+                            bloodStains.push_back({enemy.getPixelPos(), 400, 400,
+                                10.f + (rand()%6),  // raggio piu' grande (era 8)
+                                sf::Color(200, 180, 160, 220)});  // cenere chiara beige
                         }
                     }
                 }
@@ -2895,10 +2910,21 @@ void Game::render() {
         }
 
         // Particelle: alpha proporzionale al rapporto life/maxLife
+        // Ogni particella ha un nucleo solido (5px) + un glow esterno
+        // semitrasparente (10px) per renderla molto visibile, specialmente
+        // le fiammate arancioni/rosse che prima erano troppo piccole.
         for (const auto& p : particles) {
-            sf::CircleShape c(4.f);
-            c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, 255 * p.life / p.maxLife));
-            c.setPosition(p.pos.x - 4.f, p.pos.y - 4.f);
+            float lifeRatio = (float)p.life / (float)p.maxLife;
+            sf::Uint8 alpha = (sf::Uint8)(255 * lifeRatio);
+            // --- Glow esterno (cerchio grande semitrasparente) ---
+            sf::CircleShape glow(10.f);
+            glow.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, (sf::Uint8)(alpha * 0.3f)));
+            glow.setPosition(p.pos.x - 10.f, p.pos.y - 10.f);
+            window.draw(glow);
+            // --- Nucleo solido (cerchio piccolo, piu' opaco) ---
+            sf::CircleShape c(5.f);
+            c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+            c.setPosition(p.pos.x - 5.f, p.pos.y - 5.f);
             window.draw(c);
         }
 
@@ -5236,6 +5262,45 @@ void Game::render() {
         // --- Rendering dei fulmini (nella stanza del boss) ---
         for (const auto& lt : lightnings) {
             drawLightning(window, lt);
+        }
+
+        // --- Particelle (fiammate, scintille, sangue) nella stanza del boss ---
+        // Prima non venivano renderizzate in STATE_BOSS: le fiammate dei
+        // nemici bruciati dal player invincibile non si vedevano. Ora le
+        // disegniamo con glow + nucleo (come STATE_PLAYING).
+        for (const auto& p : particles) {
+            float lifeRatio = (float)p.life / (float)p.maxLife;
+            sf::Uint8 alpha = (sf::Uint8)(255 * lifeRatio);
+            sf::CircleShape glow(10.f);
+            glow.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, (sf::Uint8)(alpha * 0.3f)));
+            glow.setPosition(p.pos.x - 10.f, p.pos.y - 10.f);
+            window.draw(glow);
+            sf::CircleShape c(5.f);
+            c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+            c.setPosition(p.pos.x - 5.f, p.pos.y - 5.f);
+            window.draw(c);
+        }
+
+        // --- Macchie di sangue/cenere sul pavimento (stanza del boss) ---
+        for (const auto& bs : bloodStains) {
+            float alpha = 200.f * (float)bs.life / (float)bs.maxLife;
+            if (alpha < 0) alpha = 0;
+            sf::CircleShape stain(bs.radius);
+            stain.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)alpha));
+            stain.setPosition(bs.pos.x - bs.radius, bs.pos.y - bs.radius);
+            window.draw(stain);
+            // Schizzi più piccoli attorno
+            for (int i = 0; i < 4; i++) {
+                float angle = i * (float)M_PI / 2.f + 0.5f;
+                float dist = bs.radius * 1.5f;
+                float sx = bs.pos.x + cos(angle) * dist;
+                float sy = bs.pos.y + sin(angle) * dist;
+                float sr = bs.radius * 0.4f;
+                sf::CircleShape splash(sr);
+                splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
+                splash.setPosition(sx - sr, sy - sr);
+                window.draw(splash);
+            }
         }
         player.render(window);
         if (numPlayers == 2) player2.render(window);
