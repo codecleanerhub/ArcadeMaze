@@ -65,10 +65,14 @@ struct Firework {
 
 // Bonus scarpe alate: aumenta la velocità di movimento del giocatore
 // per 5 secondi quando raccolto. Appare nella stanza del boss.
+// In modalita' 2P ci sono DUE paia di scarpe (una per player1, una per
+// player2), ognuna con il proprio owner (1 o 2) per evitare che un
+// player raccogli due volte. owner=0 significa "libera" (1P mode).
 struct SpeedBootsBonus {
     sf::Vector2f pos;
     bool active;
     float bobOffset;  // oscillazione verticale per effetto fluttuante
+    int owner;        // 0=libera (1P), 1=player1 (2P), 2=player2 (2P)
 };
 
 // Porta di uscita dal labirinto: quando tutti i tesori sono raccolti,
@@ -185,7 +189,8 @@ private:
     std::vector<Projectile> bossProjectiles;     // proiettili sparati dal boss
     std::vector<Projectile> enemyProjectiles;    // proiettili sparati dai nemici
     std::vector<BossRoomWeapon> bossRoomWeapons; // armi a terra nella stanza del boss
-    SpeedBootsBonus speedBoots;                 // bonus scarpe alate (1 per boss fight)
+    SpeedBootsBonus speedBoots;                 // bonus scarpe alate player1
+    SpeedBootsBonus speedBoots2;                // bonus scarpe alate player2 (2P)
     ExitDoor exitDoor;                          // porta di uscita dal labirinto (post-tesori)
     MagicPortal magicPortal;                    // portale magico per respawn nemici
     bool portalUsed;                            // true = portale gia' usato questo livello
@@ -286,6 +291,14 @@ private:
     // Usa primitve SFML: segmenti larghi 4px con outline bianca, halo,
     // glow, flash, ramificazioni e scintille. Stile 8-bit/16-bit.
     void drawLightning(sf::RenderTarget& target, const Lightning& lt);
+    // Disegna l'aura di FUOCO attorno al giocatore quando e' invincibile
+    // (calice dell'immortalita'). Sostituisce la vecchia aura gialla con:
+    //   * Fiamme animate che salgono dal basso verso l'alto (8 fiamme)
+    //   * Bagliore arancione pulsante attorno al player
+    //   * Particelle di scintille che fluttuano
+    // Colori palette 16: (220,160,40) oro, (200,80,80) rosso, (240,240,240)
+    // cenere bianca. (pos) e' il centro del player, invTimer per pulsazione.
+    void drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer);
 };
 
 #endif

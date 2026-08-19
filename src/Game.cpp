@@ -337,13 +337,32 @@ void Game::spawnEnemyFromPortal() {
 void Game::startBossFight(bool keepBossState) {
     state = STATE_BOSS;
     if (keepBossState && boss != nullptr && !boss->isDead()) {
-        // Continua la fight esistente: il boss resta invariato.
-        // (nessuna ricreazione, nessun reset HP)
-    } else {
-        // Creazione boss nuova o reset completo.
-        if (boss) delete boss;
-        boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
+        // --- CONTINUE CREDIT: mantieni lo stato del boss fight ---
+        // Il boss resta invariato (HP, posizione, animazione, tipo attacco).
+        // Inoltre NON vengono rigenerati:
+        //   * mine (se gia' usata o in rimbalzo, resta cosi')
+        //   * scettro (se gia' raccolto/triggered, resta cosi')
+        //   * armi a terra (bossRoomWeapons resta invariato)
+        //   * scarpe alate (speedBoots/speedBoots2 restano come sono)
+        // Vengono solo riposizionati i giocatori e puliti i proiettili in
+        // volo. Questo rispetta la regola: "lo stato del gioco deve rimanere
+        // identico, solo la vita del giocatore viene ricaricata".
+        player.resetPosition();
+        player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
+        if (numPlayers == 2) {
+            player2.resetPosition();
+            player2.setPosition(WINDOW_WIDTH / 2.0f + 120.0f, WINDOW_HEIGHT - 100.0f);
+        }
+        bossProjectiles.clear();
+        enemyProjectiles.clear();
+        // NESSUNA rigenerazione di mine/scettro/armi/scarpe: lo stato resta.
+        if (musicEnabled) audio.playLevelMusic(currentLevel, true);
+        return;
     }
+    // --- NUOVA BOSS FIGHT (keepBossState=false) ---
+    // Creazione boss nuova o reset completo.
+    if (boss) delete boss;
+    boss = new Boss(currentLevel, WINDOW_WIDTH, WINDOW_HEIGHT);
     player.resetPosition();
     // Posiziona il giocatore in fondo alla stanza (centro orizzontale)
     player.setPosition(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT - 100.0f);
@@ -356,10 +375,25 @@ void Game::startBossFight(bool keepBossState) {
     bossProjectiles.clear();
     enemyProjectiles.clear();
     spawnBossRoomWeapons();
-    // Spawn bonus scarpe alate: posizionato a sinistra della stanza
+    // --- Spawn scarpe alate ---
+    // In 1P: 1 paio (per player1). In 2P: 2 paia (uno per player1, uno per
+    // player2), posizionati in punti diversi della stanza. owner indica
+    // quale player puo' raccogliere le scarpe (0=libera/1P, 1=p1, 2=p2).
     speedBoots.active = true;
     speedBoots.pos = sf::Vector2f(150.0f, 200.0f);
     speedBoots.bobOffset = 0.f;
+    speedBoots.owner = 0;  // 1P: libera
+    if (numPlayers == 2) {
+        // 2P: una paia per player1 (owner=1) e una per player2 (owner=2)
+        speedBoots.owner = 1;
+        speedBoots2.active = true;
+        speedBoots2.pos = sf::Vector2f(WINDOW_WIDTH - 150.0f, 200.0f);
+        speedBoots2.bobOffset = 0.f;
+        speedBoots2.owner = 2;
+    } else {
+        speedBoots2.active = false;
+        speedBoots2.owner = 0;
+    }
     // --- Spawn mina nella stanza del boss ---
     // IMPORTANTE: se la mina era attiva nel labirinto ma NON e' stata
     // raccolta (mine.active=true, mine.inBossRoom=false), la rimuoviamo
@@ -1190,7 +1224,9 @@ void Game::update() {
         }
 
         // --- Aggiornamento invincibilità (pozione) per entrambi i player ---
-        // Lambda per evitare duplicazione
+        // Quando il giocatore e' invincibile (calice dell'immortalita'), i
+        // nemici che tocca BRUCIANO: non c'e' sangue, ma fiammate + cenere.
+        // Lambda per evitare duplicazione.
         auto updateInvincible = [this](Player& p, int& timer) {
             if (timer > 0) {
                 if (timer > 16) timer -= 16;
@@ -1205,11 +1241,30 @@ void Game::update() {
                             p.addScore(5000);
                             audio.playSound(SOUND_ENEMY_DEATH);
                             audio.playSound(SOUND_ENEMY_EXPLODE);
-                            audio.playSound(SOUND_BLOOD_SPLAT);
-                            for (int i = 0; i < 25; i++)
-                                particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
-                                    sf::Color(150+rand()%50, 0, 0), 35, 35});
-                            bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                            // --- Fiammate (particelle di fuoco) ---
+                            // Sostituiscono il sangue: colore arancione/rosso
+                            // fuoco con movemento verso l'alto (leggerita').
+                            // Palette 16 colori: (220,160,40) oro-fuoco,
+                            // (200,80,80) rosso chiaro, (240,240,240) cenere.
+                            for (int i = 0; i < 30; i++) {
+                                float ang = (rand() % 360) * (float)M_PI / 180.f;
+                                float spd = 2.f + (rand() % 6);
+                                sf::Vector2f vel(cos(ang) * spd,
+                                                  sin(ang) * spd - 2.f);  // -2 = verso alto
+                                // Colore fuoco: giallo->arancione->rosso
+                                sf::Color fireCol;
+                                int fireVar = rand() % 3;
+                                if (fireVar == 0) fireCol = sf::Color(240, 240, 240);  // cenere bianca (core)
+                                else if (fireVar == 1) fireCol = sf::Color(220, 160, 40);  // oro-fuoco
+                                else fireCol = sf::Color(200, 80, 80);  // rosso fuoco
+                                particles.push_back({enemy.getPixelPos(), vel, fireCol, 35, 35});
+                            }
+                            // --- Cenere sul pavimento (sostituisce sangue) ---
+                            // Macchia grigia scura invece di rossa, simula
+                            // i resti bruciati del nemico.
+                            bloodStains.push_back({enemy.getPixelPos(), 300, 300,
+                                8.f + (rand()%6),
+                                sf::Color(60, 50, 45, 200)});  // cenere grigio scura
                         }
                     }
                 }
@@ -1771,23 +1826,36 @@ void Game::update() {
         }
 
         // --- Raccolta bonus scarpe alate (speed boost) ---
+        // In 2P ci sono 2 paia di scarpe (speedBoots owner=1 per player1,
+        // speedBoots2 owner=2 per player2). Ogni player puo' raccogliere
+        // solo le proprie scarpe (owner corrispondente). In 1P c'e' solo
+        // speedBoots con owner=0 (libera, raccoglibile da player1).
+        static float bootsAnimTime = 0.f;
+        bootsAnimTime += 16.f;
+        // --- SpeedBoots (player1 o 1P) ---
         if (speedBoots.active) {
-            static float bootsAnimTime = 0.f;
-            bootsAnimTime += 16.f;
-            speedBoots.bobOffset = sin(bootsAnimTime * 0.005f) * 5.f;  // fluttua
-            float dx = speedBoots.pos.x - player.getPixelPos().x;
-            float dy = speedBoots.pos.y - player.getPixelPos().y;
-            if (dx*dx + dy*dy < 1000) {
-                player.activateSpeedBoost();
-                speedBoots.active = false;
-                audio.playSound(SOUND_TREASURE);  // suono raccolta
+            speedBoots.bobOffset = sin(bootsAnimTime * 0.005f) * 5.f;
+            // Player1 raccoglie se owner==0 (1P) o owner==1 (2P)
+            if (speedBoots.owner == 0 || speedBoots.owner == 1) {
+                float dx = speedBoots.pos.x - player.getPixelPos().x;
+                float dy = speedBoots.pos.y - player.getPixelPos().y;
+                if (dx*dx + dy*dy < 1000) {
+                    player.activateSpeedBoost();
+                    speedBoots.active = false;
+                    audio.playSound(SOUND_TREASURE);
+                }
             }
-            if (numPlayers == 2) {
-                float dx2 = speedBoots.pos.x - player2.getPixelPos().x;
-                float dy2 = speedBoots.pos.y - player2.getPixelPos().y;
+        }
+        // --- SpeedBoots2 (player2 in 2P) ---
+        if (numPlayers == 2 && speedBoots2.active) {
+            speedBoots2.bobOffset = sin(bootsAnimTime * 0.005f + 1.f) * 5.f;
+            // Solo player2 con owner==2 raccoglie
+            if (speedBoots2.owner == 2) {
+                float dx2 = speedBoots2.pos.x - player2.getPixelPos().x;
+                float dy2 = speedBoots2.pos.y - player2.getPixelPos().y;
                 if (dx2*dx2 + dy2*dy2 < 1000) {
                     player2.activateSpeedBoost();
-                    speedBoots.active = false;
+                    speedBoots2.active = false;
                     audio.playSound(SOUND_TREASURE);
                 }
             }
@@ -2350,6 +2418,112 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
 }
 
 // ---------------------------------------------------------------------------
+// drawFireAura: disegna l'aura di FUOCO attorno al giocatore quando e'
+// invincibile (calice dell'immortalita'). Sostituisce la vecchia aura
+// gialla con un effetto di fiamme animate che avvolgono il player.
+//
+// Effetti renderizzati:
+//   1. Bagliore arancione pulsante (cerchio grande semitrasparente)
+//   2. 8 fiamme triangolari attorno al player che fluttuano in altezza
+//      con animazione sinusoidale (effetto movimento del fuoco)
+//   3. Scintille bianche che salgono verso l'alto
+//   4. Bagliore interno rosso-arancio
+//
+// Colori palette 16 colori OBBLIGATORIA:
+//   * (220,160,40) oro = base fiamma
+//   * (200,80,80) rosso = corpo fiamma
+//   * (240,240,240) bianco = scintille
+//   * (160,40,40) rosso scuro = bagliore interno
+//
+// (pos) e' il centro del player. invTimer e' il timer di invincibilita'
+// residuo (ms), usato per la pulsazione (sin(timer*0.01)).
+// ---------------------------------------------------------------------------
+void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer) {
+    // Palette 16 colori OBBLIGATORIA
+    const sf::Color COL_GOLD  (220, 160, 40);    // base fiamma
+    const sf::Color COL_RED_L (200, 80, 80);     // corpo fiamma
+    const sf::Color COL_RED_D (160, 40, 40);     // bagliore interno
+    const sf::Color COL_WHITE (240, 240, 240);   // scintille
+    const sf::Color COL_DARK  (48, 40, 36);      // outline
+
+    float invPulse = sin(invTimer * 0.01f) * 0.2f + 1.f;
+    // Tempo per animazione fuoco (usa static per persistere tra i frame)
+    static float fireAnimTime = 0.f;
+    fireAnimTime += 0.08f;
+
+    // --- 1. Bagliore arancione pulsante (cerchio grande) ---
+    float glowR = 28.f * invPulse;
+    sf::CircleShape glowOuter(glowR);
+    glowOuter.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 60));
+    glowOuter.setPosition(pos.x - glowR, pos.y - glowR);
+    target.draw(glowOuter);
+
+    // --- 2. Bagliore interno rosso-arancio (piu' piccolo, piu' intenso) ---
+    float innerR = 18.f * invPulse;
+    sf::CircleShape glowInner(innerR);
+    glowInner.setFillColor(sf::Color(COL_RED_D.r, COL_RED_D.g, COL_RED_D.b, 90));
+    glowInner.setPosition(pos.x - innerR, pos.y - innerR);
+    target.draw(glowInner);
+
+    // --- 3. 8 fiamme triangolari attorno al player ---
+    // Ogni fiamma e' un triangolo (ConvexShape) che punta verso l'alto,
+    // con altezza oscillante (sin) per effetto "fiamma che danza".
+    // Disposte a cerchio attorno al player.
+    for (int i = 0; i < 8; i++) {
+        float angle = (i / 8.f) * 2.f * (float)M_PI;
+        // Posizione base della fiamma (attorno al player, raggio 16px)
+        float fx = pos.x + cos(angle) * 16.f;
+        float fy = pos.y + sin(angle) * 16.f;
+        // Altezza della fiamma oscillante (8-16px)
+        float flameH = 8.f + sin(fireAnimTime + i * 0.7f) * 4.f + 4.f;
+        // Larghezza fiamma (4px)
+        float flameW = 4.f;
+        // Colore: alterna oro (base) e rosso (apice) per effetto fuoco
+        // Costruisce triangolo con 3 punti: base-sx, base-dx, punta-alto
+        sf::ConvexShape flame;
+        flame.setPointCount(3);
+        flame.setPoint(0, sf::Vector2f(fx - flameW, fy));
+        flame.setPoint(1, sf::Vector2f(fx + flameW, fy));
+        flame.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 2.f,
+                                        fy - flameH));
+        flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 200));
+        flame.setOutlineThickness(0.3f);
+        flame.setOutlineColor(sf::Color(COL_RED_D.r, COL_RED_D.g, COL_RED_D.b, 180));
+        target.draw(flame);
+        // Apice rosso della fiamma (piu' piccolo, sopra)
+        sf::ConvexShape flameTip;
+        flameTip.setPointCount(3);
+        float tipH = flameH * 0.6f;
+        flameTip.setPoint(0, sf::Vector2f(fx - flameW * 0.6f, fy - flameH * 0.4f));
+        flameTip.setPoint(1, sf::Vector2f(fx + flameW * 0.6f, fy - flameH * 0.4f));
+        flameTip.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 2.f,
+                                           fy - flameH - tipH * 0.3f));
+        flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b, 220));
+        target.draw(flameTip);
+    }
+
+    // --- 4. Scintille bianche che salgono ---
+    // 5 scintille piccole che fluttuano verso l'alto con animazione
+    for (int i = 0; i < 5; i++) {
+        float sparkX = pos.x + sin(fireAnimTime * 1.5f + i * 1.2f) * 12.f;
+        float sparkY = pos.y - 10.f - ((int)(fireAnimTime * 20.f + i * 8) % 30);
+        float sparkR = 1.f + sin(fireAnimTime + i) * 0.5f;
+        sf::CircleShape spark(sparkR);
+        spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                      200 - (int)(fireAnimTime * 20.f + i * 8) % 30 * 6));
+        spark.setPosition(sparkX - sparkR, sparkY - sparkR);
+        target.draw(spark);
+    }
+
+    // --- 5. Nucleo centrale luminoso (pulsante) ---
+    float coreR = 6.f * invPulse;
+    sf::CircleShape core(coreR);
+    core.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 150));
+    core.setPosition(pos.x - coreR, pos.y - coreR);
+    target.draw(core);
+}
+
+// ---------------------------------------------------------------------------
 // drawMenu: disegna il menu' principale (tema fantasy cavernoso).
 //
 // Elementi:
@@ -2869,35 +3043,15 @@ void Game::render() {
             window.draw(shadow);
         }
 
-        // --- Aura di invincibilità attorno al player1 ---
+        // --- Aura di FUOCO attorno al player1 (invincibilità calice) ---
+        // Sostituisce la vecchia aura gialla: ora il player e' avvolto da
+        // fiamme animate che bruciano i nemici al contatto.
         if (playerInvincibleTimer > 0) {
-            sf::Vector2f ppos = player.getPixelPos();
-            float invPulse = sin(playerInvincibleTimer * 0.01f) * 0.2f + 1.f;
-            float auraR = 25.f * invPulse;
-            sf::CircleShape invAura(auraR);
-            sf::Uint8 alpha = (playerInvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
-            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
-            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
-            window.draw(invAura);
-            sf::CircleShape invShield(15.f * invPulse);
-            invShield.setFillColor(sf::Color(255, 235, 100, 40));
-            invShield.setPosition(ppos.x - 15.f * invPulse, ppos.y - 15.f * invPulse);
-            window.draw(invShield);
+            drawFireAura(window, player.getPixelPos(), playerInvincibleTimer);
         }
-        // --- Aura di invincibilità attorno al player2 ---
+        // --- Aura di FUOCO attorno al player2 (invincibilità calice) ---
         if (numPlayers == 2 && player2InvincibleTimer > 0) {
-            sf::Vector2f ppos = player2.getPixelPos();
-            float invPulse = sin(player2InvincibleTimer * 0.01f) * 0.2f + 1.f;
-            float auraR = 25.f * invPulse;
-            sf::CircleShape invAura(auraR);
-            sf::Uint8 alpha = (player2InvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
-            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
-            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
-            window.draw(invAura);
-            sf::CircleShape invShield(15.f * invPulse);
-            invShield.setFillColor(sf::Color(255, 235, 100, 40));
-            invShield.setPosition(ppos.x - 15.f * invPulse, ppos.y - 15.f * invPulse);
-            window.draw(invShield);
+            drawFireAura(window, player2.getPixelPos(), player2InvincibleTimer);
         }
 
         // --- Rendering della mina ---
@@ -5025,9 +5179,12 @@ void Game::render() {
         // Armi a terra (raccoglibili)
         for (const auto& brw : bossRoomWeapons) brw.w.render(window, brw.pos.x - TILE_SIZE/2, brw.pos.y - TILE_SIZE/2);
         // Bonus scarpe alate (se attivo, disegna sprite + aura)
-        if (speedBoots.active) {
-            float bx = speedBoots.pos.x;
-            float by = speedBoots.pos.y + speedBoots.bobOffset;
+        // Lambda per disegnare un paio di scarpe (riusato per speedBoots
+        // e speedBoots2 in modalita' 2P).
+        auto drawSpeedBoots = [&](const SpeedBootsBonus& boots) {
+            if (!boots.active) return;
+            float bx = boots.pos.x;
+            float by = boots.pos.y + boots.bobOffset;
             // Carica lo sprite delle scarpe alate se non gia' fatto
             static SpriteSheet bootsSprite;
             static bool bootsLoaded = false;
@@ -5052,11 +5209,15 @@ void Game::render() {
                 window.draw(wing);
             }
             // Aura gialla pulsante
-            sf::CircleShape aura(20.f + sin(speedBoots.bobOffset * 0.5f) * 3.f);
+            sf::CircleShape aura(20.f + sin(boots.bobOffset * 0.5f) * 3.f);
             aura.setFillColor(sf::Color(255, 220, 80, 40));
             aura.setPosition(bx - 20.f, by - 20.f);
             window.draw(aura);
-        }
+        };
+        // Disegna speedBoots (player1 o 1P)
+        drawSpeedBoots(speedBoots);
+        // Disegna speedBoots2 (player2 in 2P)
+        if (numPlayers == 2) drawSpeedBoots(speedBoots2);
 
         // --- Rendering dello scettro magico (nella stanza del boss, stile Gandalf) ---
         // Lo scettro può apparire anche nella stanza del boss (vedi
@@ -5649,27 +5810,13 @@ void Game::render() {
             }
         }
 
-        // --- Rendering aura invincibilità player1 nella stanza boss ---
+        // --- Rendering aura FUOCO player1 nella stanza boss ---
         if (playerInvincibleTimer > 0) {
-            sf::Vector2f ppos = player.getPixelPos();
-            float invPulse = sin(playerInvincibleTimer * 0.01f) * 0.2f + 1.f;
-            float auraR = 25.f * invPulse;
-            sf::CircleShape invAura(auraR);
-            sf::Uint8 alpha = (playerInvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
-            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
-            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
-            window.draw(invAura);
+            drawFireAura(window, player.getPixelPos(), playerInvincibleTimer);
         }
-        // --- Rendering aura invincibilità player2 nella stanza boss ---
+        // --- Rendering aura FUOCO player2 nella stanza boss ---
         if (numPlayers == 2 && player2InvincibleTimer > 0) {
-            sf::Vector2f ppos = player2.getPixelPos();
-            float invPulse = sin(player2InvincibleTimer * 0.01f) * 0.2f + 1.f;
-            float auraR = 25.f * invPulse;
-            sf::CircleShape invAura(auraR);
-            sf::Uint8 alpha = (player2InvincibleTimer / 10000.f > 0.3f) ? 80 : 150;
-            invAura.setFillColor(sf::Color(255, 215, 0, alpha));
-            invAura.setPosition(ppos.x - auraR, ppos.y - auraR);
-            window.draw(invAura);
+            drawFireAura(window, player2.getPixelPos(), player2InvincibleTimer);
         }
 
         // Etichetta del livello boss in alto
