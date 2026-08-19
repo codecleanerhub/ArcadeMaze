@@ -3111,11 +3111,20 @@ void Game::drawConfigJoy2() {
 // ---------------------------------------------------------------------------
 // drawSelectPlayer: schermata di selezione personaggio.
 //
-// Mostra 8 personaggi in una "ruota" (carousel orizzontale):
-//   * Personaggio corrente al CENTRO (frontale, grande)
-//   * 2 personaggi a SINISTRA e 2 a DESTRA (piu' piccoli, effetto prospettiva)
-//   * Navigazione: Left/Right (tastiera) o asse X joystick
-//   * Conferma: Enter (tastiera) o pulsante jump (joystick)
+// Mostra gli 8 personaggi SOPRA una grande ruota di roccia disegnata IN
+// PROSPETTIVA: invece di un cerchio piatto, la ruota e' un'ellisse (cerchio
+// compresso verticalmente) e i personaggi stanno attorno al perimetro, come
+// se fossero in piedi su un piatto rotante visto leggermente dall'alto.
+//
+//   * Personaggio corrente al FRONT (basso dell'ellisse, davanti al viewer,
+//     piu' grande)
+//   * Personaggi laterali ai LATI (medi)
+//   * Personaggi dietro al BACK (alto dell'ellisse, piu' piccoli e piu'
+//     trasparenti, parzialmente nascosti dalla ruota)
+//   * Ordinamento z-buffer: prima i personaggi dietro, poi quelli davanti
+//
+// Navigazione: Left/Right (tastiera) o asse X joystick ruota la ruota di
+// un passo per volta (animazione smooth). Enter conferma.
 //
 // In 2P: P1 sceglie prima (selectPlayerStep=0), poi P2 (selectPlayerStep=1).
 // Se P2 sceglie lo stesso personaggio di P1, viene applicato un tint bluastro.
@@ -3149,11 +3158,13 @@ void Game::drawSelectPlayer() {
     float centerX = WINDOW_WIDTH / 2.f;
     float centerY = WINDOW_HEIGHT / 2.f + 80.f;  // piu' in basso per lasciare spazio al titolo
 
-    // --- RUOTA ROCCIOSA con ingranaggi animati ---
-    // La ruota e' un grande cerchio di roccia sotto i personaggi.
-    // Gli ingranaggi (dentoni) sono disposti attorno alla ruota e ruotano
-    // per dare l'effetto "meccanismo che gira". I personaggi stanno SOPRA
-    // la ruota, in posizione frontale.
+    // --- RUOTA IN PROSPETTIVA ---
+    // La ruota e' un'ellisse (cerchio compresso verticalmente) per dare
+    // l'effetto "vista dall'alto in avanti". I personaggi stanno IN PIEDI
+    // attorno al perimetro della ruota (non su una piattaforma frontale).
+    //   * wheelRadiusX = raggio orizzontale (largo)
+    //   * wheelRadiusY = raggio verticale (schiacciato per prospettiva)
+    //   * perspectiveRatio = Y/X = grado di compressione (0.30 = molto schiacciata)
     // Palette 16 colori per stile coerente.
     const sf::Color COL_ROCK_DARK (48, 40, 36);
     const sf::Color COL_ROCK_MID  (96, 80, 72);
@@ -3163,63 +3174,149 @@ void Game::drawSelectPlayer() {
     const sf::Color COL_GOLD (220, 160, 40);
     const sf::Color COL_BLACK(12, 12, 12);
 
+    float wheelRadiusX = 340.f;                       // raggio orizzontale
+    float perspectiveRatio = 0.32f;                   // compressione verticale
+    float wheelRadiusY = wheelRadiusX * perspectiveRatio;  // ~108 px
+
     // Tempo per animazione ingranaggi (static per persistere tra i frame)
     static float gearAnimTime = 0.f;
     gearAnimTime += 0.04f;
-    // Rotazione ingranaggi: piu' veloce quando la ruota sta ruotando
     bool isRotating = (wheelIndex != wheelTargetIndex);
     float gearSpeed = isRotating ? 0.12f : 0.04f;
     float gearRotation = gearAnimTime * gearSpeed * (wheelTargetIndex > wheelIndex ? 1.f : -1.f);
 
-    // --- Ruota grande di roccia (cerchio di base) ---
-    float wheelRadius = 220.f;
-    // Ombra ruota
-    sf::CircleShape wheelShadow(wheelRadius + 10.f);
-    wheelShadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, 100));
-    wheelShadow.setScale(1.1f, 0.3f);
-    wheelShadow.setPosition(centerX - wheelRadius - 10.f, centerY + wheelRadius * 0.4f);
+    // --- Angolo di rotazione della ruota (personaggi girano attorno al perno) ---
+    // Ogni personaggio occupa un settore di 2pi/8. L'angolo 0 = destra,
+    // PI/2 = davanti (basso), PI = sinistra, -PI/2 = dietro (alto).
+    // Il personaggio selezionato (wheelIndex) deve trovarsi al FRONT (PI/2).
+    float anglePerChar = 2.f * (float)M_PI / (float)CHARACTER_TYPE_COUNT;
+
+    // Interpolazione smooth: quando la ruota sta ruotando (wheelRotation
+    // avanza da 0 a 1), aggiungiamo una frazione di passo per dare continuita'
+    // visiva (il personaggio non salta da una posizione all'altra).
+    int diff = wheelTargetIndex - wheelIndex;
+    if (diff > CHARACTER_TYPE_COUNT / 2) diff -= CHARACTER_TYPE_COUNT;
+    else if (diff < -CHARACTER_TYPE_COUNT / 2) diff += CHARACTER_TYPE_COUNT;
+    float interpStep = (diff != 0) ? wheelRotation * (diff > 0 ? 1.f : -1.f) : 0.f;
+
+    // Angolo base della ruota: posizione di wheelIndex + interpStep
+    // Usiamo PI/2 - (wheelIndex + interpStep) * anglePerChar in modo che
+    // all'aumentare di wheelIndex la ruota giri in senso antiorario
+    // (visivamente: il personaggio a destra scorre verso il front).
+    float wheelAngleBase = (float)M_PI / 2.f - ((float)wheelIndex + interpStep) * anglePerChar;
+
+    // --- 1. Ombra sotto la ruota ---
+    sf::CircleShape wheelShadow(wheelRadiusX);
+    wheelShadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, 110));
+    wheelShadow.setScale(1.15f, perspectiveRatio * 0.55f);
+    wheelShadow.setPosition(centerX - wheelRadiusX,
+                            centerY + wheelRadiusY * 0.85f);
     window.draw(wheelShadow);
-    // Ruota base (roccia scura)
-    sf::CircleShape wheelBase(wheelRadius);
+
+    // --- 2. Spessore laterale della ruota (cilindro visto in prospettiva) ---
+    // Per dare l'effetto 3D, disegniamo due "pareti" laterali che mostrano
+    // lo spessore della ruota (come se fosse un cilindro schiacciato).
+    float rimThickness = 24.f;  // spessore del bordo della ruota
+    // Lato sinistro
+    sf::ConvexShape wheelLeftSide;
+    wheelLeftSide.setPointCount(4);
+    wheelLeftSide.setPoint(0, sf::Vector2f(centerX - wheelRadiusX, centerY - wheelRadiusY * 0.05f));
+    wheelLeftSide.setPoint(1, sf::Vector2f(centerX - wheelRadiusX - rimThickness * 0.4f,
+                                          centerY - wheelRadiusY * 0.05f + rimThickness * 0.3f));
+    wheelLeftSide.setPoint(2, sf::Vector2f(centerX - wheelRadiusX - rimThickness * 0.4f,
+                                          centerY + wheelRadiusY * 0.85f + rimThickness));
+    wheelLeftSide.setPoint(3, sf::Vector2f(centerX - wheelRadiusX, centerY + wheelRadiusY * 0.85f));
+    wheelLeftSide.setFillColor(COL_ROCK_DARK);
+    wheelLeftSide.setOutlineThickness(2.f);
+    wheelLeftSide.setOutlineColor(COL_BLACK);
+    window.draw(wheelLeftSide);
+    // Lato destro
+    sf::ConvexShape wheelRightSide;
+    wheelRightSide.setPointCount(4);
+    wheelRightSide.setPoint(0, sf::Vector2f(centerX + wheelRadiusX, centerY - wheelRadiusY * 0.05f));
+    wheelRightSide.setPoint(1, sf::Vector2f(centerX + wheelRadiusX + rimThickness * 0.4f,
+                                           centerY - wheelRadiusY * 0.05f + rimThickness * 0.3f));
+    wheelRightSide.setPoint(2, sf::Vector2f(centerX + wheelRadiusX + rimThickness * 0.4f,
+                                           centerY + wheelRadiusY * 0.85f + rimThickness));
+    wheelRightSide.setPoint(3, sf::Vector2f(centerX + wheelRadiusX, centerY + wheelRadiusY * 0.85f));
+    wheelRightSide.setFillColor(COL_ROCK_DARK);
+    wheelRightSide.setOutlineThickness(2.f);
+    wheelRightSide.setOutlineColor(COL_BLACK);
+    window.draw(wheelRightSide);
+
+    // --- 3. Base della ruota (ellisse: cerchio compresso verticalmente) ---
+    sf::CircleShape wheelBase(wheelRadiusX);
     wheelBase.setFillColor(COL_ROCK_DARK);
     wheelBase.setOutlineThickness(8.f);
     wheelBase.setOutlineColor(COL_ROCK_MID);
-    wheelBase.setPosition(centerX - wheelRadius, centerY - wheelRadius);
+    wheelBase.setScale(1.f, perspectiveRatio);
+    wheelBase.setPosition(centerX - wheelRadiusX, centerY - wheelRadiusY);
     window.draw(wheelBase);
-    // Cerchio interno (roccia piu' chiara, effetto profondita')
-    sf::CircleShape wheelInner(wheelRadius - 30.f);
+
+    // --- 4. Anello interno (roccia piu' chiara, effetto profondita') ---
+    float innerRadius = wheelRadiusX - 28.f;
+    sf::CircleShape wheelInner(innerRadius);
     wheelInner.setFillColor(COL_ROCK_MID);
-    wheelInner.setPosition(centerX - wheelRadius + 30.f, centerY - wheelRadius + 30.f);
+    wheelInner.setScale(1.f, perspectiveRatio);
+    wheelInner.setPosition(centerX - innerRadius,
+                           centerY - innerRadius * perspectiveRatio);
     window.draw(wheelInner);
-    // Centro della ruota (perno metallico)
-    sf::CircleShape wheelHub(40.f);
+
+    // --- 5. Raggi della ruota (linee dal centro al bordo) ---
+    // Disegnati PRIMA dei personaggi e del perno centrale. I raggi ruotano
+    // con wheelAngleBase per dare l'effetto "ruota che gira".
+    for (int s = 0; s < CHARACTER_TYPE_COUNT; s++) {
+        float a = wheelAngleBase + s * anglePerChar;
+        float x1 = centerX;
+        float y1 = centerY;
+        float x2 = centerX + cosf(a) * (innerRadius - 8.f);
+        float y2 = centerY + sinf(a) * (innerRadius - 8.f) * perspectiveRatio;
+        // Disegna il raggio come rettangolo sottile ruotato
+        float dx = x2 - x1, dy = y2 - y1;
+        float len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1.f) continue;
+        float angleDeg = std::atan2(dy, dx) * 180.f / (float)M_PI;
+        sf::RectangleShape spoke(sf::Vector2f(6.f, len));
+        spoke.setFillColor(sf::Color(COL_ROCK_LIGHT.r, COL_ROCK_LIGHT.g, COL_ROCK_LIGHT.b, 140));
+        spoke.setOrigin(3.f, 0.f);
+        spoke.setPosition(x1, y1);
+        spoke.setRotation(angleDeg - 90.f);
+        window.draw(spoke);
+    }
+
+    // --- 6. Perno centrale (hub metallico) ---
+    sf::CircleShape wheelHub(46.f);
     wheelHub.setFillColor(COL_METAL_DARK);
-    wheelHub.setOutlineThickness(4.f);
+    wheelHub.setOutlineThickness(5.f);
     wheelHub.setOutlineColor(COL_GOLD);
-    wheelHub.setPosition(centerX - 40.f, centerY - 40.f);
+    wheelHub.setScale(1.f, perspectiveRatio);
+    wheelHub.setPosition(centerX - 46.f, centerY - 46.f * perspectiveRatio);
     window.draw(wheelHub);
     // Bullone centrale
-    sf::CircleShape wheelBolt(12.f);
+    sf::CircleShape wheelBolt(14.f);
     wheelBolt.setFillColor(COL_GOLD);
-    wheelBolt.setPosition(centerX - 12.f, centerY - 12.f);
+    wheelBolt.setOutlineThickness(2.f);
+    wheelBolt.setOutlineColor(COL_METAL_DARK);
+    wheelBolt.setScale(1.f, perspectiveRatio);
+    wheelBolt.setPosition(centerX - 14.f, centerY - 14.f * perspectiveRatio);
     window.draw(wheelBolt);
 
-    // --- Ingranaggi attorno alla ruota (8 dentoni che ruotano) ---
-    // Disposti a cerchio attorno alla ruota, ognuno ruota per dare
-    // l'effetto "meccanismo che muove la ruota".
-    for (int g = 0; g < 8; g++) {
-        float angle = g * (2.f * (float)M_PI / 8.f) + gearRotation;
-        float gx = centerX + cosf(angle) * (wheelRadius + 30.f);
-        float gy = centerY + sinf(angle) * (wheelRadius + 30.f);
-        float gearR = 25.f;
-        // Ingranaggio (cerchio con denti)
+    // --- 7. Ingranaggi decorativi attorno alla ruota (lato dietro, in alto) ---
+    // Disposti a semicerchio sul retro della ruota (parte alta dell'ellisse),
+    // non sul front, per non coprire i personaggi davanti.
+    for (int g = 0; g < 6; g++) {
+        // Distribuiti da 200° a 340° (parte alta dell'ellisse)
+        float angle = (200.f + g * 28.f) * (float)M_PI / 180.f;
+        float gx = centerX + cosf(angle) * (wheelRadiusX + 38.f);
+        float gy = centerY + sinf(angle) * (wheelRadiusY + 30.f);
+        float gearR = 22.f;
         sf::CircleShape gear(gearR);
         gear.setFillColor(COL_METAL_DARK);
         gear.setOutlineThickness(3.f);
         gear.setOutlineColor(COL_GOLD);
         gear.setOrigin(gearR, gearR);
         gear.setPosition(gx, gy);
-        gear.rotate(gearRotation * 180.f / (float)M_PI + g * 45.f);
+        gear.rotate(gearRotation * 180.f / (float)M_PI + g * 60.f);
         window.draw(gear);
         // Denti dell'ingranaggio (8 piccoli rettangoli attorno)
         for (int t = 0; t < 8; t++) {
@@ -3228,7 +3325,7 @@ void Game::drawSelectPlayer() {
             tooth.setFillColor(COL_METAL_LIGHT);
             tooth.setOrigin(3.f, 5.f);
             tooth.setPosition(gx + cosf(tAngle) * gearR, gy + sinf(tAngle) * gearR);
-            tooth.rotate(tAngle * 180.f / (float)M_PI + gearRotation * 180.f / (float)M_PI + g * 45.f);
+            tooth.rotate(tAngle * 180.f / (float)M_PI + gearRotation * 180.f / (float)M_PI + g * 60.f);
             window.draw(tooth);
         }
         // Centro ingranaggio (perno)
@@ -3238,37 +3335,45 @@ void Game::drawSelectPlayer() {
         window.draw(gearHub);
     }
 
-    // --- Piattaforma frontale (dove stanno i personaggi) ---
-    // Una piattaforma di roccia piu' chiara sopra la ruota, nella parte frontale.
-    float platformY = centerY - wheelRadius * 0.3f;
-    sf::ConvexShape platform;
-    platform.setPointCount(6);
-    platform.setPoint(0, sf::Vector2f(centerX - 200.f, platformY + 20.f));
-    platform.setPoint(1, sf::Vector2f(centerX - 180.f, platformY));
-    platform.setPoint(2, sf::Vector2f(centerX + 180.f, platformY));
-    platform.setPoint(3, sf::Vector2f(centerX + 200.f, platformY + 20.f));
-    platform.setPoint(4, sf::Vector2f(centerX + 160.f, platformY + 40.f));
-    platform.setPoint(5, sf::Vector2f(centerX - 160.f, platformY + 40.f));
-    platform.setFillColor(COL_ROCK_LIGHT);
-    platform.setOutlineThickness(3.f);
-    platform.setOutlineColor(COL_ROCK_DARK);
-    window.draw(platform);
+    // --- 8. Personaggi SOPRA la ruota (in prospettiva, attorno al perimetro) ---
+    // Per ogni personaggio calcoliamo posizione sull'ellisse, profondita'
+    // (sin(angle)), scala e alpha in base alla profondita'.
+    struct CharPlacement {
+        int   charIdx;
+        float x, y;        // posizione piedi sull'ellisse
+        float scale;       // scala (1 = front, piu' piccolo sul retro)
+        float depth;       // -1 = back, +1 = front
+        float alpha;       // 0..255
+    };
+    std::vector<CharPlacement> placements;
+    placements.reserve(CHARACTER_TYPE_COUNT);
 
-    // --- Personaggi sulla piattaforma (carousel) ---
-    // Scale AUMENTATE per visibilita': centro 2.2 (era 1.0), laterali 1.6 (era 0.7),
-    // esterni 1.0 (era 0.4). Personaggi molto piu' grandi e visibili.
-    float spacing = 200.f;
-    for (int offset = -2; offset <= 2; offset++) {
-        int charIdx = (wheelIndex + offset + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
-        CharacterType ct = (CharacterType)charIdx;
+    for (int i = 0; i < CHARACTER_TYPE_COUNT; i++) {
+        float a = wheelAngleBase + (float)i * anglePerChar;
+        // Posizione sull'ellisse (perimetro della ruota in prospettiva)
+        float x = centerX + cosf(a) * wheelRadiusX;
+        float y = centerY + sinf(a) * wheelRadiusY;
+        // Profondita': sin(a) > 0 = davanti al viewer (front), < 0 = dietro
+        float depth = sinf(a);
+        // Scala: front = piu' grande (1.8), back = piu' piccolo (0.8)
+        // Mappiamo depth [-1, +1] -> scale [0.8, 1.8]
+        float scale = 0.8f + (depth + 1.f) * 0.5f;
+        // Alpha: front = piu' opaco (250), back = piu' trasparente (130)
+        float alpha = 130.f + (depth + 1.f) * 60.f;
+        placements.push_back({ i, x, y, scale, depth, alpha });
+    }
 
-        float x = centerX + offset * spacing;
-        float y = platformY - 20.f;  // sopra la piattaforma
-        float scale;
-        sf::Uint8 alpha;
-        if (offset == 0) { scale = 2.2f; alpha = 255; }       // centro: GRANDE (era 1.0)
-        else if (abs(offset) == 1) { scale = 1.6f; alpha = 200; }  // laterali (era 0.7)
-        else { scale = 1.0f; alpha = 120; }                        // esterni (era 0.4)
+    // Ordina per depth crescente: prima i personaggi dietro (depth minore),
+    // poi quelli davanti. Cosi' quelli davanti vengono disegnati SOPRA
+    // (z-order corretto per occlusione).
+    std::sort(placements.begin(), placements.end(),
+              [](const CharPlacement& a, const CharPlacement& b) {
+                  return a.depth < b.depth;
+              });
+
+    // Disegna i personaggi in ordine (dietro -> davanti)
+    for (const auto& p : placements) {
+        CharacterType ct = (CharacterType)p.charIdx;
 
         // Tint: P1 = bianco, P2 = bluastro
         sf::Color tint = getPlayerTint(selectPlayerStep + 1);
@@ -3276,34 +3381,47 @@ void Game::drawSelectPlayer() {
             tint = getPlayerTint(2);
         }
 
-        // Ombra del personaggio sulla piattaforma
-        sf::CircleShape charShadow(30.f * scale);
-        charShadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, alpha * 0.4f));
-        charShadow.setScale(1.f, 0.3f);
-        charShadow.setPosition(x - 30.f * scale, platformY + 35.f);
+        // Ombra del personaggio sulla ruota (schiacciata in prospettiva)
+        sf::CircleShape charShadow(28.f * p.scale);
+        charShadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b,
+                                           (sf::Uint8)(p.alpha * 0.35f)));
+        charShadow.setScale(1.f, perspectiveRatio * 0.9f);
+        charShadow.setPosition(p.x - 28.f * p.scale, p.y - 4.f);
         window.draw(charShadow);
 
-        // Disegna anteprima personaggio (ora molto piu' grande)
-        drawCharacterPreview(window, ct, x, y, scale, tint, alpha);
+        // Disegna anteprima personaggio SOPRA il punto di appoggio
+        // (drawCharacterPreview usa (x, y) come posizione dei piedi)
+        drawCharacterPreview(window, ct, p.x, p.y, p.scale, tint, (sf::Uint8)p.alpha);
 
-        // Highlight per il personaggio centrale (selezione corrente)
-        if (offset == 0) {
-            // Freccia indicatrice sopra il personaggio
-            float arrowY = y - 80.f * scale;
+        // Highlight per il personaggio al FRONT (selezione corrente)
+        // Lo identifichiamo come quello piu' vicino a depth=1 (front).
+        if (p.charIdx == wheelIndex) {
+            float arrowY = p.y - 70.f * p.scale;
             sf::ConvexShape arrow;
             arrow.setPointCount(3);
             arrow.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
                                           (sf::Uint8)(200 + sinf(gearAnimTime * 5.f) * 55)));
-            arrow.setPoint(0, sf::Vector2f(x, arrowY + 15.f));
-            arrow.setPoint(1, sf::Vector2f(x - 12.f, arrowY));
-            arrow.setPoint(2, sf::Vector2f(x + 12.f, arrowY));
+            arrow.setPoint(0, sf::Vector2f(p.x, arrowY + 18.f));
+            arrow.setPoint(1, sf::Vector2f(p.x - 14.f, arrowY));
+            arrow.setPoint(2, sf::Vector2f(p.x + 14.f, arrowY));
             window.draw(arrow);
+
+            // Cerchio luminescente attorno al personaggio selezionato
+            sf::CircleShape selGlow(48.f * p.scale);
+            selGlow.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 0));
+            selGlow.setOutlineThickness(4.f);
+            selGlow.setOutlineColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                               (sf::Uint8)(120 + sinf(gearAnimTime * 4.f) * 60)));
+            selGlow.setScale(1.f, perspectiveRatio);
+            selGlow.setPosition(p.x - 48.f * p.scale, p.y - 48.f * p.scale * perspectiveRatio);
+            window.draw(selGlow);
         }
     }
 
     // --- Nome personaggio corrente (sotto la ruota) ---
     std::string charName = getCharacterName((CharacterType)wheelIndex);
-    drawTextCenteredOutlined(window, charName, WINDOW_WIDTH/2, centerY + wheelRadius + 60.f, 5, playerColor);
+    drawTextCenteredOutlined(window, charName, WINDOW_WIDTH/2,
+                              centerY + wheelRadiusY + 80.f, 5, playerColor);
 
     // --- Indicatore "P1 scelto: XXX" (in 2P, step 1) ---
     if (selectPlayerStep == 1) {

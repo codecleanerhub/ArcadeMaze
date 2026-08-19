@@ -317,7 +317,13 @@ void Player::render(sf::RenderTarget& target) {
         std::string animName = "idle";
         int frameDuration = 200;
         int frame = 0;
-        bool flipped = (lastDx < 0);
+        // FIX: inverteremo la logica di flip perche' gli sprite PNG
+        // dei personaggi hanno orientamento di default verso SINISTRA.
+        //   * lastDx > 0 (muove a destra): flipped=true  -> specchia -> guarda DESTRA
+        //   * lastDx < 0 (muove a sinistra): flipped=false -> originale -> guarda SINISTRA
+        //   * lastDx == 0 (fermo): usa ultima direzione valida (lastDx)
+        //     in modo che il personaggio continui a guardare dove guardava.
+        bool flipped = (lastDx > 0);
         if (shootAnimTimer > 0 && sprite.getFrameCount("attack") > 0) {
             animName = "attack";
             frameDuration = 50;  // 6 frame in 300 ms
@@ -401,7 +407,10 @@ void Player::render(sf::RenderTarget& target) {
     // dedicati per ognuno (i 2 originali hanno sprite, gli altri 6 usano
     // questo fallback che li disegna in stile coerente).
     {
-        bool flipped = (lastDx < 0);
+        // FIX: stessa logica di flip dello sprite PNG (vedi sopra).
+        //   lastDx > 0 -> guardare destra (flipped=true per specchiare default LEFT)
+        //   lastDx < 0 -> guardare sinistra (default, no flip)
+        bool flipped = (lastDx > 0);
         bool walking = (dx != 0 || dy != 0);
         float bobY = 0.f;
         if (walking) {
@@ -918,5 +927,8 @@ void Player::renderCharacterFallback(sf::RenderTarget& target, float x, float y,
     }
 
     // --- Arma equipaggiata ---
-    currentWeapon.renderEquipped(target, px + (flipped ? -16 : 16), py + bobY);
+    // Posizionata sul lato in cui il personaggio e' rivolto:
+    //   * flipped=true  (guarda destra)  -> arma a destra  (px + 16)
+    //   * flipped=false (guarda sinistra) -> arma a sinistra (px - 16)
+    currentWeapon.renderEquipped(target, px + (flipped ? 16 : -16), py + bobY);
 }
