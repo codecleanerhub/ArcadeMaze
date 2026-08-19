@@ -77,13 +77,28 @@ struct Config {
 // Usata per effetti: sangue dei nemici, scintille del tesoro, ecc.
 // `life` e `maxLife` sono in frame (a 60 FPS), il colore e' sfumato in base
 // al rapporto life/maxLife durante il rendering.
+// `size` e' il raggio in pixel (default 4). `type` controlla la forma:
+//   * 0 = cerchio (default, sangue/scintille)
+//   * 1 = fiamma triangolare (per fuoco: punta verso l'alto, si restringe)
+//   * 2 = quadrato (per detriti/cenere)
 struct Particle {
     sf::Vector2f pos;
     sf::Vector2f vel;
     sf::Color color;
-    int life;       // vita residua (frame)
-    int maxLife;    // vita iniziale (per calcolare l'alpha)
+    int life = 0;       // vita residua (frame)
+    int maxLife = 0;    // vita iniziale (per calcolare l'alpha)
+    float size = 4.f;   // raggio in pixel (default 4)
+    int type = 0;       // 0=cerchio, 1=fiamma triangolare, 2=quadrato
 };
+
+// Costruttori di comodo per Particle (per non dover specificare size/type
+// ogni volta). Mantengono compatibilità col codice esistente che usa la
+// sintassi {pos, vel, color, life, maxLife} (size=4, type=0 di default).
+inline Particle makeParticle(sf::Vector2f pos, sf::Vector2f vel,
+                              sf::Color color, int life, int maxLife,
+                              float size = 4.f, int type = 0) {
+    return {pos, vel, color, life, maxLife, size, type};
+}
 
 // Carica la configurazione dei comandi da un file INI semplice.
 Config loadConfig(const std::string& filename);

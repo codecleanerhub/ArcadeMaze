@@ -18,6 +18,7 @@ add_executable(${PROJECT_NAME}
     src/Utils.cpp
     src/AudioManager.cpp
     src/Boss.cpp
+    src/MiniBoss.cpp
     src/SpriteSheet.cpp
 )
 

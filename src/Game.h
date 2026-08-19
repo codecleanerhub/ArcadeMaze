@@ -19,6 +19,7 @@
 #include "Maze.h"
 #include "Player.h"
 #include "Enemy.h"
+#include "MiniBoss.h"
 #include "UI.h"
 #include "Utils.h"
 #include "AudioManager.h"
@@ -110,6 +111,21 @@ struct BloodStain {
     sf::Color color;
 };
 
+// Mucchio di cenere temporaneo sul pavimento dopo che un nemico e' stato
+// BRUCIATO dal player invincibile (calice dell'immortalita'). Diverso dal
+// BloodStain perche':
+//   * Forma irregolare (mucchio, non macchia piatta)
+//   * Colore grigio-beige chiaro (cenere) invece di rosso scuro (sangue)
+//   * Particelle di cenere che si sollevano lentamente verso l'alto
+//   * Piu' duraturo del sangue (i resti bruciati restano piu' a lungo)
+struct AshPile {
+    sf::Vector2f pos;
+    int life;               // vita residua in frame (60 FPS)
+    int maxLife;
+    float radius;           // raggio del mucchio
+    float animTime;         // tempo per animazione particelle cenere
+};
+
 // Mina: oggetto sul pavimento che, se calpestato dal player, si attiva
 // e rimbalza. Se colpisce un nemico lo uccide e scompare.
 // Una sola mina per livello. Appare nel labirinto E nella stanza del boss.
@@ -183,9 +199,12 @@ private:
 
     // Entita' di gioco. `enemies` e' un vettore perche' ogni livello ne
     // genera 5. `boss` e' un puntatore perche' viene creato/destroyato
-    // dinamicamente ad ogni scontro.
+    // dinamicamente ad ogni scontro. `miniBoss` e' un puntatore perche'
+    // appare SOLO quando il portale magico fa respawn (1 per labirinto).
     std::vector<Enemy> enemies;
     Boss* boss;
+    MiniBoss* miniBoss;            // mini-boss del labirinto (1 per livello, al respawn)
+    bool miniBossSpawned;          // true = mini-boss gia' generato questo livello
     std::vector<Projectile> bossProjectiles;     // proiettili sparati dal boss
     std::vector<Projectile> enemyProjectiles;    // proiettili sparati dai nemici
     std::vector<BossRoomWeapon> bossRoomWeapons; // armi a terra nella stanza del boss
@@ -196,6 +215,7 @@ private:
     bool portalUsed;                            // true = portale gia' usato questo livello
     int initialEnemyCount;                      // numero nemici iniziali (per calcolo 50%)
     std::vector<BloodStain> bloodStains;        // macchie di sangue temporanee
+    std::vector<AshPile> ashPiles;              // mucchi di cenere (nemici bruciati)
     Mine mine;                                   // mina sul pavimento (1 per livello)
     GoldenChalice chalice;                       // calice d'oro pozione magica (1 per livello)
     bool chaliceUsed;                            // true = calice gia' raccolto questo livello

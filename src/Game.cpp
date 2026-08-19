@@ -39,7 +39,7 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
@@ -132,6 +132,10 @@ void Game::startLevel(int lvl) {
     portalUsed = false;
     initialEnemyCount = (int)enemies.size();
     bloodStains.clear();
+    ashPiles.clear();
+    // Reset del mini-boss (verra' generato al respawn del portale magico)
+    if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
+    miniBossSpawned = false;
     // Spawna la mina in una cella vuota casuale del labirinto
     mine.active = false;
     mine.bouncing = false;
@@ -868,6 +872,58 @@ void Game::update() {
             if (!enemy.isDeathAnimDone()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
         }
 
+        // --- Aggiornamento mini-boss (se presente) ---
+        // Il mini-boss insegue il player con BFS e attacca meele.
+        if (miniBoss && !miniBoss->isDead()) {
+            miniBoss->update(maze, player.getGridPos(), pPos, particles);
+            // --- Collisione mini-boss vs player (danno meele quando attacca) ---
+            // takeDamage() del player toglie 1 HP fisso (con invulnerabilita'
+            // post-colpo). Per simulare il danno alto del mini-boss, chiamiamo
+            // takeDamage() piu' volte in base al danno dell'arma.
+            if (miniBoss->isAttacking()) {
+                float dx = pPos.x - miniBoss->getPixelPos().x;
+                float dy = pPos.y - miniBoss->getPixelPos().y;
+                float dist = sqrtf(dx*dx + dy*dy);
+                if (dist < miniBoss->getAttackRange() + 10.f) {
+                    // Danno al player (solo se non invincibile)
+                    if (playerInvincibleTimer <= 0) {
+                        // takeDamage() toglie 1 HP per chiamata. Il mini-boss
+                        // fa 12-25 danno, quindi chiamiamo takeDamage() per
+                        // ogni punto (ma takeDamage rispetta invulnerabilita'
+                        // post-colpo, quindi solo 1 sara' effettivo).
+                        // Per semplicita', chiamiamo takeDamage() una volta
+                        // per ogni 5 punti danno (arrotondato).
+                        int numHits = miniBoss->getAttackDamage() / 5;
+                        if (numHits < 1) numHits = 1;
+                        for (int h = 0; h < numHits; h++) {
+                            player.takeDamage();
+                        }
+                    }
+                }
+            }
+        }
+        // Pulizia mini-boss morto (dopo animazione morte)
+        if (miniBoss && miniBoss->isDead()) {
+            // Lascia il mini-boss renderizzato per l'animazione di morte
+            // (dyingTimer gestito in update). Quando e' 0, eliminiamo.
+            // Per semplicita', eliminiamo subito dopo la morte.
+            player.addScore(miniBoss->getScoreReward());
+            audio.playSound(SOUND_ENEMY_DEATH);
+            audio.playSound(SOUND_ENEMY_EXPLODE);
+            // Particelle di morte (oro per distinguerlo dai nemici normali)
+            for (int i = 0; i < 30; i++) {
+                float ang = (rand() % 360) * (float)M_PI / 180.f;
+                float spd = 2.f + (rand() % 6);
+                particles.push_back(makeParticle(
+                    miniBoss->getPixelPos(),
+                    sf::Vector2f(cos(ang) * spd, sin(ang) * spd - 2.f),
+                    sf::Color(220, 160, 40),  // oro
+                    50, 50, 6.f, 1));  // fiamma triangolare
+            }
+            delete miniBoss;
+            miniBoss = nullptr;
+        }
+
         // --- Aggiornamento proiettili nemici ---
         // Vanno mossi qui perche' Enemy non ha accesso al loop di gioco.
         for (auto& proj : enemyProjectiles) {
@@ -903,6 +959,32 @@ void Game::update() {
                         bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
                     }
                     break;
+                }
+            }
+        }
+
+        // --- Collisioni: proiettili player vs mini-boss ---
+        // Il mini-boss ha HP piu' alti (18-35), quindi serve piu' di 1 colpo.
+        // Hit box piu' grande dei nemici normali (size 32-40px).
+        if (miniBoss && !miniBoss->isDead()) {
+            float mbHalfSize = (float)miniBoss->getMaxHealth() * 0.f + 16.f;  // raggio ~16px
+            for (auto& proj : player.getProjectiles()) {
+                if (!proj.active) continue;
+                float dx = proj.pos.x - miniBoss->getPixelPos().x;
+                float dy = proj.pos.y - miniBoss->getPixelPos().y;
+                if (dx*dx + dy*dy < mbHalfSize * mbHalfSize) {
+                    miniBoss->takeDamage(proj.power);
+                    proj.active = false;
+                    audio.playSound(SOUND_BOSS_HIT);  // suono clank metallico
+                    // Particelle di impatto (oro)
+                    for (int i = 0; i < 8; i++) {
+                        float ang = (rand() % 360) * (float)M_PI / 180.f;
+                        particles.push_back(makeParticle(
+                            miniBoss->getPixelPos(),
+                            sf::Vector2f(cos(ang) * 3.f, sin(ang) * 3.f - 1.f),
+                            sf::Color(220, 160, 40),  // oro
+                            20, 20, 3.f, 0));
+                    }
                 }
             }
         }
@@ -1133,6 +1215,41 @@ void Game::update() {
                     }
                     portalUsed = true;
                     audio.playSound(SOUND_PORTAL_OPEN);
+
+                    // --- Spawn del mini-boss (1 per labirinto, al respawn) ---
+                    // Il mini-boss appare SOLO quando il portale magico si
+                    // attiva (50% nemici uccisi). 1 per livello, tipo unico
+                    // basato sul livello corrente (17 tipi che ciclano).
+                    if (!miniBossSpawned && !miniBoss) {
+                        // Trova una cella vuota lontana dal player
+                        sf::Vector2f ppos = player.getPixelPos();
+                        int pc = (int)(ppos.x / TILE_SIZE);
+                        int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                        int mbC = -1, mbR = -1;
+                        int bestDist = -1;
+                        for (int c = 1; c < MAZE_COLS - 1; c++) {
+                            for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                                if (maze.getCellType(c, r) == CELL_EMPTY &&
+                                    !maze.isWall(c, r)) {
+                                    int dist = abs(c - pc) + abs(r - pr);
+                                    // Almeno 6 celle dal player, piu' lontano possibile
+                                    if (dist >= 6 && dist > bestDist) {
+                                        bestDist = dist;
+                                        mbC = c;
+                                        mbR = r;
+                                    }
+                                }
+                            }
+                        }
+                        if (mbC >= 0) {
+                            // Tipo basato sul livello (17 tipi che ciclano)
+                            MiniBossType mbType = (MiniBossType)(
+                                (currentLevel - 1) % MINIBOSS_TYPE_COUNT);
+                            miniBoss = new MiniBoss(mbType, currentLevel, mbC, mbR);
+                            miniBossSpawned = true;
+                        }
+                    }
+
                     // Avvia musica evocativa fantasy per la durata del portale.
                     // Questa traccia e' un jingle evento (non musica di sottofondo):
                     // suona SEMPRE, anche se l'opzione "musica" del menu e' OFF.
@@ -1191,6 +1308,17 @@ void Game::update() {
         bloodStains.erase(std::remove_if(bloodStains.begin(), bloodStains.end(),
             [](const BloodStain& bs) { return bs.life <= 0; }), bloodStains.end());
 
+        // --- Aggiornamento mucchi di cenere ---
+        // I mucchi di cenere (nemici bruciati dal player invincibile) durano
+        // piu' a lungo del sangue e hanno un'animazione di particelle che
+        // si sollevano lentamente.
+        for (auto& ap : ashPiles) {
+            ap.life--;
+            ap.animTime += 0.04f;
+        }
+        ashPiles.erase(std::remove_if(ashPiles.begin(), ashPiles.end(),
+            [](const AshPile& ap) { return ap.life <= 0; }), ashPiles.end());
+
         // --- Aggiornamento del calice d'oro (pozione magica) ---
         if (chalice.active) {
             chalice.pulse += 0.016f;
@@ -1241,45 +1369,55 @@ void Game::update() {
                             p.addScore(5000);
                             audio.playSound(SOUND_ENEMY_DEATH);
                             audio.playSound(SOUND_ENEMY_EXPLODE);
-                            // --- Fiammate (particelle di fuoco) ---
-                            // Sostituiscono il sangue: colore arancione/rosso
-                            // fuoco con movemento verso l'alto. Durata 60 frame
-                            // (~1s, era 35) per dare tempo di vedere l'effetto.
-                            // 50 particelle (era 30) per un effetto piu' denso.
-                            // Palette 16 colori: (220,160,40) oro-fuoco,
-                            // (200,80,80) rosso chiaro, (240,240,240) cenere.
-                            for (int i = 0; i < 50; i++) {
+                            // --- FIAMME VISCIBILI sul nemico (particelle tipo 1) ---
+                            // Triangoli (fiamme) GRANDI (10-14px) con glow,
+                            // durata 90 frame (~1.5s) per effetto prolungato.
+                            // Colori palette 16: (220,160,40) oro, (200,80,80)
+                            // rosso, (240,240,240) scintille bianche.
+                            for (int i = 0; i < 40; i++) {
                                 float ang = (rand() % 360) * (float)M_PI / 180.f;
-                                float spd = 2.f + (rand() % 6);
+                                float spd = 1.5f + (rand() % 4);
                                 sf::Vector2f vel(cos(ang) * spd,
-                                                  sin(ang) * spd - 3.f);  // -3 = verso alto (era -2)
-                                // Colore fuoco: la maggior parte oro/rosso,
-                                // poche bianche (scintille calde)
+                                                  sin(ang) * spd - 3.5f);  // -3.5 = salgono veloci
+                                // Colore: 25% scintille bianche, 40% oro, 35% rosso
                                 sf::Color fireCol;
-                                int fireVar = rand() % 10;
-                                if (fireVar < 2) fireCol = sf::Color(240, 240, 240);  // scintilla bianca (20%)
-                                else if (fireVar < 6) fireCol = sf::Color(220, 160, 40);  // oro-fuoco (40%)
-                                else fireCol = sf::Color(200, 80, 80);  // rosso fuoco (40%)
-                                particles.push_back({enemy.getPixelPos(), vel, fireCol, 60, 60});  // durata 60 frame
+                                int fireVar = rand() % 20;
+                                if (fireVar < 5) fireCol = sf::Color(240, 240, 240);  // scintilla
+                                else if (fireVar < 13) fireCol = sf::Color(220, 160, 40);  // oro
+                                else fireCol = sf::Color(200, 80, 80);  // rosso
+                                // size 10-14px (era 5), type 1 = fiamma triangolare
+                                float psize = 10.f + (rand() % 5);
+                                particles.push_back(makeParticle(
+                                    enemy.getPixelPos(), vel, fireCol,
+                                    90, 90, psize, 1));  // durata 90 frame, type 1
                             }
-                            // --- Esplosione di fuoco centrale (effetto flash) ---
-                            // 15 particelle grandi al centro del nemico
+                            // --- Esplosione di fuoco centrale (15 fiamme grandi oro) ---
                             for (int i = 0; i < 15; i++) {
                                 float ang = (rand() % 360) * (float)M_PI / 180.f;
-                                float spd = 1.f + (rand() % 3);
-                                sf::Vector2f vel(cos(ang) * spd, sin(ang) * spd - 1.f);
-                                particles.push_back({enemy.getPixelPos(), vel,
-                                    sf::Color(220, 160, 40), 45, 45});  // oro, durata media
+                                float spd = 0.8f + (rand() % 2);
+                                sf::Vector2f vel(cos(ang) * spd, sin(ang) * spd - 1.5f);
+                                particles.push_back(makeParticle(
+                                    enemy.getPixelPos(), vel,
+                                    sf::Color(220, 160, 40),  // oro
+                                    60, 60, 12.f, 1));  // size 12, durata 60
                             }
-                            // --- Cenere sul pavimento (sostituisce sangue) ---
-                            // Macchia GRIGIO CHIARA (non scura, altrimenti si
-                            // confonde con il pavimento scuro del labirinto).
-                            // Colore (200,180,160) della palette 16 = beige
-                            // chiaro, ben visibile sul pavimento scuro.
-                            // Durata 400 frame (~6.6s) per dare tempo di vederla.
-                            bloodStains.push_back({enemy.getPixelPos(), 400, 400,
-                                10.f + (rand()%6),  // raggio piu' grande (era 8)
-                                sf::Color(200, 180, 160, 220)});  // cenere chiara beige
+                            // --- Scintille bianche che salgono (10 piccole) ---
+                            for (int i = 0; i < 10; i++) {
+                                float ang = (rand() % 360) * (float)M_PI / 180.f;
+                                float spd = 2.f + (rand() % 5);
+                                sf::Vector2f vel(cos(ang) * spd, sin(ang) * spd - 4.f);
+                                particles.push_back(makeParticle(
+                                    enemy.getPixelPos(), vel,
+                                    sf::Color(240, 240, 240),  // bianco
+                                    70, 70, 6.f, 0));  // size 6, type 0 (cerchio)
+                            }
+                            // --- MUCCHIO DI CENERE sul pavimento ---
+                            // Sostituisce la macchia di sangue. Forma a mucchio
+                            // (irregolare) colore grigio-beige chiaro, con
+                            // particelle di cenere che si sollevano lentamente.
+                            // Diverso visualmente dal BloodStain (macchia piatta).
+                            ashPiles.push_back({enemy.getPixelPos(), 500, 500,
+                                12.f + (rand()%6), 0.f});  // raggio 12-17, durata ~8.3s
                         }
                     }
                 }
@@ -2900,6 +3038,13 @@ void Game::render() {
         // non vengono renderizzati.
         for (const auto& enemy : enemies) if (!enemy.isDeathAnimDone()) enemy.render(window);
 
+        // --- Rendering del mini-boss (se presente e non morto) ---
+        // Il mini-boss e' renderizzato in stile boss ma con dimensioni piccole
+        // (32-40px). Aura pulsante, corpo dettagliato, arma in mano, barra HP.
+        if (miniBoss && !miniBoss->isDead()) {
+            miniBoss->render(window);
+        }
+
         // Proiettili nemici: piccoli cerchi rossi (3px) con outline
         for (const auto& p : enemyProjectiles) {
             if (p.active) {
@@ -2910,22 +3055,43 @@ void Game::render() {
         }
 
         // Particelle: alpha proporzionale al rapporto life/maxLife
-        // Ogni particella ha un nucleo solido (5px) + un glow esterno
-        // semitrasparente (10px) per renderla molto visibile, specialmente
-        // le fiammate arancioni/rosse che prima erano troppo piccole.
+        // Ogni particella ha un nucleo + glow per visibilita'. Le particelle
+        // di tipo 1 (fiamme) sono triangoli che puntano verso l'alto, molto
+        // piu' visibili dei cerchi. Le particelle tipo 2 sono quadrati
+        // (detriti/cenere).
         for (const auto& p : particles) {
             float lifeRatio = (float)p.life / (float)p.maxLife;
             sf::Uint8 alpha = (sf::Uint8)(255 * lifeRatio);
+            float sz = p.size;
             // --- Glow esterno (cerchio grande semitrasparente) ---
-            sf::CircleShape glow(10.f);
-            glow.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, (sf::Uint8)(alpha * 0.3f)));
-            glow.setPosition(p.pos.x - 10.f, p.pos.y - 10.f);
+            sf::CircleShape glow(sz * 2.f);
+            glow.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b,
+                                        (sf::Uint8)(alpha * 0.35f)));
+            glow.setPosition(p.pos.x - sz * 2.f, p.pos.y - sz * 2.f);
             window.draw(glow);
-            // --- Nucleo solido (cerchio piccolo, piu' opaco) ---
-            sf::CircleShape c(5.f);
-            c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
-            c.setPosition(p.pos.x - 5.f, p.pos.y - 5.f);
-            window.draw(c);
+            // --- Nucleo (forma in base al type) ---
+            if (p.type == 1) {
+                // Fiamma triangolare (punta verso l'alto)
+                sf::ConvexShape flame;
+                flame.setPointCount(3);
+                flame.setPoint(0, sf::Vector2f(p.pos.x - sz, p.pos.y + sz));      // base sx
+                flame.setPoint(1, sf::Vector2f(p.pos.x + sz, p.pos.y + sz));      // base dx
+                flame.setPoint(2, sf::Vector2f(p.pos.x, p.pos.y - sz * 1.5f));    // punta alto
+                flame.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+                window.draw(flame);
+            } else if (p.type == 2) {
+                // Quadrato (detriti/cenere)
+                sf::RectangleShape sq(sf::Vector2f(sz * 2.f, sz * 2.f));
+                sq.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+                sq.setPosition(p.pos.x - sz, p.pos.y - sz);
+                window.draw(sq);
+            } else {
+                // Cerchio (default: sangue/scintille)
+                sf::CircleShape c(sz);
+                c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+                c.setPosition(p.pos.x - sz, p.pos.y - sz);
+                window.draw(c);
+            }
         }
 
         // --- Macchie di sangue temporanee sul pavimento ---
@@ -2948,6 +3114,73 @@ void Game::render() {
                 splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
                 splash.setPosition(sx - sr, sy - sr);
                 window.draw(splash);
+            }
+        }
+
+        // --- Mucchi di cenere (nemici bruciati dal player invincibile) ---
+        // Diversi visualmente dalle macchie di sangue:
+        //   * Forma a MUCCHIO (3 cerchi sovrapposti: base larga + 2 piccoli)
+        //   * Colore grigio-beige chiaro (palette 16: 200,180,160)
+        //   * Particelle di cenere che si sollevano lentamente verso l'alto
+        //   * Piu' duraturi del sangue (i resti bruciati restano di piu')
+        for (const auto& ap : ashPiles) {
+            float alpha = 220.f * (float)ap.life / (float)ap.maxLife;
+            if (alpha < 0) alpha = 0;
+            // Palette 16 colori per la cenere
+            const sf::Color COL_ASH_LIGHT(200, 180, 160);  // beige chiaro
+            const sf::Color COL_ASH_DARK (120, 100, 90);   // grigio cenere scuro
+            const sf::Color COL_ASH_MID  (160, 128, 112);  // cenere medio
+            // --- Mucchio base (cerchio grande schiacciato) ---
+            sf::CircleShape pile(ap.radius);
+            pile.setFillColor(sf::Color(COL_ASH_DARK.r, COL_ASH_DARK.g,
+                                         COL_ASH_DARK.b, (sf::Uint8)alpha));
+            pile.setScale(1.2f, 0.5f);  // schiacciato (mucchio sul pavimento)
+            pile.setPosition(ap.pos.x - ap.radius, ap.pos.y - ap.radius * 0.5f);
+            window.draw(pile);
+            // --- Mucchio medio (sopra la base, piu' chiaro) ---
+            sf::CircleShape pileMid(ap.radius * 0.7f);
+            pileMid.setFillColor(sf::Color(COL_ASH_MID.r, COL_ASH_MID.g,
+                                            COL_ASH_MID.b, (sf::Uint8)alpha));
+            pileMid.setScale(1.f, 0.6f);
+            pileMid.setPosition(ap.pos.x - ap.radius * 0.7f,
+                                 ap.pos.y - ap.radius * 0.6f);
+            window.draw(pileMid);
+            // --- Cima del mucchio (piccola, piu' chiara) ---
+            sf::CircleShape pileTop(ap.radius * 0.4f);
+            pileTop.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
+                                            COL_ASH_LIGHT.b, (sf::Uint8)alpha));
+            pileTop.setPosition(ap.pos.x - ap.radius * 0.4f,
+                                 ap.pos.y - ap.radius * 0.8f);
+            window.draw(pileTop);
+            // --- Pezzetti di cenere sparsi attorno (4 detriti) ---
+            for (int i = 0; i < 4; i++) {
+                float angle = i * (float)M_PI / 2.f + ap.animTime * 0.1f;
+                float dist = ap.radius * 1.3f;
+                float dx = ap.pos.x + cos(angle) * dist;
+                float dy = ap.pos.y + sin(angle) * dist * 0.4f;
+                float dr = ap.radius * 0.2f;
+                sf::RectangleShape debris(sf::Vector2f(dr * 2.f, dr * 2.f));
+                debris.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
+                                               COL_ASH_LIGHT.b,
+                                               (sf::Uint8)(alpha * 0.6f)));
+                debris.setPosition(dx - dr, dy - dr);
+                debris.rotate(angle * 180.f / (float)M_PI);
+                window.draw(debris);
+            }
+            // --- Particelle di cenere che si sollevano (animazione) ---
+            // 3 particelle piccole che salgono lentamente verso l'alto
+            // con movimento sinusoidale (effetto "fumo che sale")
+            for (int i = 0; i < 3; i++) {
+                float sparkX = ap.pos.x + sin(ap.animTime + i * 2.f) * ap.radius * 0.5f;
+                float sparkY = ap.pos.y - ((int)(ap.animTime * 30.f + i * 20) % 40);
+                float sparkR = 1.5f;
+                sf::Uint8 sparkAlpha = (sf::Uint8)(alpha * 0.5f *
+                    (1.f - (int)(ap.animTime * 30.f + i * 20) % 40 / 40.f));
+                sf::CircleShape ashSpark(sparkR);
+                ashSpark.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
+                                                 COL_ASH_LIGHT.b, sparkAlpha));
+                ashSpark.setPosition(sparkX - sparkR, sparkY - sparkR);
+                window.draw(ashSpark);
             }
         }
 
@@ -5267,18 +5500,36 @@ void Game::render() {
         // --- Particelle (fiammate, scintille, sangue) nella stanza del boss ---
         // Prima non venivano renderizzate in STATE_BOSS: le fiammate dei
         // nemici bruciati dal player invincibile non si vedevano. Ora le
-        // disegniamo con glow + nucleo (come STATE_PLAYING).
+        // disegniamo con glow + nucleo (come STATE_PLAYING), supportando
+        // anche le fiamme triangolari (type 1).
         for (const auto& p : particles) {
             float lifeRatio = (float)p.life / (float)p.maxLife;
             sf::Uint8 alpha = (sf::Uint8)(255 * lifeRatio);
-            sf::CircleShape glow(10.f);
-            glow.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, (sf::Uint8)(alpha * 0.3f)));
-            glow.setPosition(p.pos.x - 10.f, p.pos.y - 10.f);
+            float sz = p.size;
+            sf::CircleShape glow(sz * 2.f);
+            glow.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b,
+                                        (sf::Uint8)(alpha * 0.35f)));
+            glow.setPosition(p.pos.x - sz * 2.f, p.pos.y - sz * 2.f);
             window.draw(glow);
-            sf::CircleShape c(5.f);
-            c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
-            c.setPosition(p.pos.x - 5.f, p.pos.y - 5.f);
-            window.draw(c);
+            if (p.type == 1) {
+                sf::ConvexShape flame;
+                flame.setPointCount(3);
+                flame.setPoint(0, sf::Vector2f(p.pos.x - sz, p.pos.y + sz));
+                flame.setPoint(1, sf::Vector2f(p.pos.x + sz, p.pos.y + sz));
+                flame.setPoint(2, sf::Vector2f(p.pos.x, p.pos.y - sz * 1.5f));
+                flame.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+                window.draw(flame);
+            } else if (p.type == 2) {
+                sf::RectangleShape sq(sf::Vector2f(sz * 2.f, sz * 2.f));
+                sq.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+                sq.setPosition(p.pos.x - sz, p.pos.y - sz);
+                window.draw(sq);
+            } else {
+                sf::CircleShape c(sz);
+                c.setFillColor(sf::Color(p.color.r, p.color.g, p.color.b, alpha));
+                c.setPosition(p.pos.x - sz, p.pos.y - sz);
+                window.draw(c);
+            }
         }
 
         // --- Macchie di sangue/cenere sul pavimento (stanza del boss) ---
@@ -5300,6 +5551,62 @@ void Game::render() {
                 splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
                 splash.setPosition(sx - sr, sy - sr);
                 window.draw(splash);
+            }
+        }
+
+        // --- Mucchi di cenere sul pavimento (stanza del boss) ---
+        // Stesso rendering di STATE_PLAYING: mucchio a 3 strati + detriti +
+        // particelle di cenere che salgono.
+        for (const auto& ap : ashPiles) {
+            float alpha = 220.f * (float)ap.life / (float)ap.maxLife;
+            if (alpha < 0) alpha = 0;
+            const sf::Color COL_ASH_LIGHT(200, 180, 160);
+            const sf::Color COL_ASH_DARK (120, 100, 90);
+            const sf::Color COL_ASH_MID  (160, 128, 112);
+            sf::CircleShape pile(ap.radius);
+            pile.setFillColor(sf::Color(COL_ASH_DARK.r, COL_ASH_DARK.g,
+                                         COL_ASH_DARK.b, (sf::Uint8)alpha));
+            pile.setScale(1.2f, 0.5f);
+            pile.setPosition(ap.pos.x - ap.radius, ap.pos.y - ap.radius * 0.5f);
+            window.draw(pile);
+            sf::CircleShape pileMid(ap.radius * 0.7f);
+            pileMid.setFillColor(sf::Color(COL_ASH_MID.r, COL_ASH_MID.g,
+                                            COL_ASH_MID.b, (sf::Uint8)alpha));
+            pileMid.setScale(1.f, 0.6f);
+            pileMid.setPosition(ap.pos.x - ap.radius * 0.7f,
+                                 ap.pos.y - ap.radius * 0.6f);
+            window.draw(pileMid);
+            sf::CircleShape pileTop(ap.radius * 0.4f);
+            pileTop.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
+                                            COL_ASH_LIGHT.b, (sf::Uint8)alpha));
+            pileTop.setPosition(ap.pos.x - ap.radius * 0.4f,
+                                 ap.pos.y - ap.radius * 0.8f);
+            window.draw(pileTop);
+            for (int i = 0; i < 4; i++) {
+                float angle = i * (float)M_PI / 2.f + ap.animTime * 0.1f;
+                float dist = ap.radius * 1.3f;
+                float dx = ap.pos.x + cos(angle) * dist;
+                float dy = ap.pos.y + sin(angle) * dist * 0.4f;
+                float dr = ap.radius * 0.2f;
+                sf::RectangleShape debris(sf::Vector2f(dr * 2.f, dr * 2.f));
+                debris.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
+                                               COL_ASH_LIGHT.b,
+                                               (sf::Uint8)(alpha * 0.6f)));
+                debris.setPosition(dx - dr, dy - dr);
+                debris.rotate(angle * 180.f / (float)M_PI);
+                window.draw(debris);
+            }
+            for (int i = 0; i < 3; i++) {
+                float sparkX = ap.pos.x + sin(ap.animTime + i * 2.f) * ap.radius * 0.5f;
+                float sparkY = ap.pos.y - ((int)(ap.animTime * 30.f + i * 20) % 40);
+                float sparkR = 1.5f;
+                sf::Uint8 sparkAlpha = (sf::Uint8)(alpha * 0.5f *
+                    (1.f - (int)(ap.animTime * 30.f + i * 20) % 40 / 40.f));
+                sf::CircleShape ashSpark(sparkR);
+                ashSpark.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
+                                                 COL_ASH_LIGHT.b, sparkAlpha));
+                ashSpark.setPosition(sparkX - sparkR, sparkY - sparkR);
+                window.draw(ashSpark);
             }
         }
         player.render(window);
