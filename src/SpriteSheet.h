@@ -45,6 +45,14 @@ public:
                 int frameIdx, float x, float y, float scale,
                 bool flipped) const;
 
+    // Overload con tint color: moltiplica i colori dello sprite per `tint`.
+    // Utile quando P1 e P2 scelgono lo stesso personaggio: P2 viene tinto
+    // di un colore diverso (es. bluastro) per distinguerlo da P1.
+    // tint = sf::Color(255,255,255) = nessun tint (comportamento normale).
+    void render(sf::RenderTarget& target, const std::string& animName,
+                int frameIdx, float x, float y, float scale,
+                bool flipped, const sf::Color& tint) const;
+
     // True se il PNG e' stato caricato con successo.
     bool isLoaded() const { return loaded; }
 

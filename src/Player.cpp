@@ -17,7 +17,53 @@
 //     movimento e' libero in pixel.
 // ===========================================================================
 
-Player::Player() { reset(); }
+Player::Player() : characterType(CHAR_HERO_M), playerNum(1), tint(255, 255, 255) { reset(); }
+
+// --- Funzioni helper per CharacterType ---
+
+// Restituisce il path base dello sprite per il personaggio.
+// I file sono: assets/sprites/<base>_sheet.png + <base>_walk0..3_sheet.png
+std::string getCharacterSpriteBase(CharacterType ct) {
+    switch (ct) {
+        case CHAR_HERO_M:   return "assets/sprites/player1";      // esiste gia'
+        case CHAR_HERO_F:   return "assets/sprites/player2";      // esiste gia'
+        case CHAR_MAGE:     return "assets/sprites/char_mage";
+        case CHAR_ORC:      return "assets/sprites/char_orc";
+        case CHAR_ELF:      return "assets/sprites/char_elf";
+        case CHAR_KNIGHT:   return "assets/sprites/char_knight";
+        case CHAR_GOLEM:   return "assets/sprites/char_golem";
+        case CHAR_DRAGON:  return "assets/sprites/char_dragon";
+        case CHAR_VAMPIRE: return "assets/sprites/char_vampire";
+    }
+    return "assets/sprites/player1";
+}
+
+// Restituisce il nome descrittivo del personaggio (per UI menu selezione).
+std::string getCharacterName(CharacterType ct) {
+    switch (ct) {
+        case CHAR_HERO_M:   return "HERO";
+        case CHAR_HERO_F:   return "HEROINE";
+        case CHAR_MAGE:     return "MAGE";
+        case CHAR_ORC:      return "ORC";
+        case CHAR_ELF:      return "ELF";
+        case CHAR_KNIGHT:   return "KNIGHT";
+        case CHAR_GOLEM:   return "GOLEM";
+        case CHAR_DRAGON:  return "DRAGON";
+        case CHAR_VAMPIRE: return "VAMPIRE";
+    }
+    return "HERO";
+}
+
+// Restituisce il color tint per distinguere P1 da P2 quando stesso personaggio.
+// P1 = bianco (nessun tint), P2 = bluastro (200, 200, 255).
+sf::Color getPlayerTint(int playerNum) {
+    if (playerNum == 2) {
+        // P2: tint bluastro leggero per distinguere
+        return sf::Color(200, 200, 255);
+    }
+    // P1: nessun tint (bianco = moltiplica per 1)
+    return sf::Color(255, 255, 255);
+}
 
 // Reset completo (nuova partita): oltre alla posizione, resetta vite,
 // energia, punteggio, soglia prossima vita e arma iniziale (pistola).
@@ -52,6 +98,23 @@ bool Player::loadSprite(const std::string& basePath) {
     }
     jumpSprite.load(basePath + "_jump");
     return mainOk;
+}
+
+// --- Character selection ---
+// Imposta il tipo di personaggio e il numero giocatore, poi carica lo sprite.
+// Se il file PNG non esiste, lo sprite resta non caricato e il render()
+// usera' il fallback procedurale (renderCharacterFallback).
+void Player::setCharacter(CharacterType ct, int playerNum) {
+    characterType = ct;
+    this->playerNum = playerNum;
+    tint = getPlayerTint(playerNum);
+    loadCharacterSprite();
+}
+
+// Carica lo sprite associato al characterType corrente.
+void Player::loadCharacterSprite() {
+    std::string basePath = getCharacterSpriteBase(characterType);
+    loadSprite(basePath);
 }
 
 // Imposta posizione assoluta e ferma il movimento (usato in modalita' boss).
@@ -240,7 +303,7 @@ Vec2 Player::getGridPos() const { return { (int)(pos.x / TILE_SIZE), (int)((pos.
 // ---------------------------------------------------------------------------
 void Player::render(sf::RenderTarget& target) {
     float px = pos.x;
-    float py = pos.y - jumpOffset; // Applica offset visivo del salto
+    // py non piu' usato dopo la refactoring del fallback procedurale
 
     // Etichetta arma sopra la testa
     drawTextCentered(target, currentWeapon.getName(), px, pos.y - 60, 2, sf::Color(255, 255, 0));
@@ -293,8 +356,8 @@ void Player::render(sf::RenderTarget& target) {
             // Effetto zoom: comprime leggermente in orizzontale (0.9x)
             // per simulare lo stretching del salto
             float scaleX = 0.9f + sin(jumpProgress * M_PI) * 0.1f;  // 0.9 -> 1.0 -> 0.9
-            // Disegna lo sprite idle con scale modificato e sollevato
-            sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped);
+            // Disegna lo sprite idle con scale modificato e sollevato (+ tint)
+            sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped, tint);
         }
         // Se sta camminando e abbiamo 4 frame, cicla walk0->walk1->walk2->walk3
         else if (isWalking && walkSprites[0].isLoaded() && walkSprites[1].isLoaded()) {
@@ -305,14 +368,14 @@ void Player::render(sf::RenderTarget& target) {
             }
             if (availableFrames >= 2) {
                 stepFrame = stepFrame % availableFrames;
-                walkSprites[stepFrame].render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped);
+                walkSprites[stepFrame].render(target, "idle", 0, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
             } else {
-                sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
+                sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
             }
         }
         // Altrimenti usa sprite principale (idle o attack)
         else {
-            sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped);
+            sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
         }
 
         // Speed boost: effetto discreto (piccoli pixel gialli ai piedi, non cerchio)
@@ -332,63 +395,40 @@ void Player::render(sf::RenderTarget& target) {
         return;
     }
 
-    // Fallback: rendering a primitive (Indiana Jones)
-    sf::Color skin(210, 180, 140);
-    sf::Color shirt(200, 200, 200);
-    sf::Color jacket(139, 69, 19);
-    sf::Color pants(50, 50, 50);
-    sf::Color hat(80, 50, 20);
-    sf::Color outline(10, 10, 10);
+    // --- Fallback: rendering procedurale per personaggi senza sprite PNG ---
+    // Disegna il personaggio con primitive SFML in base a characterType.
+    // Questo permette di avere 8 personaggi giocabili anche senza sprite PNG
+    // dedicati per ognuno (i 2 originali hanno sprite, gli altri 6 usano
+    // questo fallback che li disegna in stile coerente).
+    {
+        bool flipped = (lastDx < 0);
+        bool walking = (dx != 0 || dy != 0);
+        float bobY = 0.f;
+        if (walking) {
+            bobY = sin(animTime * 0.012f) * 2.f;
+        } else {
+            bobY = sin(animTime * 0.004f) * 1.f;
+        }
+        renderCharacterFallback(target, px, pos.y + 8.f - jumpOffset + bobY,
+                                  flipped, walking, bobY);
 
-    // Gambe: se sta saltando, sono piu' corte e divaricate (postura "in aria")
-    if (isJumping()) {
-        sf::RectangleShape leg1(sf::Vector2f(8.f, 16.f)); leg1.setFillColor(pants); leg1.setOutlineThickness(1.f); leg1.setOutlineColor(outline);
-        leg1.setPosition(px - 12.f, py + 4.f); target.draw(leg1);
-        sf::RectangleShape leg2(sf::Vector2f(8.f, 16.f)); leg2.setFillColor(pants); leg2.setOutlineThickness(1.f); leg2.setOutlineColor(outline);
-        leg2.setPosition(px + 4.f, py + 4.f); target.draw(leg2);
-    } else {
-        sf::RectangleShape leg1(sf::Vector2f(8.f, 20.f)); leg1.setFillColor(pants); leg1.setOutlineThickness(1.f); leg1.setOutlineColor(outline);
-        leg1.setPosition(px - 6.f, py + 4.f); target.draw(leg1);
-        sf::RectangleShape leg2(sf::Vector2f(8.f, 20.f)); leg2.setFillColor(pants); leg2.setOutlineThickness(1.f); leg2.setOutlineColor(outline);
-        leg2.setPosition(px + 2.f, py + 4.f); target.draw(leg2);
+        // Speed boost (stesso del ramo sprite)
+        if (speedBoostTimer > 0) {
+            sf::Color sparkColor(255, 220, 80, 200);
+            for (int i = 0; i < 3; i++) {
+                float sparkX = px + (rand() % 12 - 6);
+                float sparkY = pos.y + 18.f + (rand() % 4);
+                sf::RectangleShape spark(sf::Vector2f(2.f, 2.f));
+                spark.setFillColor(sparkColor);
+                spark.setPosition(sparkX, sparkY);
+                target.draw(spark);
+            }
+        }
+
+        drawProjectiles(target);
     }
-
-    // Corpo (camicia chiara)
-    sf::RectangleShape body(sf::Vector2f(24.f, 20.f)); body.setFillColor(shirt); body.setOutlineThickness(1.f); body.setOutlineColor(outline);
-    body.setPosition(px - 12.f, py - 8.f); target.draw(body);
-    // Giubbotto di pelle ai lati del corpo
-    sf::RectangleShape jacket1(sf::Vector2f(6.f, 20.f)); jacket1.setFillColor(jacket); jacket1.setOutlineThickness(1.f); jacket1.setOutlineColor(outline);
-    jacket1.setPosition(px - 12.f, py - 8.f); target.draw(jacket1);
-    sf::RectangleShape jacket2(sf::Vector2f(6.f, 20.f)); jacket2.setFillColor(jacket); jacket2.setOutlineThickness(1.f); jacket2.setOutlineColor(outline);
-    jacket2.setPosition(px + 6.f, py - 8.f); target.draw(jacket2);
-
-    // Braccia
-    sf::RectangleShape arm1(sf::Vector2f(6.f, 16.f)); arm1.setFillColor(shirt); arm1.setOutlineThickness(1.f); arm1.setOutlineColor(outline);
-    arm1.setPosition(px - 14.f, py - 6.f); target.draw(arm1);
-    sf::RectangleShape arm2(sf::Vector2f(6.f, 16.f)); arm2.setFillColor(shirt); arm2.setOutlineThickness(1.f); arm2.setOutlineColor(outline);
-    arm2.setPosition(px + 8.f, py - 6.f); target.draw(arm2);
-
-    // Testa (cerchio)
-    sf::CircleShape head(8.f); head.setFillColor(skin); head.setOutlineThickness(1.f); head.setOutlineColor(outline);
-    head.setPosition(px - 8.f, py - 22.f); target.draw(head);
-
-    // Cappello Fedora: parte superiore + tesa
-    sf::RectangleShape top(sf::Vector2f(14.f, 6.f)); top.setFillColor(hat); top.setOutlineThickness(1.f); top.setOutlineColor(outline);
-    top.setPosition(px - 7.f, py - 28.f); target.draw(top);
-    sf::RectangleShape brim(sf::Vector2f(24.f, 4.f)); brim.setFillColor(hat); brim.setOutlineThickness(1.f); brim.setOutlineColor(outline);
-    brim.setPosition(px - 12.f, py - 24.f); target.draw(brim);
-
-    // Frusta arrotolata sul fianco destro
-    sf::RectangleShape whip(sf::Vector2f(2.f, 12.f)); whip.setFillColor(sf::Color(100, 50, 10));
-    whip.setPosition(px + 10.f, py - 4.f); target.draw(whip);
-
-    // Arma equipaggiata: viene posizionata davanti al personaggio nella
-    // direzione di orientamento (lastDx). Su y resta all'altezza del corpo.
-    currentWeapon.renderEquipped(target, px + (lastDx * 16), py);
-
-    // Proiettili (comune a sprite e primitive)
-    drawProjectiles(target);
 }
+
 
 // ---------------------------------------------------------------------------
 // drawProjectiles: disegna i proiettili sparati dal giocatore.
@@ -497,4 +537,386 @@ void Player::drawProjectiles(sf::RenderTarget& target) {
             target.draw(trail);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// renderCharacterFallback: rendering procedurale per i personaggi senza
+// sprite PNG dedicati. Disegna il personaggio con primitive SFML in base
+// a characterType. Stile coerente con gli sprite esistenti (64px alto,
+// palette 16 colori, anchor piedi in basso).
+//
+// Ogni personaggio ha:
+//   * Corpo (rettangolo con colori specifici)
+//   * Testa (cerchio)
+//   * Dettagli unici (cappello, mantello, orecchie, armatura, scaglie, ecc.)
+//   * Arma equipaggiata (chiamata a currentWeapon.renderEquipped)
+//   * Tint color applicato a tutte le forme (per P2 se stesso personaggio)
+//
+// Parametri:
+//   x, y = posizione centro personaggio (piedi)
+//   flipped = true se rivolto a sinistra
+//   walking = true se in movimento (bob effect piu' pronunciato)
+//   bobY = offset verticale animazione camminata
+// ---------------------------------------------------------------------------
+void Player::renderCharacterFallback(sf::RenderTarget& target, float x, float y,
+                                       bool flipped, bool walking, float bobY) const {
+    // Palette 16 colori OBBLIGATORIA
+    const sf::Color COL_BLACK   (12, 12, 12);
+    const sf::Color COL_DARK    (48, 40, 36);
+    const sf::Color COL_MID     (96, 80, 72);
+    const sf::Color COL_LIT     (160, 128, 112);
+    const sf::Color COL_PALE    (200, 180, 160);
+    const sf::Color COL_RED     (160, 40, 40);
+    const sf::Color COL_RED_L   (200, 80, 80);
+    const sf::Color COL_GOLD     (220, 160, 40);
+    const sf::Color COL_GREEN_D  (40, 80, 60);
+    const sf::Color COL_GREEN_L  (80, 120, 100);
+    const sf::Color COL_BLUE_D   (48, 40, 36);  // ri-usa dark per blu scuro
+    const sf::Color COL_BLUE_L   (80, 160, 220);  // azzurro
+    const sf::Color COL_WHITE    (240, 240, 240);
+    const sf::Color COL_PURPLE   (160, 120, 200);
+    const sf::Color COL_CYAN     (120, 200, 200);
+
+    // Tint applicato a tutti i colori (P1 = bianco, P2 = bluastro)
+    // Moltiplichiamo i componenti RGB per il tint normalizzato.
+    auto tintColor = [&](const sf::Color& c) -> sf::Color {
+        return sf::Color(
+            (sf::Uint8)(c.r * tint.r / 255),
+            (sf::Uint8)(c.g * tint.g / 255),
+            (sf::Uint8)(c.b * tint.b / 255),
+            c.a);
+    };
+
+    // Colori del personaggio in base al tipo
+    sf::Color skin, body, accent, headColor;
+    switch (characterType) {
+        case CHAR_HERO_M:   // eroe maschio
+            skin = COL_PALE; body = COL_MID; accent = COL_GOLD; headColor = COL_PALE;
+            break;
+        case CHAR_HERO_F:   // eroina femmina
+            skin = COL_PALE; body = COL_RED_L; accent = COL_GOLD; headColor = COL_PALE;
+            break;
+        case CHAR_MAGE:     // mago
+            skin = COL_PALE; body = COL_BLUE_L; accent = COL_GOLD; headColor = COL_PALE;
+            break;
+        case CHAR_ORC:      // orco
+            skin = COL_GREEN_L; body = COL_DARK; accent = COL_RED; headColor = COL_GREEN_L;
+            break;
+        case CHAR_ELF:      // elfo
+            skin = COL_PALE; body = COL_GREEN_L; accent = COL_GOLD; headColor = COL_PALE;
+            break;
+        case CHAR_KNIGHT:   // cavaliere
+            skin = COL_MID; body = COL_LIT; accent = COL_GOLD; headColor = COL_MID;
+            break;
+        case CHAR_GOLEM:   // golem
+            skin = COL_MID; body = COL_DARK; accent = COL_CYAN; headColor = COL_MID;
+            break;
+        case CHAR_DRAGON:  // uomo drago
+            skin = COL_RED_L; body = COL_RED; accent = COL_GOLD; headColor = COL_RED_L;
+            break;
+        case CHAR_VAMPIRE: // vampiro
+            skin = COL_PALE; body = COL_BLACK; accent = COL_RED; headColor = COL_PALE;
+            break;
+        default:
+            skin = COL_PALE; body = COL_MID; accent = COL_GOLD; headColor = COL_PALE;
+    }
+
+    // Applica tint a tutti i colori
+    skin = tintColor(skin);
+    body = tintColor(body);
+    accent = tintColor(accent);
+    headColor = tintColor(headColor);
+
+    float px = x;
+    float py = y;
+
+    // --- Ombra sul pavimento ---
+    sf::CircleShape shadow(8.f);
+    shadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, 80));
+    shadow.setScale(1.5f, 0.4f);
+    shadow.setPosition(px - 8.f, py + 18.f);
+    target.draw(shadow);
+
+    // --- Gambe ---
+    // Se sta camminando, alternanza delle gambe (effetto passo)
+    float legOffset = walking ? sin(animTime * 0.024f) * 3.f : 0.f;
+    sf::RectangleShape leg1(sf::Vector2f(7.f, 18.f));
+    leg1.setFillColor(tintColor(COL_DARK));
+    leg1.setOutlineThickness(0.5f);
+    leg1.setOutlineColor(tintColor(COL_BLACK));
+    leg1.setPosition(px - 7.f, py + 2.f + legOffset);
+    target.draw(leg1);
+    sf::RectangleShape leg2(sf::Vector2f(7.f, 18.f));
+    leg2.setFillColor(tintColor(COL_DARK));
+    leg2.setOutlineThickness(0.5f);
+    leg2.setOutlineColor(tintColor(COL_BLACK));
+    leg2.setPosition(px + 1.f, py + 2.f - legOffset);
+    target.draw(leg2);
+
+    // --- Corpo ---
+    sf::RectangleShape bodyShape(sf::Vector2f(20.f, 22.f));
+    bodyShape.setFillColor(body);
+    bodyShape.setOutlineThickness(1.f);
+    bodyShape.setOutlineColor(tintColor(COL_BLACK));
+    bodyShape.setPosition(px - 10.f, py - 8.f + bobY);
+    target.draw(bodyShape);
+
+    // --- Braccia ---
+    sf::RectangleShape arm1(sf::Vector2f(5.f, 16.f));
+    arm1.setFillColor(body);
+    arm1.setOutlineThickness(0.5f);
+    arm1.setOutlineColor(tintColor(COL_BLACK));
+    arm1.setPosition(px - 13.f, py - 6.f + bobY);
+    target.draw(arm1);
+    sf::RectangleShape arm2(sf::Vector2f(5.f, 16.f));
+    arm2.setFillColor(body);
+    arm2.setOutlineThickness(0.5f);
+    arm2.setOutlineColor(tintColor(COL_BLACK));
+    arm2.setPosition(px + 8.f, py - 6.f + bobY);
+    target.draw(arm2);
+
+    // --- Testa ---
+    float headR = 7.f;
+    sf::CircleShape head(headR);
+    head.setFillColor(headColor);
+    head.setOutlineThickness(1.f);
+    head.setOutlineColor(tintColor(COL_BLACK));
+    head.setPosition(px - headR, py - 22.f + bobY);
+    target.draw(head);
+
+    // --- Occhi ---
+    float eyeY = py - 22.f + bobY + 2.f;
+    sf::CircleShape eye1(1.f);
+    eye1.setFillColor(tintColor(COL_BLACK));
+    eye1.setPosition(px - 3.f, eyeY);
+    target.draw(eye1);
+    sf::CircleShape eye2(1.f);
+    eye2.setFillColor(tintColor(COL_BLACK));
+    eye2.setPosition(px + 2.f, eyeY);
+    target.draw(eye2);
+
+    // --- Dettagli specifici per tipo di personaggio ---
+    switch (characterType) {
+        case CHAR_HERO_M: {
+            // Cappello da esploratore (fedora)
+            sf::RectangleShape hatBrim(sf::Vector2f(18.f, 2.f));
+            hatBrim.setFillColor(tintColor(COL_DARK));
+            hatBrim.setPosition(px - 9.f, py - 26.f + bobY);
+            target.draw(hatBrim);
+            sf::RectangleShape hatTop(sf::Vector2f(10.f, 5.f));
+            hatTop.setFillColor(tintColor(COL_DARK));
+            hatTop.setPosition(px - 5.f, py - 31.f + bobY);
+            target.draw(hatTop);
+            break;
+        }
+        case CHAR_HERO_F: {
+            // Capelli lunghi (rettili laterali)
+            sf::RectangleShape hair1(sf::Vector2f(3.f, 12.f));
+            hair1.setFillColor(tintColor(COL_GOLD));
+            hair1.setPosition(px - 8.f, py - 22.f + bobY);
+            target.draw(hair1);
+            sf::RectangleShape hair2(sf::Vector2f(3.f, 12.f));
+            hair2.setFillColor(tintColor(COL_GOLD));
+            hair2.setPosition(px + 5.f, py - 22.f + bobY);
+            target.draw(hair2);
+            break;
+        }
+        case CHAR_MAGE: {
+            // Cappello a cono (mago)
+            sf::ConvexShape hat;
+            hat.setPointCount(3);
+            hat.setFillColor(tintColor(COL_BLUE_L));
+            hat.setOutlineThickness(0.5f);
+            hat.setOutlineColor(tintColor(COL_BLACK));
+            hat.setPoint(0, sf::Vector2f(px - 7.f, py - 26.f + bobY));
+            hat.setPoint(1, sf::Vector2f(px + 7.f, py - 26.f + bobY));
+            hat.setPoint(2, sf::Vector2f(px, py - 38.f + bobY));
+            target.draw(hat);
+            // Stella sul cappello
+            sf::CircleShape star(1.5f);
+            star.setFillColor(tintColor(COL_GOLD));
+            star.setPosition(px - 1.5f, py - 32.f + bobY);
+            target.draw(star);
+            // Mantello dietro
+            sf::ConvexShape cloak;
+            cloak.setPointCount(3);
+            cloak.setFillColor(sf::Color(tintColor(COL_BLUE_L).r,
+                                          tintColor(COL_BLUE_L).g,
+                                          tintColor(COL_BLUE_L).b, 180));
+            cloak.setPoint(0, sf::Vector2f(px, py - 8.f + bobY));
+            cloak.setPoint(1, sf::Vector2f(px - 12.f, py + 16.f));
+            cloak.setPoint(2, sf::Vector2f(px + 12.f, py + 16.f));
+            target.draw(cloak);
+            break;
+        }
+        case CHAR_ORC: {
+            // Zanne (2 triangoli bianchi dalla bocca)
+            for (int side = 0; side < 2; side++) {
+                float dir = (side == 0) ? -1.f : 1.f;
+                sf::ConvexShape fang;
+                fang.setPointCount(3);
+                fang.setFillColor(tintColor(COL_WHITE));
+                fang.setPoint(0, sf::Vector2f(px + dir * 2.f, py - 16.f + bobY));
+                fang.setPoint(1, sf::Vector2f(px + dir * 3.f, py - 12.f + bobY));
+                fang.setPoint(2, sf::Vector2f(px + dir * 1.f, py - 12.f + bobY));
+                target.draw(fang);
+            }
+            // Orecchie appuntite
+            for (int side = 0; side < 2; side++) {
+                float dir = (side == 0) ? -1.f : 1.f;
+                sf::ConvexShape ear;
+                ear.setPointCount(3);
+                ear.setFillColor(headColor);
+                ear.setPoint(0, sf::Vector2f(px + dir * (headR + 1.f), py - 22.f + bobY));
+                ear.setPoint(1, sf::Vector2f(px + dir * (headR + 5.f), py - 24.f + bobY));
+                ear.setPoint(2, sf::Vector2f(px + dir * (headR + 2.f), py - 19.f + bobY));
+                target.draw(ear);
+            }
+            break;
+        }
+        case CHAR_ELF: {
+            // Orecchie lunghe appuntite
+            for (int side = 0; side < 2; side++) {
+                float dir = (side == 0) ? -1.f : 1.f;
+                sf::ConvexShape ear;
+                ear.setPointCount(3);
+                ear.setFillColor(headColor);
+                ear.setOutlineThickness(0.5f);
+                ear.setOutlineColor(tintColor(COL_BLACK));
+                ear.setPoint(0, sf::Vector2f(px + dir * (headR + 1.f), py - 22.f + bobY));
+                ear.setPoint(1, sf::Vector2f(px + dir * (headR + 6.f), py - 25.f + bobY));
+                ear.setPoint(2, sf::Vector2f(px + dir * (headR + 3.f), py - 18.f + bobY));
+                target.draw(ear);
+            }
+            // Cappuccio verde
+            sf::ConvexShape hood;
+            hood.setPointCount(3);
+            hood.setFillColor(body);
+            hood.setPoint(0, sf::Vector2f(px - 9.f, py - 24.f + bobY));
+            hood.setPoint(1, sf::Vector2f(px + 9.f, py - 24.f + bobY));
+            hood.setPoint(2, sf::Vector2f(px, py - 34.f + bobY));
+            target.draw(hood);
+            break;
+        }
+        case CHAR_KNIGHT: {
+            // Elmo (rettangolo con visiera)
+            sf::RectangleShape helmet(sf::Vector2f(14.f, 10.f));
+            helmet.setFillColor(tintColor(COL_LIT));
+            helmet.setOutlineThickness(1.f);
+            helmet.setOutlineColor(tintColor(COL_BLACK));
+            helmet.setPosition(px - 7.f, py - 28.f + bobY);
+            target.draw(helmet);
+            // Visiera (fessura)
+            sf::RectangleShape visor(sf::Vector2f(10.f, 2.f));
+            visor.setFillColor(tintColor(COL_BLACK));
+            visor.setPosition(px - 5.f, py - 24.f + bobY);
+            target.draw(visor);
+            // Piumaggio rosso
+            sf::RectangleShape plume(sf::Vector2f(2.f, 6.f));
+            plume.setFillColor(tintColor(COL_RED));
+            plume.setPosition(px - 1.f, py - 34.f + bobY);
+            target.draw(plume);
+            // Spalline
+            sf::RectangleShape shoulder1(sf::Vector2f(6.f, 4.f));
+            shoulder1.setFillColor(tintColor(COL_LIT));
+            shoulder1.setOutlineThickness(0.5f);
+            shoulder1.setOutlineColor(tintColor(COL_BLACK));
+            shoulder1.setPosition(px - 14.f, py - 8.f + bobY);
+            target.draw(shoulder1);
+            sf::RectangleShape shoulder2(sf::Vector2f(6.f, 4.f));
+            shoulder2.setFillColor(tintColor(COL_LIT));
+            shoulder2.setOutlineThickness(0.5f);
+            shoulder2.setOutlineColor(tintColor(COL_BLACK));
+            shoulder2.setPosition(px + 8.f, py - 8.f + bobY);
+            target.draw(shoulder2);
+            break;
+        }
+        case CHAR_GOLEM: {
+            // Crepe sul corpo (3 linee scure)
+            for (int i = 0; i < 3; i++) {
+                sf::RectangleShape crack(sf::Vector2f(1.f, 6.f));
+                crack.setFillColor(tintColor(COL_BLACK));
+                crack.setPosition(px - 6.f + i * 6.f, py - 6.f + bobY);
+                crack.rotate((i % 2) * 20.f);
+                target.draw(crack);
+            }
+            // Occhi glow (cyan)
+            sf::CircleShape glow1(1.5f);
+            glow1.setFillColor(tintColor(COL_CYAN));
+            glow1.setPosition(px - 4.f, py - 20.f + bobY);
+            target.draw(glow1);
+            sf::CircleShape glow2(1.5f);
+            glow2.setFillColor(tintColor(COL_CYAN));
+            glow2.setPosition(px + 2.f, py - 20.f + bobY);
+            target.draw(glow2);
+            break;
+        }
+        case CHAR_DRAGON: {
+            // Cresta sul capo (3 spuntoni)
+            for (int i = 0; i < 3; i++) {
+                sf::ConvexShape spike;
+                spike.setPointCount(3);
+                spike.setFillColor(tintColor(COL_RED));
+                spike.setPoint(0, sf::Vector2f(px - 5.f + i * 4.f, py - 26.f + bobY));
+                spike.setPoint(1, sf::Vector2f(px - 3.f + i * 4.f, py - 32.f + bobY));
+                spike.setPoint(2, sf::Vector2f(px - 1.f + i * 4.f, py - 26.f + bobY));
+                target.draw(spike);
+            }
+            // Ali (2 triangoli dietro)
+            for (int side = 0; side < 2; side++) {
+                float dir = (side == 0) ? -1.f : 1.f;
+                sf::ConvexShape wing;
+                wing.setPointCount(3);
+                wing.setFillColor(sf::Color(tintColor(COL_RED).r,
+                                             tintColor(COL_RED).g,
+                                             tintColor(COL_RED).b, 200));
+                wing.setPoint(0, sf::Vector2f(px + dir * 10.f, py - 6.f + bobY));
+                wing.setPoint(1, sf::Vector2f(px + dir * 20.f, py - 12.f + bobY));
+                wing.setPoint(2, sf::Vector2f(px + dir * 16.f, py + 4.f));
+                target.draw(wing);
+            }
+            // Coda
+            sf::ConvexShape tail;
+            tail.setPointCount(3);
+            tail.setFillColor(tintColor(COL_RED));
+            tail.setPoint(0, sf::Vector2f(px - 3.f, py + 14.f));
+            tail.setPoint(1, sf::Vector2f(px - 8.f, py + 20.f));
+            tail.setPoint(2, sf::Vector2f(px + 2.f, py + 18.f));
+            target.draw(tail);
+            break;
+        }
+        case CHAR_VAMPIRE: {
+            // Mantello nero (dietro)
+            sf::ConvexShape cloak;
+            cloak.setPointCount(3);
+            cloak.setFillColor(tintColor(COL_BLACK));
+            cloak.setPoint(0, sf::Vector2f(px, py - 8.f + bobY));
+            cloak.setPoint(1, sf::Vector2f(px - 14.f, py + 18.f));
+            cloak.setPoint(2, sf::Vector2f(px + 14.f, py + 18.f));
+            target.draw(cloak);
+            // Colletto rosso a V
+            sf::ConvexShape collar;
+            collar.setPointCount(3);
+            collar.setFillColor(tintColor(COL_RED));
+            collar.setPoint(0, sf::Vector2f(px - 5.f, py - 8.f + bobY));
+            collar.setPoint(1, sf::Vector2f(px + 5.f, py - 8.f + bobY));
+            collar.setPoint(2, sf::Vector2f(px, py - 2.f + bobY));
+            target.draw(collar);
+            // Canini (2 piccoli triangoli bianchi)
+            for (int side = 0; side < 2; side++) {
+                float dir = (side == 0) ? -1.f : 1.f;
+                sf::ConvexShape fang;
+                fang.setPointCount(3);
+                fang.setFillColor(tintColor(COL_WHITE));
+                fang.setPoint(0, sf::Vector2f(px + dir * 2.f, py - 16.f + bobY));
+                fang.setPoint(1, sf::Vector2f(px + dir * 1.f, py - 12.f + bobY));
+                fang.setPoint(2, sf::Vector2f(px + dir * 3.f, py - 12.f + bobY));
+                target.draw(fang);
+            }
+            break;
+        }
+    }
+
+    // --- Arma equipaggiata ---
+    currentWeapon.renderEquipped(target, px + (flipped ? -16 : 16), py + bobY);
 }

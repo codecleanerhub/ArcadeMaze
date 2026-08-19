@@ -39,7 +39,7 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
@@ -89,11 +89,13 @@ bool Game::init() {
     // I file mancanti vengono saltati: il render fara' fallback alle primitive.
     Enemy::loadAllSprites("assets/sprites");
     Boss::loadAllSprites("assets/sprites");
-    // Carica gli sprite dei giocatori (player1 e player2 distinti).
-    // Carichiamo sempre entrambi: se il file non esiste resta unloaded e il
-    // render fa fallback alle primitive. numPlayers verra' scelto dopo nel menu.
-    player.loadSprite("assets/sprites/player1");
-    player2.loadSprite("assets/sprites/player2");
+    // Carica gli sprite dei giocatori in base al personaggio selezionato.
+    // I personaggi di default sono CHAR_HERO_M (P1) e CHAR_HERO_F (P2),
+    // ma l'utente puo' cambiarli dal menu "SELECT PLAYER".
+    // Se il file sprite non esiste, resta unloaded e il render fa fallback
+    // alle primitive (renderCharacterFallback).
+    player.setCharacter(player1Character, 1);
+    player2.setCharacter(player2Character, 2);
     return true;
 }
 
@@ -555,9 +557,9 @@ void Game::handleEvents() {
 
             // Navigazione menu'
             if (state == STATE_MENU) {
-                // Su/Giu: cambio voce selezionata (6 voci totali, wrap con +6 %6)
-                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
-                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                // Su/Giu: cambio voce selezionata (7 voci totali, wrap con +7 %7)
+                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
                 // Sinistra/Destra: modifica dell'opzione selezionata
                 else if (key == sf::Keyboard::Left) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
@@ -571,7 +573,7 @@ void Game::handleEvents() {
                         else audio.stopMusic();
                     }
 #ifdef TEST_MODE_FEATURE
-                    if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
+                    if (menuItemIndex == 4) testModeEnabled = !testModeEnabled;
 #endif
                 }
                 else if (key == sf::Keyboard::Right) {
@@ -583,22 +585,69 @@ void Game::handleEvents() {
                         else audio.stopMusic();
                     }
 #ifdef TEST_MODE_FEATURE
-                    if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
+                    if (menuItemIndex == 4) testModeEnabled = !testModeEnabled;
 #endif
                 }
-                // Return: conferma (voci 4 = config joystick, 5 = avvia partita)
+                // Return: conferma (3 = select player, 5 = config joystick, 6 = avvia partita)
                 else if (key == sf::Keyboard::Return) {
                     audio.playSound(SOUND_MENU_CONFIRM);
-                    if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 5) {
+                    if (menuItemIndex == 3) {
+                        // SELECT PLAYER: apre la schermata di selezione personaggio
+                        state = STATE_SELECT_PLAYER;
+                        selectPlayerStep = 0;  // P1 sceglie per primo
+                        wheelIndex = (int)player1Character;
+                        wheelTargetIndex = wheelIndex;
+                        wheelRotation = 0.f;
+                    }
+                    else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 6) {
                         // Avvia il livello 1. La finestra resta in fullscreen
                         // alla risoluzione nativa gia' impostata nel costruttore.
                         window.setFramerateLimit(60);
                         sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
                         window.setView(view);
                         currentLevel = 1;
+                        // Applica i personaggi scelti ai player prima di iniziare
+                        player.setCharacter(player1Character, 1);
+                        if (numPlayers == 2) player2.setCharacter(player2Character, 2);
                         startLevel(1);
                     }
+                }
+            } else if (state == STATE_SELECT_PLAYER) {
+                // --- Schermata selezione personaggio ---
+                // Left/Right (o joystick): ruota la ruota dei personaggi
+                // Enter: conferma il personaggio corrente
+                if (key == sf::Keyboard::Left) {
+                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
+                    audio.playSound(SOUND_MENU_SELECT);
+                }
+                else if (key == sf::Keyboard::Right) {
+                    wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
+                    audio.playSound(SOUND_MENU_SELECT);
+                }
+                else if (key == sf::Keyboard::Return) {
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                    if (selectPlayerStep == 0) {
+                        // P1 ha scelto
+                        player1Character = (CharacterType)wheelIndex;
+                        if (numPlayers == 2) {
+                            // In 2P: P2 sceglie ora
+                            selectPlayerStep = 1;
+                            wheelIndex = (int)player2Character;
+                            wheelTargetIndex = wheelIndex;
+                        } else {
+                            // In 1P: torna al menu
+                            state = STATE_MENU;
+                        }
+                    } else {
+                        // P2 ha scelto
+                        player2Character = (CharacterType)wheelIndex;
+                        state = STATE_MENU;
+                    }
+                }
+                else if (key == sf::Keyboard::Escape) {
+                    // ESC: torna al menu senza confermare
+                    state = STATE_MENU;
                 }
             } else if (state == STATE_CONTINUES) {
                 // Schermata continues: Left/Right scegli Yes/No, Enter conferma
@@ -647,15 +696,42 @@ void Game::handleEvents() {
                 // config.joy_jump e' int (perche' letto da file INI come intero).
                 if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     audio.playSound(SOUND_MENU_CONFIRM);
-                    if (menuItemIndex == 4) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 5) {
-                        // Avvia il livello 1. La finestra resta in fullscreen
-                        // alla risoluzione nativa gia' impostata nel costruttore.
+                    if (menuItemIndex == 3) {
+                        // SELECT PLAYER
+                        state = STATE_SELECT_PLAYER;
+                        selectPlayerStep = 0;
+                        wheelIndex = (int)player1Character;
+                        wheelTargetIndex = wheelIndex;
+                        wheelRotation = 0.f;
+                    }
+                    else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                    else if (menuItemIndex == 6) {
+                        // Avvia il livello 1
                         window.setFramerateLimit(60);
                         sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
                         window.setView(view);
                         currentLevel = 1;
+                        player.setCharacter(player1Character, 1);
+                        if (numPlayers == 2) player2.setCharacter(player2Character, 2);
                         startLevel(1);
+                    }
+                }
+            } else if (state == STATE_SELECT_PLAYER) {
+                // Joystick: pulsante jump = conferma personaggio
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                    if (selectPlayerStep == 0) {
+                        player1Character = (CharacterType)wheelIndex;
+                        if (numPlayers == 2) {
+                            selectPlayerStep = 1;
+                            wheelIndex = (int)player2Character;
+                            wheelTargetIndex = wheelIndex;
+                        } else {
+                            state = STATE_MENU;
+                        }
+                    } else {
+                        player2Character = (CharacterType)wheelIndex;
+                        state = STATE_MENU;
                     }
                 }
             } else if (state == STATE_CONFIG_JOY) {
@@ -732,14 +808,43 @@ void Game::update() {
             static bool joyMoved = false;
             if (fabs(y) > 50 && !joyMoved) {
                 joyMoved = true;
-                if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
-                else { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+                else { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
             } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
         }
 
         // Fulmine casuale: ~5/600 di probabilita' per frame, durata 10 frame
         if (rand() % 600 < 5) lightningTimer = 10;
         if (lightningTimer > 0) lightningTimer--;
+    }
+    // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
+    else if (state == STATE_SELECT_PLAYER) {
+        if (sf::Joystick::isConnected(0)) {
+            float x = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+            static bool joyMovedWheel = false;
+            if (fabs(x) > 50 && !joyMovedWheel) {
+                joyMovedWheel = true;
+                if (x < 0) {
+                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
+                } else {
+                    wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
+                }
+                audio.playSound(SOUND_MENU_SELECT);
+            } else if (fabs(x) < 20) joyMovedWheel = false;
+        }
+        // Animazione ruota: interpolazione smooth verso wheelTargetIndex
+        if (wheelIndex != wheelTargetIndex) {
+            wheelRotation += 0.15f;  // velocita' rotazione
+            if (wheelRotation >= 1.f) {
+                wheelRotation = 0.f;
+                // Avanza di 1 verso il target (gestendo wrap-around)
+                int diff = wheelTargetIndex - wheelIndex;
+                if (diff > CHARACTER_TYPE_COUNT / 2) diff -= CHARACTER_TYPE_COUNT;
+                else if (diff < -CHARACTER_TYPE_COUNT / 2) diff += CHARACTER_TYPE_COUNT;
+                if (diff > 0) wheelIndex = (wheelIndex + 1) % CHARACTER_TYPE_COUNT;
+                else if (diff < 0) wheelIndex = (wheelIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
+            }
+        }
     }
 
     // --- Input giocatore (sia STATE_PLAYING che STATE_BOSS) ---
@@ -2889,6 +2994,7 @@ void Game::drawMenu() {
         "NUMBER OF PLAYERS: " + std::to_string(numPlayers),
         "GAME MODE: " + std::string(gameMode == MODE_STORY ? "STORY" : "INFINITE"),
         "MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"),
+        "SELECT PLAYER",                        // nuova voce: selezione personaggio
 #ifdef TEST_MODE_FEATURE
         "TEST MODE: " + std::string(testModeEnabled ? "ON" : "OFF"),
 #else
@@ -2898,12 +3004,12 @@ void Game::drawMenu() {
         "START GAME"
     };
 
-    // Disegna le 6 voci; quella selezionata e' in giallo con "> ... <"
+    // Disegna le 7 voci; quella selezionata e' in giallo con "> ... <"
     // e una piccola fiammella pulsante alla sua sinistra.
-    for(int i=0; i<6; i++) {
+    for(int i=0; i<7; i++) {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-        float itemY = 380 + i * 70;
+        float itemY = 360 + i * 65;
         drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, itemY, 3, color);
 
         // Fiammella laterale animata per la voce selezionata
@@ -3000,6 +3106,253 @@ void Game::drawConfigJoy2() {
 }
 
 // ---------------------------------------------------------------------------
+// drawSelectPlayer: schermata di selezione personaggio.
+//
+// Mostra 8 personaggi in una "ruota" (carousel orizzontale):
+//   * Personaggio corrente al CENTRO (frontale, grande)
+//   * 2 personaggi a SINISTRA e 2 a DESTRA (piu' piccoli, effetto prospettiva)
+//   * Navigazione: Left/Right (tastiera) o asse X joystick
+//   * Conferma: Enter (tastiera) o pulsante jump (joystick)
+//
+// In 2P: P1 sceglie prima (selectPlayerStep=0), poi P2 (selectPlayerStep=1).
+// Se P2 sceglie lo stesso personaggio di P1, viene applicato un tint bluastro.
+// ---------------------------------------------------------------------------
+void Game::drawSelectPlayer() {
+    // Sfondo: gradiente notte (stesso del menu')
+    for (int i = 0; i < 32; i++) {
+        float t = (float)i / 31.f;
+        sf::Uint8 r = (sf::Uint8)(30  + (1.f - t) * 25.f);
+        sf::Uint8 g = (sf::Uint8)(20  + (1.f - t) * 10.f);
+        sf::Uint8 b = (sf::Uint8)(60  + (1.f - t) * 30.f);
+        sf::RectangleShape band(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT / 32.f + 1.f));
+        band.setFillColor(sf::Color(r, g, b));
+        band.setPosition(0.f, i * (WINDOW_HEIGHT / 32.f));
+        window.draw(band);
+    }
+
+    // --- Titolo ---
+    std::string title = (selectPlayerStep == 0) ? "SELECT PLAYER 1" : "SELECT PLAYER 2";
+    drawTextCenteredOutlined(window, title, WINDOW_WIDTH/2, 120, 5, sf::Color(255, 215, 0));
+    drawTextCenteredOutlined(window, title, WINDOW_WIDTH/2 - 4, 120 - 4, 5, sf::Color(180, 120, 40));
+
+    // --- Indicatore giocatore corrente ---
+    sf::Color playerColor = (selectPlayerStep == 0) ? sf::Color(255, 215, 0) : sf::Color(120, 180, 255);
+    drawTextCenteredOutlined(window, "(JOYSTICK LEFT/RIGHT OR ARROWS TO ROTATE)",
+        WINDOW_WIDTH/2, 180, 2, sf::Color(150, 150, 150));
+    drawTextCenteredOutlined(window, "PRESS ENTER TO CONFIRM",
+        WINDOW_WIDTH/2, 210, 2, playerColor);
+
+    // --- Ruota personaggi (carousel) ---
+    float centerX = WINDOW_WIDTH / 2.f;
+    float centerY = WINDOW_HEIGHT / 2.f + 50.f;
+    float spacing = 180.f;
+
+    for (int offset = -2; offset <= 2; offset++) {
+        int charIdx = (wheelIndex + offset + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
+        CharacterType ct = (CharacterType)charIdx;
+
+        float x = centerX + offset * spacing;
+        float y = centerY;
+        float scale;
+        sf::Uint8 alpha;
+        if (offset == 0) { scale = 1.0f; alpha = 255; }
+        else if (abs(offset) == 1) { scale = 0.7f; alpha = 180; }
+        else { scale = 0.4f; alpha = 100; }
+
+        // Tint: P1 = bianco, P2 = bluastro
+        sf::Color tint = getPlayerTint(selectPlayerStep + 1);
+        if (selectPlayerStep == 1 && ct == player1Character) {
+            tint = getPlayerTint(2);
+        }
+
+        // Piattaforma (cerchio ellittico ai piedi)
+        sf::CircleShape platform(40.f * scale);
+        platform.setFillColor(sf::Color(60, 50, 40, alpha));
+        platform.setOutlineThickness(2.f);
+        platform.setOutlineColor(sf::Color(120, 90, 50, alpha));
+        platform.setScale(1.f, 0.3f);
+        platform.setPosition(x - 40.f * scale, y + 30.f * scale);
+        window.draw(platform);
+
+        // Disegna anteprima personaggio
+        drawCharacterPreview(window, ct, x, y + 10.f, scale, tint, alpha);
+    }
+
+    // --- Nome personaggio corrente ---
+    std::string charName = getCharacterName((CharacterType)wheelIndex);
+    drawTextCenteredOutlined(window, charName, WINDOW_WIDTH/2, centerY + 100.f, 4, playerColor);
+
+    // --- Indicatore "P1 scelto: XXX" (in 2P, step 1) ---
+    if (selectPlayerStep == 1) {
+        std::string p1Info = "P1: " + getCharacterName(player1Character);
+        drawTextCenteredOutlined(window, p1Info, WINDOW_WIDTH/2, 280, 2, sf::Color(255, 215, 0));
+    }
+
+    // --- Istruzioni in basso ---
+    drawTextCenteredOutlined(window, "ESC TO GO BACK", WINDOW_WIDTH/2, WINDOW_HEIGHT - 80, 2, sf::Color(120, 120, 120));
+}
+
+// ---------------------------------------------------------------------------
+// drawCharacterPreview: disegna un'anteprima del personaggio per la schermata
+// di selezione. Usa sprite PNG se disponibile (cached staticamente),
+// altrimenti fallback a primitive SFML.
+// ---------------------------------------------------------------------------
+void Game::drawCharacterPreview(sf::RenderTarget& target, CharacterType ct,
+                                 float x, float y, float scale,
+                                 const sf::Color& tint, sf::Uint8 alpha) {
+    // Cache statica di sprite per personaggio
+    static SpriteSheet charSprites[CHARACTER_TYPE_COUNT];
+    static bool charSpritesInit[CHARACTER_TYPE_COUNT] = {false};
+    if (!charSpritesInit[(int)ct]) {
+        charSpritesInit[(int)ct] = true;
+        std::string basePath = getCharacterSpriteBase(ct);
+        charSprites[(int)ct].load(basePath);
+    }
+
+    if (charSprites[(int)ct].isLoaded()) {
+        sf::Color tintedAlpha(tint.r, tint.g, tint.b, alpha);
+        charSprites[(int)ct].render(target, "idle", 0, x, y, scale, false, tintedAlpha);
+    } else {
+        // Fallback: primitive SFML (semplificato per anteprima)
+        const sf::Color COL_DARK(48, 40, 36);
+        const sf::Color COL_PALE(200, 180, 160);
+        const sf::Color COL_GOLD(220, 160, 40);
+        const sf::Color COL_BLACK(12, 12, 12);
+        const sf::Color COL_RED_L(200, 80, 80);
+        const sf::Color COL_BLUE_L(80, 160, 220);
+        const sf::Color COL_GREEN_L(80, 120, 100);
+        const sf::Color COL_RED(160, 40, 40);
+
+        auto tcol = [&](const sf::Color& c) -> sf::Color {
+            return sf::Color(
+                (sf::Uint8)(c.r * tint.r / 255 * alpha / 255),
+                (sf::Uint8)(c.g * tint.g / 255 * alpha / 255),
+                (sf::Uint8)(c.b * tint.b / 255 * alpha / 255),
+                alpha);
+        };
+
+        sf::Color bodyCol, headCol;
+        switch (ct) {
+            case CHAR_HERO_M:   bodyCol = COL_DARK;   headCol = COL_PALE; break;
+            case CHAR_HERO_F:   bodyCol = COL_RED_L;  headCol = COL_PALE; break;
+            case CHAR_MAGE:     bodyCol = COL_BLUE_L; headCol = COL_PALE; break;
+            case CHAR_ORC:      bodyCol = COL_DARK;   headCol = COL_GREEN_L; break;
+            case CHAR_ELF:      bodyCol = COL_GREEN_L; headCol = COL_PALE; break;
+            case CHAR_KNIGHT:   bodyCol = COL_PALE;   headCol = COL_DARK; break;
+            case CHAR_GOLEM:   bodyCol = COL_DARK;   headCol = COL_DARK; break;
+            case CHAR_DRAGON:  bodyCol = COL_RED;    headCol = COL_RED_L; break;
+            case CHAR_VAMPIRE: bodyCol = COL_BLACK;  headCol = COL_PALE; break;
+        }
+        bodyCol = tcol(bodyCol);
+        headCol = tcol(headCol);
+
+        float bw = 20.f * scale;
+        float bh = 22.f * scale;
+        sf::RectangleShape body(sf::Vector2f(bw, bh));
+        body.setFillColor(bodyCol);
+        body.setOutlineThickness(1.f);
+        body.setOutlineColor(tcol(COL_BLACK));
+        body.setOrigin(bw / 2.f, bh / 2.f);
+        body.setPosition(x, y);
+        target.draw(body);
+
+        float hr = 7.f * scale;
+        sf::CircleShape head(hr);
+        head.setFillColor(headCol);
+        head.setOutlineThickness(1.f);
+        head.setOutlineColor(tcol(COL_BLACK));
+        head.setPosition(x - hr, y - bh / 2.f - hr - 2.f);
+        target.draw(head);
+
+        float eyeR = 1.f * scale;
+        sf::CircleShape eye1(eyeR);
+        eye1.setFillColor(tcol(COL_BLACK));
+        eye1.setPosition(x - 3.f * scale, y - bh / 2.f - hr);
+        target.draw(eye1);
+        sf::CircleShape eye2(eyeR);
+        eye2.setFillColor(tcol(COL_BLACK));
+        eye2.setPosition(x + 2.f * scale, y - bh / 2.f - hr);
+        target.draw(eye2);
+
+        // Dettagli per tipo
+        switch (ct) {
+            case CHAR_MAGE: {
+                sf::ConvexShape hat;
+                hat.setPointCount(3);
+                hat.setFillColor(tcol(COL_BLUE_L));
+                hat.setPoint(0, sf::Vector2f(x - 7.f * scale, y - bh/2.f - hr - 4.f));
+                hat.setPoint(1, sf::Vector2f(x + 7.f * scale, y - bh/2.f - hr - 4.f));
+                hat.setPoint(2, sf::Vector2f(x, y - bh/2.f - hr - 16.f * scale));
+                target.draw(hat);
+                break;
+            }
+            case CHAR_KNIGHT: {
+                sf::RectangleShape helmet(sf::Vector2f(14.f * scale, 10.f * scale));
+                helmet.setFillColor(tcol(COL_PALE));
+                helmet.setOutlineThickness(1.f);
+                helmet.setOutlineColor(tcol(COL_BLACK));
+                helmet.setPosition(x - 7.f * scale, y - bh/2.f - hr - 10.f);
+                target.draw(helmet);
+                break;
+            }
+            case CHAR_ORC: {
+                for (int side = 0; side < 2; side++) {
+                    float dir = (side == 0) ? -1.f : 1.f;
+                    sf::ConvexShape fang;
+                    fang.setPointCount(3);
+                    fang.setFillColor(tcol(COL_PALE));
+                    fang.setPoint(0, sf::Vector2f(x + dir * 2.f * scale, y - bh/2.f + 2.f));
+                    fang.setPoint(1, sf::Vector2f(x + dir * 3.f * scale, y - bh/2.f + 6.f * scale));
+                    fang.setPoint(2, sf::Vector2f(x + dir * 1.f * scale, y - bh/2.f + 6.f * scale));
+                    target.draw(fang);
+                }
+                break;
+            }
+            case CHAR_DRAGON: {
+                for (int side = 0; side < 2; side++) {
+                    float dir = (side == 0) ? -1.f : 1.f;
+                    sf::ConvexShape wing;
+                    wing.setPointCount(3);
+                    wing.setFillColor(tcol(COL_RED));
+                    wing.setPoint(0, sf::Vector2f(x + dir * 10.f * scale, y));
+                    wing.setPoint(1, sf::Vector2f(x + dir * 20.f * scale, y - 6.f * scale));
+                    wing.setPoint(2, sf::Vector2f(x + dir * 16.f * scale, y + 8.f * scale));
+                    target.draw(wing);
+                }
+                break;
+            }
+            case CHAR_VAMPIRE: {
+                sf::ConvexShape cloak;
+                cloak.setPointCount(3);
+                cloak.setFillColor(tcol(COL_BLACK));
+                cloak.setPoint(0, sf::Vector2f(x, y - bh/2.f));
+                cloak.setPoint(1, sf::Vector2f(x - 14.f * scale, y + bh/2.f));
+                cloak.setPoint(2, sf::Vector2f(x + 14.f * scale, y + bh/2.f));
+                target.draw(cloak);
+                break;
+            }
+            default: break;
+        }
+
+        // Gambe
+        float lw = 7.f * scale;
+        float lh = 18.f * scale;
+        sf::RectangleShape leg1(sf::Vector2f(lw, lh));
+        leg1.setFillColor(tcol(COL_DARK));
+        leg1.setOutlineThickness(0.5f);
+        leg1.setOutlineColor(tcol(COL_BLACK));
+        leg1.setPosition(x - 7.f * scale, y + bh/2.f);
+        target.draw(leg1);
+        sf::RectangleShape leg2(sf::Vector2f(lw, lh));
+        leg2.setFillColor(tcol(COL_DARK));
+        leg2.setOutlineThickness(0.5f);
+        leg2.setOutlineColor(tcol(COL_BLACK));
+        leg2.setPosition(x + 1.f * scale, y + bh/2.f);
+        target.draw(leg2);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // render: disegna tutto in base allo stato. Pulisce con nero (10,10,10)
 // e chiama display() alla fine.
 //
@@ -3014,6 +3367,9 @@ void Game::render() {
 
     if (state == STATE_MENU) {
         drawMenu();
+    }
+    else if (state == STATE_SELECT_PLAYER) {
+        drawSelectPlayer();
     }
     else if (state == STATE_CONFIG_JOY) {
         drawConfigJoy();

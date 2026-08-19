@@ -25,6 +25,44 @@
 #include "SpriteSheet.h"
 #include <cstdint>
 
+// ===========================================================================
+// CharacterType - 8 personaggi giocabili selezionabili dal menu "Select Player".
+//
+// I primi 2 (HERO_M, HERO_F) sono i personaggi originali del gioco
+// (eroe maschio + eroina femmina). Gli altri 6 sono nuovi personaggi
+// fantasy ispirati a classi D&D / LOTR: mago, orco, elfo, cavaliere,
+// golem, uomo drago, vampiro.
+//
+// Ogni personaggio ha:
+//   * Sprite PNG dedicato (assets/sprites/char_<name>_sheet.png) se esiste,
+//     altrimenti fallback a primitive SFML (rendering procedurale).
+//   * Stessa meccanica di gioco (non cambiano le statistiche).
+//   * Color tint per distinguere P1 da P2 se scelgono lo stesso personaggio.
+// ===========================================================================
+enum CharacterType {
+    CHAR_HERO_M,       // Eroe maschio (originale player1)
+    CHAR_HERO_F,       // Eroina femmina (originale player2)
+    CHAR_MAGE,         // Mago/stregone (mantello, cappello appuntito, bastone)
+    CHAR_ORC,          // Orco (verde, zanne, muscoloso)
+    CHAR_ELF,          // Elfo (biondo, orecchie appuntite, arco)
+    CHAR_KNIGHT,       // Cavaliere (armatura, elmo, spada)
+    CHAR_GOLEM,       // Golem (roccia grigia, occhi glow)
+    CHAR_DRAGON,      // Uomo drago (scaglie rosse, ali, coda)
+    CHAR_VAMPIRE       // Vampiro (mantello nero, pallore, canini)
+};
+
+constexpr int CHARACTER_TYPE_COUNT = 8;  // numero totale di personaggi
+
+// Restituisce il nome del personaggio (per UI e path sprite).
+// I file sprite sono: assets/sprites/char_<name>_sheet.png
+std::string getCharacterSpriteBase(CharacterType ct);
+// Restituisce il nome descrittivo (per UI menu selezione).
+std::string getCharacterName(CharacterType ct);
+// Restituisce il color tint per distinguere P1 (no tint = bianco) da P2
+// (tint bluastro) quando scelgono lo stesso personaggio.
+// playerNum: 1 o 2.
+sf::Color getPlayerTint(int playerNum);
+
 class Player {
 public:
     Player();
@@ -110,6 +148,17 @@ public:
     bool loadSprite(const std::string& basePath);
     bool isSpriteLoaded() const { return sprite.isLoaded(); }
 
+    // --- Character selection (Select Player menu) ---
+    // Imposta il tipo di personaggio (eroe, mago, orco, ecc.) e il numero
+    // giocatore (1 o 2). Carica lo sprite associato al personaggio.
+    // Se playerNum=2 e il personaggio e' uguale a P1, viene applicato un
+    // color tint bluastro per distinguere i due giocatori.
+    void setCharacter(CharacterType ct, int playerNum);
+    CharacterType getCharacter() const { return characterType; }
+    int getPlayerNum() const { return playerNum; }
+    // Carica lo sprite del personaggio corrente (basato su characterType).
+    void loadCharacterSprite();
+
     // --- Speed boost (da bonus scarpe alate) ---
     void activateSpeedBoost() { speedBoostTimer = 5000; }  // 5 secondi
     bool hasSpeedBoost() const { return speedBoostTimer > 0; }
@@ -139,6 +188,11 @@ private:
     // Sprite salto
     SpriteSheet jumpSprite;
 
+    // --- Character selection ---
+    CharacterType characterType;  // personaggio scelto (eroe, mago, orco, ...)
+    int playerNum;                // 1 o 2 (per tint color se stesso personaggio)
+    sf::Color tint;               // tint applicato allo sprite (bianco = nessuno)
+
     // Tenta di muoversi nella direzione (tDx, tDy). Restituisce true se il
     // movimento e' possibile (la cella destinazione non e' muro).
     bool tryMove(int tDx, int tDy, Maze& maze);
@@ -147,6 +201,12 @@ private:
     // Separato da render() perche' viene chiamato anche quando si usa lo
     // sprite PNG (i proiettili non sono parte dello spritesheet).
     void drawProjectiles(sf::RenderTarget& target);
+
+    // Rendering procedurale (fallback) per i personaggi senza sprite PNG.
+    // Disegna il personaggio con primitive SFML in base a characterType.
+    // Usato anche per l'anteprima nel menu "Select Player".
+    void renderCharacterFallback(sf::RenderTarget& target, float x, float y,
+                                  bool flipped, bool walking, float bobY) const;
 };
 
 #endif

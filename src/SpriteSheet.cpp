@@ -218,3 +218,36 @@ void SpriteSheet::render(sf::RenderTarget& target, const std::string& animName,
     }
     target.draw(sprite);
 }
+
+// ---------------------------------------------------------------------------
+// render (overload con tint color): come render(scale) ma applica anche un
+// tint color moltiplicativo. Usato per distinguere P1 da P2 quando scelgono
+// lo stesso personaggio: P2 viene tinto di un colore diverso.
+// ---------------------------------------------------------------------------
+void SpriteSheet::render(sf::RenderTarget& target, const std::string& animName,
+                          int frameIdx, float x, float y, float scale,
+                          bool flipped, const sf::Color& tint) const {
+    if (!loaded) return;
+    auto it = animations.find(animName);
+    if (it == animations.end()) return;
+    const AnimInfo& info = it->second;
+
+    int idx = frameIdx;
+    if (info.frames > 0) idx = ((idx % info.frames) + info.frames) % info.frames;
+
+    int sx = idx * frameW;
+    int sy = info.row * frameH;
+    sf::IntRect rect(sx, sy, frameW, frameH);
+
+    sf::Sprite sprite(texture, rect);
+    float ox = frameW * 0.5f * scale;
+    float oy = frameH * (56.f / 64.f) * scale;
+    sprite.setOrigin(ox / scale, oy / scale);
+    sprite.setPosition(x, y);
+    sprite.setScale(scale, scale);
+    if (flipped) {
+        sprite.scale(-1.f, 1.f);
+    }
+    sprite.setColor(tint);  // applica tint moltiplicativo
+    target.draw(sprite);
+}

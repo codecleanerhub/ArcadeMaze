@@ -29,6 +29,7 @@
 // sono simbolici (non usati come indici).
 enum GameState {
     STATE_MENU,           // menu' principale (sceglie anche 1/2 giocatori)
+    STATE_SELECT_PLAYER,  // selezione personaggio (ruota 8 personaggi)
     STATE_CONFIG_JOY,     // configurazione joystick giocatore 1 (2 step)
     STATE_CONFIG_JOY_2,   // configurazione joystick giocatore 2 (2 step)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
@@ -243,6 +244,17 @@ private:
     bool continuesChoice;                      // true = YES, false = NO
     bool diedInBoss;                           // true se morto durante il boss
 
+    // --- Select Player (selezione personaggio) ---
+    // 8 personaggi giocabili (CHAR_HERO_M, CHAR_HERO_F, CHAR_MAGE, ecc.).
+    // P1 e P2 scelgono indipendentemente il proprio personaggio.
+    // Se scelgono lo stesso, P2 ha un tint bluastro per distinguerlo.
+    CharacterType player1Character;            // personaggio scelto da P1
+    CharacterType player2Character;            // personaggio scelto da P2
+    int selectPlayerStep;                      // 0 = P1 sceglie, 1 = P2 sceglie (solo 2P)
+    int wheelIndex;                            // indice personaggio corrente nella ruota (0..7)
+    float wheelRotation;                       // animazione rotazione ruota (per transizione fluida)
+    int wheelTargetIndex;                      // indice target (per animazione smooth)
+
     // --- TEST MODE (feature temporanea, facilmente disabilitabile) ---
     // Per disabilitare completamente la voce di menu "Test Mode" e la
     // scorciatoia da tastiera (barra spaziatrice per saltare il livello),
@@ -285,6 +297,16 @@ private:
     void drawContinues();
     // Disegna la schermata di configurazione joystick per il giocatore 2.
     void drawConfigJoy2();
+    // Disegna la schermata di selezione personaggio (ruota 8 personaggi).
+    // Mostra il personaggio corrente al centro (frontale) e i vicini ai lati
+    // (in scala ridotta per effetto "carosello"). Joystick/tastiera ruota
+    // la selezione, Enter conferma. In 2P: P1 sceglie prima, poi P2.
+    void drawSelectPlayer();
+    // Disegna un'anteprima del personaggio (sprite PNG o fallback primitive).
+    // Usato da drawSelectPlayer per ogni personaggio nella ruota.
+    void drawCharacterPreview(sf::RenderTarget& target, CharacterType ct,
+                              float x, float y, float scale,
+                              const sf::Color& tint, sf::Uint8 alpha);
     // Genera un fuoco d'artificio esploso in posizione casuale.
     void spawnFirework();
     // Disegna lo scettro magico in stile "Gandalf" (bastone di Gandalf
