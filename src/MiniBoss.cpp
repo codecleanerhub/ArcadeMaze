@@ -252,6 +252,11 @@ void MiniBoss::moveGreedy(Maze& maze, const Vec2& target) {
     }
     pos.x += bestDx * (float)speed;
     pos.y += bestDy * (float)speed;
+    // Aggiorna dx/dy membri per il flip dello sprite
+    if (bestDx > 0) dx = 1;
+    else if (bestDx < 0) dx = -1;
+    if (bestDy > 0) dy = 1;
+    else if (bestDy < 0) dy = -1;
 }
 
 // --- Update ---
@@ -277,12 +282,19 @@ void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
             // Muovi verso nextStep
             float targetX = nextStep.x * TILE_SIZE + TILE_SIZE / 2.f;
             float targetY = nextStep.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
-            float dx = targetX - pos.x;
-            float dy = targetY - pos.y;
-            float dist = sqrtf(dx*dx + dy*dy);
+            float moveDx = targetX - pos.x;
+            float moveDy = targetY - pos.y;
+            float dist = sqrtf(moveDx*moveDx + moveDy*moveDy);
             if (dist > 0.1f) {
-                pos.x += (dx / dist) * (float)speed;
-                pos.y += (dy / dist) * (float)speed;
+                pos.x += (moveDx / dist) * (float)speed;
+                pos.y += (moveDy / dist) * (float)speed;
+                // Aggiorna dx/dy membri per il flip dello sprite
+                // (dx > 0 = muove a destra, dx < 0 = muove a sinistra)
+                if (moveDx > 0.1f) dx = 1;
+                else if (moveDx < -0.1f) dx = -1;
+                // dy non usata per flip, ma aggiorniamo per coerenza
+                if (moveDy > 0.1f) dy = 1;
+                else if (moveDy < -0.1f) dy = -1;
             }
         } else {
             moveGreedy(maze, playerGridPos);
@@ -293,13 +305,16 @@ void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
     if (attackCooldown > 0) attackCooldown -= 16;
     if (attackingTimer > 0) attackingTimer -= 16;
 
-    float dx = playerPixelPos.x - pos.x;
-    float dy = playerPixelPos.y - pos.y;
-    float dist = sqrtf(dx*dx + dy*dy);
-    if (dist < getAttackRange() && attackCooldown == 0) {
+    float atkDx = playerPixelPos.x - pos.x;
+    float atkDy = playerPixelPos.y - pos.y;
+    float atkDist = sqrtf(atkDx*atkDx + atkDy*atkDy);
+    if (atkDist < getAttackRange() && attackCooldown == 0) {
         // Inizia attacco
         attackingTimer = 400;   // 400ms di animazione attacco
         attackCooldown = 1200;  // 1.2s tra attacchi
+        // Aggiorna dx per orientare l'attacco verso il player
+        if (atkDx > 0) dx = 1;
+        else if (atkDx < 0) dx = -1;
         // Genera particelle di "swung" dell'arma (scintille)
         for (int i = 0; i < 5; i++) {
             float ang = (rand() % 360) * (float)M_PI / 180.f;
