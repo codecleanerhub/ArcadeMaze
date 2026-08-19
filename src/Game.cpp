@@ -3006,10 +3006,13 @@ void Game::drawMenu() {
 
     // Disegna le 7 voci; quella selezionata e' in giallo con "> ... <"
     // e una piccola fiammella pulsante alla sua sinistra.
+    // Distanza ridotta a 50px (era 65) per evitare che l'ultima voce esca
+    // dal riquadro pergamena (360-860). Prima voce a Y=410 (era 360) per
+    // lasciare margine superiore e non attaccarsi al bordo.
     for(int i=0; i<7; i++) {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-        float itemY = 360 + i * 65;
+        float itemY = 410 + i * 50;
         drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, itemY, 3, color);
 
         // Fiammella laterale animata per la voce selezionata
@@ -3132,32 +3135,140 @@ void Game::drawSelectPlayer() {
 
     // --- Titolo ---
     std::string title = (selectPlayerStep == 0) ? "SELECT PLAYER 1" : "SELECT PLAYER 2";
-    drawTextCenteredOutlined(window, title, WINDOW_WIDTH/2, 120, 5, sf::Color(255, 215, 0));
-    drawTextCenteredOutlined(window, title, WINDOW_WIDTH/2 - 4, 120 - 4, 5, sf::Color(180, 120, 40));
+    drawTextCenteredOutlined(window, title, WINDOW_WIDTH/2, 100, 5, sf::Color(255, 215, 0));
+    drawTextCenteredOutlined(window, title, WINDOW_WIDTH/2 - 4, 100 - 4, 5, sf::Color(180, 120, 40));
 
     // --- Indicatore giocatore corrente ---
     sf::Color playerColor = (selectPlayerStep == 0) ? sf::Color(255, 215, 0) : sf::Color(120, 180, 255);
     drawTextCenteredOutlined(window, "(JOYSTICK LEFT/RIGHT OR ARROWS TO ROTATE)",
-        WINDOW_WIDTH/2, 180, 2, sf::Color(150, 150, 150));
+        WINDOW_WIDTH/2, 150, 2, sf::Color(150, 150, 150));
     drawTextCenteredOutlined(window, "PRESS ENTER TO CONFIRM",
-        WINDOW_WIDTH/2, 210, 2, playerColor);
+        WINDOW_WIDTH/2, 175, 2, playerColor);
 
-    // --- Ruota personaggi (carousel) ---
+    // --- Posizione centrale della ruota ---
     float centerX = WINDOW_WIDTH / 2.f;
-    float centerY = WINDOW_HEIGHT / 2.f + 50.f;
-    float spacing = 180.f;
+    float centerY = WINDOW_HEIGHT / 2.f + 80.f;  // piu' in basso per lasciare spazio al titolo
 
+    // --- RUOTA ROCCIOSA con ingranaggi animati ---
+    // La ruota e' un grande cerchio di roccia sotto i personaggi.
+    // Gli ingranaggi (dentoni) sono disposti attorno alla ruota e ruotano
+    // per dare l'effetto "meccanismo che gira". I personaggi stanno SOPRA
+    // la ruota, in posizione frontale.
+    // Palette 16 colori per stile coerente.
+    const sf::Color COL_ROCK_DARK (48, 40, 36);
+    const sf::Color COL_ROCK_MID  (96, 80, 72);
+    const sf::Color COL_ROCK_LIGHT(160, 128, 112);
+    const sf::Color COL_METAL_DARK(48, 40, 36);
+    const sf::Color COL_METAL_LIGHT(200, 180, 160);
+    const sf::Color COL_GOLD (220, 160, 40);
+    const sf::Color COL_BLACK(12, 12, 12);
+
+    // Tempo per animazione ingranaggi (static per persistere tra i frame)
+    static float gearAnimTime = 0.f;
+    gearAnimTime += 0.04f;
+    // Rotazione ingranaggi: piu' veloce quando la ruota sta ruotando
+    bool isRotating = (wheelIndex != wheelTargetIndex);
+    float gearSpeed = isRotating ? 0.12f : 0.04f;
+    float gearRotation = gearAnimTime * gearSpeed * (wheelTargetIndex > wheelIndex ? 1.f : -1.f);
+
+    // --- Ruota grande di roccia (cerchio di base) ---
+    float wheelRadius = 220.f;
+    // Ombra ruota
+    sf::CircleShape wheelShadow(wheelRadius + 10.f);
+    wheelShadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, 100));
+    wheelShadow.setScale(1.1f, 0.3f);
+    wheelShadow.setPosition(centerX - wheelRadius - 10.f, centerY + wheelRadius * 0.4f);
+    window.draw(wheelShadow);
+    // Ruota base (roccia scura)
+    sf::CircleShape wheelBase(wheelRadius);
+    wheelBase.setFillColor(COL_ROCK_DARK);
+    wheelBase.setOutlineThickness(8.f);
+    wheelBase.setOutlineColor(COL_ROCK_MID);
+    wheelBase.setPosition(centerX - wheelRadius, centerY - wheelRadius);
+    window.draw(wheelBase);
+    // Cerchio interno (roccia piu' chiara, effetto profondita')
+    sf::CircleShape wheelInner(wheelRadius - 30.f);
+    wheelInner.setFillColor(COL_ROCK_MID);
+    wheelInner.setPosition(centerX - wheelRadius + 30.f, centerY - wheelRadius + 30.f);
+    window.draw(wheelInner);
+    // Centro della ruota (perno metallico)
+    sf::CircleShape wheelHub(40.f);
+    wheelHub.setFillColor(COL_METAL_DARK);
+    wheelHub.setOutlineThickness(4.f);
+    wheelHub.setOutlineColor(COL_GOLD);
+    wheelHub.setPosition(centerX - 40.f, centerY - 40.f);
+    window.draw(wheelHub);
+    // Bullone centrale
+    sf::CircleShape wheelBolt(12.f);
+    wheelBolt.setFillColor(COL_GOLD);
+    wheelBolt.setPosition(centerX - 12.f, centerY - 12.f);
+    window.draw(wheelBolt);
+
+    // --- Ingranaggi attorno alla ruota (8 dentoni che ruotano) ---
+    // Disposti a cerchio attorno alla ruota, ognuno ruota per dare
+    // l'effetto "meccanismo che muove la ruota".
+    for (int g = 0; g < 8; g++) {
+        float angle = g * (2.f * (float)M_PI / 8.f) + gearRotation;
+        float gx = centerX + cosf(angle) * (wheelRadius + 30.f);
+        float gy = centerY + sinf(angle) * (wheelRadius + 30.f);
+        float gearR = 25.f;
+        // Ingranaggio (cerchio con denti)
+        sf::CircleShape gear(gearR);
+        gear.setFillColor(COL_METAL_DARK);
+        gear.setOutlineThickness(3.f);
+        gear.setOutlineColor(COL_GOLD);
+        gear.setOrigin(gearR, gearR);
+        gear.setPosition(gx, gy);
+        gear.rotate(gearRotation * 180.f / (float)M_PI + g * 45.f);
+        window.draw(gear);
+        // Denti dell'ingranaggio (8 piccoli rettangoli attorno)
+        for (int t = 0; t < 8; t++) {
+            float tAngle = t * (2.f * (float)M_PI / 8.f);
+            sf::RectangleShape tooth(sf::Vector2f(6.f, 10.f));
+            tooth.setFillColor(COL_METAL_LIGHT);
+            tooth.setOrigin(3.f, 5.f);
+            tooth.setPosition(gx + cosf(tAngle) * gearR, gy + sinf(tAngle) * gearR);
+            tooth.rotate(tAngle * 180.f / (float)M_PI + gearRotation * 180.f / (float)M_PI + g * 45.f);
+            window.draw(tooth);
+        }
+        // Centro ingranaggio (perno)
+        sf::CircleShape gearHub(6.f);
+        gearHub.setFillColor(COL_GOLD);
+        gearHub.setPosition(gx - 6.f, gy - 6.f);
+        window.draw(gearHub);
+    }
+
+    // --- Piattaforma frontale (dove stanno i personaggi) ---
+    // Una piattaforma di roccia piu' chiara sopra la ruota, nella parte frontale.
+    float platformY = centerY - wheelRadius * 0.3f;
+    sf::ConvexShape platform;
+    platform.setPointCount(6);
+    platform.setPoint(0, sf::Vector2f(centerX - 200.f, platformY + 20.f));
+    platform.setPoint(1, sf::Vector2f(centerX - 180.f, platformY));
+    platform.setPoint(2, sf::Vector2f(centerX + 180.f, platformY));
+    platform.setPoint(3, sf::Vector2f(centerX + 200.f, platformY + 20.f));
+    platform.setPoint(4, sf::Vector2f(centerX + 160.f, platformY + 40.f));
+    platform.setPoint(5, sf::Vector2f(centerX - 160.f, platformY + 40.f));
+    platform.setFillColor(COL_ROCK_LIGHT);
+    platform.setOutlineThickness(3.f);
+    platform.setOutlineColor(COL_ROCK_DARK);
+    window.draw(platform);
+
+    // --- Personaggi sulla piattaforma (carousel) ---
+    // Scale AUMENTATE per visibilita': centro 2.2 (era 1.0), laterali 1.6 (era 0.7),
+    // esterni 1.0 (era 0.4). Personaggi molto piu' grandi e visibili.
+    float spacing = 200.f;
     for (int offset = -2; offset <= 2; offset++) {
         int charIdx = (wheelIndex + offset + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
         CharacterType ct = (CharacterType)charIdx;
 
         float x = centerX + offset * spacing;
-        float y = centerY;
+        float y = platformY - 20.f;  // sopra la piattaforma
         float scale;
         sf::Uint8 alpha;
-        if (offset == 0) { scale = 1.0f; alpha = 255; }
-        else if (abs(offset) == 1) { scale = 0.7f; alpha = 180; }
-        else { scale = 0.4f; alpha = 100; }
+        if (offset == 0) { scale = 2.2f; alpha = 255; }       // centro: GRANDE (era 1.0)
+        else if (abs(offset) == 1) { scale = 1.6f; alpha = 200; }  // laterali (era 0.7)
+        else { scale = 1.0f; alpha = 120; }                        // esterni (era 0.4)
 
         // Tint: P1 = bianco, P2 = bluastro
         sf::Color tint = getPlayerTint(selectPlayerStep + 1);
@@ -3165,31 +3276,43 @@ void Game::drawSelectPlayer() {
             tint = getPlayerTint(2);
         }
 
-        // Piattaforma (cerchio ellittico ai piedi)
-        sf::CircleShape platform(40.f * scale);
-        platform.setFillColor(sf::Color(60, 50, 40, alpha));
-        platform.setOutlineThickness(2.f);
-        platform.setOutlineColor(sf::Color(120, 90, 50, alpha));
-        platform.setScale(1.f, 0.3f);
-        platform.setPosition(x - 40.f * scale, y + 30.f * scale);
-        window.draw(platform);
+        // Ombra del personaggio sulla piattaforma
+        sf::CircleShape charShadow(30.f * scale);
+        charShadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b, alpha * 0.4f));
+        charShadow.setScale(1.f, 0.3f);
+        charShadow.setPosition(x - 30.f * scale, platformY + 35.f);
+        window.draw(charShadow);
 
-        // Disegna anteprima personaggio
-        drawCharacterPreview(window, ct, x, y + 10.f, scale, tint, alpha);
+        // Disegna anteprima personaggio (ora molto piu' grande)
+        drawCharacterPreview(window, ct, x, y, scale, tint, alpha);
+
+        // Highlight per il personaggio centrale (selezione corrente)
+        if (offset == 0) {
+            // Freccia indicatrice sopra il personaggio
+            float arrowY = y - 80.f * scale;
+            sf::ConvexShape arrow;
+            arrow.setPointCount(3);
+            arrow.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                          (sf::Uint8)(200 + sinf(gearAnimTime * 5.f) * 55)));
+            arrow.setPoint(0, sf::Vector2f(x, arrowY + 15.f));
+            arrow.setPoint(1, sf::Vector2f(x - 12.f, arrowY));
+            arrow.setPoint(2, sf::Vector2f(x + 12.f, arrowY));
+            window.draw(arrow);
+        }
     }
 
-    // --- Nome personaggio corrente ---
+    // --- Nome personaggio corrente (sotto la ruota) ---
     std::string charName = getCharacterName((CharacterType)wheelIndex);
-    drawTextCenteredOutlined(window, charName, WINDOW_WIDTH/2, centerY + 100.f, 4, playerColor);
+    drawTextCenteredOutlined(window, charName, WINDOW_WIDTH/2, centerY + wheelRadius + 60.f, 5, playerColor);
 
     // --- Indicatore "P1 scelto: XXX" (in 2P, step 1) ---
     if (selectPlayerStep == 1) {
         std::string p1Info = "P1: " + getCharacterName(player1Character);
-        drawTextCenteredOutlined(window, p1Info, WINDOW_WIDTH/2, 280, 2, sf::Color(255, 215, 0));
+        drawTextCenteredOutlined(window, p1Info, WINDOW_WIDTH/2, 250, 3, sf::Color(255, 215, 0));
     }
 
     // --- Istruzioni in basso ---
-    drawTextCenteredOutlined(window, "ESC TO GO BACK", WINDOW_WIDTH/2, WINDOW_HEIGHT - 80, 2, sf::Color(120, 120, 120));
+    drawTextCenteredOutlined(window, "ESC TO GO BACK", WINDOW_WIDTH/2, WINDOW_HEIGHT - 50, 2, sf::Color(120, 120, 120));
 }
 
 // ---------------------------------------------------------------------------
