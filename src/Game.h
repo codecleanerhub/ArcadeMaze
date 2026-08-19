@@ -127,6 +127,19 @@ struct AshPile {
     float animTime;         // tempo per animazione particelle cenere
 };
 
+// Effetto esplosione di fuoco che appare quando il player invincibile tocca
+// un nemico. Sostituisce la vecchia logica "solo particelle triangolari" con
+// uno spritesheet PNG animato (effect_fireburst) + glow radiale procedurale
+// per dare un effetto fuoco realistico.
+// Viene creato in updateInvincible() e renderizzato da drawFireBursts().
+struct FireBurst {
+    sf::Vector2f pos;       // centro dell'esplosione
+    int life;               // vita residua in frame (60 frame = 1s)
+    int maxLife;
+    float animTime;          // tempo per animazione frame PNG
+    float scale;            // scala dello sprite (1 = nativo 64x64)
+};
+
 // Mina: oggetto sul pavimento che, se calpestato dal player, si attiva
 // e rimbalza. Se colpisce un nemico lo uccide e scompare.
 // Una sola mina per livello. Appare nel labirinto E nella stanza del boss.
@@ -217,6 +230,7 @@ private:
     int initialEnemyCount;                      // numero nemici iniziali (per calcolo 50%)
     std::vector<BloodStain> bloodStains;        // macchie di sangue temporanee
     std::vector<AshPile> ashPiles;              // mucchi di cenere (nemici bruciati)
+    std::vector<FireBurst> fireBursts;          // esplosioni di fuoco (nemici bruciati)
     Mine mine;                                   // mina sul pavimento (1 per livello)
     GoldenChalice chalice;                       // calice d'oro pozione magica (1 per livello)
     bool chaliceUsed;                            // true = calice gia' raccolto questo livello
@@ -341,6 +355,12 @@ private:
     // Colori palette 16: (220,160,40) oro, (200,80,80) rosso, (240,240,240)
     // cenere bianca. (pos) e' il centro del player, invTimer per pulsazione.
     void drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer);
+    // Disegna le esplosioni di fuoco create quando il player invincibile
+    // brucia un nemico. Usa spritesheet PNG (effect_fireburst) + glow radiale.
+    void drawFireBursts(sf::RenderTarget& target);
+    // Disegna i mucchi di cenere. Usa spritesheet PNG (effect_ashpile) +
+    // braci incandescenti + fumo procedurale.
+    void drawAshPiles(sf::RenderTarget& target);
 };
 
 #endif

@@ -135,6 +135,7 @@ void Game::startLevel(int lvl) {
     initialEnemyCount = (int)enemies.size();
     bloodStains.clear();
     ashPiles.clear();
+    fireBursts.clear();  // pulisce anche le esplosioni di fuoco residue
     // Reset del mini-boss (verra' generato al respawn del portale magico)
     if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
     miniBossSpawned = false;
@@ -1476,6 +1477,15 @@ void Game::update() {
         ashPiles.erase(std::remove_if(ashPiles.begin(), ashPiles.end(),
             [](const AshPile& ap) { return ap.life <= 0; }), ashPiles.end());
 
+        // --- Aggiornamento delle esplosioni di fuoco (FireBurst) ---
+        // Ogni FireBurst vive ~60 frame (1s) e viene rimosso quando scade.
+        for (auto& fb : fireBursts) {
+            fb.life--;
+            fb.animTime += 0.1f;
+        }
+        fireBursts.erase(std::remove_if(fireBursts.begin(), fireBursts.end(),
+            [](const FireBurst& fb) { return fb.life <= 0; }), fireBursts.end());
+
         // --- Aggiornamento del calice d'oro (pozione magica) ---
         if (chalice.active) {
             chalice.pulse += 0.016f;
@@ -1575,6 +1585,17 @@ void Game::update() {
                             // Diverso visualmente dal BloodStain (macchia piatta).
                             ashPiles.push_back({enemy.getPixelPos(), 500, 500,
                                 12.f + (rand()%6), 0.f});  // raggio 12-17, durata ~8.3s
+
+                            // --- ESPLOSIONE DI FUOCO (FireBurst) ---
+                            // NUOVO: aggiunge un effetto FireBurst che renderizza
+                            // lo spritesheet PNG (effect_fireburst) + glow radiale
+                            // multistrato. Vive 60 frame (1s). Sostituisce
+                            // visivamente la "nuvola di triangoli" che era poco
+                            // realistica. Le particelle triangolari sopra restano
+                            // come scintille secondarie, ma l'effetto principale
+                            // e' ora lo spritesheet PNG.
+                            fireBursts.push_back({enemy.getPixelPos(), 60, 60,
+                                0.f, 1.5f});  // pos, life=60, maxLife=60, animTime=0, scale=1.5
                         }
                     }
                 }
@@ -2755,82 +2776,361 @@ void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer
     const sf::Color COL_RED_D (160, 40, 40);     // bagliore interno
     const sf::Color COL_WHITE (240, 240, 240);   // scintille
     const sf::Color COL_DARK  (48, 40, 36);      // outline
+    const sf::Color COL_ORANGE(255, 100, 0);     // extra: orange brillante
 
     float invPulse = sin(invTimer * 0.01f) * 0.2f + 1.f;
     // Tempo per animazione fuoco (usa static per persistere tra i frame)
     static float fireAnimTime = 0.f;
     fireAnimTime += 0.08f;
 
+    // --- 0. Spritesheet PNG aura di fuoco (NUOVO) ---
+    // Usa lo spritesheet effect_fireaura (6x4 frame 64x64) con blend ADDITIVO
+    // per dare un effetto luminoso reale (il bianco del PNG si somma al
+    //背景 dando glow). L'animazione cicla i frame "idle" o "walk" in base
+    // allo stato del player. Lo sprite e' centrato (anchor 32,32).
+    static SpriteSheet fireAuraSprite;
+    static bool fireAuraLoaded = false;
+    if (!fireAuraLoaded) {
+        fireAuraLoaded = true;
+        fireAuraSprite.load("assets/sprites/effect_fireaura");
+    }
+    if (fireAuraSprite.isLoaded()) {
+        // Calcola frame animazione (cicla 6 frame idle/walk a 80ms)
+        int frameDuration = 80;
+        int frameCount = fireAuraSprite.getFrameCount("idle");
+        if (frameCount <= 0) frameCount = 6;
+        int frame = ((int)(fireAnimTime * 1000.f) / frameDuration) % frameCount;
+        // Scala in base alla pulse di invincibilita'
+        float spriteScale = 1.4f * invPulse;
+        // Disegna lo sprite centrato sul player. Il blend e' alpha (normale),
+        // ma i glow procedurali sottostanti danno luminosita' aggiuntiva.
+        fireAuraSprite.render(target, "idle", frame, pos.x, pos.y, spriteScale, false);
+    }
+
     // --- 1. Bagliore arancione pulsante (cerchio grande) ---
-    float glowR = 28.f * invPulse;
+    float glowR = 32.f * invPulse;
     sf::CircleShape glowOuter(glowR);
-    glowOuter.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 60));
+    glowOuter.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 70));
     glowOuter.setPosition(pos.x - glowR, pos.y - glowR);
     target.draw(glowOuter);
 
     // --- 2. Bagliore interno rosso-arancio (piu' piccolo, piu' intenso) ---
-    float innerR = 18.f * invPulse;
+    float innerR = 22.f * invPulse;
     sf::CircleShape glowInner(innerR);
-    glowInner.setFillColor(sf::Color(COL_RED_D.r, COL_RED_D.g, COL_RED_D.b, 90));
+    glowInner.setFillColor(sf::Color(COL_RED_D.r, COL_RED_D.g, COL_RED_D.b, 100));
     glowInner.setPosition(pos.x - innerR, pos.y - innerR);
     target.draw(glowInner);
 
-    // --- 3. 8 fiamme triangolari attorno al player ---
-    // Ogni fiamma e' un triangolo (ConvexShape) che punta verso l'alto,
-    // con altezza oscillante (sin) per effetto "fiamma che danza".
-    // Disposte a cerchio attorno al player.
-    for (int i = 0; i < 8; i++) {
-        float angle = (i / 8.f) * 2.f * (float)M_PI;
-        // Posizione base della fiamma (attorno al player, raggio 16px)
-        float fx = pos.x + cos(angle) * 16.f;
-        float fy = pos.y + sin(angle) * 16.f;
-        // Altezza della fiamma oscillante (8-16px)
-        float flameH = 8.f + sin(fireAnimTime + i * 0.7f) * 4.f + 4.f;
-        // Larghezza fiamma (4px)
-        float flameW = 4.f;
-        // Colore: alterna oro (base) e rosso (apice) per effetto fuoco
-        // Costruisce triangolo con 3 punti: base-sx, base-dx, punta-alto
+    // --- 3. Glow centrale oro ---
+    float midR = 14.f * invPulse;
+    sf::CircleShape glowMid(midR);
+    glowMid.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 90));
+    glowMid.setPosition(pos.x - midR, pos.y - midR);
+    target.draw(glowMid);
+
+    // --- 4. Fiamme procedurali attorno al player (mantenute per dynamism) ---
+    // 12 fiamme invece di 8, piu' piccole e dense, per dare "spessore" al
+    // fuoco attorno al player. Alternate oro/rosso per varieta'.
+    for (int i = 0; i < 12; i++) {
+        float angle = (i / 12.f) * 2.f * (float)M_PI;
+        float fx = pos.x + cos(angle) * 20.f;
+        float fy = pos.y + sin(angle) * 20.f;
+        float flameH = 10.f + sin(fireAnimTime + i * 0.7f) * 5.f + 5.f;
+        float flameW = 3.5f;
+        // Colore: alterna oro (base) e rosso (apice)
         sf::ConvexShape flame;
         flame.setPointCount(3);
         flame.setPoint(0, sf::Vector2f(fx - flameW, fy));
         flame.setPoint(1, sf::Vector2f(fx + flameW, fy));
-        flame.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 2.f,
+        flame.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 3.f,
                                         fy - flameH));
-        flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 200));
+        flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 220));
         flame.setOutlineThickness(0.3f);
         flame.setOutlineColor(sf::Color(COL_RED_D.r, COL_RED_D.g, COL_RED_D.b, 180));
         target.draw(flame);
-        // Apice rosso della fiamma (piu' piccolo, sopra)
+        // Apice rosso
         sf::ConvexShape flameTip;
         flameTip.setPointCount(3);
         float tipH = flameH * 0.6f;
         flameTip.setPoint(0, sf::Vector2f(fx - flameW * 0.6f, fy - flameH * 0.4f));
         flameTip.setPoint(1, sf::Vector2f(fx + flameW * 0.6f, fy - flameH * 0.4f));
-        flameTip.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 2.f,
+        flameTip.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 3.f,
                                            fy - flameH - tipH * 0.3f));
-        flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b, 220));
+        flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b, 230));
         target.draw(flameTip);
     }
 
-    // --- 4. Scintille bianche che salgono ---
-    // 5 scintille piccole che fluttuano verso l'alto con animazione
-    for (int i = 0; i < 5; i++) {
-        float sparkX = pos.x + sin(fireAnimTime * 1.5f + i * 1.2f) * 12.f;
-        float sparkY = pos.y - 10.f - ((int)(fireAnimTime * 20.f + i * 8) % 30);
-        float sparkR = 1.f + sin(fireAnimTime + i) * 0.5f;
+    // --- 5. Scintille bianche che salgono ---
+    for (int i = 0; i < 8; i++) {
+        float sparkX = pos.x + sin(fireAnimTime * 1.5f + i * 1.2f) * 14.f;
+        float sparkY = pos.y - 10.f - ((int)(fireAnimTime * 20.f + i * 8) % 35);
+        float sparkR = 1.2f + sin(fireAnimTime + i) * 0.5f;
         sf::CircleShape spark(sparkR);
         spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
-                                      200 - (int)(fireAnimTime * 20.f + i * 8) % 30 * 6));
+                                      220 - (int)(fireAnimTime * 20.f + i * 8) % 35 * 6));
         spark.setPosition(sparkX - sparkR, sparkY - sparkR);
         target.draw(spark);
     }
 
-    // --- 5. Nucleo centrale luminoso (pulsante) ---
-    float coreR = 6.f * invPulse;
+    // --- 6. Nucleo centrale luminoso (pulsante) ---
+    float coreR = 8.f * invPulse;
     sf::CircleShape core(coreR);
-    core.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 150));
+    core.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 180));
     core.setPosition(pos.x - coreR, pos.y - coreR);
     target.draw(core);
+}
+
+// ---------------------------------------------------------------------------
+// drawFireBursts: disegna le esplosioni di fuoco sui nemici bruciati dal
+// player invincibile. Sostituisce la vecchia logica "solo particelle
+// triangolari" con uno spritesheet PNG animato (effect_fireburst) + glow
+// radiale procedurale multistrato per dare un effetto fuoco realistico.
+//
+// Ogni FireBurst vive ~60 frame (1 secondo) e cicla 24 frame dell'animazione
+// (6 frame per riga, 4 righe: idle/walk/attack/death). La fase cambia in
+// base al tempo di vita: prima meta' = espansione (row 0/1), picco = row 2,
+// dissipazione = row 3.
+// ---------------------------------------------------------------------------
+void Game::drawFireBursts(sf::RenderTarget& target) {
+    if (fireBursts.empty()) return;
+
+    // Palette
+    const sf::Color COL_GOLD  (220, 160, 40);
+    const sf::Color COL_RED_L (200, 80, 80);
+    const sf::Color COL_RED_D (160, 40, 40);
+    const sf::Color COL_WHITE (240, 240, 240);
+    const sf::Color COL_ORANGE(255, 100, 0);
+
+    // Carica lo spritesheet una tantum
+    static SpriteSheet fireBurstSprite;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        fireBurstSprite.load("assets/sprites/effect_fireburst");
+    }
+
+    for (const auto& fb : fireBursts) {
+        float lifeRatio = (float)fb.life / (float)fb.maxLife;  // 1 = inizio, 0 = fine
+        // Pulsa in base al tempo
+        float pulse = 1.0f + sin(fb.animTime * 0.3f) * 0.1f;
+
+        // --- 1. Glow radiale ampissimo (arancione, alpha basso) ---
+        float outerR = 28.f * fb.scale * pulse;
+        sf::CircleShape glowOuter(outerR);
+        glowOuter.setFillColor(sf::Color(COL_ORANGE.r, COL_ORANGE.g, COL_ORANGE.b,
+                                          (sf::Uint8)(70 * lifeRatio)));
+        glowOuter.setPosition(fb.pos.x - outerR, fb.pos.y - outerR);
+        target.draw(glowOuter);
+
+        // --- 2. Glow medio (rosso) ---
+        float midR = 20.f * fb.scale * pulse;
+        sf::CircleShape glowMid(midR);
+        glowMid.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
+                                        (sf::Uint8)(100 * lifeRatio)));
+        glowMid.setPosition(fb.pos.x - midR, fb.pos.y - midR);
+        target.draw(glowMid);
+
+        // --- 3. Glow interno (oro) ---
+        float innerR = 12.f * fb.scale * pulse;
+        sf::CircleShape glowInner(innerR);
+        glowInner.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                          (sf::Uint8)(140 * lifeRatio)));
+        glowInner.setPosition(fb.pos.x - innerR, fb.pos.y - innerR);
+        target.draw(glowInner);
+
+        // --- 4. Core bianco centrale ---
+        float coreR = 6.f * fb.scale * pulse;
+        sf::CircleShape core(coreR);
+        core.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                     (sf::Uint8)(180 * lifeRatio)));
+        core.setPosition(fb.pos.x - coreR, fb.pos.y - coreR);
+        target.draw(core);
+
+        // --- 5. Spritesheet PNG animato (effetto fuoco avanzato) ---
+        if (fireBurstSprite.isLoaded()) {
+            // Selezione animazione in base alla fase di vita
+            std::string animName = "idle";
+            int frameDuration = 50;
+            // Prima 25% vita: idle (inizio espansione)
+            // 25-50%: walk (espansione massima)
+            // 50-75%: attack (picco)
+            // 75-100%: death (dissipazione)
+            if (lifeRatio > 0.75f) animName = "idle";
+            else if (lifeRatio > 0.5f) animName = "walk";
+            else if (lifeRatio > 0.25f) animName = "attack";
+            else animName = "death";
+            int frameCount = fireBurstSprite.getFrameCount(animName);
+            if (frameCount <= 0) {
+                animName = "idle";
+                frameCount = fireBurstSprite.getFrameCount(animName);
+            }
+            if (frameCount > 0) {
+                int elapsed = (int)((fb.maxLife - fb.life) * 50);  // ms simulati
+                int frame = (elapsed / frameDuration) % frameCount;
+                // Scala: cresce durante l'espansione, decresce nella dissipazione
+                float spriteScale = fb.scale * (1.2f + (1.0f - lifeRatio) * 0.5f);
+                // Tint con fade alpha in base al life ratio
+                sf::Color tint(255, 255, 255, (sf::Uint8)(255 * lifeRatio));
+                fireBurstSprite.render(target, animName, frame,
+                                        fb.pos.x, fb.pos.y, spriteScale, false, tint);
+            }
+        }
+
+        // --- 6. Scintille bianche che volano fuori (procedurali, per dynamism) ---
+        for (int i = 0; i < 6; i++) {
+            float angle = (i / 6.f) * 2.f * (float)M_PI + fb.animTime * 0.5f;
+            float dist = (1.0f - lifeRatio) * 30.f * fb.scale;
+            float sx = fb.pos.x + cos(angle) * dist;
+            float sy = fb.pos.y + sin(angle) * dist - (1.0f - lifeRatio) * 10.f;
+            sf::CircleShape spark(1.5f);
+            spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                          (sf::Uint8)(220 * lifeRatio)));
+            spark.setPosition(sx - 1.5f, sy - 1.5f);
+            target.draw(spark);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// drawAshPiles: disegna i mucchi di cenere con spritesheet PNG avanzato
+// (effect_ashpile) + braci incandescenti pulsanti + fumo procedurale.
+// Sostituisce la vecchia logica "3 cerchi schiacciati" con un rendering
+// molto piu' realistico.
+// ---------------------------------------------------------------------------
+void Game::drawAshPiles(sf::RenderTarget& target) {
+    if (ashPiles.empty()) return;
+
+    // Palette
+    const sf::Color COL_ASH_LIGHT(200, 180, 160);
+    const sf::Color COL_ASH_DARK (120, 100, 90);
+    const sf::Color COL_ASH_MID  (160, 128, 112);
+    const sf::Color COL_SOOT     (48, 40, 36);
+    const sf::Color COL_BLACK    (12, 12, 12);
+    const sf::Color COL_RED_L    (200, 80, 80);
+    const sf::Color COL_GOLD     (220, 160, 40);
+    const sf::Color COL_SMOKE    (180, 170, 160);
+
+    // Carica lo spritesheet una tantum
+    static SpriteSheet ashPileSprite;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        ashPileSprite.load("assets/sprites/effect_ashpile");
+    }
+
+    for (const auto& ap : ashPiles) {
+        float lifeRatio = (float)ap.life / (float)ap.maxLife;
+        if (lifeRatio < 0.f) lifeRatio = 0.f;
+        sf::Uint8 alpha = (sf::Uint8)(255 * lifeRatio);
+
+        // --- 1. Ombra sul pavimento (schiacciata) ---
+        float shadowR = ap.radius * 1.4f;
+        sf::CircleShape shadow(shadowR);
+        shadow.setFillColor(sf::Color(COL_BLACK.r, COL_BLACK.g, COL_BLACK.b,
+                                        (sf::Uint8)(100 * lifeRatio)));
+        shadow.setScale(1.3f, 0.4f);
+        shadow.setPosition(ap.pos.x - shadowR, ap.pos.y - shadowR * 0.4f);
+        target.draw(shadow);
+
+        // --- 2. Spritesheet PNG del mucchio di cenere ---
+        if (ashPileSprite.isLoaded()) {
+            // Selezione animazione in base alla fase di vita
+            std::string animName = "idle";
+            if (lifeRatio > 0.75f) animName = "idle";       // fresco
+            else if (lifeRatio > 0.5f) animName = "walk";   // smoldering
+            else if (lifeRatio > 0.25f) animName = "attack"; // cooling
+            else animName = "death";                          // old
+            int frameCount = ashPileSprite.getFrameCount(animName);
+            if (frameCount <= 0) {
+                animName = "idle";
+                frameCount = ashPileSprite.getFrameCount(animName);
+            }
+            if (frameCount > 0) {
+                int frameDuration = 200;
+                int frame = ((int)(ap.animTime * 1000.f) / frameDuration) % frameCount;
+                // Scala in base al raggio (sprite 64x64 -> size reale)
+                float spriteScale = ap.radius / 24.f;  // 24 = meta' di 48 (frame width)
+                if (spriteScale < 0.8f) spriteScale = 0.8f;
+                // Tint con fade alpha
+                sf::Color tint(255, 255, 255, alpha);
+                ashPileSprite.render(target, animName, frame,
+                                      ap.pos.x, ap.pos.y, spriteScale, false, tint);
+            }
+        } else {
+            // Fallback se lo sprite non e' caricato: 3 cerchi schiacciati
+            // (vecchio comportamento, per robustezza)
+            sf::CircleShape pile(ap.radius);
+            pile.setFillColor(sf::Color(COL_ASH_DARK.r, COL_ASH_DARK.g, COL_ASH_DARK.b, alpha));
+            pile.setScale(1.2f, 0.5f);
+            pile.setPosition(ap.pos.x - ap.radius, ap.pos.y - ap.radius * 0.5f);
+            target.draw(pile);
+            sf::CircleShape pileMid(ap.radius * 0.7f);
+            pileMid.setFillColor(sf::Color(COL_ASH_MID.r, COL_ASH_MID.g, COL_ASH_MID.b, alpha));
+            pileMid.setScale(1.f, 0.6f);
+            pileMid.setPosition(ap.pos.x - ap.radius * 0.7f, ap.pos.y - ap.radius * 0.6f);
+            target.draw(pileMid);
+            sf::CircleShape pileTop(ap.radius * 0.4f);
+            pileTop.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g, COL_ASH_LIGHT.b, alpha));
+            pileTop.setPosition(ap.pos.x - ap.radius * 0.4f, ap.pos.y - ap.radius * 0.8f);
+            target.draw(pileTop);
+        }
+
+        // --- 3. Braci incandescenti (puntini rossi/oro che brillano) ---
+        // Solo nei primi 75% della vita (poi si spengono)
+        if (lifeRatio > 0.25f) {
+            float emberPulse = 0.7f + 0.3f * sin(ap.animTime * 5.f);
+            float emberAlpha = (lifeRatio - 0.25f) / 0.75f;  // 1 quando fresco, 0 quando spento
+            for (int i = 0; i < 4; i++) {
+                float angle = (i / 4.f) * 2.f * (float)M_PI + ap.animTime * 0.3f;
+                float ex = ap.pos.x + cos(angle) * ap.radius * 0.4f;
+                float ey = ap.pos.y - 4.f + sin(angle) * ap.radius * 0.2f - i * 2.f;
+                // Glow attorno alla brace
+                float glowR = 3.f * emberPulse;
+                sf::CircleShape emberGlow(glowR);
+                emberGlow.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
+                                                   (sf::Uint8)(80 * emberAlpha)));
+                emberGlow.setPosition(ex - glowR, ey - glowR);
+                target.draw(emberGlow);
+                // Centro brace (rosso acceso)
+                sf::CircleShape emberCore(1.f);
+                emberCore.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                                   (sf::Uint8)(255 * emberAlpha)));
+                emberCore.setPosition(ex - 1.f, ey - 1.f);
+                target.draw(emberCore);
+            }
+        }
+
+        // --- 4. Fumo che sale (particelle grigie) ---
+        // Solo nei primi 60% della vita
+        if (lifeRatio > 0.4f) {
+            float smokeAlpha = (lifeRatio - 0.4f) / 0.6f;  // 1 quando fresco
+            for (int i = 0; i < 5; i++) {
+                float sx = ap.pos.x + sin(ap.animTime + i * 2.f) * ap.radius * 0.5f;
+                float sy = ap.pos.y - 8.f - ((int)(ap.animTime * 30.f + i * 20) % 40);
+                float sr = 2.f + i * 0.5f;
+                sf::CircleShape smoke(sr);
+                smoke.setFillColor(sf::Color(COL_SMOKE.r, COL_SMOKE.g, COL_SMOKE.b,
+                                               (sf::Uint8)(100 * smokeAlpha * (1.f - i * 0.15f))));
+                smoke.setPosition(sx - sr, sy - sr);
+                target.draw(smoke);
+            }
+        }
+
+        // --- 5. Detriti di carbone (pezzi scuri attorno al mucchio) ---
+        for (int i = 0; i < 5; i++) {
+            float angle = (i / 5.f) * 2.f * (float)M_PI + 0.5f;
+            float dist = ap.radius * 1.1f;
+            float dx = ap.pos.x + cos(angle) * dist;
+            float dy = ap.pos.y + sin(angle) * dist * 0.4f;  // schiacciato (pavimento)
+            sf::RectangleShape debris(sf::Vector2f(3.f, 2.f));
+            debris.setFillColor(sf::Color(COL_SOOT.r, COL_SOOT.g, COL_SOOT.b,
+                                           (sf::Uint8)(200 * lifeRatio)));
+            debris.setOrigin(1.5f, 1.f);
+            debris.setPosition(dx, dy);
+            debris.rotate(angle * 180.f / (float)M_PI);
+            target.draw(debris);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3767,71 +4067,14 @@ void Game::render() {
         }
 
         // --- Mucchi di cenere (nemici bruciati dal player invincibile) ---
-        // Diversi visualmente dalle macchie di sangue:
-        //   * Forma a MUCCHIO (3 cerchi sovrapposti: base larga + 2 piccoli)
-        //   * Colore grigio-beige chiaro (palette 16: 200,180,160)
-        //   * Particelle di cenere che si sollevano lentamente verso l'alto
-        //   * Piu' duraturi del sangue (i resti bruciati restano di piu')
-        for (const auto& ap : ashPiles) {
-            float alpha = 220.f * (float)ap.life / (float)ap.maxLife;
-            if (alpha < 0) alpha = 0;
-            // Palette 16 colori per la cenere
-            const sf::Color COL_ASH_LIGHT(200, 180, 160);  // beige chiaro
-            const sf::Color COL_ASH_DARK (120, 100, 90);   // grigio cenere scuro
-            const sf::Color COL_ASH_MID  (160, 128, 112);  // cenere medio
-            // --- Mucchio base (cerchio grande schiacciato) ---
-            sf::CircleShape pile(ap.radius);
-            pile.setFillColor(sf::Color(COL_ASH_DARK.r, COL_ASH_DARK.g,
-                                         COL_ASH_DARK.b, (sf::Uint8)alpha));
-            pile.setScale(1.2f, 0.5f);  // schiacciato (mucchio sul pavimento)
-            pile.setPosition(ap.pos.x - ap.radius, ap.pos.y - ap.radius * 0.5f);
-            window.draw(pile);
-            // --- Mucchio medio (sopra la base, piu' chiaro) ---
-            sf::CircleShape pileMid(ap.radius * 0.7f);
-            pileMid.setFillColor(sf::Color(COL_ASH_MID.r, COL_ASH_MID.g,
-                                            COL_ASH_MID.b, (sf::Uint8)alpha));
-            pileMid.setScale(1.f, 0.6f);
-            pileMid.setPosition(ap.pos.x - ap.radius * 0.7f,
-                                 ap.pos.y - ap.radius * 0.6f);
-            window.draw(pileMid);
-            // --- Cima del mucchio (piccola, piu' chiara) ---
-            sf::CircleShape pileTop(ap.radius * 0.4f);
-            pileTop.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
-                                            COL_ASH_LIGHT.b, (sf::Uint8)alpha));
-            pileTop.setPosition(ap.pos.x - ap.radius * 0.4f,
-                                 ap.pos.y - ap.radius * 0.8f);
-            window.draw(pileTop);
-            // --- Pezzetti di cenere sparsi attorno (4 detriti) ---
-            for (int i = 0; i < 4; i++) {
-                float angle = i * (float)M_PI / 2.f + ap.animTime * 0.1f;
-                float dist = ap.radius * 1.3f;
-                float dx = ap.pos.x + cos(angle) * dist;
-                float dy = ap.pos.y + sin(angle) * dist * 0.4f;
-                float dr = ap.radius * 0.2f;
-                sf::RectangleShape debris(sf::Vector2f(dr * 2.f, dr * 2.f));
-                debris.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
-                                               COL_ASH_LIGHT.b,
-                                               (sf::Uint8)(alpha * 0.6f)));
-                debris.setPosition(dx - dr, dy - dr);
-                debris.rotate(angle * 180.f / (float)M_PI);
-                window.draw(debris);
-            }
-            // --- Particelle di cenere che si sollevano (animazione) ---
-            // 3 particelle piccole che salgono lentamente verso l'alto
-            // con movimento sinusoidale (effetto "fumo che sale")
-            for (int i = 0; i < 3; i++) {
-                float sparkX = ap.pos.x + sin(ap.animTime + i * 2.f) * ap.radius * 0.5f;
-                float sparkY = ap.pos.y - ((int)(ap.animTime * 30.f + i * 20) % 40);
-                float sparkR = 1.5f;
-                sf::Uint8 sparkAlpha = (sf::Uint8)(alpha * 0.5f *
-                    (1.f - (int)(ap.animTime * 30.f + i * 20) % 40 / 40.f));
-                sf::CircleShape ashSpark(sparkR);
-                ashSpark.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
-                                                 COL_ASH_LIGHT.b, sparkAlpha));
-                ashSpark.setPosition(sparkX - sparkR, sparkY - sparkR);
-                window.draw(ashSpark);
-            }
-        }
+        // Renderizzato tramite drawAshPiles() che usa spritesheet PNG avanzato
+        // (effect_ashpile) + braci incandescenti + fumo procedurale.
+        drawAshPiles(window);
+
+        // --- Esplosioni di fuoco (nemici bruciati dal player invincibile) ---
+        // Renderizzato tramite drawFireBursts() che usa spritesheet PNG
+        // avanzato (effect_fireburst) + glow radiale multistrato.
+        drawFireBursts(window);
 
         // --- Rendering dello scettro magico (stile Gandalf) ---
         // Disegna il bastone di Gandalf: legno intagliato lungo, gemma
@@ -6204,60 +6447,13 @@ void Game::render() {
         }
 
         // --- Mucchi di cenere sul pavimento (stanza del boss) ---
-        // Stesso rendering di STATE_PLAYING: mucchio a 3 strati + detriti +
-        // particelle di cenere che salgono.
-        for (const auto& ap : ashPiles) {
-            float alpha = 220.f * (float)ap.life / (float)ap.maxLife;
-            if (alpha < 0) alpha = 0;
-            const sf::Color COL_ASH_LIGHT(200, 180, 160);
-            const sf::Color COL_ASH_DARK (120, 100, 90);
-            const sf::Color COL_ASH_MID  (160, 128, 112);
-            sf::CircleShape pile(ap.radius);
-            pile.setFillColor(sf::Color(COL_ASH_DARK.r, COL_ASH_DARK.g,
-                                         COL_ASH_DARK.b, (sf::Uint8)alpha));
-            pile.setScale(1.2f, 0.5f);
-            pile.setPosition(ap.pos.x - ap.radius, ap.pos.y - ap.radius * 0.5f);
-            window.draw(pile);
-            sf::CircleShape pileMid(ap.radius * 0.7f);
-            pileMid.setFillColor(sf::Color(COL_ASH_MID.r, COL_ASH_MID.g,
-                                            COL_ASH_MID.b, (sf::Uint8)alpha));
-            pileMid.setScale(1.f, 0.6f);
-            pileMid.setPosition(ap.pos.x - ap.radius * 0.7f,
-                                 ap.pos.y - ap.radius * 0.6f);
-            window.draw(pileMid);
-            sf::CircleShape pileTop(ap.radius * 0.4f);
-            pileTop.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
-                                            COL_ASH_LIGHT.b, (sf::Uint8)alpha));
-            pileTop.setPosition(ap.pos.x - ap.radius * 0.4f,
-                                 ap.pos.y - ap.radius * 0.8f);
-            window.draw(pileTop);
-            for (int i = 0; i < 4; i++) {
-                float angle = i * (float)M_PI / 2.f + ap.animTime * 0.1f;
-                float dist = ap.radius * 1.3f;
-                float dx = ap.pos.x + cos(angle) * dist;
-                float dy = ap.pos.y + sin(angle) * dist * 0.4f;
-                float dr = ap.radius * 0.2f;
-                sf::RectangleShape debris(sf::Vector2f(dr * 2.f, dr * 2.f));
-                debris.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
-                                               COL_ASH_LIGHT.b,
-                                               (sf::Uint8)(alpha * 0.6f)));
-                debris.setPosition(dx - dr, dy - dr);
-                debris.rotate(angle * 180.f / (float)M_PI);
-                window.draw(debris);
-            }
-            for (int i = 0; i < 3; i++) {
-                float sparkX = ap.pos.x + sin(ap.animTime + i * 2.f) * ap.radius * 0.5f;
-                float sparkY = ap.pos.y - ((int)(ap.animTime * 30.f + i * 20) % 40);
-                float sparkR = 1.5f;
-                sf::Uint8 sparkAlpha = (sf::Uint8)(alpha * 0.5f *
-                    (1.f - (int)(ap.animTime * 30.f + i * 20) % 40 / 40.f));
-                sf::CircleShape ashSpark(sparkR);
-                ashSpark.setFillColor(sf::Color(COL_ASH_LIGHT.r, COL_ASH_LIGHT.g,
-                                                 COL_ASH_LIGHT.b, sparkAlpha));
-                ashSpark.setPosition(sparkX - sparkR, sparkY - sparkR);
-                window.draw(ashSpark);
-            }
-        }
+        // Renderizzato tramite drawAshPiles() (stesso metodo di STATE_PLAYING)
+        // che usa spritesheet PNG avanzato (effect_ashpile) + braci + fumo.
+        drawAshPiles(window);
+
+        // --- Esplosioni di fuoco (nemici bruciati dal player invincibile) ---
+        // Renderizzato tramite drawFireBursts() (stesso metodo di STATE_PLAYING).
+        drawFireBursts(window);
         player.render(window);
         if (numPlayers == 2) player2.render(window);
         boss->render(window);
