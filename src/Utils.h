@@ -16,6 +16,10 @@
 #include <string>
 #include <vector>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // --- Dimensioni finestra e griglia di gioco -------------------------------
 // La finestra logica e' quadrata 1024x1024; l'area di gioco e' posta sotto
 // la barra UI di 80 px (UI_HEIGHT). Il labirinto occupa 21 colonne x 19 righe
