@@ -673,20 +673,28 @@ void MiniBoss::renderPrimitives(sf::RenderTarget& target) const {
         }
     }
 
-    // --- Barra HP (sopra la testa) ---
-    if (health < maxHealth) {
-        float barW = (float)size * 0.8f;
-        float barH = 3.f;
-        float barY = cy - bodyH / 2.f - headR - 6.f;
+    // --- Barra HP ROSSA (sopra la testa, sempre visibile) ---
+    // FIX: barra sempre rossa (richiesta utente) e sempre visualizzata
+    // (non solo quando health < maxHealth) per dare feedback immediato
+    // del danno inflitto al mini-boss.
+    {
+        float barW = (float)size * 0.9f;  // leggermente piu' larga
+        float barH = 4.f;                // leggermente piu' alta (visibilita')
+        float barY = cy - bodyH / 2.f - headR - 8.f;
         // Sfondo (nero)
         sf::RectangleShape bg(sf::Vector2f(barW, barH));
         bg.setFillColor(COL_BLACK);
+        bg.setOutlineThickness(1.f);
+        bg.setOutlineColor(sf::Color(60, 0, 0));  // outline rosso scuro
         bg.setPosition(cx - barW / 2.f, barY);
         target.draw(bg);
-        // HP (rosso -> verde in base alla percentuale)
+        // HP sempre ROSSO (colore fisso, richiesta utente)
         float hpRatio = (float)health / (float)maxHealth;
-        sf::Color hpColor = (hpRatio > 0.5f) ? COL_GREEN_L :
-                            (hpRatio > 0.25f) ? COL_GOLD : COL_RED;
+        if (hpRatio < 0.f) hpRatio = 0.f;
+        // Colore: rosso acceso quando > 50%, rosso scuro quando < 50%
+        // (per dare feedback sulla gravita' del danno pur restando rosso)
+        sf::Color hpColor = (hpRatio > 0.5f) ? sf::Color(220, 60, 60) :  // rosso vivo
+                                             sf::Color(160, 40, 40);     // rosso scuro
         sf::RectangleShape hp(sf::Vector2f(barW * hpRatio, barH));
         hp.setFillColor(hpColor);
         hp.setPosition(cx - barW / 2.f, barY);
@@ -790,20 +798,25 @@ void MiniBoss::render(sf::RenderTarget& target) const {
         aura.setPosition(pos.x - auraR, pos.y - auraR);
         target.draw(aura);
 
-        // --- Barra HP (sopra la testa) ---
-        if (health < maxHealth) {
-            // Barra piu' larga per adattarsi allo sprite piu' grande
-            float barW = (float)size * 0.8f * scale;
-            float barH = 3.f;
-            float barY = pos.y - (float)size * scale / 2.f - 8.f;
+        // --- Barra HP ROSSA (sopra la testa, sempre visibile) ---
+        // FIX: barra sempre rossa (richiesta utente) e sempre visualizzata
+        // per dare feedback immediato del danno inflitto al mini-boss.
+        {
+            float barW = (float)size * 0.9f * scale;  // piu' larga, scalata
+            float barH = 4.f;                        // piu' alta
+            float barY = pos.y - (float)size * scale / 2.f - 10.f;
             sf::RectangleShape bg(sf::Vector2f(barW, barH));
             bg.setFillColor(sf::Color(12, 12, 12));
+            bg.setOutlineThickness(1.f);
+            bg.setOutlineColor(sf::Color(60, 0, 0));  // outline rosso scuro
             bg.setPosition(pos.x - barW / 2.f, barY);
             target.draw(bg);
             float hpRatio = (float)health / (float)maxHealth;
-            sf::Color hpColor = (hpRatio > 0.5f) ? sf::Color(80, 120, 100) :
-                                (hpRatio > 0.25f) ? sf::Color(220, 160, 40) :
-                                                    sf::Color(160, 40, 40);
+            if (hpRatio < 0.f) hpRatio = 0.f;
+            // Colore: sempre ROSSO (richiesta utente)
+            // Rosso vivo quando > 50%, rosso scuro quando < 50%
+            sf::Color hpColor = (hpRatio > 0.5f) ? sf::Color(220, 60, 60) :  // rosso vivo
+                                                 sf::Color(160, 40, 40);     // rosso scuro
             sf::RectangleShape hp(sf::Vector2f(barW * hpRatio, barH));
             hp.setFillColor(hpColor);
             hp.setPosition(pos.x - barW / 2.f, barY);

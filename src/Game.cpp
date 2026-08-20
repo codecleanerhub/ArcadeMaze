@@ -1503,8 +1503,12 @@ void Game::update() {
             if (p1Hit || p2Hit) {
                 chalice.active = false;
                 chaliceUsed = true;
-                if (p1Hit) playerInvincibleTimer = 10000;
-                if (p2Hit) player2InvincibleTimer = 10000;
+                // Durata invincibilita': 10000 ms = 10 secondi (valore originale).
+                // FIX: aumentata del 50% -> 15000 ms = 15 secondi (richiesta utente).
+                // Questo da' piu' tempo al player per bruciare nemici dopo aver
+                // bevuto il calice.
+                if (p1Hit) playerInvincibleTimer = 15000;
+                if (p2Hit) player2InvincibleTimer = 15000;
                 audio.playSound(SOUND_POTION_DRINK);
                 // Avvia il jingle epico DEDICATO del calice (fanfara eroica
                 // dorata, ~6s). Suona su un canale SEPARATO (epicSound), NON
@@ -1787,6 +1791,37 @@ void Game::update() {
                     break;
                 }
             }
+            // FIX: controlla collisione anche con il mini-boss (se presente e vivo)
+            // Prima la mina non collideva col mini-boss, ora sì. La mina fa
+            // 25 danni al mini-boss (non 999 come i nemici normali, altrimenti
+            // lo uccide con un solo colpo). Il mini-boss ha 18-35 HP, quindi
+            // servono 1-2 mine per ucciderlo (bilanciato).
+            if (mine.active && mine.bouncing && miniBoss && !miniBoss->isDead()) {
+                float dx = mine.pos.x - miniBoss->getPixelPos().x;
+                float dy = mine.pos.y - miniBoss->getPixelPos().y;
+                // Raggio collisione piu' largo del mini-boss (e' piu' grande)
+                if (dx * dx + dy * dy < 800) {
+                    // Danno al mini-boss (25 HP per mina)
+                    miniBoss->takeDamage(25);
+                    player.addScore(1000);
+                    audio.playSound(SOUND_ENEMY_EXPLODE);
+                    audio.playSound(SOUND_BLOOD_SPLAT);
+                    // Esplosione + scintille dorate (mini-boss e' piu' resistente)
+                    for (int i = 0; i < 30; i++)
+                        particles.push_back({miniBoss->getPixelPos(),
+                            {(float)(rand()%12-6), (float)(rand()%12-6)},
+                            sf::Color(220, 160, 40), 35, 35});  // oro
+                    for (int i = 0; i < 15; i++)
+                        particles.push_back({miniBoss->getPixelPos(),
+                            {(float)(rand()%14-7), (float)(rand()%14-7)},
+                            sf::Color(200, 80, 80), 30, 30});  // rosso
+                    // Esplosione mina
+                    for (int i = 0; i < 20; i++)
+                        particles.push_back({mine.pos, {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(255, 200, 50), 30, 30});
+                    mine.active = false;
+                    mine.bouncing = false;
+                }
+            }
 
             // Timer: dopo 8 secondi senza colpire nemici, scompare
             if (mine.bouncing) {
@@ -1872,6 +1907,63 @@ void Game::update() {
                         particles.push_back({mine.pos, {(float)(rand()%12-6), (float)(rand()%12-6)}, sf::Color(255, 200, 50), 30, 30});
                     mine.active = false;
                     mine.bouncing = false;
+                }
+                // FIX: controlla collisione anche con i nemici normali residui
+                // (nella stanza del boss potrebbero esserci nemici provenienti
+                // dal portale o residui). Prima la mina li ignorava.
+                if (mine.active && mine.bouncing) {
+                    for (auto& enemy : enemies) {
+                        if (enemy.isDead()) continue;
+                        float edx = mine.pos.x - enemy.getPixelPos().x;
+                        float edy = mine.pos.y - enemy.getPixelPos().y;
+                        if (edx * edx + edy * edy < 500) {
+                            enemy.takeDamage(999);
+                            player.addScore(5000);
+                            audio.playSound(SOUND_ENEMY_DEATH);
+                            audio.playSound(SOUND_ENEMY_EXPLODE);
+                            audio.playSound(SOUND_BLOOD_SPLAT);
+                            for (int i = 0; i < 25; i++)
+                                particles.push_back({enemy.getPixelPos(),
+                                    {(float)(rand()%10-5), (float)(rand()%10-5)},
+                                    sf::Color(150+rand()%50, 0, 0), 35, 35});
+                            bloodStains.push_back({enemy.getPixelPos(), 300, 300,
+                                8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
+                            for (int i = 0; i < 20; i++)
+                                particles.push_back({mine.pos,
+                                    {(float)(rand()%12-6), (float)(rand()%12-6)},
+                                    sf::Color(255, 200, 50), 30, 30});
+                            mine.active = false;
+                            mine.bouncing = false;
+                            break;
+                        }
+                    }
+                }
+                // FIX: controlla collisione anche con il mini-boss (se presente)
+                // nella stanza del boss. Il mini-boss ha 18-35 HP, la mina fa
+                // 25 danni (1-2 mine per ucciderlo).
+                if (mine.active && mine.bouncing && miniBoss && !miniBoss->isDead()) {
+                    float mdx = mine.pos.x - miniBoss->getPixelPos().x;
+                    float mdy = mine.pos.y - miniBoss->getPixelPos().y;
+                    if (mdx * mdx + mdy * mdy < 800) {
+                        miniBoss->takeDamage(25);
+                        player.addScore(1000);
+                        audio.playSound(SOUND_ENEMY_EXPLODE);
+                        audio.playSound(SOUND_BLOOD_SPLAT);
+                        for (int i = 0; i < 30; i++)
+                            particles.push_back({miniBoss->getPixelPos(),
+                                {(float)(rand()%12-6), (float)(rand()%12-6)},
+                                sf::Color(220, 160, 40), 35, 35});
+                        for (int i = 0; i < 15; i++)
+                            particles.push_back({miniBoss->getPixelPos(),
+                                {(float)(rand()%14-7), (float)(rand()%14-7)},
+                                sf::Color(200, 80, 80), 30, 30});
+                        for (int i = 0; i < 20; i++)
+                            particles.push_back({mine.pos,
+                                {(float)(rand()%12-6), (float)(rand()%12-6)},
+                                sf::Color(255, 200, 50), 30, 30});
+                        mine.active = false;
+                        mine.bouncing = false;
+                    }
                 }
                 // Timer
                 if (mine.bouncing) {
