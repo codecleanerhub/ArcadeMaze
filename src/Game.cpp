@@ -1552,6 +1552,29 @@ void Game::update() {
                             audio.playSound(SOUND_ENEMY_EXPLODE);
                         }
                     }
+                    // --- FIX: brucia anche il mini-boss se presente e vicino ---
+                    // In precedenza il mini-boss era IGNORATO dal calice: il player
+                    // invincibile poteva toccarlo senza subire danno ne' ferirlo.
+                    // Ora il mini-boss viene bruciato come i nemici normali, ma
+                    // con due differenze:
+                    //   1. Raggio collisione piu' grande (1200 invece di 600)
+                    //      perche' il mini-boss e' piu' grande
+                    //   2. Una singola "bruciatura" di 50 frame NON lo uccide:
+                    //      gli toglie ~40% HP. Servono 2-3 contatti per bruciarlo
+                    //      del tutto. La morte da bruciatura (quando HP <= 0)
+                    //      viene gestita sotto (come i nemici normali).
+                    if (miniBoss && !miniBoss->isDead() &&
+                        !miniBoss->isDying() && !miniBoss->isBurning()) {
+                        float dx = p.getPixelPos().x - miniBoss->getPixelPos().x;
+                        float dy = p.getPixelPos().y - miniBoss->getPixelPos().y;
+                        // Raggio piu' grande per il mini-boss (e' piu' grosso)
+                        if (dx * dx + dy * dy < 1200) {
+                            miniBoss->startBurning(50);
+                            // Score per il contatto (non per l'uccisione)
+                            p.addScore(2000);
+                            audio.playSound(SOUND_ENEMY_EXPLODE);
+                        }
+                    }
                 }
             }
         };
@@ -1585,6 +1608,38 @@ void Game::update() {
                 // vita 30 frame (0.5s, piu' breve del normale che era 60).
                 fireBursts.push_back({enemy.getPixelPos(), 30, 30,
                     0.f, 0.9f});  // pos, life=30, maxLife=30, animTime=0, scale=0.9
+            }
+        }
+
+        // --- FIX: Gestione morte mini-boss bruciato (burning -> ash) ---
+        // Come i nemici normali, il mini-boss che ha finito lo stato burning
+        // viene finalizzato qui. Tuttavia, una singola bruciatura NON lo
+        // uccide: gli toglie ~40% HP. Quando l'HP arriva a 0 (dopo 2-3
+        // bruciature), il mini-boss muore e diventa cenere + FireBurst.
+        if (miniBoss && !miniBoss->isDead() && !miniBoss->isDying() &&
+            !miniBoss->isBurning() && miniBoss->wasBurned()) {
+            // La fase burning e' finita. Infliggi il danno da bruciatura:
+            // ~40% HP del mini-boss (maxHealth / 2.5 ~= 40%).
+            int burnDmg = miniBoss->getMaxHealth() * 40 / 100;
+            if (burnDmg < 5) burnDmg = 5;  // minimo 5 danni
+            miniBoss->takeDamage(burnDmg);
+            miniBoss->clearBurnedFlag();
+            // Suono: fuoco che si spegne / danno subito
+            audio.playSound(SOUND_BLOOD_SPLAT);
+            // Piccolo FireBurst come feedback del danno subito
+            fireBursts.push_back({miniBoss->getPixelPos(), 25, 25,
+                0.f, 0.7f});
+            // Se il mini-boss e' morto per la bruciatura (HP <= 0):
+            // takeDamage ha impostato health = 0, ma il mini-boss non triggera
+            // automaticamente dyingTimer come Enemy. Impostiamolo a mano.
+            if (miniBoss->isDead()) {
+                // Crea cenere + FireBurst grande per la morte del mini-boss
+                ashPiles.push_back({miniBoss->getPixelPos(), 600, 600,
+                    18.f + (rand()%6), 0.f});  // raggio piu' grande dei nemici
+                // FireBurst piu' grande per il mini-boss (scale 1.2, vita 50)
+                fireBursts.push_back({miniBoss->getPixelPos(), 50, 50,
+                    0.f, 1.2f});
+                audio.playSound(SOUND_ENEMY_DEATH);
             }
         }
 

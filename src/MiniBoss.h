@@ -111,6 +111,26 @@ public:
     // True se il mini-boss sta attaccando in questo frame (per collisione danno).
     bool isAttacking() const { return attackingTimer > 0; }
 
+    // --- STATO BURNING (bruciatura da player invincibile) ---
+    // Come per Enemy: quando il player invincibile (calice) tocca il mini-boss,
+    // questo NON muore istantaneamente: entra in stato "burning" per
+    // `burningTimer` frame. Durante questo stato:
+    //   * Il mini-boss e' fermo (non si muove, non attacca)
+    //   * Sopra di esso viene disegnato un overlay di fiamme (sprite PNG
+    //     effect_fireaura + glow radiale multistrato + poche fiamme procedurali)
+    // A fine burning, il mini-boss muore (cenere + FireBurst finale).
+    // Poiche' il mini-boss e' piu' resistente dei nemici normali (18-35 HP),
+    // una singola "bruciatura" non lo uccide: gli toglie ~40% HP. Servono
+    // 2-3 contatti ravvicinati col player invincibile per bruciarlo del tutto.
+    bool isBurning() const { return burningTimer > 0; }
+    void startBurning(int frames = 50);  // accende per `frames` frame
+    // True se e' appena uscito dallo stato burning (burningTimer scaduto ma
+    // non ancora morto). Usato da Game per finalizzare la morte (cenere).
+    bool wasBurned() const { return burnedFlag; }
+    void clearBurnedFlag() { burnedFlag = false; }
+    // True se il mini-boss sta morendo (animazione morte in corso).
+    bool isDying() const { return dyingTimer > 0; }
+
 private:
     sf::Vector2f pos;
     int dx, dy;
@@ -122,6 +142,9 @@ private:
     uint32_t attackCooldown;     // ms residui al prossimo attacco
     uint32_t attackingTimer;     // >0 = animazione attacco in corso
     uint32_t dyingTimer;         // >0 = animazione morte
+    uint32_t burningTimer;       // >0 = mini-boss che brucia (player invincibile)
+    uint32_t burnAnimTime;       // tempo accumulato per animazione fiamme overlay
+    bool burnedFlag;             // true se e' stato in burning (per finalizzazione morte)
     float animTime;
     int size;                    // dimensione sprite (32-40px)
 

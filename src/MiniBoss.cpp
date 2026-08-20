@@ -23,6 +23,7 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
     : pos(), dx(0), dy(0), speed(0), health(0), maxHealth(0),
       type(t), weapon(getWeaponForType(t)),
       pathUpdateTimer(0), attackCooldown(0), attackingTimer(0), dyingTimer(0),
+      burningTimer(0), burnAnimTime(0), burnedFlag(false),
       animTime(0.f), size(0), spriteLoaded(false),
       targetPos(), hasTarget(false) {
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.f;
@@ -205,6 +206,19 @@ int MiniBoss::getScoreReward() const {
     return 5000 + (int)type * 300;  // aumenta col tipo
 }
 
+// startBurning: fa entrare il mini-boss in stato "burning" per `frames` frame.
+// Durante lo stato burning, il mini-boss e' fermo (non si muove, non attacca)
+// e sopra di esso viene disegnato un overlay di fiamme (vedi render).
+// A fine burning, il mini-boss muore (gestito da Game quando burningTimer
+// arriva a 0 e wasBurned() == true).
+// Imposta anche burnedFlag = true per la rilevazione della transizione.
+void MiniBoss::startBurning(int frames) {
+    if (dyingTimer > 0 || burningTimer > 0) return;  // gia' morente o gia' bruciando
+    burningTimer = (uint32_t)frames;
+    burnAnimTime = 0;
+    burnedFlag = true;
+}
+
 // --- BFS pathfinding (come Enemy::bfsPath) ---
 bool MiniBoss::bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep) {
     if (start.x == target.x && start.y == target.y) return false;
@@ -277,6 +291,18 @@ void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
     if (isDead()) {
         if (dyingTimer > 0) dyingTimer -= 16;
         else dyingTimer = 0;
+        return;
+    }
+
+    // --- STATO BURNING: mini-boss che brucia (player invincibile) ---
+    // Decrementa burningTimer. Mentre brucia, il mini-boss e' FERMO (non
+    // si muove, non attacca) e sopra di lui viene disegnato un overlay di
+    // fiamme (vedi render). Identico al comportamento di Enemy::update.
+    if (burningTimer > 0) {
+        if (burningTimer > 1) burningTimer--;
+        else burningTimer = 0;
+        burnAnimTime += 16;
+        // Blocca movimento e attacco mentre brucia
         return;
     }
 
@@ -833,5 +859,130 @@ void MiniBoss::render(sf::RenderTarget& target) const {
     } else {
         // Fallback: rendering procedurale (se sprite non caricato)
         renderPrimitives(target);
+    }
+
+    // --- OVERLAY FIAMME quando il mini-boss sta bruciando (player invincibile) ---
+    // Stesso sistema di Enemy::render: il mini-boss appare AVVOLTO dalle fiamme
+    // per ~50 frame (~0.8s) prima di morire. Composto da:
+    //   1. 3 layer di glow radiale (arancione esterno, rosso medio, oro interno)
+    //   2. Sprite PNG effect_fireaura animato centrato sul mini-boss
+    //   3. 6 fiamme procedurali ad anello (alternate oro/rosso)
+    //   4. 3 scintille bianche (faville)
+    //   5. 2 particelle di fumo grigio
+    // Intensita' variabile in base al progresso di bruciatura.
+    if (burningTimer > 0) {
+        const sf::Color COL_GOLD  (220, 160, 40);
+        const sf::Color COL_RED_L (200, 80, 80);
+        const sf::Color COL_WHITE (240, 240, 240);
+        const sf::Color COL_ORANGE(255, 100, 0);
+
+        // Intensita' in base al progresso: build-up / massimo / fade-out
+        float burnProgress = 1.0f - (float)burningTimer / 50.f;
+        float intensity = 1.0f;
+        if (burnProgress < 0.2f) intensity = 0.5f + burnProgress * 2.5f;
+        else if (burnProgress > 0.8f) intensity = 1.0f - (burnProgress - 0.8f) * 1.5f;
+        if (intensity < 0.3f) intensity = 0.3f;
+
+        float pulse = 1.0f + sin(burnAnimTime * 0.02f) * 0.1f;
+        // Centro del mini-boss (piedi sono a pos.y, corpo e' sopra)
+        float cx = pos.x;
+        float cy = pos.y - 8.f;
+
+        // 1. Glow radiale multistrato (piu' grande del nemico normale perche'
+        // il mini-boss e' piu' grande)
+        float outerR = 28.f * pulse;
+        sf::CircleShape glowOuter(outerR);
+        glowOuter.setFillColor(sf::Color(COL_ORANGE.r, COL_ORANGE.g, COL_ORANGE.b,
+                                          (sf::Uint8)(90 * intensity)));
+        glowOuter.setPosition(cx - outerR, cy - outerR);
+        target.draw(glowOuter);
+
+        float midR = 20.f * pulse;
+        sf::CircleShape glowMid(midR);
+        glowMid.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
+                                        (sf::Uint8)(120 * intensity)));
+        glowMid.setPosition(cx - midR, cy - midR);
+        target.draw(glowMid);
+
+        float innerR = 12.f * pulse;
+        sf::CircleShape glowInner(innerR);
+        glowInner.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                          (sf::Uint8)(160 * intensity)));
+        glowInner.setPosition(cx - innerR, cy - innerR);
+        target.draw(glowInner);
+
+        // 2. Sprite PNG effect_fireaura (overlay fiamme animato)
+        static SpriteSheet fireOverlaySprite;
+        static bool fireOverlayLoaded = false;
+        if (!fireOverlayLoaded) {
+            fireOverlayLoaded = true;
+            fireOverlaySprite.load("assets/sprites/effect_fireaura");
+        }
+        if (fireOverlaySprite.isLoaded()) {
+            int frameDuration = 80;
+            int frameCount = fireOverlaySprite.getFrameCount("idle");
+            if (frameCount <= 0) frameCount = 6;
+            int frame = ((int)burnAnimTime / frameDuration) % frameCount;
+            // Scala 1.4x (piu' grande del nemico normale che era 1.1x) per
+            // coprire il mini-boss che e' piu' grande
+            float overlayScale = 1.4f * pulse;
+            sf::Color tint(255, 255, 255, (sf::Uint8)(220 * intensity));
+            fireOverlaySprite.render(target, "idle", frame,
+                                      cx, cy, overlayScale, false, tint);
+        }
+
+        // 3. 8 fiamme procedurali ad anello (piu' del nemico normale che
+        // ne aveva 6, perche' il mini-boss e' piu' grande)
+        for (int i = 0; i < 8; i++) {
+            float angle = (i / 8.f) * 2.f * (float)M_PI + burnAnimTime * 0.005f;
+            float ringR = 18.f;  // raggio piu' largo del nemico normale (14)
+            float fx = cx + cos(angle) * ringR;
+            float fy = cy + sin(angle) * ringR;
+            float flameH = (10.f + sin(burnAnimTime * 0.02f + i * 0.7f) * 5.f + 5.f) * intensity;
+            float flameW = 4.f;
+            sf::ConvexShape flame;
+            flame.setPointCount(3);
+            flame.setPoint(0, sf::Vector2f(fx - flameW, fy));
+            flame.setPoint(1, sf::Vector2f(fx + flameW, fy));
+            flame.setPoint(2, sf::Vector2f(fx + sin(burnAnimTime * 0.02f + i) * 3.f,
+                                            fy - flameH));
+            flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
+                                          (sf::Uint8)(220 * intensity)));
+            target.draw(flame);
+            // Apice rosso
+            sf::ConvexShape flameTip;
+            flameTip.setPointCount(3);
+            flameTip.setPoint(0, sf::Vector2f(fx - flameW * 0.6f, fy - flameH * 0.4f));
+            flameTip.setPoint(1, sf::Vector2f(fx + flameW * 0.6f, fy - flameH * 0.4f));
+            flameTip.setPoint(2, sf::Vector2f(fx + sin(burnAnimTime * 0.02f + i) * 3.f,
+                                               fy - flameH * 1.3f));
+            flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
+                                              (sf::Uint8)(230 * intensity)));
+            target.draw(flameTip);
+        }
+
+        // 4. 4 scintille bianche (faville)
+        for (int i = 0; i < 4; i++) {
+            float sparkX = cx + sin(burnAnimTime * 0.015f + i * 1.2f) * 12.f;
+            float sparkY = cy - 10.f - ((int)(burnAnimTime * 0.2f + i * 8) % 30);
+            float sparkR = 1.2f;
+            sf::CircleShape spark(sparkR);
+            spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                           (sf::Uint8)(220 * intensity)));
+            spark.setPosition(sparkX - sparkR, sparkY - sparkR);
+            target.draw(spark);
+        }
+
+        // 5. 3 particelle di fumo grigio
+        for (int i = 0; i < 3; i++) {
+            float smokeX = cx + sin(burnAnimTime * 0.01f + i * 2.f) * 8.f;
+            float smokeY = cy - 15.f - ((int)(burnAnimTime * 0.15f + i * 15) % 40);
+            float smokeR = 2.5f + i * 0.5f;
+            sf::CircleShape smoke(smokeR);
+            smoke.setFillColor(sf::Color(180, 170, 160,
+                                           (sf::Uint8)(110 * intensity)));
+            smoke.setPosition(smokeX - smokeR, smokeY - smokeR);
+            target.draw(smoke);
+        }
     }
 }
