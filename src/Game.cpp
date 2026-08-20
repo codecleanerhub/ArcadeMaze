@@ -4,6 +4,24 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+unsigned getConnectedJoystick(unsigned playerIndex) {
+    sf::Joystick::update();
+    unsigned connectedIndex = 0;
+    for (unsigned joystickId = 0; joystickId < sf::Joystick::Count; ++joystickId) {
+        if (sf::Joystick::isConnected(joystickId)) {
+            if (connectedIndex == playerIndex) return joystickId;
+            ++connectedIndex;
+        }
+    }
+    return sf::Joystick::Count;
+}
+
+bool isPlayerJoystick(unsigned joystickId, unsigned playerIndex) {
+    return joystickId == getConnectedJoystick(playerIndex);
+}
+}
+
 // ===========================================================================
 // Game.cpp - Implementazione del ciclo di gioco centrale.
 //
@@ -156,7 +174,6 @@ void Game::startLevel(int lvl) {
     scepter.lightningTimer = 0;
     scepterUsed = false;
     lightnings.clear();
-    // Spawna la mina in una cella vuota casuale del labirinto
     {
         std::vector<Vec2> mineCells;
         for (int c = 1; c < MAZE_COLS - 1; c++) {
@@ -695,7 +712,7 @@ void Game::handleEvents() {
             if (state == STATE_MENU) {
                 // Cast a unsigned: event.joystickButton.button e' unsigned int,
                 // config.joy_jump e' int (perche' letto da file INI come intero).
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
+                if (isPlayerJoystick(event.joystickButton.joystickId, 0) && event.joystickButton.button == (unsigned)config.joy_jump) {
                     audio.playSound(SOUND_MENU_CONFIRM);
                     if (menuItemIndex == 3) {
                         // SELECT PLAYER
@@ -719,7 +736,7 @@ void Game::handleEvents() {
                 }
             } else if (state == STATE_SELECT_PLAYER) {
                 // Joystick: pulsante jump = conferma personaggio
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
+                if (isPlayerJoystick(event.joystickButton.joystickId, 0) && event.joystickButton.button == (unsigned)config.joy_jump) {
                     audio.playSound(SOUND_MENU_CONFIRM);
                     if (selectPlayerStep == 0) {
                         player1Character = (CharacterType)wheelIndex;
@@ -739,7 +756,7 @@ void Game::handleEvents() {
                 // Configurazione joystick a 2 step:
                 //   step 0: cattura pulsante per salto
                 //   step 1: cattura pulsante per sparo, poi torna al menu'
-                if (event.joystickButton.joystickId == 0) {
+                if (isPlayerJoystick(event.joystickButton.joystickId, 0)) {
                     if (configJoyStep == 0) { config.joy_jump = event.joystickButton.button; configJoyStep = 1; }
                     else if (configJoyStep == 1) { config.joy_shoot = event.joystickButton.button; 
                         if (numPlayers == 2) state = STATE_CONFIG_JOY_2; 
@@ -750,13 +767,13 @@ void Game::handleEvents() {
                 // Configurazione joystick secondo giocatore (joystick 1).
                 // Usa i campi joy2_* dedicati: NON tocca config.joy_jump/joy_shoot
                 // del giocatore 1 (bug critico della versione precedente).
-                if (event.joystickButton.joystickId == 1) {
+                if (isPlayerJoystick(event.joystickButton.joystickId, 1)) {
                     if (configJoyStep == 0) { config.joy2_jump = event.joystickButton.button; configJoyStep = 1; }
                     else if (configJoyStep == 1) { config.joy2_shoot = event.joystickButton.button; state = STATE_MENU; }
                 }
             } else if (state == STATE_CONTINUES) {
                 // Joystick: pulsante jump = conferma, pulsante shoot = toggle
-                if (event.joystickButton.joystickId == 0) {
+                if (isPlayerJoystick(event.joystickButton.joystickId, 0)) {
                     if (event.joystickButton.button == (unsigned)config.joy_jump) {
                         audio.playSound(SOUND_MENU_CONFIRM);
                         if (continuesChoice) {
@@ -774,7 +791,7 @@ void Game::handleEvents() {
                     }
                 }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
+                if (isPlayerJoystick(event.joystickButton.joystickId, 0) && event.joystickButton.button == (unsigned)config.joy_jump) {
                     state = STATE_MENU;
                     currentLevel = 1;
                     continuesLeft = 3;
@@ -802,8 +819,9 @@ void Game::update() {
 
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
     if (state == STATE_MENU) {
-        if (sf::Joystick::isConnected(0)) {
-            float y = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+        unsigned joystickId = getConnectedJoystick(0);
+        if (joystickId < sf::Joystick::Count) {
+            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
             // joyMoved e' static: serve da "debounce" per evitare che un
             // solo movimento dell'analogico faccia scorrere tutte le voci.
             static bool joyMoved = false;
@@ -820,8 +838,9 @@ void Game::update() {
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
-        if (sf::Joystick::isConnected(0)) {
-            float x = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+        unsigned joystickId = getConnectedJoystick(0);
+        if (joystickId < sf::Joystick::Count) {
+            float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
             static bool joyMovedWheel = false;
             if (fabs(x) > 50 && !joyMovedWheel) {
                 joyMovedWheel = true;
@@ -857,9 +876,10 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
 
         // Joystick: prevale sulla tastiera se fuori dalla deadzone (30%)
-        if (sf::Joystick::isConnected(0)) {
-            float x = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
-            float y = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+        unsigned joystickId = getConnectedJoystick(0);
+        if (joystickId < sf::Joystick::Count) {
+            float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
+            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
             if (fabs(x) > 30 || fabs(y) > 30) {
                 // Determina l'asse dominante per evitare movimenti diagonali
                 // non intenzionali (utile per labirinto "snap-to-grid").
@@ -872,7 +892,7 @@ void Game::update() {
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(0, config.joy_shoot)) {
+            if (sf::Joystick::isButtonPressed(joystickId, config.joy_shoot)) {
                 if (player.getShootCooldown() == 0) {
                     int ammoBefore = player.getCurrentWeapon().ammo;
                     player.shoot();
@@ -881,7 +901,7 @@ void Game::update() {
                     player.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(0, (unsigned)config.joy_jump)) {
+            if (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy_jump)) {
                 bool wasJumping = player.isJumping();
                 player.activateJump();
                 if (!wasJumping && player.isJumping()) audio.playSound(SOUND_JUMP);
@@ -915,9 +935,10 @@ void Game::update() {
 
         // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
         // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
-        if (sf::Joystick::isConnected(1)) {
-            float x = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_x);
-            float y = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_y);
+        unsigned joystickId = getConnectedJoystick(1);
+        if (joystickId < sf::Joystick::Count) {
+            float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy2_axis_x);
+            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy2_axis_y);
             if (fabs(x) > 30 || fabs(y) > 30) {
                 if (fabs(x) > fabs(y)) {
                     if (x > 30) { player2.setDirection(1, 0); }
@@ -928,7 +949,7 @@ void Game::update() {
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_shoot)) {
+            if (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
                     player2.shoot();
@@ -936,7 +957,7 @@ void Game::update() {
                     player2.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_jump)) {
+            if (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy2_jump)) {
                 bool wasJumping = player2.isJumping();
                 player2.activateJump();
                 if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
