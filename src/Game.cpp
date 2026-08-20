@@ -1903,6 +1903,63 @@ void Game::update() {
                         lightnings.back().hitEnemy = true;
                     }
                 }
+                // --- FIX: Danno fulmine al mini-boss ---
+                // Il fulmine attraversa tutto lo schermo, quindi puo' colpire
+                // il mini-boss ovunque si trovi. Stessa logica dei nemici:
+                // controlla distanza da ogni segmento del zigzag + dal punto
+                // di impatto. Danno: 35% HP del mini-boss (maxHealth * 35/100).
+                // Non 999 come i nemici normali (il mini-boss ha 18-35 HP,
+                // 999 lo ucciderebbe con un solo fulmine). Servono 2-3 fulmini
+                // per ucciderlo (bilanciato con i 5 fulmini totali dello
+                // scettro).
+                if (miniBoss && !miniBoss->isDead() && !miniBoss->isDying()) {
+                    sf::Vector2f mbPos = miniBoss->getPixelPos();
+                    bool mbHit = false;
+                    for (size_t i = 0; i + 1 < pts.size() && !mbHit; i++) {
+                        sf::Vector2f p0 = pts[i];
+                        sf::Vector2f p1 = pts[i + 1];
+                        float segDx = p1.x - p0.x;
+                        float segDy = p1.y - p0.y;
+                        float segLen2 = segDx * segDx + segDy * segDy;
+                        if (segLen2 < 0.001f) continue;
+                        float t = ((mbPos.x - p0.x) * segDx +
+                                   (mbPos.y - p0.y) * segDy) / segLen2;
+                        if (t < 0.f) t = 0.f;
+                        if (t > 1.f) t = 1.f;
+                        float projX = p0.x + segDx * t;
+                        float projY = p0.y + segDy * t;
+                        float ddx = mbPos.x - projX;
+                        float ddy = mbPos.y - projY;
+                        // Raggio piu' grande del nemico normale (40px invece
+                        // di 30) perche' il mini-boss e' piu' grosso
+                        if (ddx * ddx + ddy * ddy < 1600.f) {
+                            mbHit = true;
+                        }
+                    }
+                    // Check anche distanza dal punto di impatto (70px)
+                    if (!mbHit) {
+                        float dx = mbPos.x - lx;
+                        float dy = mbPos.y - ly;
+                        if (dx * dx + dy * dy < 4900.f) mbHit = true;
+                    }
+                    if (mbHit) {
+                        // Danno: 35% HP massimo (min 8)
+                        int mbDmg = miniBoss->getMaxHealth() * 35 / 100;
+                        if (mbDmg < 8) mbDmg = 8;
+                        miniBoss->takeDamage(mbDmg);
+                        player.addScore(1500);
+                        audio.playSound(SOUND_ENEMY_EXPLODE);
+                        // Particelle dorate per il colpo del fulmine
+                        for (int i = 0; i < 25; i++)
+                            particles.push_back({mbPos,
+                                {(float)(rand()%12-6), (float)(rand()%12-6)},
+                                sf::Color(220, 160, 40), 30, 30});  // oro
+                        for (int i = 0; i < 15; i++)
+                            particles.push_back({mbPos,
+                                {(float)(rand()%14-7), (float)(rand()%14-7)},
+                                sf::Color(120, 200, 200), 25, 25});  // ciano
+                    }
+                }
             }
         }
         // Update fulmini attivi (visualizzazione)
