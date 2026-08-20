@@ -24,8 +24,9 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
       type(t), weapon(getWeaponForType(t)),
       pathUpdateTimer(0), attackCooldown(0), attackingTimer(0), dyingTimer(0),
       burningTimer(0), burnAnimTime(0), burnedFlag(false),
-      animTime(0.f), size(0), spriteLoaded(false),
-      targetPos(), hasTarget(false) {
+      animTime(0.f), size(0),
+      targetPos(), hasTarget(false),
+      sprite(), spriteLoaded(false) {
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.f;
     pos.y = startRow * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
     maxHealth = getBaseHealth(t) + (level - 1) * 3;  // scala col livello

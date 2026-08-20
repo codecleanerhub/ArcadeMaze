@@ -132,10 +132,12 @@ bool Player::loadSprite(const std::string& basePath) {
 // Imposta il tipo di personaggio e il numero giocatore, poi carica lo sprite.
 // Se il file PNG non esiste, lo sprite resta non caricato e il render()
 // usera' il fallback procedurale (renderCharacterFallback).
-void Player::setCharacter(CharacterType ct, int playerNum) {
+// FIX -Wshadow: parametro rinominato da 'playerNum' a 'pNum' per evitare
+// shadowing del membro omonimo Player::playerNum.
+void Player::setCharacter(CharacterType ct, int pNum) {
     characterType = ct;
-    this->playerNum = playerNum;
-    tint = getPlayerTint(playerNum);
+    this->playerNum = pNum;
+    tint = getPlayerTint(pNum);
     loadCharacterSprite();
 }
 
