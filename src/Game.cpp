@@ -968,16 +968,10 @@ void Game::handleEvents() {
 // ogni frame, non eventi discreti.
 // ---------------------------------------------------------------------------
 void Game::update() {
-    // FIX CRITICO: sf::Joystick::update() DEVE essere chiamato qui, all'inizio
-    // di update(), per refreshare lo stato degli assi analogici. Su Windows
-    // (DirectInput), getAxisPosition() restituisce valori STALE (non aggiornati)
-    // se update() non viene chiamato prima della lettura.
-    //
-    // Il precedente commento che diceva "doppio update causa perdita di eventi"
-    // era ERRATO: sf::Joystick::update() NON svuota la coda eventi (quella e'
-    // gestita da window.pollEvent()), aggiorna solo lo stato interno dei
-    // pulsanti/assi. Chiamarlo 2 volte per frame e' sicuro ed e' lo standard
-    // SFML raccomandato.
+    // FIX CRITICO: sf::Joystick::update() deve essere chiamato qui.
+    // Su Windows, alcuni gamepad (specialmente XInput) richiedono che
+    // update() sia chiamato IL PIU' TARDI POSSIBILE prima della lettura
+    // degli assi. Chiamandolo qui (dopo handleEvents) dovrebbe funzionare.
     sf::Joystick::update();
 
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
@@ -1085,6 +1079,30 @@ void Game::update() {
                     if (bestY > JOY_DEADZONE) { player.setDirection(0, 1); }
                     else if (bestY < -JOY_DEADZONE) { player.setDirection(0, -1); }
                 }
+            }
+            // FIX: supporto D-pad (PovX/PovY) come fallback per il movimento.
+            // Su Windows con DirectInput, alcuni gamepad non riportano
+            // l'analogico sugli assi X/Y/Z/U ma il D-pad funziona su
+            // PovX/PovY. Valori: -100 (sinistra/su), +100 (destra/giu), 0 (centro).
+            float povX = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::PovX);
+            float povY = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::PovY);
+            const float POV_THRESHOLD = 50.f;
+            if (fabsf(povX) > POV_THRESHOLD || fabsf(povY) > POV_THRESHOLD) {
+                if (fabsf(povX) > fabsf(povY)) {
+                    if (povX > POV_THRESHOLD) { player.setDirection(1, 0); }
+                    else if (povX < -POV_THRESHOLD) { player.setDirection(-1, 0); }
+                } else {
+                    if (povY > POV_THRESHOLD) { player.setDirection(0, 1); }
+                    else if (povY < -POV_THRESHOLD) { player.setDirection(0, -1); }
+                }
+            }
+            // DEBUG: stampa anche PovX/PovY per diagnosticare
+            static int povDebugCounter = 0;
+            if (povDebugCounter++ % 60 == 0) {
+                std::cout << "POV P1: PovX=" << povX << " PovY=" << povY
+                          << " btnJump=" << (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy_jump) ? "Y" : "N")
+                          << " btnShoot=" << (sf::Joystick::isButtonPressed(joystickId, config.joy_shoot) ? "Y" : "N")
+                          << std::endl;
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
             if (sf::Joystick::isButtonPressed(joystickId, config.joy_shoot)) {
