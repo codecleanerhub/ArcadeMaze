@@ -79,7 +79,8 @@ struct Weapon {
     // Disegna l'arma appoggiata a terra (grande, con ombra).
     void render(sf::RenderTarget& target, float x, float y) const;
     // Disegna l'arma equipaggiata in mano al giocatore (piu' piccola).
-    void renderEquipped(sf::RenderTarget& target, float x, float y) const;
+    // facingRight: true = arma puntata a destra, false = specchiata a sinistra
+    void renderEquipped(sf::RenderTarget& target, float x, float y, bool facingRight = true) const;
 };
 
 #endif

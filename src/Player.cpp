@@ -438,12 +438,13 @@ void Player::render(sf::RenderTarget& target) {
         // Usiamo pos.y - 12 come altezza "imbracciata".
         float weaponX = px;
         float weaponY = pos.y - 12.f;  // centro corpo (era pos.y + 4, ai piedi)
-        if (lastDx > 0) { weaponX = px + 14.f; }
-        else if (lastDx < 0) { weaponX = px - 14.f; }
-        else if (lastDy > 0) { weaponY = pos.y + 6.f; weaponX = px + 4.f; }
-        else if (lastDy < 0) { weaponY = pos.y - 20.f; weaponX = px + 4.f; }
+        bool weaponFacingRight = true;  // direzione in cui punta l'arma
+        if (lastDx > 0) { weaponX = px + 14.f; weaponFacingRight = true; }
+        else if (lastDx < 0) { weaponX = px - 14.f; weaponFacingRight = false; }
+        else if (lastDy > 0) { weaponY = pos.y - 12.f; weaponX = px + 4.f; }
+        else if (lastDy < 0) { weaponY = pos.y - 12.f; weaponX = px + 4.f; }
         if (isJumping) weaponY -= jumpOffset;
-        currentWeapon.renderEquipped(target, weaponX, weaponY);
+        currentWeapon.renderEquipped(target, weaponX, weaponY, weaponFacingRight);
 
         drawProjectiles(target);
         return;
@@ -978,11 +979,12 @@ void Player::renderCharacterFallback(sf::RenderTarget& target, float x, float y,
     // del centro corpo (imbracciata, non ai piedi).
     {
         float wX = px;
-        float wY = py - 12.f;  // centro corpo (era py + bobY, ai piedi)
-        if (lastDx > 0) { wX = px + 14.f; }
-        else if (lastDx < 0) { wX = px - 14.f; }
-        else if (lastDy > 0) { wY = py + 6.f; wX = px + 4.f; }
-        else if (lastDy < 0) { wY = py - 20.f; wX = px + 4.f; }
-        currentWeapon.renderEquipped(target, wX, wY);
+        float wY = py - 12.f;
+        bool wFacingRight = true;
+        if (lastDx > 0) { wX = px + 14.f; wFacingRight = true; }
+        else if (lastDx < 0) { wX = px - 14.f; wFacingRight = false; }
+        else if (lastDy > 0) { wY = py - 12.f; wX = px + 4.f; }
+        else if (lastDy < 0) { wY = py - 12.f; wX = px + 4.f; }
+        currentWeapon.renderEquipped(target, wX, wY, wFacingRight);
     }
 }

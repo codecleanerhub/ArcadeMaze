@@ -517,80 +517,84 @@ void Weapon::render(sf::RenderTarget& target, float x, float y) const {
 // Pur essendo piu' piccola, mantiene i dettagli chiave (riflessi, nucleo,
 // inserti colorati) per riconoscibilita'.
 // ---------------------------------------------------------------------------
-void Weapon::renderEquipped(sf::RenderTarget& target, float x, float y) const {
+void Weapon::renderEquipped(sf::RenderTarget& target, float x, float y, bool facingRight) const {
+    // Se facingRight e' false, specchiamo l'arma orizzontalmente.
+    // Invece di riscrivere tutte le posizioni, usiamo una variabile dir
+    // che moltiplica gli offset orizzontali: +1 per destra, -1 per sinistra.
+    const float dir = facingRight ? 1.f : -1.f;
     if (type == WPN_PISTOL) {
         // Impugnatura in legno (2 strati)
         sf::RectangleShape gripBase(sf::Vector2f(6.f, 11.f));
         gripBase.setFillColor(sf::Color(50, 25, 12));
-        gripBase.setPosition(x - 3.f, y + 1.f);
+        gripBase.setPosition(x - dir * 3.f, y + 1.f);
         target.draw(gripBase);
         sf::RectangleShape gripMid(sf::Vector2f(5.f, 11.f));
         gripMid.setFillColor(sf::Color(85, 50, 25));
-        gripMid.setPosition(x - 2.5f, y + 1.f);
+        gripMid.setPosition(x - dir * 2.5f, y + 1.f);
         target.draw(gripMid);
         // Corpo metallico
         sf::RectangleShape body(sf::Vector2f(13.f, 9.f));
         body.setFillColor(sf::Color(70, 70, 80));
         body.setOutlineThickness(0.5f); body.setOutlineColor(sf::Color(20, 20, 20));
-        body.setPosition(x - 4.f, y - 7.f);
+        body.setPosition(x - dir * 4.f, y - 7.f);
         target.draw(body);
         // Slide superiore (riflesso)
         sf::RectangleShape slide(sf::Vector2f(13.f, 3.f));
         slide.setFillColor(sf::Color(120, 120, 130));
-        slide.setPosition(x - 4.f, y - 7.f);
+        slide.setPosition(x - dir * 4.f, y - 7.f);
         target.draw(slide);
         // Inserto dorato
         sf::RectangleShape insert(sf::Vector2f(2.f, 3.f));
         insert.setFillColor(sf::Color(180, 140, 60));
-        insert.setPosition(x - 3.f, y - 6.f);
+        insert.setPosition(x - dir * 3.f, y - 6.f);
         target.draw(insert);
         // Canna
         sf::RectangleShape barrel(sf::Vector2f(8.f, 5.f));
         barrel.setFillColor(sf::Color(85, 85, 95));
-        barrel.setPosition(x + 8.f, y - 5.f);
+        barrel.setPosition(x + dir * 8.f, y - 5.f);
         target.draw(barrel);
         // Bocca
         sf::CircleShape muzzle(1.5f);
         muzzle.setFillColor(sf::Color(15, 15, 15));
-        muzzle.setPosition(x + 14.5f, y - 3.5f);
+        muzzle.setPosition(x + dir * 14.5f, y - 3.5f);
         target.draw(muzzle);
     }
     else if (type == WPN_SHOTGUN) {
         // Calciatura in legno (2 strati)
         sf::RectangleShape stockBase(sf::Vector2f(14.f, 10.f));
         stockBase.setFillColor(sf::Color(70, 40, 18));
-        stockBase.setPosition(x - 7.f, y + 3.f);
+        stockBase.setPosition(x - dir * 7.f, y + 3.f);
         target.draw(stockBase);
         sf::RectangleShape stockTop(sf::Vector2f(14.f, 5.f));
         stockTop.setFillColor(sf::Color(130, 80, 35));
-        stockTop.setPosition(x - 7.f, y + 3.f);
+        stockTop.setPosition(x - dir * 7.f, y + 3.f);
         target.draw(stockTop);
         // Doppia canna
         sf::RectangleShape barrelTop(sf::Vector2f(20.f, 4.f));
         barrelTop.setFillColor(sf::Color(55, 55, 60));
         barrelTop.setOutlineThickness(0.5f); barrelTop.setOutlineColor(sf::Color(20, 20, 20));
-        barrelTop.setPosition(x - 6.f, y - 6.f);
+        barrelTop.setPosition(x - dir * 6.f, y - 6.f);
         target.draw(barrelTop);
         sf::RectangleShape barrelBot(sf::Vector2f(20.f, 4.f));
         barrelBot.setFillColor(sf::Color(50, 50, 55));
         barrelBot.setOutlineThickness(0.5f); barrelBot.setOutlineColor(sf::Color(20, 20, 20));
-        barrelBot.setPosition(x - 6.f, y - 1.f);
+        barrelBot.setPosition(x - dir * 6.f, y - 1.f);
         target.draw(barrelBot);
         // Riflesso canna
         sf::RectangleShape barrelRef(sf::Vector2f(18.f, 1.f));
         barrelRef.setFillColor(sf::Color(180, 180, 190));
-        barrelRef.setPosition(x - 5.f, y - 5.5f);
+        barrelRef.setPosition(x - dir * 5.f, y - 5.5f);
         target.draw(barrelRef);
         // Pompa
         sf::RectangleShape pump(sf::Vector2f(8.f, 5.f));
         pump.setFillColor(sf::Color(140, 90, 45));
         pump.setOutlineThickness(0.5f); pump.setOutlineColor(sf::Color(20, 20, 20));
-        pump.setPosition(x + 1.f, y + 4.f);
+        pump.setPosition(x + dir * 1.f, y + 4.f);
         target.draw(pump);
         // Scanalatura
         sf::RectangleShape groove(sf::Vector2f(0.8f, 4.f));
         groove.setFillColor(sf::Color(60, 35, 15));
-        groove.setPosition(x + 4.f, y + 4.5f);
+        groove.setPosition(x + dir * 4.f, y + 4.5f);
         target.draw(groove);
     }
     else if (type == WPN_ROCKET) {
@@ -598,83 +602,83 @@ void Weapon::renderEquipped(sf::RenderTarget& target, float x, float y) const {
         sf::RectangleShape tube(sf::Vector2f(18.f, 9.f));
         tube.setFillColor(sf::Color(60, 90, 50));
         tube.setOutlineThickness(0.8f); tube.setOutlineColor(sf::Color(20, 20, 20));
-        tube.setPosition(x - 9.f, y - 4.f);
+        tube.setPosition(x - dir * 9.f, y - 4.f);
         target.draw(tube);
         // Strato superiore (riflesso)
         sf::RectangleShape tubeTop(sf::Vector2f(18.f, 3.f));
         tubeTop.setFillColor(sf::Color(100, 140, 80));
-        tubeTop.setPosition(x - 9.f, y - 4.f);
+        tubeTop.setPosition(x - dir * 9.f, y - 4.f);
         target.draw(tubeTop);
         // Banda metallica
         sf::RectangleShape band(sf::Vector2f(1.5f, 9.f));
         band.setFillColor(sf::Color(180, 180, 180));
-        band.setPosition(x - 2.f, y - 4.f);
+        band.setPosition(x - dir * 2.f, y - 4.f);
         target.draw(band);
         // Razzo
         sf::RectangleShape rocketBody(sf::Vector2f(8.f, 5.f));
         rocketBody.setFillColor(sf::Color(180, 50, 50));
         rocketBody.setOutlineThickness(0.5f); rocketBody.setOutlineColor(sf::Color(20, 20, 20));
-        rocketBody.setPosition(x + 5.f, y - 2.5f);
+        rocketBody.setPosition(x + dir * 5.f, y - 2.5f);
         target.draw(rocketBody);
         // Punta conica
         sf::ConvexShape tip; tip.setPointCount(3);
         tip.setFillColor(sf::Color(220, 80, 80));
-        tip.setPoint(0, sf::Vector2f(x + 13.f, y - 2.5f));
-        tip.setPoint(1, sf::Vector2f(x + 13.f, y + 2.5f));
-        tip.setPoint(2, sf::Vector2f(x + 17.f, y));
+        tip.setPoint(0, sf::Vector2f(x + dir * 13.f, y - 2.5f));
+        tip.setPoint(1, sf::Vector2f(x + dir * 13.f, y + 2.5f));
+        tip.setPoint(2, sf::Vector2f(x + dir * 17.f, y));
         target.draw(tip);
         // Aletta
         sf::ConvexShape fin; fin.setPointCount(3);
         fin.setFillColor(sf::Color(140, 30, 30));
-        fin.setPoint(0, sf::Vector2f(x + 5.f, y - 2.5f));
-        fin.setPoint(1, sf::Vector2f(x + 8.f, y - 2.5f));
-        fin.setPoint(2, sf::Vector2f(x + 6.5f, y - 5.f));
+        fin.setPoint(0, sf::Vector2f(x + dir * 5.f, y - 2.5f));
+        fin.setPoint(1, sf::Vector2f(x + dir * 8.f, y - 2.5f));
+        fin.setPoint(2, sf::Vector2f(x + dir * 6.5f, y - 5.f));
         target.draw(fin);
         // Mirino
         sf::RectangleShape scope(sf::Vector2f(6.f, 2.f));
         scope.setFillColor(sf::Color(30, 30, 40));
-        scope.setPosition(x - 3.f, y - 7.f);
+        scope.setPosition(x - dir * 3.f, y - 7.f);
         target.draw(scope);
     }
     else if (type == WPN_LASER) {
         // Glow pulsante
         sf::CircleShape glow(8.f);
         glow.setFillColor(sf::Color(80, 220, 255, 60));
-        glow.setPosition(x - 8.f, y - 6.f);
+        glow.setPosition(x - dir * 8.f, y - 6.f);
         target.draw(glow);
         // Corpo
         sf::RectangleShape body(sf::Vector2f(16.f, 9.f));
         body.setFillColor(sf::Color(50, 55, 80));
         body.setOutlineThickness(0.5f); body.setOutlineColor(sf::Color(20, 20, 20));
-        body.setPosition(x - 5.f, y - 4.f);
+        body.setPosition(x - dir * 5.f, y - 4.f);
         target.draw(body);
         // Strato superiore
         sf::RectangleShape bodyTop(sf::Vector2f(16.f, 3.f));
         bodyTop.setFillColor(sf::Color(100, 110, 150));
-        bodyTop.setPosition(x - 5.f, y - 4.f);
+        bodyTop.setPosition(x - dir * 5.f, y - 4.f);
         target.draw(bodyTop);
         // Nucleo luminoso (3 strati)
         sf::CircleShape coreOut(4.f);
         coreOut.setFillColor(sf::Color(100, 200, 255, 220));
-        coreOut.setPosition(x - 4.f, y - 4.f);
+        coreOut.setPosition(x - dir * 4.f, y - 4.f);
         target.draw(coreOut);
         sf::CircleShape coreMid(2.5f);
         coreMid.setFillColor(sf::Color(180, 240, 255, 240));
-        coreMid.setPosition(x - 2.5f, y - 2.5f);
+        coreMid.setPosition(x - dir * 2.5f, y - 2.5f);
         target.draw(coreMid);
         sf::CircleShape coreIn(1.2f);
         coreIn.setFillColor(sf::Color(255, 255, 255, 250));
-        coreIn.setPosition(x - 1.2f, y - 1.2f);
+        coreIn.setPosition(x - dir * 1.2f, y - 1.2f);
         target.draw(coreIn);
         // Canna emettitrice
         sf::RectangleShape emitter(sf::Vector2f(7.f, 5.f));
         emitter.setFillColor(sf::Color(70, 80, 110));
-        emitter.setPosition(x + 8.f, y - 3.f);
+        emitter.setPosition(x + dir * 8.f, y - 3.f);
         target.draw(emitter);
         // Anello luminoso
         sf::CircleShape ring(2.f);
         ring.setFillColor(sf::Color(150, 255, 255, 220));
-        ring.setPosition(x + 13.f, y - 2.f);
+        ring.setPosition(x + dir * 13.f, y - 2.f);
         target.draw(ring);
     }
 }
