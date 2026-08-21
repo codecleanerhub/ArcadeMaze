@@ -10,7 +10,7 @@
 //   * Tutti i timer sono in "ms simulati": ogni frame a 60 FPS vengono
 //     decrementati di 16. Questo approccio semplifica il ragionamento
 //     ("1000 ms di invulnerabilita'" invece di "60 frame").
-//   * Il salto ha due effetti: visivo (jumpOffset tramite sin()) e logico
+//   * Il salto ha due effetti: visivo (jumpOffset tramite sinf()) e logico
 //     (isJumping() ritorna true e blocca i danni).
 //   * In modalita' labirinto il movimento e' "snap to grid": ci si allinea
 //     al centro della cella prima di poter girare. In modalita' boss il
@@ -183,12 +183,12 @@ bool Player::tryMove(int tDx, int tDy, Maze& maze) {
 //  5. Avanzamento dei proiettili con rimozione di quelli inattivi.
 // ---------------------------------------------------------------------------
 void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& particles) {
-    // 1) Aggiornamento salto: l'offset visivo segue sin(x*pi) per dare un
+    // 1) Aggiornamento salto: l'offset visivo segue sinf(x*pi) per dare un
     //    arco naturale (partenza morbida, picco a meta', atterraggio morbido).
     if (jumpTimer > 0) {
         jumpTimer--;
         float progress = 1.0f - (float)jumpTimer / (float)maxJumpTime;
-        jumpOffset = sin(progress * M_PI) * 25.0f; // Altezza massima salto: 25 px
+        jumpOffset = sinf(progress * (float)M_PI) * 25.0f; // Altezza massima salto: 25 px
     } else {
         jumpOffset = 0.0f;
     }
@@ -380,9 +380,9 @@ void Player::render(sf::RenderTarget& target) {
         bool isWalking = (animName == "walk" && (dx != 0 || dy != 0));
         bool isJumping = (jumpTimer > 0);
         if (isWalking) {
-            bobY = sin(animTime * 0.012f) * 2.f;
+            bobY = sinf(animTime * 0.012f) * 2.f;
         } else if (animName == "idle") {
-            bobY = sin(animTime * 0.004f) * 1.f;
+            bobY = sinf(animTime * 0.004f) * 1.f;
         }
 
         // --- Salto: usa lo sprite idle con effetto zoom-in-alto ---
@@ -394,7 +394,7 @@ void Player::render(sf::RenderTarget& target) {
             // jumpOffset e' gia' calcolato in update (sin curve, max 25px)
             // Effetto zoom: comprime leggermente in orizzontale (0.9x)
             // per simulare lo stretching del salto
-            float scaleX = 0.9f + sin(jumpProgress * M_PI) * 0.1f;  // 0.9 -> 1.0 -> 0.9
+            float scaleX = 0.9f + sinf(jumpProgress * (float)M_PI) * 0.1f;  // 0.9 -> 1.0 -> 0.9
             // Disegna lo sprite idle con scale modificato e sollevato (+ tint)
             sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped, tint);
         }
@@ -407,9 +407,9 @@ void Player::render(sf::RenderTarget& target) {
         // i personaggi (originali e nuovi).
         else if (isWalking) {
             // Bob effect piu' pronunciato quando cammina (effetto passo)
-            float walkBob = sin(animTime * 0.012f) * 3.f;
+            float walkBob = sinf(animTime * 0.012f) * 3.f;
             // Leggera inclinazione orizzontale per simulare il dondolio
-            float scaleX = 1.0f + sin(animTime * 0.024f) * 0.05f;
+            float scaleX = 1.0f + sinf(animTime * 0.024f) * 0.05f;
             sprite.render(target, "idle", 0, px, pos.y + 8.f + walkBob, scaleX, flipped, tint);
         }
         // Altrimenti usa sprite principale (idle o attack)
@@ -446,9 +446,9 @@ void Player::render(sf::RenderTarget& target) {
         bool walking = (dx != 0 || dy != 0);
         float bobY = 0.f;
         if (walking) {
-            bobY = sin(animTime * 0.012f) * 2.f;
+            bobY = sinf(animTime * 0.012f) * 2.f;
         } else {
-            bobY = sin(animTime * 0.004f) * 1.f;
+            bobY = sinf(animTime * 0.004f) * 1.f;
         }
         renderCharacterFallback(target, px, pos.y + 8.f - jumpOffset + bobY,
                                   flipped, walking, bobY);
@@ -507,8 +507,8 @@ void Player::drawProjectiles(sf::RenderTarget& target) {
         // Coseno/seno precalcolati per posizionare elementi "offset" (punta,
         // scia, pallini satellite) lungo la direzione di volo.
         float rad = angleDeg * static_cast<float>(M_PI) / 180.f;
-        float cosA = std::cos(rad);
-        float sinA = std::sin(rad);
+        float cosA = std::cosf(rad);
+        float sinA = std::sinf(rad);
 
         if (p.type == WPN_PISTOL) {
             // Pallottola piccola gialla (3px raggio). Essendo circolare,
@@ -680,7 +680,7 @@ void Player::renderCharacterFallback(sf::RenderTarget& target, float x, float y,
 
     // --- Gambe ---
     // Se sta camminando, alternanza delle gambe (effetto passo)
-    float legOffset = walking ? sin(animTime * 0.024f) * 3.f : 0.f;
+    float legOffset = walking ? sinf(animTime * 0.024f) * 3.f : 0.f;
     sf::RectangleShape leg1(sf::Vector2f(7.f, 18.f));
     leg1.setFillColor(tintColor(COL_DARK));
     leg1.setOutlineThickness(0.5f);

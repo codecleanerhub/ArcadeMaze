@@ -957,13 +957,17 @@ void Game::handleEvents() {
 // ogni frame, non eventi discreti.
 // ---------------------------------------------------------------------------
 void Game::update() {
-    // FIX: sf::Joystick::update() e' gia' chiamato in handleEvents() all'inizio
-    // (che viene eseguito prima di update() nel ciclo principale). Non lo
-    // chiamiamo di nuovo qui per evitare doppio update che su Windows puo'
-    // causare perdita di eventi (la coda DirectInput viene svuotata due
-    // volte e il secondo update non rileva pressioni brevi).
-    // updateJoystickMapping() e' gia' stato chiamato in handleEvents, quindi
-    // la cache g_joystickIds e' valida e getJoystickId() e' O(1).
+    // FIX CRITICO: sf::Joystick::update() DEVE essere chiamato qui, all'inizio
+    // di update(), per refreshare lo stato degli assi analogici. Su Windows
+    // (DirectInput), getAxisPosition() restituisce valori STALE (non aggiornati)
+    // se update() non viene chiamato prima della lettura.
+    //
+    // Il precedente commento che diceva "doppio update causa perdita di eventi"
+    // era ERRATO: sf::Joystick::update() NON svuota la coda eventi (quella e'
+    // gestita da window.pollEvent()), aggiorna solo lo stato interno dei
+    // pulsanti/assi. Chiamarlo 2 volte per frame e' sicuro ed e' lo standard
+    // SFML raccomandato.
+    sf::Joystick::update();
 
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
     if (state == STATE_MENU) {
@@ -1201,7 +1205,7 @@ void Game::update() {
                 float spd = 2.f + (rand() % 6);
                 particles.push_back(makeParticle(
                     miniBoss->getPixelPos(),
-                    sf::Vector2f(cos(ang) * spd, sin(ang) * spd - 2.f),
+                    sf::Vector2f(cosf(ang) * spd, sinf(ang) * spd - 2.f),
                     sf::Color(220, 160, 40),  // oro
                     50, 50, 6.f, 1));  // fiamma triangolare
             }
@@ -1266,7 +1270,7 @@ void Game::update() {
                         float ang = (rand() % 360) * (float)M_PI / 180.f;
                         particles.push_back(makeParticle(
                             miniBoss->getPixelPos(),
-                            sf::Vector2f(cos(ang) * 3.f, sin(ang) * 3.f - 1.f),
+                            sf::Vector2f(cosf(ang) * 3.f, sinf(ang) * 3.f - 1.f),
                             sf::Color(220, 160, 40),  // oro
                             20, 20, 3.f, 0));
                     }
@@ -1668,7 +1672,7 @@ void Game::update() {
         // --- Aggiornamento del calice d'oro (pozione magica) ---
         if (chalice.active) {
             chalice.pulse += 0.016f;
-            chalice.bobOffset = sin(chalice.pulse * 3.f) * 4.f;
+            chalice.bobOffset = sinf(chalice.pulse * 3.f) * 4.f;
             // Collisione con player1 o player2
             float dx1 = player.getPixelPos().x - chalice.pos.x;
             float dy1 = player.getPixelPos().y - chalice.pos.y;
@@ -1825,7 +1829,7 @@ void Game::update() {
         // --- Aggiornamento dello scettro magico ---
         if (scepter.active && !scepter.triggered) {
             scepter.pulse += 0.016f;
-            scepter.bobOffset = sin(scepter.pulse * 3.f) * 4.f;
+            scepter.bobOffset = sinf(scepter.pulse * 3.f) * 4.f;
             // Collisione con player1 o player2
             float dx1 = player.getPixelPos().x - scepter.pos.x;
             float dy1 = player.getPixelPos().y - scepter.pos.y;
@@ -2030,8 +2034,8 @@ void Game::update() {
                 mine.bouncing = true;
                 mine.bounceTimer = 30000;
                 float angle = (rand() % 360) * (float)M_PI / 180.f;
-                mine.vel.x = cos(angle) * 6.f;
-                mine.vel.y = sin(angle) * 6.f;
+                mine.vel.x = cosf(angle) * 6.f;
+                mine.vel.y = sinf(angle) * 6.f;
                 audio.playSound(SOUND_MINE_BOUNCE);
             }
         }
@@ -2183,8 +2187,8 @@ void Game::update() {
                     mine.bouncing = true;
                     mine.bounceTimer = 30000;
                     float angle = (rand() % 360) * (float)M_PI / 180.f;
-                    mine.vel.x = cos(angle) * 6.f;
-                    mine.vel.y = sin(angle) * 6.f;
+                    mine.vel.x = cosf(angle) * 6.f;
+                    mine.vel.y = sinf(angle) * 6.f;
                     audio.playSound(SOUND_MINE_BOUNCE);
                 }
             } else {
@@ -2310,7 +2314,7 @@ void Game::update() {
         // --- Update scettro/fulmini nella stanza del boss ---
         if (scepter.active && !scepter.triggered) {
             scepter.pulse += 0.016f;
-            scepter.bobOffset = sin(scepter.pulse * 3.f) * 4.f;
+            scepter.bobOffset = sinf(scepter.pulse * 3.f) * 4.f;
             float dx1 = player.getPixelPos().x - scepter.pos.x;
             float dy1 = player.getPixelPos().y - scepter.pos.y;
             bool p1Hit = (dx1 * dx1 + dy1 * dy1 < 500);
@@ -2538,7 +2542,7 @@ void Game::update() {
         bootsAnimTime += 16.f;
         // --- SpeedBoots (player1 o 1P) ---
         if (speedBoots.active) {
-            speedBoots.bobOffset = sin(bootsAnimTime * 0.005f) * 5.f;
+            speedBoots.bobOffset = sinf(bootsAnimTime * 0.005f) * 5.f;
             // Player1 raccoglie se owner==0 (1P) o owner==1 (2P)
             if (speedBoots.owner == 0 || speedBoots.owner == 1) {
                 float dx = speedBoots.pos.x - player.getPixelPos().x;
@@ -2552,7 +2556,7 @@ void Game::update() {
         }
         // --- SpeedBoots2 (player2 in 2P) ---
         if (numPlayers == 2 && speedBoots2.active) {
-            speedBoots2.bobOffset = sin(bootsAnimTime * 0.005f + 1.f) * 5.f;
+            speedBoots2.bobOffset = sinf(bootsAnimTime * 0.005f + 1.f) * 5.f;
             // Solo player2 con owner==2 raccoglie
             if (speedBoots2.owner == 2) {
                 float dx2 = speedBoots2.pos.x - player2.getPixelPos().x;
@@ -2690,12 +2694,12 @@ void Game::update() {
 // ---------------------------------------------------------------------------
 void Game::spawnFirework() {
     float x = 100 + rand() % (WINDOW_WIDTH - 200);
-    float y = 100 + rand() % (WINDOW_HEIGHT / 2);  // solo meta' alta dello schermo
+    float y = (float)(100 + rand() % (WINDOW_HEIGHT / 2));  // solo meta' alta dello schermo
     sf::Color colors[] = {sf::Color::Red, sf::Color::Green, sf::Color::Blue, sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan};
     sf::Color col = colors[rand() % 6];
     for(int i=0; i<30; i++) {
         float angle = i * (M_PI * 2 / 30);  // 30 particelle uniformi su 360°
-        fireworks.push_back({sf::Vector2f(x, y), sf::Vector2f(cos(angle)*4, sin(angle)*4), col, 60});
+        fireworks.push_back({sf::Vector2f(x, y), sf::Vector2f(cosf(angle)*4, sinf(angle)*4), col, 60});
     }
 }
 
@@ -3145,15 +3149,15 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
         sparkGlow.setFillColor(sf::Color(COL_CYAN.r, COL_CYAN.g,
                                           COL_CYAN.b,
                                           (sf::Uint8)(alpha * 0.5f)));
-        sparkGlow.setPosition(lx + cos(a) * r - 2.5f,
-                              ly + sin(a) * r - 2.5f);
+        sparkGlow.setPosition(lx + cosf(a) * r - 2.5f,
+                              ly + sinf(a) * r - 2.5f);
         target.draw(sparkGlow);
         sf::CircleShape spark(1.2f);
         spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g,
                                      COL_WHITE.b,
                                      (sf::Uint8)(alpha * 0.9f)));
-        spark.setPosition(lx + cos(a) * r - 1.2f,
-                          ly + sin(a) * r - 1.2f);
+        spark.setPosition(lx + cosf(a) * r - 1.2f,
+                          ly + sinf(a) * r - 1.2f);
         target.draw(spark);
     }
 
@@ -3187,7 +3191,7 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
 //   * (160,40,40) rosso scuro = bagliore interno
 //
 // (pos) e' il centro del player. invTimer e' il timer di invincibilita'
-// residuo (ms), usato per la pulsazione (sin(timer*0.01)).
+// residuo (ms), usato per la pulsazione (sinf(timer*0.01)).
 // ---------------------------------------------------------------------------
 void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer) {
     // Palette 16 colori OBBLIGATORIA
@@ -3198,7 +3202,7 @@ void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer
     const sf::Color COL_DARK  (48, 40, 36);      // outline
     const sf::Color COL_ORANGE(255, 100, 0);     // extra: orange brillante
 
-    float invPulse = sin(invTimer * 0.01f) * 0.2f + 1.f;
+    float invPulse = sinf(invTimer * 0.01f) * 0.2f + 1.f;
     // Tempo per animazione fuoco (usa static per persistere tra i frame)
     static float fireAnimTime = 0.f;
     fireAnimTime += 0.08f;
@@ -3253,16 +3257,16 @@ void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer
     // fuoco attorno al player. Alternate oro/rosso per varieta'.
     for (int i = 0; i < 12; i++) {
         float angle = (i / 12.f) * 2.f * (float)M_PI;
-        float fx = pos.x + cos(angle) * 20.f;
-        float fy = pos.y + sin(angle) * 20.f;
-        float flameH = 10.f + sin(fireAnimTime + i * 0.7f) * 5.f + 5.f;
+        float fx = pos.x + cosf(angle) * 20.f;
+        float fy = pos.y + sinf(angle) * 20.f;
+        float flameH = 10.f + sinf(fireAnimTime + i * 0.7f) * 5.f + 5.f;
         float flameW = 3.5f;
         // Colore: alterna oro (base) e rosso (apice)
         sf::ConvexShape flame;
         flame.setPointCount(3);
         flame.setPoint(0, sf::Vector2f(fx - flameW, fy));
         flame.setPoint(1, sf::Vector2f(fx + flameW, fy));
-        flame.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 3.f,
+        flame.setPoint(2, sf::Vector2f(fx + sinf(fireAnimTime * 2.f + i) * 3.f,
                                         fy - flameH));
         flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 220));
         flame.setOutlineThickness(0.3f);
@@ -3274,7 +3278,7 @@ void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer
         float tipH = flameH * 0.6f;
         flameTip.setPoint(0, sf::Vector2f(fx - flameW * 0.6f, fy - flameH * 0.4f));
         flameTip.setPoint(1, sf::Vector2f(fx + flameW * 0.6f, fy - flameH * 0.4f));
-        flameTip.setPoint(2, sf::Vector2f(fx + sin(fireAnimTime * 2.f + i) * 3.f,
+        flameTip.setPoint(2, sf::Vector2f(fx + sinf(fireAnimTime * 2.f + i) * 3.f,
                                            fy - flameH - tipH * 0.3f));
         flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b, 230));
         target.draw(flameTip);
@@ -3282,9 +3286,9 @@ void Game::drawFireAura(sf::RenderTarget& target, sf::Vector2f pos, int invTimer
 
     // --- 5. Scintille bianche che salgono ---
     for (int i = 0; i < 8; i++) {
-        float sparkX = pos.x + sin(fireAnimTime * 1.5f + i * 1.2f) * 14.f;
+        float sparkX = pos.x + sinf(fireAnimTime * 1.5f + i * 1.2f) * 14.f;
         float sparkY = pos.y - 10.f - ((int)(fireAnimTime * 20.f + i * 8) % 35);
-        float sparkR = 1.2f + sin(fireAnimTime + i) * 0.5f;
+        float sparkR = 1.2f + sinf(fireAnimTime + i) * 0.5f;
         sf::CircleShape spark(sparkR);
         spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
                                       220 - (int)(fireAnimTime * 20.f + i * 8) % 35 * 6));
@@ -3332,7 +3336,7 @@ void Game::drawFireBursts(sf::RenderTarget& target) {
     for (const auto& fb : fireBursts) {
         float lifeRatio = (float)fb.life / (float)fb.maxLife;  // 1 = inizio, 0 = fine
         // Pulsa in base al tempo
-        float pulse = 1.0f + sin(fb.animTime * 0.3f) * 0.1f;
+        float pulse = 1.0f + sinf(fb.animTime * 0.3f) * 0.1f;
 
         // --- 1. Glow radiale ampissimo (arancione, alpha basso) ---
         float outerR = 28.f * fb.scale * pulse;
@@ -3400,8 +3404,8 @@ void Game::drawFireBursts(sf::RenderTarget& target) {
         for (int i = 0; i < 6; i++) {
             float angle = (i / 6.f) * 2.f * (float)M_PI + fb.animTime * 0.5f;
             float dist = (1.0f - lifeRatio) * 30.f * fb.scale;
-            float sx = fb.pos.x + cos(angle) * dist;
-            float sy = fb.pos.y + sin(angle) * dist - (1.0f - lifeRatio) * 10.f;
+            float sx = fb.pos.x + cosf(angle) * dist;
+            float sy = fb.pos.y + sinf(angle) * dist - (1.0f - lifeRatio) * 10.f;
             sf::CircleShape spark(1.5f);
             spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
                                           (sf::Uint8)(220 * lifeRatio)));
@@ -3498,12 +3502,12 @@ void Game::drawAshPiles(sf::RenderTarget& target) {
         // --- 3. Braci incandescenti (puntini rossi/oro che brillano) ---
         // Solo nei primi 75% della vita (poi si spengono)
         if (lifeRatio > 0.25f) {
-            float emberPulse = 0.7f + 0.3f * sin(ap.animTime * 5.f);
+            float emberPulse = 0.7f + 0.3f * sinf(ap.animTime * 5.f);
             float emberAlpha = (lifeRatio - 0.25f) / 0.75f;  // 1 quando fresco, 0 quando spento
             for (int i = 0; i < 4; i++) {
                 float angle = (i / 4.f) * 2.f * (float)M_PI + ap.animTime * 0.3f;
-                float ex = ap.pos.x + cos(angle) * ap.radius * 0.4f;
-                float ey = ap.pos.y - 4.f + sin(angle) * ap.radius * 0.2f - i * 2.f;
+                float ex = ap.pos.x + cosf(angle) * ap.radius * 0.4f;
+                float ey = ap.pos.y - 4.f + sinf(angle) * ap.radius * 0.2f - i * 2.f;
                 // Glow attorno alla brace
                 float glowR = 3.f * emberPulse;
                 sf::CircleShape emberGlow(glowR);
@@ -3525,7 +3529,7 @@ void Game::drawAshPiles(sf::RenderTarget& target) {
         if (lifeRatio > 0.4f) {
             float smokeAlpha = (lifeRatio - 0.4f) / 0.6f;  // 1 quando fresco
             for (int i = 0; i < 5; i++) {
-                float sx = ap.pos.x + sin(ap.animTime + i * 2.f) * ap.radius * 0.5f;
+                float sx = ap.pos.x + sinf(ap.animTime + i * 2.f) * ap.radius * 0.5f;
                 float sy = ap.pos.y - 8.f - ((int)(ap.animTime * 30.f + i * 20) % 40);
                 float sr = 2.f + i * 0.5f;
                 sf::CircleShape smoke(sr);
@@ -3540,8 +3544,8 @@ void Game::drawAshPiles(sf::RenderTarget& target) {
         for (int i = 0; i < 5; i++) {
             float angle = (i / 5.f) * 2.f * (float)M_PI + 0.5f;
             float dist = ap.radius * 1.1f;
-            float dx = ap.pos.x + cos(angle) * dist;
-            float dy = ap.pos.y + sin(angle) * dist * 0.4f;  // schiacciato (pavimento)
+            float dx = ap.pos.x + cosf(angle) * dist;
+            float dy = ap.pos.y + sinf(angle) * dist * 0.4f;  // schiacciato (pavimento)
             sf::RectangleShape debris(sf::Vector2f(3.f, 2.f));
             debris.setFillColor(sf::Color(COL_SOOT.r, COL_SOOT.g, COL_SOOT.b,
                                            (sf::Uint8)(200 * lifeRatio)));
@@ -3559,7 +3563,7 @@ void Game::drawAshPiles(sf::RenderTarget& target) {
 // Elementi:
 //   * Sfondo: gradiente notte (viola scuro -> nero in basso) + alone lunare
 //   * 100 stelle generate con seed fisso (srand(42)) per non mutare ad
-//     ogni frame; poi srand(time(NULL)) per ripristinare il random del gioco
+//     ogni frame; poi srand((unsigned int)time(NULL)) per ripristinare il random del gioco
 //   * Nebbia bassa viola/azzurra che si muove lentamente
 //   * Luna in alto a destra con due crateri + alone luminoso
 //   * Fulmine casuale (overlay bianco + linee gialle) quando lightningTimer>0
@@ -3615,7 +3619,7 @@ void Game::drawMenu() {
         }
     }
     // Ripristina il seed randomico per il resto del gioco
-    srand(time(NULL));
+    srand((unsigned int)time(NULL));
 
     // --- Nebbia bassa: onde semitrasparenti viola/azzurre ---
     // 3 strati di nebbia che fluttuano lentamente con animazione sinusoidale.
@@ -3629,7 +3633,7 @@ void Game::drawMenu() {
                                           sf::Color(40, 50, 100, 40);
         float yBase = WINDOW_HEIGHT - 180.f + layer * 30.f;
         for (int x = 0; x < WINDOW_WIDTH; x += 16) {
-            float y = yBase + sin(menuTime * 0.5f + x * 0.01f + layer) * 15.f;
+            float y = yBase + sinf(menuTime * 0.5f + x * 0.01f + layer) * 15.f;
             sf::CircleShape fog(40.f);
             fog.setFillColor(fogCol);
             fog.setPosition((float)x - 40.f, y - 40.f);
@@ -3723,8 +3727,8 @@ void Game::drawMenu() {
     // Le due parti sono centrate come un'unica stringa.
     std::string byStr   = "By ";
     std::string nameStr = "Luca A. Greco";
-    float byW   = byStr.length()   * 4 * 5;
-    float nameW = nameStr.length() * 4 * 5;
+    float byW = (float)byStr.length()   * 4 * 5;
+    float nameW = (float)nameStr.length() * 4 * 5;
     float totalW = byW + nameW;
     float startX = WINDOW_WIDTH/2 - totalW/2.f;
     drawTextOutlined(window, byStr,   startX,             260, 5, sf::Color(255, 215, 100));
@@ -3790,7 +3794,7 @@ void Game::drawMenu() {
         // Fiammella laterale animata per la voce selezionata
         if (i == menuItemIndex) {
             float fx = 150.f;
-            float flicker = sin(menuTime * 15.f) * 1.5f;
+            float flicker = sinf(menuTime * 15.f) * 1.5f;
             // Aura
             sf::CircleShape flameAura(8.f);
             flameAura.setFillColor(sf::Color(255, 180, 60, 80));
@@ -4109,7 +4113,7 @@ void Game::drawSelectPlayer() {
 
     // --- 8. Personaggi SOPRA la ruota (in prospettiva, attorno al perimetro) ---
     // Per ogni personaggio calcoliamo posizione sull'ellisse, profondita'
-    // (sin(angle)), scala e alpha in base alla profondita'.
+    // (sinf(angle)), scala e alpha in base alla profondita'.
     struct CharPlacement {
         int   charIdx;
         float x, y;        // posizione piedi sull'ellisse
@@ -4125,7 +4129,7 @@ void Game::drawSelectPlayer() {
         // Posizione sull'ellisse (perimetro della ruota in prospettiva)
         float x = centerX + cosf(a) * wheelRadiusX;
         float y = centerY + sinf(a) * wheelRadiusY;
-        // Profondita': sin(a) > 0 = davanti al viewer (front), < 0 = dietro
+        // Profondita': sinf(a) > 0 = davanti al viewer (front), < 0 = dietro
         float depth = sinf(a);
         // Scala: front = piu' grande (1.8), back = piu' piccolo (0.8)
         // Mappiamo depth [-1, +1] -> scale [0.8, 1.8]
@@ -4476,8 +4480,8 @@ void Game::render() {
             for (int i = 0; i < 4; i++) {
                 float angle = i * (float)M_PI / 2.f + 0.5f;
                 float dist = bs.radius * 1.5f;
-                float sx = bs.pos.x + cos(angle) * dist;
-                float sy = bs.pos.y + sin(angle) * dist;
+                float sx = bs.pos.x + cosf(angle) * dist;
+                float sy = bs.pos.y + sinf(angle) * dist;
                 float sr = bs.radius * 0.4f;
                 sf::CircleShape splash(sr);
                 splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
@@ -4504,7 +4508,7 @@ void Game::render() {
         if (scepter.active && !scepter.triggered) {
             float sx = scepter.pos.x;
             float sy = scepter.pos.y + scepter.bobOffset;
-            float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
+            float sPulse = sinf(scepter.pulse * 4.f) * 0.15f + 1.f;
             drawMagicScepter(window, sx, sy, sPulse);
         }
 
@@ -4527,7 +4531,7 @@ void Game::render() {
         if (chalice.active) {
             float cx = chalice.pos.x;
             float cy = chalice.pos.y + chalice.bobOffset;
-            float pulse = sin(chalice.pulse * 4.f) * 0.15f + 1.f;
+            float pulse = sinf(chalice.pulse * 4.f) * 0.15f + 1.f;
             // Colori palette 16
             const sf::Color COL_GOLD   (220, 160, 40);   // oro principale
             const sf::Color COL_RED_D  (160, 40, 40);    // rosso scuro (gemma)
@@ -4629,7 +4633,7 @@ void Game::render() {
         if (mine.active) {
             float mx = mine.pos.x;
             float my = mine.pos.y;
-            float pulse = sin(mine.pulse * 5.f) * 0.2f + 1.f;
+            float pulse = sinf(mine.pulse * 5.f) * 0.2f + 1.f;
 
             // Aura rossa pulsante
             float auraR = 18.f * pulse;
@@ -4656,12 +4660,12 @@ void Game::render() {
                 spike.setFillColor(sf::Color(100, 85, 70));
                 spike.setOutlineThickness(0.5f);
                 spike.setOutlineColor(sf::Color(30, 25, 20));
-                float tipX = mx + cos(a) * (bodyR + spikeLen);
-                float tipY = my + sin(a) * (bodyR + spikeLen);
-                float perpX = -sin(a) * 3.f;
-                float perpY = cos(a) * 3.f;
-                float baseX = mx + cos(a) * bodyR;
-                float baseY = my + sin(a) * bodyR;
+                float tipX = mx + cosf(a) * (bodyR + spikeLen);
+                float tipY = my + sinf(a) * (bodyR + spikeLen);
+                float perpX = -sinf(a) * 3.f;
+                float perpY = cosf(a) * 3.f;
+                float baseX = mx + cosf(a) * bodyR;
+                float baseY = my + sinf(a) * bodyR;
                 spike.setPoint(0, sf::Vector2f(tipX, tipY));
                 spike.setPoint(1, sf::Vector2f(baseX + perpX, baseY + perpY));
                 spike.setPoint(2, sf::Vector2f(baseX - perpX, baseY - perpY));
@@ -4671,7 +4675,7 @@ void Game::render() {
             // LED rosso pulsante al centro
             float ledR = 2.f * pulse;
             sf::CircleShape led(ledR);
-            led.setFillColor(sf::Color(255, 50 + (sf::Uint8)(sin(mine.pulse * 8.f) * 50), 30, 240));
+            led.setFillColor(sf::Color(255, 50 + (sf::Uint8)(sinf(mine.pulse * 8.f) * 50), 30, 240));
             led.setPosition(mx - ledR, my - ledR);
             window.draw(led);
 
@@ -4689,7 +4693,7 @@ void Game::render() {
             float px = magicPortal.pos.x;
             float py = magicPortal.pos.y;
             float rot = magicPortal.rotation;
-            float pulse = sin(magicPortal.glowPulse * 4.f) * 0.2f + 1.f;
+            float pulse = sinf(magicPortal.glowPulse * 4.f) * 0.2f + 1.f;
 
             // Aura esterna pulsante (viola-blu) - GRANDE per essere visibile
             float auraR = 55.f * pulse;
@@ -4724,10 +4728,10 @@ void Game::render() {
             // Spirale di particelle rotanti (12 particelle)
             for (int i = 0; i < 12; i++) {
                 float a = rot * 2.f + i * (float)M_PI / 6.f;
-                float r = 14.f + sin(rot + i) * 8.f;
-                float sx = px + cos(a) * r;
-                float sy = py + sin(a) * r;
-                float sparkSize = 2.5f + sin(rot * 3.f + i) * 1.f;
+                float r = 14.f + sinf(rot + i) * 8.f;
+                float sx = px + cosf(a) * r;
+                float sy = py + sinf(a) * r;
+                float sparkSize = 2.5f + sinf(rot * 3.f + i) * 1.f;
                 sf::CircleShape spark(sparkSize);
                 spark.setFillColor(sf::Color(230, 160, 255, 220));
                 spark.setPosition(sx - sparkSize, sy - sparkSize);
@@ -4776,7 +4780,7 @@ void Game::render() {
             float dx = exitDoor.pos.x;
             float dy = exitDoor.pos.y;
             // Aura luminosa pulsante (dorata)
-            float pulse = 1.0f + sin(exitDoor.glowPulse * 3.f) * 0.15f;
+            float pulse = 1.0f + sinf(exitDoor.glowPulse * 3.f) * 0.15f;
             float auraR = 32.f * pulse;
             sf::CircleShape doorAura(auraR);
             doorAura.setFillColor(sf::Color(255, 200, 80, 50));
@@ -4877,7 +4881,7 @@ void Game::render() {
 
             // Bagliore profondo in fondo alla scala (in alto, punto luce che attira)
             float glowY = botStepY - (numSteps - 1) * stepSpacing - 2.f;
-            float glowPulse2 = sin(exitDoor.glowPulse * 2.f) * 0.3f + 0.7f;
+            float glowPulse2 = sinf(exitDoor.glowPulse * 2.f) * 0.3f + 0.7f;
             sf::CircleShape deepGlow(4.f * glowPulse2);
             deepGlow.setFillColor(sf::Color(200, 160, 60, 120));
             deepGlow.setPosition(dx - 4.f * glowPulse2, glowY - 4.f * glowPulse2);
@@ -4925,7 +4929,7 @@ void Game::render() {
 
             // Indicatore "ENTRA" sopra la porta quando e' aperta
             if (exitDoor.animTimer == 0) {
-                float bobY = sin(exitDoor.glowPulse * 4.f) * 2.f;
+                float bobY = sinf(exitDoor.glowPulse * 4.f) * 2.f;
                 drawTextCentered(window, "ENTRA", dx, dy - 30.f + bobY, 1,
                                  sf::Color(255, 220, 80));
             }
@@ -5190,7 +5194,7 @@ void Game::render() {
                 aura.setPosition(x - 20.f, yBase - 38.f);
                 window.draw(aura);
                 // Fiamma animata (3 strati)
-                float flicker = sin(bossRoomTime * 18.f + x) * 2.f;
+                float flicker = sinf(bossRoomTime * 18.f + x) * 2.f;
                 // Strato esterno (rosso)
                 sf::CircleShape flame3(8.f + flicker);
                 flame3.setFillColor(sf::Color(180, 30, 10, 220));
@@ -5398,7 +5402,7 @@ void Game::render() {
             // l'area circostante.
             if (boss) {
                 sf::Vector2f bpos = boss->getPos();
-                float pulse = 1.0f + sin(bossRoomTime * 2.5f) * 0.08f;
+                float pulse = 1.0f + sinf(bossRoomTime * 2.5f) * 0.08f;
                 float auraR = (boss->getSize() * 0.9f) * pulse;
                 sf::CircleShape bossAura(auraR);
                 // Colore dell'aura = ambientLight ma più intenso
@@ -5820,7 +5824,7 @@ void Game::render() {
                 bAura.setPosition(cx - 28.f, cy - 50.f);
                 window.draw(bAura);
                 // Fiamma animata (3 strati)
-                float flicker = sin(bossRoomTime * 16.f + cx) * 1.5f;
+                float flicker = sinf(bossRoomTime * 16.f + cx) * 1.5f;
                 // Strato esterno (rosso)
                 sf::CircleShape flame3(7.f + flicker);
                 flame3.setFillColor(sf::Color(180, 30, 10, 220));
@@ -6026,7 +6030,7 @@ void Game::render() {
                 candle.setPosition(x + 8.f, y - 8.f);
                 window.draw(candle);
                 // Fiamma animata
-                float flick = sin(bossRoomTime * 14.f + x) * 0.8f;
+                float flick = sinf(bossRoomTime * 14.f + x) * 0.8f;
                 sf::CircleShape flame(1.5f + flick);
                 flame.setFillColor(sf::Color(255, 180, 60, 230));
                 flame.setPosition(x + 8.f - flick, y - 12.f);
@@ -6301,7 +6305,7 @@ void Game::render() {
                             candle.setPosition(cx - 2.f, ay - 12.f);
                             window.draw(candle);
                             // Fiamma viola animata
-                            float flick = sin(bossRoomTime * 14.f + i * 1.5f) * 1.f;
+                            float flick = sinf(bossRoomTime * 14.f + i * 1.5f) * 1.f;
                             sf::CircleShape cFlame(2.f + flick);
                             cFlame.setFillColor(sf::Color(200, 100, 240, 230));
                             cFlame.setPosition(cx - 2.f - flick, ay - 18.f);
@@ -6338,8 +6342,8 @@ void Game::render() {
                         // Fiammelle che si alzano
                         for (int i = 0; i < 5; i++) {
                             float fx = lx - 18.f + i * 9.f;
-                            float fyOff = sin(bossRoomTime * 8.f + i) * 4.f;
-                            sf::CircleShape flame(2.5f + sin(bossRoomTime * 10.f + i) * 0.5f);
+                            float fyOff = sinf(bossRoomTime * 8.f + i) * 4.f;
+                            sf::CircleShape flame(2.5f + sinf(bossRoomTime * 10.f + i) * 0.5f);
                             flame.setFillColor(sf::Color(255, 150, 40, 220));
                             flame.setPosition(fx - 2.5f, ly - 14.f + fyOff);
                             window.draw(flame);
@@ -6441,7 +6445,7 @@ void Game::render() {
                         // Bolle animate
                         for (int i = 0; i < 6; i++) {
                             float bx = wx - 18.f + (i * 7.f);
-                            float byOff = sin(bossRoomTime * 3.f + i * 1.2f) * 4.f;
+                            float byOff = sinf(bossRoomTime * 3.f + i * 1.2f) * 4.f;
                             sf::CircleShape bubble(1.5f + (i % 2) * 0.5f);
                             bubble.setFillColor(sf::Color(180, 220, 230, 180));
                             bubble.setPosition(bx, wy - 3.f + byOff);
@@ -6538,7 +6542,7 @@ void Game::render() {
                             candle.setPosition(cx + dx - 1.5f, by - 6.f);
                             window.draw(candle);
                             // Fiamma ciano animata
-                            float flick = sin(bossRoomTime * 12.f + i * 1.3f) * 0.8f;
+                            float flick = sinf(bossRoomTime * 12.f + i * 1.3f) * 0.8f;
                             sf::CircleShape flame(1.5f + flick);
                             flame.setFillColor(sf::Color(150, 220, 255, 230));
                             flame.setPosition(cx + dx - 1.5f - flick, by - 10.f);
@@ -6719,12 +6723,12 @@ void Game::render() {
                     float baseY = (float)(rand() % (playH - 100)) + playTop + 50.f;
                     // Animazione: oscillazione sinusoidale attorno alla posizione base
                     float t = bossRoomTime + i * 0.7f;
-                    float dx = sin(t * 1.5f) * 8.f;
-                    float dy = cos(t * 1.2f) * 6.f;
+                    float dx = sinf(t * 1.5f) * 8.f;
+                    float dy = cosf(t * 1.2f) * 6.f;
                     float px = baseX + dx;
                     float py = baseY + dy;
                     // Pulsazione alpha
-                    float alphaPulse = (sin(t * 3.f) + 1.f) * 0.5f;  // 0..1
+                    float alphaPulse = (sinf(t * 3.f) + 1.f) * 0.5f;  // 0..1
                     sf::Uint8 pAlpha = (sf::Uint8)(100 + alphaPulse * 100);
                     // Particella principale
                     sf::CircleShape particle(1.5f);
@@ -6741,7 +6745,7 @@ void Game::render() {
                     pAura.setPosition(px - 4.f, py - 4.f);
                     window.draw(pAura);
                 }
-                srand(time(NULL));  // ripristina seed randomico
+                srand((unsigned int)time(NULL));  // ripristina seed randomico
             }
         }
 
@@ -6783,7 +6787,7 @@ void Game::render() {
                 window.draw(wing);
             }
             // Aura gialla pulsante
-            sf::CircleShape aura(20.f + sin(boots.bobOffset * 0.5f) * 3.f);
+            sf::CircleShape aura(20.f + sinf(boots.bobOffset * 0.5f) * 3.f);
             aura.setFillColor(sf::Color(255, 220, 80, 40));
             aura.setPosition(bx - 20.f, by - 20.f);
             window.draw(aura);
@@ -6803,7 +6807,7 @@ void Game::render() {
         if (scepter.active && !scepter.triggered) {
             float sx = scepter.pos.x;
             float sy = scepter.pos.y + scepter.bobOffset;
-            float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
+            float sPulse = sinf(scepter.pulse * 4.f) * 0.15f + 1.f;
             drawMagicScepter(window, sx, sy, sPulse);
         }
 
@@ -6859,8 +6863,8 @@ void Game::render() {
             for (int i = 0; i < 4; i++) {
                 float angle = i * (float)M_PI / 2.f + 0.5f;
                 float dist = bs.radius * 1.5f;
-                float sx = bs.pos.x + cos(angle) * dist;
-                float sy = bs.pos.y + sin(angle) * dist;
+                float sx = bs.pos.x + cosf(angle) * dist;
+                float sy = bs.pos.y + sinf(angle) * dist;
                 float sr = bs.radius * 0.4f;
                 sf::CircleShape splash(sr);
                 splash.setFillColor(sf::Color(bs.color.r, bs.color.g, bs.color.b, (sf::Uint8)(alpha * 0.7f)));
@@ -6960,7 +6964,7 @@ void Game::render() {
                 case BP_FIREBALL: {
                     // DEMON: palla di fuoco con lingue di fiamma
                     // (non piu' un pallino, ma una sfera con 4 fiamme che si alzano)
-                    float pulse = sin(p.age * 0.02f) * 0.8f;
+                    float pulse = sinf(p.age * 0.02f) * 0.8f;
                     sf::CircleShape fAura(7.f + pulse);
                     fAura.setFillColor(sf::Color(255, 100, 30, 80));
                     fAura.setPosition(px - 7.f - pulse, py - 7.f - pulse);
@@ -6968,14 +6972,14 @@ void Game::render() {
                     // 4 lingue di fiamma che si alzano (triangoli animati)
                     for (int i = 0; i < 4; i++) {
                         float ang = i * (float)M_PI / 2.f + p.age * 0.005f;
-                        float flameLen = 4.f + sin(p.age * 0.025f + i) * 1.5f;
+                        float flameLen = 4.f + sinf(p.age * 0.025f + i) * 1.5f;
                         sf::ConvexShape flame; flame.setPointCount(3);
                         flame.setFillColor(sf::Color(255, 140, 30, 200));
                         // Triangolo che parte dal centro verso l'esterno
-                        flame.setPoint(0, sf::Vector2f(px + cos(ang) * 3.f, py + sin(ang) * 3.f));
-                        flame.setPoint(1, sf::Vector2f(px + cos(ang + 0.3f) * 1.5f, py + sin(ang + 0.3f) * 1.5f));
-                        flame.setPoint(2, sf::Vector2f(px + cos(ang) * (3.f + flameLen),
-                                                         py + sin(ang) * (3.f + flameLen)));
+                        flame.setPoint(0, sf::Vector2f(px + cosf(ang) * 3.f, py + sinf(ang) * 3.f));
+                        flame.setPoint(1, sf::Vector2f(px + cosf(ang + 0.3f) * 1.5f, py + sinf(ang + 0.3f) * 1.5f));
+                        flame.setPoint(2, sf::Vector2f(px + cosf(ang) * (3.f + flameLen),
+                                                         py + sinf(ang) * (3.f + flameLen)));
                         window.draw(flame);
                     }
                     // Nucleo centrale (sfera di fuoco)
@@ -7045,8 +7049,8 @@ void Game::render() {
                     // 3 gocce di inchiostro disposte lungo la direzione di volo
                     for (int i = 0; i < 3; i++) {
                         float t = (i - 1.f) * 3.f;  // offset lungo la direzione
-                        float dx = cos(inkAng * (float)M_PI / 180.f) * t;
-                        float dy = sin(inkAng * (float)M_PI / 180.f) * t;
+                        float dx = cosf(inkAng * (float)M_PI / 180.f) * t;
+                        float dy = sinf(inkAng * (float)M_PI / 180.f) * t;
                         sf::CircleShape drop(2.5f - i * 0.4f);
                         drop.setFillColor(sf::Color(60, 20, 80));
                         drop.setOutlineThickness(0.5f);
@@ -7064,26 +7068,26 @@ void Game::render() {
                 case BP_DRAGON_BREATH: {
                     // DRAGON: cono di fuoco (non piu' un pallino, ma un piccolo
                     // soffio conico rivolto nella direzione di volo)
-                    float pulse = sin(p.age * 0.025f) * 0.5f;
+                    float pulse = sinf(p.age * 0.025f) * 0.5f;
                     sf::CircleShape bAura(6.f + pulse);
                     bAura.setFillColor(sf::Color(255, 200, 80, 100));
                     bAura.setPosition(px - 6.f - pulse, py - 6.f - pulse);
                     window.draw(bAura);
                     // Cono: ConvexShape triangolare allungato nella direzione di volo
                     float bAng = atan2(p.dir.y, p.dir.x) * 180.f / (float)M_PI;
-                    float perpX = -sin(bAng * (float)M_PI / 180.f);
-                    float perpY = cos(bAng * (float)M_PI / 180.f);
+                    float perpX = -sinf(bAng * (float)M_PI / 180.f);
+                    float perpY = cosf(bAng * (float)M_PI / 180.f);
                     sf::ConvexShape cone; cone.setPointCount(3);
                     cone.setFillColor(sf::Color(255, 180, 60));
                     cone.setOutlineThickness(0.5f);
                     cone.setOutlineColor(sf::Color(200, 80, 20));
                     // Punta in avanti, base larga dietro
-                    cone.setPoint(0, sf::Vector2f(px + cos(bAng * (float)M_PI / 180.f) * 5.f,
-                                                   py + sin(bAng * (float)M_PI / 180.f) * 5.f));
-                    cone.setPoint(1, sf::Vector2f(px - cos(bAng * (float)M_PI / 180.f) * 2.f + perpX * 3.f,
-                                                   py - sin(bAng * (float)M_PI / 180.f) * 2.f + perpY * 3.f));
-                    cone.setPoint(2, sf::Vector2f(px - cos(bAng * (float)M_PI / 180.f) * 2.f - perpX * 3.f,
-                                                   py - sin(bAng * (float)M_PI / 180.f) * 2.f - perpY * 3.f));
+                    cone.setPoint(0, sf::Vector2f(px + cosf(bAng * (float)M_PI / 180.f) * 5.f,
+                                                   py + sinf(bAng * (float)M_PI / 180.f) * 5.f));
+                    cone.setPoint(1, sf::Vector2f(px - cosf(bAng * (float)M_PI / 180.f) * 2.f + perpX * 3.f,
+                                                   py - sinf(bAng * (float)M_PI / 180.f) * 2.f + perpY * 3.f));
+                    cone.setPoint(2, sf::Vector2f(px - cosf(bAng * (float)M_PI / 180.f) * 2.f - perpX * 3.f,
+                                                   py - sinf(bAng * (float)M_PI / 180.f) * 2.f - perpY * 3.f));
                     window.draw(cone);
                     // Nucleo giallo centrale
                     sf::CircleShape core(1.5f);
@@ -7154,28 +7158,28 @@ void Game::render() {
                     head.setOutlineThickness(0.4f);
                     head.setOutlineColor(sf::Color(100, 10, 20));
                     // Punta davanti all'asta
-                    float hx = px + cos(bAng * (float)M_PI / 180.f) * 4.f;
-                    float hy = py + sin(bAng * (float)M_PI / 180.f) * 4.f;
-                    float perpX = -sin(bAng * (float)M_PI / 180.f);
-                    float perpY = cos(bAng * (float)M_PI / 180.f);
+                    float hx = px + cosf(bAng * (float)M_PI / 180.f) * 4.f;
+                    float hy = py + sinf(bAng * (float)M_PI / 180.f) * 4.f;
+                    float perpX = -sinf(bAng * (float)M_PI / 180.f);
+                    float perpY = cosf(bAng * (float)M_PI / 180.f);
                     head.setPoint(0, sf::Vector2f(hx, hy));  // punta
-                    head.setPoint(1, sf::Vector2f(hx - cos(bAng * (float)M_PI / 180.f) * 3.f + perpX * 2.f,
-                                                  hy - sin(bAng * (float)M_PI / 180.f) * 3.f + perpY * 2.f));
-                    head.setPoint(2, sf::Vector2f(hx - cos(bAng * (float)M_PI / 180.f) * 3.f - perpX * 2.f,
-                                                  hy - sin(bAng * (float)M_PI / 180.f) * 3.f - perpY * 2.f));
+                    head.setPoint(1, sf::Vector2f(hx - cosf(bAng * (float)M_PI / 180.f) * 3.f + perpX * 2.f,
+                                                  hy - sinf(bAng * (float)M_PI / 180.f) * 3.f + perpY * 2.f));
+                    head.setPoint(2, sf::Vector2f(hx - cosf(bAng * (float)M_PI / 180.f) * 3.f - perpX * 2.f,
+                                                  hy - sinf(bAng * (float)M_PI / 180.f) * 3.f - perpY * 2.f));
                     window.draw(head);
                     // Piume della coda (2 piccoli triangoli)
                     for (int side = 0; side < 2; side++) {
                         float s = (side == 0) ? 1.f : -1.f;
                         sf::ConvexShape fletch; fletch.setPointCount(3);
                         fletch.setFillColor(sf::Color(140, 20, 30));
-                        float tx = px - cos(bAng * (float)M_PI / 180.f) * 3.f;
-                        float ty = py - sin(bAng * (float)M_PI / 180.f) * 3.f;
+                        float tx = px - cosf(bAng * (float)M_PI / 180.f) * 3.f;
+                        float ty = py - sinf(bAng * (float)M_PI / 180.f) * 3.f;
                         fletch.setPoint(0, sf::Vector2f(tx, ty));
-                        fletch.setPoint(1, sf::Vector2f(tx - cos(bAng * (float)M_PI / 180.f) * 2.f + perpX * s * 2.f,
-                                                        ty - sin(bAng * (float)M_PI / 180.f) * 2.f + perpY * s * 2.f));
-                        fletch.setPoint(2, sf::Vector2f(tx - cos(bAng * (float)M_PI / 180.f) * 4.f,
-                                                        ty - sin(bAng * (float)M_PI / 180.f) * 4.f));
+                        fletch.setPoint(1, sf::Vector2f(tx - cosf(bAng * (float)M_PI / 180.f) * 2.f + perpX * s * 2.f,
+                                                        ty - sinf(bAng * (float)M_PI / 180.f) * 2.f + perpY * s * 2.f));
+                        fletch.setPoint(2, sf::Vector2f(tx - cosf(bAng * (float)M_PI / 180.f) * 4.f,
+                                                        ty - sinf(bAng * (float)M_PI / 180.f) * 4.f));
                         window.draw(fletch);
                     }
                     break;
@@ -7238,7 +7242,7 @@ void Game::render() {
                 case BP_CULT_ORB: {
                     // CULT_HERALD: libro magico volante con pagine
                     // (non piu' un pallino, ma un piccolo tomo aperto)
-                    float pulse = sin(p.age * 0.02f) * 0.6f;
+                    float pulse = sinf(p.age * 0.02f) * 0.6f;
                     sf::CircleShape oAura(7.f + pulse);
                     oAura.setFillColor(sf::Color(180, 60, 220, 70));
                     oAura.setPosition(px - 7.f - pulse, py - 7.f - pulse);
@@ -7251,14 +7255,14 @@ void Game::render() {
                     book.setOrigin(4.f, 3.f);
                     book.setPosition(px, py);
                     // Ruota leggermente il libro (effetto "fluttuante")
-                    book.rotate(sin(p.age * 0.015f) * 15.f);
+                    book.rotate(sinf(p.age * 0.015f) * 15.f);
                     window.draw(book);
                     // Pagine (striscia chiara centrale)
                     sf::RectangleShape pages(sf::Vector2f(6.f, 4.f));
                     pages.setFillColor(sf::Color(240, 220, 240));
                     pages.setOrigin(3.f, 2.f);
                     pages.setPosition(px, py);
-                    pages.rotate(sin(p.age * 0.015f) * 15.f);
+                    pages.rotate(sinf(p.age * 0.015f) * 15.f);
                     window.draw(pages);
                     // Simbolo magico sul libro (punto dorato)
                     sf::CircleShape sym(1.f);
@@ -7270,7 +7274,7 @@ void Game::render() {
                     spine.setFillColor(sf::Color(60, 25, 80));
                     spine.setOrigin(0.25f, 3.f);
                     spine.setPosition(px, py);
-                    spine.rotate(sin(p.age * 0.015f) * 15.f);
+                    spine.rotate(sinf(p.age * 0.015f) * 15.f);
                     window.draw(spine);
                     break;
                 }
@@ -7312,7 +7316,7 @@ void Game::render() {
                 case BP_WITCH_HEX: {
                     // SUPREME_WITCH: piccolo calderone ribollente viola
                     // (non piu' un pallino, ma un calderone con bolle animate)
-                    float pulse = sin(p.age * 0.018f) * 0.7f;
+                    float pulse = sinf(p.age * 0.018f) * 0.7f;
                     // Aura estesa se homing (chiazza più grande)
                     float auraR = (p.homingTimer > 0) ? 10.f : 7.f;
                     sf::CircleShape hAura(auraR + pulse);
@@ -7337,7 +7341,7 @@ void Game::render() {
                     // Contenuto ribollente (palline viola animate)
                     for (int i = 0; i < 3; i++) {
                         float bubbleX = px - 3.f + i * 3.f;
-                        float bubbleY = py - 3.f + sin(p.age * 0.03f + i * 1.5f) * 1.f;
+                        float bubbleY = py - 3.f + sinf(p.age * 0.03f + i * 1.5f) * 1.f;
                         sf::CircleShape bubble(1.f + (i % 2) * 0.4f);
                         bubble.setFillColor(sf::Color(200, 80, 230));
                         bubble.setOutlineThickness(0.3f);
@@ -7392,7 +7396,7 @@ void Game::render() {
         if (scepter.active && !scepter.triggered) {
             float sx = scepter.pos.x;
             float sy = scepter.pos.y + scepter.bobOffset;
-            float sPulse = sin(scepter.pulse * 4.f) * 0.15f + 1.f;
+            float sPulse = sinf(scepter.pulse * 4.f) * 0.15f + 1.f;
             drawMagicScepter(window, sx, sy, sPulse);
         }
 
@@ -7405,7 +7409,7 @@ void Game::render() {
         if (mine.active) {
             float mx = mine.pos.x;
             float my = mine.pos.y;
-            float mPulse = sin(mine.pulse * 5.f) * 0.2f + 1.f;
+            float mPulse = sinf(mine.pulse * 5.f) * 0.2f + 1.f;
             float auraR = 18.f * mPulse;
             sf::CircleShape mineAura(auraR);
             mineAura.setFillColor(sf::Color(200, 50, 20, 50));
@@ -7426,12 +7430,12 @@ void Game::render() {
                 spike.setFillColor(sf::Color(100, 85, 70));
                 spike.setOutlineThickness(0.5f);
                 spike.setOutlineColor(sf::Color(30, 25, 20));
-                float tipX = mx + cos(a) * (bodyR + spikeLen);
-                float tipY = my + sin(a) * (bodyR + spikeLen);
-                float perpX = -sin(a) * 3.f;
-                float perpY = cos(a) * 3.f;
-                float baseX = mx + cos(a) * bodyR;
-                float baseY = my + sin(a) * bodyR;
+                float tipX = mx + cosf(a) * (bodyR + spikeLen);
+                float tipY = my + sinf(a) * (bodyR + spikeLen);
+                float perpX = -sinf(a) * 3.f;
+                float perpY = cosf(a) * 3.f;
+                float baseX = mx + cosf(a) * bodyR;
+                float baseY = my + sinf(a) * bodyR;
                 spike.setPoint(0, sf::Vector2f(tipX, tipY));
                 spike.setPoint(1, sf::Vector2f(baseX + perpX, baseY + perpY));
                 spike.setPoint(2, sf::Vector2f(baseX - perpX, baseY - perpY));
@@ -7439,7 +7443,7 @@ void Game::render() {
             }
             float ledR = 2.f * mPulse;
             sf::CircleShape led(ledR);
-            led.setFillColor(sf::Color(255, 50 + (sf::Uint8)(sin(mine.pulse * 8.f) * 50), 30, 240));
+            led.setFillColor(sf::Color(255, 50 + (sf::Uint8)(sinf(mine.pulse * 8.f) * 50), 30, 240));
             led.setPosition(mx - ledR, my - ledR);
             window.draw(led);
             if (mine.bouncing) {

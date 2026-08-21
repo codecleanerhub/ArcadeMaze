@@ -101,7 +101,7 @@ void drawText(sf::RenderTarget& target, const std::string& text, float x, float 
         for (int row = 0; row < 5; ++row) {
             for (int col = 0; col < 3; ++col) {
                 if (charData[row] & (1 << (2 - col))) {
-                    sf::RectangleShape pixel(sf::Vector2f(scale, scale));
+                    sf::RectangleShape pixel(sf::Vector2f((float)scale, (float)scale));
                     pixel.setPosition(currentX + col * scale, y + row * scale);
                     pixel.setFillColor(color);
                     target.draw(pixel);
@@ -115,7 +115,7 @@ void drawText(sf::RenderTarget& target, const std::string& text, float x, float 
 // drawTextCentered: centra orizzontalmente il testo rispetto a `cx`.
 // Larghezza stimata = lunghezza stringa * 4 * scale (3 px glifo + 1 px spazio).
 void drawTextCentered(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color) {
-    float width = text.length() * 4 * scale;
+    float width = (float)text.length() * 4.f * (float)scale;
     drawText(target, text, cx - width / 2.f, y, scale, color);
 }
 
@@ -131,6 +131,6 @@ void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x
 
 // drawTextCenteredOutlined: combinazione di centered + outlined.
 void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color) {
-    float width = text.length() * 4 * scale;
+    float width = (float)text.length() * 4.f * (float)scale;
     drawTextOutlined(target, text, cx - width / 2.f, y, scale, color);
 }

@@ -257,7 +257,7 @@ void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
     for (int i = 0; i < 4; ++i) {
         int nc = col + dc[i], nr = row + dr[i];
         if (!maze.isWall(nc, nr)) {
-            float dist = (nc - target.x) * (nc - target.x) + (nr - target.y) * (nr - target.y);
+            float dist = (float)((nc - target.x) * (nc - target.x) + (nr - target.y) * (nr - target.y));
             if (dc[i] == -dx && dr[i] == -dy) dist += 10;
             if (dist < minDist) { minDist = dist; bestDx = dc[i]; bestDy = dr[i]; }
         }
@@ -455,9 +455,9 @@ void Enemy::render(sf::RenderTarget& target) const {
                 bool flipped = (dx < 0);
                 float bobY = 0.f;
                 if (animName == "walk" && (dx != 0 || dy != 0)) {
-                    bobY = sin(pathUpdateTimer * 0.012f) * 2.f;
+                    bobY = sinf(pathUpdateTimer * 0.012f) * 2.f;
                 } else if (animName == "idle") {
-                    bobY = sin(pathUpdateTimer * 0.004f) * 1.f;
+                    bobY = sinf(pathUpdateTimer * 0.004f) * 1.f;
                 }
                 it->second.render(target, animName, frame, px, py + 8.f + bobY, 1.0f, flipped);
                 spriteDrawn = true;
@@ -522,7 +522,7 @@ void Enemy::render(sf::RenderTarget& target) const {
         else if (burnProgress > 0.8f) intensity = 1.0f - (burnProgress - 0.8f) * 1.5f;
         if (intensity < 0.3f) intensity = 0.3f;
 
-        float pulse = 1.0f + sin(burnAnimTime * 0.02f) * 0.1f;
+        float pulse = 1.0f + sinf(burnAnimTime * 0.02f) * 0.1f;
 
         // 1. Glow radiale multistrato (sotto lo sprite PNG per dare profondita')
         float outerR = 22.f * pulse;
@@ -574,15 +574,15 @@ void Enemy::render(sf::RenderTarget& target) const {
         for (int i = 0; i < 6; i++) {
             float angle = (i / 6.f) * 2.f * (float)M_PI + burnAnimTime * 0.005f;
             float ringR = 14.f;
-            float fx = px + cos(angle) * ringR;
-            float fy = py - 8.f + sin(angle) * ringR;
-            float flameH = (8.f + sin(burnAnimTime * 0.02f + i * 0.7f) * 4.f + 4.f) * intensity;
+            float fx = px + cosf(angle) * ringR;
+            float fy = py - 8.f + sinf(angle) * ringR;
+            float flameH = (8.f + sinf(burnAnimTime * 0.02f + i * 0.7f) * 4.f + 4.f) * intensity;
             float flameW = 3.f;
             sf::ConvexShape flame;
             flame.setPointCount(3);
             flame.setPoint(0, sf::Vector2f(fx - flameW, fy));
             flame.setPoint(1, sf::Vector2f(fx + flameW, fy));
-            flame.setPoint(2, sf::Vector2f(fx + sin(burnAnimTime * 0.02f + i) * 2.f,
+            flame.setPoint(2, sf::Vector2f(fx + sinf(burnAnimTime * 0.02f + i) * 2.f,
                                             fy - flameH));
             flame.setFillColor(sf::Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b,
                                           (sf::Uint8)(200 * intensity)));
@@ -592,7 +592,7 @@ void Enemy::render(sf::RenderTarget& target) const {
             flameTip.setPointCount(3);
             flameTip.setPoint(0, sf::Vector2f(fx - flameW * 0.6f, fy - flameH * 0.4f));
             flameTip.setPoint(1, sf::Vector2f(fx + flameW * 0.6f, fy - flameH * 0.4f));
-            flameTip.setPoint(2, sf::Vector2f(fx + sin(burnAnimTime * 0.02f + i) * 2.f,
+            flameTip.setPoint(2, sf::Vector2f(fx + sinf(burnAnimTime * 0.02f + i) * 2.f,
                                                fy - flameH * 1.3f));
             flameTip.setFillColor(sf::Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b,
                                               (sf::Uint8)(220 * intensity)));
@@ -601,7 +601,7 @@ void Enemy::render(sf::RenderTarget& target) const {
 
         // 4. 3 scintille bianche che salgono (faville)
         for (int i = 0; i < 3; i++) {
-            float sparkX = px + sin(burnAnimTime * 0.015f + i * 1.2f) * 10.f;
+            float sparkX = px + sinf(burnAnimTime * 0.015f + i * 1.2f) * 10.f;
             float sparkY = py - 18.f - ((int)(burnAnimTime * 0.2f + i * 8) % 25);
             float sparkR = 1.f;
             sf::CircleShape spark(sparkR);
@@ -613,7 +613,7 @@ void Enemy::render(sf::RenderTarget& target) const {
 
         // 5. Fumo grigio che sale (il nemico sta bruciando, fa fumo)
         for (int i = 0; i < 2; i++) {
-            float smokeX = px + sin(burnAnimTime * 0.01f + i * 2.f) * 6.f;
+            float smokeX = px + sinf(burnAnimTime * 0.01f + i * 2.f) * 6.f;
             float smokeY = py - 20.f - ((int)(burnAnimTime * 0.15f + i * 15) % 35);
             float smokeR = 2.f + (i * 0.5f);
             sf::CircleShape smoke(smokeR);
@@ -640,7 +640,7 @@ void Enemy::render(sf::RenderTarget& target) const {
         const sf::Color COL_WHITE (240, 240, 240);
 
         // Intensita' pulsante (effetto "elettrico" che flickera)
-        float pulse = 0.7f + 0.3f * sin(electrifiedAnimTime * 0.05f);
+        float pulse = 0.7f + 0.3f * sinf(electrifiedAnimTime * 0.05f);
         float alpha = (float)electrifiedTimer / 30.f;  // fade-out negli ultimi frame
 
         // 1. Glow radiale ciano-blu attorno al nemico
@@ -663,15 +663,15 @@ void Enemy::render(sf::RenderTarget& target) const {
         // Ogni arco ha 4 segmenti con jitter casuale per sembrare elettrico
         for (int arc = 0; arc < 5; arc++) {
             float baseAngle = (arc / 5.f) * 2.f * (float)M_PI +
-                              sin(electrifiedAnimTime * 0.03f + arc) * 0.3f;
+                              sinf(electrifiedAnimTime * 0.03f + arc) * 0.3f;
             float curX = px;
             float curY = py - 8.f;
             // 4 segmenti per arco
             for (int seg = 0; seg < 4; seg++) {
                 float segLen = 5.f + (rand() % 4);
                 float jitterAngle = baseAngle + ((rand() % 100) - 50) / 100.f * 0.8f;
-                float nextX = curX + cos(jitterAngle) * segLen;
-                float nextY = curY + sin(jitterAngle) * segLen;
+                float nextX = curX + cosf(jitterAngle) * segLen;
+                float nextY = curY + sinf(jitterAngle) * segLen;
                 float segDx = nextX - curX;
                 float segDy = nextY - curY;
                 float segLen2 = sqrtf(segDx * segDx + segDy * segDy);
@@ -695,9 +695,9 @@ void Enemy::render(sf::RenderTarget& target) const {
         for (int i = 0; i < 4; i++) {
             float sAngle = (i / 4.f) * 2.f * (float)M_PI +
                            electrifiedAnimTime * 0.04f;
-            float sDist = 12.f + sin(electrifiedAnimTime * 0.06f + i) * 4.f;
-            float sx = px + cos(sAngle) * sDist;
-            float sy = py - 8.f + sin(sAngle) * sDist;
+            float sDist = 12.f + sinf(electrifiedAnimTime * 0.06f + i) * 4.f;
+            float sx = px + cosf(sAngle) * sDist;
+            float sy = py - 8.f + sinf(sAngle) * sDist;
             sf::CircleShape spark(1.5f);
             spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
                                            (sf::Uint8)(240 * alpha)));
@@ -899,9 +899,9 @@ void Enemy::renderPrimitives(sf::RenderTarget& target) const {
         sf::Color web(200, 200, 200);
         for(int i=0; i<4; i++) {
             sf::RectangleShape l1(sf::Vector2f(12.f, 2.f)); l1.setFillColor(web);
-            l1.rotate(-30 + i*20); l1.setPosition(px - 8.f, py - 2 + i*3); target.draw(l1);
+            l1.rotate(-30 + i*20); l1.setPosition(px - 8.f, py - 2.f + (float)(i*3)); target.draw(l1);
             sf::RectangleShape l2(sf::Vector2f(12.f, 2.f)); l2.setFillColor(web);
-            l2.rotate(30 - i*20); l2.setPosition(px + 8.f, py - 2 + i*3); target.draw(l2);
+            l2.rotate(30 - i*20); l2.setPosition(px + 8.f, py - 2.f + (float)(i*3)); target.draw(l2);
         }
         sf::CircleShape body(10.f); body.setFillColor(sf::Color(30, 30, 30)); body.setOutlineThickness(1.f); body.setOutlineColor(outline);
         body.setPosition(px - 10.f, py - 4.f); target.draw(body);

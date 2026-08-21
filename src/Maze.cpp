@@ -292,7 +292,7 @@ void Maze::render(sf::RenderTarget& target) {
     // Prima passata: celle del labirinto (muri, pavimento, tesori, armi).
     for (int c = 0; c < MAZE_COLS; ++c) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
-            rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+            rect.setPosition((float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT));
             if (grid[c][r].type == CELL_WALL) {
                 // --- Muro 3D roccioso con gradiente verticale pulito ---
                 // La roccia e' resa con un gradiente verticale a 5 strisce
@@ -328,7 +328,7 @@ void Maze::render(sf::RenderTarget& target) {
                     (sf::Uint8)std::max(0, wallColor.b - 20));
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.75f));
                 rect.setFillColor(colLowShadow);
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT + TILE_SIZE * 0.25f);
+                rect.setPosition((float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT + TILE_SIZE * 0.25f));
                 target.draw(rect);
 
                 // Strato 3 (centro, tono base): 55% del tile dal centro in su
@@ -338,7 +338,7 @@ void Maze::render(sf::RenderTarget& target) {
                     (sf::Uint8)std::max(0, wallColor.b - 5));
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.55f));
                 rect.setFillColor(colMid);
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+                rect.setPosition((float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT));
                 target.draw(rect);
 
                 // Strato 2 (alto-sopra, luce media): 30% del tile dall'alto
@@ -348,7 +348,7 @@ void Maze::render(sf::RenderTarget& target) {
                     (sf::Uint8)std::min(255, wallColor.b + 14));
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.30f));
                 rect.setFillColor(colHigh);
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+                rect.setPosition((float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT));
                 target.draw(rect);
 
                 // Strato 1 (cima, luce intensa): 10% del tile dal bordo superiore
@@ -358,7 +358,7 @@ void Maze::render(sf::RenderTarget& target) {
                     (sf::Uint8)std::min(255, wallColor.b + 32));
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE * 0.10f));
                 rect.setFillColor(colTop);
-                rect.setPosition(c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+                rect.setPosition((float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT));
                 target.draw(rect);
 
                 // Singola crepa rara (~10% delle celle muro), sottile e corta.
@@ -593,7 +593,7 @@ void Maze::render(sf::RenderTarget& target) {
                         for (int i = 0; i < 8; i++) {
                             float ang = i * (float)M_PI / 4.f;
                             float radius = (i % 2 == 0) ? 14.f : 7.f;  // alterna raggio (stella)
-                            gem.setPoint(i, sf::Vector2f(cx + cos(ang) * radius, cy + sin(ang) * radius));
+                            gem.setPoint(i, sf::Vector2f(cx + cosf(ang) * radius, cy + sinf(ang) * radius));
                         }
                         target.draw(gem);
 
@@ -858,15 +858,15 @@ void Maze::render(sf::RenderTarget& target) {
                         for (int i = 0; i < 10; i++) {
                             float ang = i * (float)M_PI / 5.f - (float)M_PI / 2.f;
                             float starR = (i % 2 == 0) ? 3.f : 1.2f;  // FIX -Wshadow: rinominato r -> starR
-                            star.setPoint(i, sf::Vector2f(cx + cos(ang) * starR, cy - 5.f + sin(ang) * starR));
+                            star.setPoint(i, sf::Vector2f(cx + cosf(ang) * starR, cy - 5.f + sinf(ang) * starR));
                         }
                         target.draw(star);
 
                         // Piccoli raggi luminosi attorno alla pila (effetto scintillio)
                         for (int i = 0; i < 4; i++) {
                             float ang = i * (float)M_PI / 2.f + (float)M_PI / 4.f;
-                            float sx = cx + cos(ang) * 14.f;
-                            float sy = cy - 4.f + sin(ang) * 10.f;
+                            float sx = cx + cosf(ang) * 14.f;
+                            float sy = cy - 4.f + sinf(ang) * 10.f;
                             sf::RectangleShape ray(sf::Vector2f(1.f, 3.f));
                             ray.setFillColor(sf::Color(255, 240, 150, 180));
                             ray.setOrigin(0.5f, 1.5f);
@@ -877,7 +877,7 @@ void Maze::render(sf::RenderTarget& target) {
                     }
                 } else if (grid[c][r].type == CELL_WEAPON) {
                     // Arma a terra: delega a Weapon::render
-                    grid[c][r].weapon.render(target, c * TILE_SIZE, r * TILE_SIZE + UI_HEIGHT);
+                    grid[c][r].weapon.render(target, (float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT));
                 }
             }
         }
@@ -928,8 +928,8 @@ void Maze::render(sf::RenderTarget& target) {
         bracket.setPoint(3, sf::Vector2f(x - 4.f, yBase - 10.f));
         target.draw(bracket);
         // Fiamma animata (3 strati)
-        float flicker = sin(torchTime * 18.f + x) * 1.5f;
-        float flicker2 = cos(torchTime * 22.f + x * 0.7f) * 1.f;
+        float flicker = sinf(torchTime * 18.f + x) * 1.5f;
+        float flicker2 = cosf(torchTime * 22.f + x * 0.7f) * 1.f;
         // Strato esterno (rosso scuro)
         sf::CircleShape flame3(6.f + flicker);
         flame3.setFillColor(sf::Color(180, 30, 10, 220));
@@ -1256,12 +1256,12 @@ void Maze::render(sf::RenderTarget& target) {
             float baseY = (float)(rand() % (MAZE_ROWS * TILE_SIZE)) + UI_HEIGHT;
             // Animazione sinusoidale (fluttuazione lenta)
             float t = animTime + i * 0.5f;
-            float dx = sin(t * 0.8f) * 6.f;
-            float dy = cos(t * 0.6f + i) * 4.f;
+            float dx = sinf(t * 0.8f) * 6.f;
+            float dy = cosf(t * 0.6f + i) * 4.f;
             float px = baseX + dx;
             float py = baseY + dy;
             // Pulsazione alpha (lampeggio lento)
-            float alphaPulse = (sin(t * 1.5f + i) + 1.f) * 0.5f;  // 0..1
+            float alphaPulse = (sinf(t * 1.5f + i) + 1.f) * 0.5f;  // 0..1
             sf::Uint8 pAlpha = (sf::Uint8)(40 + alphaPulse * 60);
             // Particella (piccolo punto chiaro)
             sf::CircleShape dust(1.f);
@@ -1269,6 +1269,6 @@ void Maze::render(sf::RenderTarget& target) {
             dust.setPosition(px - 1.f, py - 1.f);
             target.draw(dust);
         }
-        srand(time(NULL));  // ripristina seed
+        srand((unsigned int)time(NULL));  // ripristina seed
     }
 }

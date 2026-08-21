@@ -69,7 +69,7 @@ void UI::render(sf::RenderTarget& target, Player& player, int remainingTreasures
     // LIVES: un cuore per ogni vita
     drawTextOutlined(target, "LIVES", 150, 10, 2, sf::Color::White);
     for(int i = 0; i < player.getLives(); ++i) {
-        drawDetailedHeart(target, 160 + i * 24, 35, 8.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+        drawDetailedHeart(target, (float)(160 + i * 24), 35.f, 8.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
     }
 
     // ENERGY: barra proporzionale (magenta su grigio)
@@ -115,7 +115,7 @@ void UI::render(sf::RenderTarget& target, Player& player1, Player& player2, int 
     // P1 LIVES
     drawTextOutlined(target, "LIFE", 80, 10, 2, sf::Color::White);
     for(int i = 0; i < player1.getLives(); ++i) {
-        drawDetailedHeart(target, 90 + i * 16, 35, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+        drawDetailedHeart(target, (float)(90 + i * 16), 35.f, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
     }
     // P1 ENERGY
     drawTextOutlined(target, "EN", 180, 10, 2, sf::Color::White);
@@ -141,7 +141,7 @@ void UI::render(sf::RenderTarget& target, Player& player1, Player& player2, int 
     // P2 LIVES
     drawTextOutlined(target, "LIFE", 640, 10, 2, sf::Color::White);
     for(int i = 0; i < player2.getLives(); ++i) {
-        drawDetailedHeart(target, 650 + i * 16, 35, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+        drawDetailedHeart(target, (float)(650 + i * 16), 35.f, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
     }
     // P2 ENERGY
     drawTextOutlined(target, "EN", 740, 10, 2, sf::Color::White);

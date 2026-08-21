@@ -126,7 +126,7 @@ void AudioManager::playMenuMusic() {
 
 int AudioManager::findFreeSound() {
     for(size_t i = 0; i < sounds.size(); ++i) {
-        if(sounds[i].getStatus() != sf::Sound::Playing) return i;
+        if(sounds[i].getStatus() != sf::Sound::Playing) return (int)i;
     }
     return 0;  // voice stealing
 }
@@ -153,7 +153,7 @@ void AudioManager::playSound(SoundType type) {
 
     if (type == SOUND_PISTOL) {
         // 0.08s: noise burst + 80Hz pulse, decay veloce
-        for(int i = 0; i < SR * 0.08; i++) {
+        for(int i = 0; i < (int)(SR * 0.08); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 35.0);
             double s = 0.5 * noiseGen() + 0.5 * pulseWave(t * 80.0, 0.5);
@@ -162,7 +162,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_SHOTGUN) {
         // 0.15s: piu' noise, 60Hz, decay medio
-        for(int i = 0; i < SR * 0.15; i++) {
+        for(int i = 0; i < (int)(SR * 0.15); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 20.0);
             double s = 0.7 * noiseGen() + 0.3 * pulseWave(t * 60.0, 0.5);
@@ -171,7 +171,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_ROCKET) {
         // 0.25s: rumble grave 40Hz + noise
-        for(int i = 0; i < SR * 0.25; i++) {
+        for(int i = 0; i < (int)(SR * 0.25); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 12.0);
             double s = 0.4 * noiseGen() + 0.6 * pulseWave(t * 40.0, 0.3);
@@ -180,7 +180,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_LASER) {
         // 0.15s: sweep frequenza alta discendente
-        for(int i = 0; i < SR * 0.15; i++) {
+        for(int i = 0; i < (int)(SR * 0.15); i++) {
             double t = (double)i / SR;
             double freq = 1200 - t * 4000;
             if (freq < 200) freq = 200;
@@ -193,7 +193,7 @@ void AudioManager::playSound(SoundType type) {
         // Arpeggio ascendente 4 note: Do-Mi-Sol-Do (ottava superiore)
         int notes[] = {523, 659, 784, 1047};
         for(int n = 0; n < 4; n++) {
-            for(int i = 0; i < SR * 0.06; i++) {
+            for(int i = 0; i < (int)(SR * 0.06); i++) {
                 double t = (double)i / SR;
                 double env = exp(-t * 20.0);
                 double s = 0.6 * pulseWave(t * notes[n], 0.5) +
@@ -207,7 +207,7 @@ void AudioManager::playSound(SoundType type) {
         // 1) gridolato pitch discendente (pulse wave)
         // 2) esplosione noise burst
         // 3) dissolve basso
-        for(int i = 0; i < SR * 0.5; i++) {
+        for(int i = 0; i < (int)(SR * 0.5); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 5.0);
             double s = 0;
@@ -228,7 +228,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_LOSE_LIFE) {
         // 0.5s: onda quadra discendente (classico "lose life" NES)
-        for(int i = 0; i < SR * 0.5; i++) {
+        for(int i = 0; i < (int)(SR * 0.5); i++) {
             double t = (double)i / SR;
             double freq = 300 - t * 400;
             if (freq < 60) freq = 60;
@@ -241,7 +241,7 @@ void AudioManager::playSound(SoundType type) {
         // Fanfara vittoria: 5 note ascendenti
         int notes[] = {523, 659, 784, 1047, 1319};
         for(int n = 0; n < 5; n++) {
-            for(int i = 0; i < SR * 0.1; i++) {
+            for(int i = 0; i < (int)(SR * 0.1); i++) {
                 double t = (double)i / SR;
                 double env = exp(-t * 6.0);
                 double s = 0.5 * pulseWave(t * notes[n], 0.5) +
@@ -252,7 +252,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_BOSS_HIT) {
         // 0.1s: clank metallico (due freq alte + noise)
-        for(int i = 0; i < SR * 0.1; i++) {
+        for(int i = 0; i < (int)(SR * 0.1); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 25.0);
             double s = 0.3 * pulseWave(t * 800, 0.5) +
@@ -263,7 +263,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_BOSS_DEATH) {
         // 1.5s: esplosione lunga (noise + basso discendente)
-        for(int i = 0; i < SR * 1.5; i++) {
+        for(int i = 0; i < (int)(SR * 1.5); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 2.0);
             double freq = 100 * exp(-t * 1.5) + 30;
@@ -274,7 +274,7 @@ void AudioManager::playSound(SoundType type) {
     // --- Nuovi SFX retro ---
     else if (type == SOUND_JUMP) {
         // 0.15s: sweep triangolare ascendente (salto)
-        for(int i = 0; i < SR * 0.15; i++) {
+        for(int i = 0; i < (int)(SR * 0.15); i++) {
             double t = (double)i / SR;
             double freq = 200 + t * 1200;  // 200 -> 1400 Hz
             double env = exp(-t * 8.0);
@@ -284,7 +284,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_DOOR_OPEN) {
         // 0.4s: cigolio grave (pulse a bassa freq con vibrato)
-        for(int i = 0; i < SR * 0.4; i++) {
+        for(int i = 0; i < (int)(SR * 0.4); i++) {
             double t = (double)i / SR;
             double freq = 60 + 20 * sin(t * 30);  // vibrato
             double env = exp(-t * 3.0) * (1.0 - exp(-t * 20.0));  // attack + decay
@@ -294,7 +294,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_TRAP) {
         // 0.2s: scatto secco (noise burst + click alto)
-        for(int i = 0; i < SR * 0.2; i++) {
+        for(int i = 0; i < (int)(SR * 0.2); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 15.0);
             double s = 0.6 * noiseGen() + 0.4 * pulseWave(t * 1500, 0.1);
@@ -303,7 +303,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_MENU_SELECT) {
         // 0.05s: blip corto (cursor move NES style)
-        for(int i = 0; i < SR * 0.05; i++) {
+        for(int i = 0; i < (int)(SR * 0.05); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 40.0);
             double s = pulseWave(t * 880, 0.5);  // La5
@@ -314,7 +314,7 @@ void AudioManager::playSound(SoundType type) {
         // 0.15s: due toni (La -> Do) classico confirm
         int notes[] = {880, 1319};  // La5, Mi6
         for(int n = 0; n < 2; n++) {
-            for(int i = 0; i < SR * 0.07; i++) {
+            for(int i = 0; i < (int)(SR * 0.07); i++) {
                 double t = (double)i / SR;
                 double env = exp(-t * 15.0);
                 double s = pulseWave(t * notes[n], 0.5);
@@ -328,7 +328,7 @@ void AudioManager::playSound(SoundType type) {
         // 6 note ascendenti (Do-Mi-Sol-Do-Mi-Sol) con sweep di freq
         int notes[] = {262, 330, 392, 523, 659, 784};
         for(int n = 0; n < 6; n++) {
-            for(int i = 0; i < SR * 0.1; i++) {
+            for(int i = 0; i < (int)(SR * 0.1); i++) {
                 double t = (double)i / SR;
                 double env = exp(-t * 8.0) * (1.0 - exp(-t * 30.0));
                 double s = 0.4 * pulseWave(t * notes[n], 0.5) +
@@ -338,7 +338,7 @@ void AudioManager::playSound(SoundType type) {
             }
         }
         // Tail reverb (0.2s)
-        for(int i = 0; i < SR * 0.2; i++) {
+        for(int i = 0; i < (int)(SR * 0.2); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 5.0);
             double s = 0.3 * triangleWave(t * 784) + 0.2 * noiseGen();
@@ -347,7 +347,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_PORTAL_CLOSE) {
         // 0.6s: chiusura discendente - sweep inverso + impatto
-        for(int i = 0; i < SR * 0.6; i++) {
+        for(int i = 0; i < (int)(SR * 0.6); i++) {
             double t = (double)i / SR;
             double freq = 600 * exp(-t * 4.0) + 80;  // discendente
             double env = exp(-t * 3.0);
@@ -357,7 +357,7 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(2200 * s * env));
         }
         // Impatto finale (0.1s)
-        for(int i = 0; i < SR * 0.1; i++) {
+        for(int i = 0; i < (int)(SR * 0.1); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 20.0);
             double s = 0.6 * noiseGen() + 0.4 * pulseWave(t * 50, 0.5);
@@ -367,25 +367,25 @@ void AudioManager::playSound(SoundType type) {
     else if (type == SOUND_WEAPON_PICKUP) {
         // 0.6s: caricamento fucile (click-click-clack meccanico)
         // Fase 1: click metallico secco (0.05s)
-        for(int i = 0; i < SR * 0.05; i++) {
+        for(int i = 0; i < (int)(SR * 0.05); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 50.0);
             double s = 0.6 * noiseGen() + 0.4 * pulseWave(t * 2000, 0.1);
             samples.push_back((sf::Int16)(2500 * s * env));
         }
         // Pausa (0.05s silenzio)
-        for(int i = 0; i < SR * 0.05; i++) samples.push_back(0);
+        for(int i = 0; i < (int)(SR * 0.05); i++) samples.push_back(0);
         // Fase 2: secondo click (0.05s)
-        for(int i = 0; i < SR * 0.05; i++) {
+        for(int i = 0; i < (int)(SR * 0.05); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 50.0);
             double s = 0.5 * noiseGen() + 0.5 * pulseWave(t * 1500, 0.1);
             samples.push_back((sf::Int16)(2200 * s * env));
         }
         // Pausa (0.05s silenzio)
-        for(int i = 0; i < SR * 0.05; i++) samples.push_back(0);
+        for(int i = 0; i < (int)(SR * 0.05); i++) samples.push_back(0);
         // Fase 3: clack di caricamento (0.15s) - slide meccanico grave
-        for(int i = 0; i < SR * 0.15; i++) {
+        for(int i = 0; i < (int)(SR * 0.15); i++) {
             double t = (double)i / SR;
             double freq = 300 - t * 800;  // sweep discendente
             if (freq < 80) freq = 80;
@@ -396,14 +396,14 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(2500 * s * env));
         }
         // Fase 4: click finale di chiusura (0.05s)
-        for(int i = 0; i < SR * 0.05; i++) {
+        for(int i = 0; i < (int)(SR * 0.05); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 40.0);
             double s = 0.7 * noiseGen() + 0.3 * pulseWave(t * 1800, 0.1);
             samples.push_back((sf::Int16)(2800 * s * env));
         }
         // Fase 5: tonfo basso di conferma (0.1s)
-        for(int i = 0; i < SR * 0.1; i++) {
+        for(int i = 0; i < (int)(SR * 0.1); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 15.0);
             double s = 0.5 * triangleWave(t * 100) + 0.3 * pulseWave(t * 50, 0.5);
@@ -412,7 +412,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_ENEMY_EXPLODE) {
         // 0.4s: boom esplosione (noise burst + basso discendente + debris)
-        for(int i = 0; i < SR * 0.4; i++) {
+        for(int i = 0; i < (int)(SR * 0.4); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 6.0);
             double freq = 120 * exp(-t * 5.0) + 30;
@@ -425,14 +425,14 @@ void AudioManager::playSound(SoundType type) {
     else if (type == SOUND_BLOOD_SPLAT) {
         // 0.5s: splatter gore (schizzo sangue + impatto carnoso + gocce)
         // Fase 1 (0.05s): impatto carnoso iniziale (tonfo + noise burst)
-        for(int i = 0; i < SR * 0.05; i++) {
+        for(int i = 0; i < (int)(SR * 0.05); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 30.0);
             double s = 0.6 * noiseGen() + 0.4 * triangleWave(t * 60);
             samples.push_back((sf::Int16)(3000 * s * env));
         }
         // Fase 2 (0.15s): schizzo liquido (sweep discendente + gorgoglio)
-        for(int i = 0; i < SR * 0.15; i++) {
+        for(int i = 0; i < (int)(SR * 0.15); i++) {
             double t = (double)i / SR;
             double freq = 400 * exp(-t * 6.0) + 50;
             double env = exp(-t * 8.0) * (1.0 - exp(-t * 50.0));
@@ -446,7 +446,7 @@ void AudioManager::playSound(SoundType type) {
         // Fase 3 (0.1s): gocce che cadono (3 blip discendenti)
         for(int g = 0; g < 3; g++) {
             double gulpFreq = 200 - g * 50;
-            for(int i = 0; i < SR * 0.03; i++) {
+            for(int i = 0; i < (int)(SR * 0.03); i++) {
                 double t = (double)i / SR;
                 double env = exp(-t * 40.0);
                 double s = 0.5 * triangleWave(t * gulpFreq) +
@@ -454,10 +454,10 @@ void AudioManager::playSound(SoundType type) {
                 samples.push_back((sf::Int16)(1800 * s * env));
             }
             // Pausa breve tra le gocce
-            for(int i = 0; i < SR * 0.015; i++) samples.push_back(0);
+            for(int i = 0; i < (int)(SR * 0.015); i++) samples.push_back(0);
         }
         // Fase 4 (0.05s): dissolvenza bassa (pozza che si forma)
-        for(int i = 0; i < SR * 0.05; i++) {
+        for(int i = 0; i < (int)(SR * 0.05); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 15.0);
             double s = 0.4 * triangleWave(t * 40) + 0.2 * noiseGen();
@@ -466,7 +466,7 @@ void AudioManager::playSound(SoundType type) {
     }
     else if (type == SOUND_MINE_BOUNCE) {
         // 0.12s: boing metallico (sweep discendente rapido + noise)
-        for(int i = 0; i < SR * 0.12; i++) {
+        for(int i = 0; i < (int)(SR * 0.12); i++) {
             double t = (double)i / SR;
             double freq = 800 * exp(-t * 8.0) + 200;
             double env = exp(-t * 18.0) * (1.0 - exp(-t * 50.0));
@@ -493,10 +493,10 @@ void AudioManager::playSound(SoundType type) {
                 samples.push_back((sf::Int16)(2200 * s * env));
             }
             // Pausa breve tra un glug e l'altro
-            for (int i = 0; i < SR * 0.06; i++) samples.push_back(0);
+            for (int i = 0; i < (int)(SR * 0.06); i++) samples.push_back(0);
         }
         // Deglutizione finale (tonfo basso)
-        for (int i = 0; i < SR * 0.1; i++) {
+        for (int i = 0; i < (int)(SR * 0.1); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 15.0);
             double s = 0.5 * triangleWave(t * 90) + 0.3 * pulseWave(t * 60, 0.5);
@@ -506,14 +506,14 @@ void AudioManager::playSound(SoundType type) {
     else if (type == SOUND_LIGHTNING) {
         // 0.4s: fulmine (crack elettrico + boom + tuono)
         // Fase 1 (0.02s): crack iniziale (noise burst acuto)
-        for(int i = 0; i < SR * 0.02; i++) {
+        for(int i = 0; i < (int)(SR * 0.02); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 80.0);
             double s = noiseGen();
             samples.push_back((sf::Int16)(3200 * s * env));
         }
         // Fase 2 (0.1s): scarica elettrica (sweep acuto discendente + buzz)
-        for(int i = 0; i < SR * 0.1; i++) {
+        for(int i = 0; i < (int)(SR * 0.1); i++) {
             double t = (double)i / SR;
             double freq = 3000 * exp(-t * 15.0) + 200;
             double env = exp(-t * 12.0);
@@ -523,7 +523,7 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(2800 * s * env));
         }
         // Fase 3 (0.15s): boom (basso discendente)
-        for(int i = 0; i < SR * 0.15; i++) {
+        for(int i = 0; i < (int)(SR * 0.15); i++) {
             double t = (double)i / SR;
             double freq = 100 * exp(-t * 5.0) + 30;
             double env = exp(-t * 6.0);
@@ -533,7 +533,7 @@ void AudioManager::playSound(SoundType type) {
             samples.push_back((sf::Int16)(2500 * s * env));
         }
         // Fase 4 (0.13s): tuono morente (rumore basso che sfuma)
-        for(int i = 0; i < SR * 0.13; i++) {
+        for(int i = 0; i < (int)(SR * 0.13); i++) {
             double t = (double)i / SR;
             double env = exp(-t * 8.0);
             double s = 0.4 * noiseGen() * (1.0 - t / 0.13) +
@@ -670,7 +670,7 @@ void AudioManager::generateTrack(int trackIdx) {
     double tempo = (trackIdx == 4) ? 130.0 : 100.0 + trackIdx * 2.5;
     double beatDur = 60.0 / tempo;
     double sixteenthDur = beatDur / 4.0;
-    int samplesPerSixteenth = SR * sixteenthDur;
+    int samplesPerSixteenth = (int)(SR * sixteenthDur);
     int numBars = 32;
     int totalSamples = numBars * 4 * samplesPerSixteenth;  // 32 bar * 4 beat * 4 sixteenth
 
