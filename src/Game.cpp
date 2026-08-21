@@ -766,24 +766,54 @@ void Game::update() {
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
-        // FIX: usa il joystick corretto in base allo step (P1=0, P2=1 o fallback 0)
-        // e se Joy:: non trova il joystick 1, prova SFML direttamente
+        // FIX RUOTA P2: per il player 2, preferiamo SFML a Joy::. Su Windows,
+        // quando P1 ha un controller XInput, DirectInput enumera anche un
+        // "ghost" di P1 (visibile come device DirectInput). Joy:: mappa
+        // joystick ID 1 a DirectInput device 0, che e' il ghost di P1, NON
+        // il controller reale di P2. Risultato: Joy:: per P2 legge lo stato
+        // di P1, causando "mirror" del movimento (P2 si muove come P1).
+        // SFML gestisce correttamente XInput senza ghost, quindi e' piu'
+        // affidabile per P2. Joy:: resta come fallback se SFML non rileva
+        // il joystick (es. vecchie versioni SFML senza supporto XInput).
         unsigned int wheelJoyId = (selectPlayerStep == 0) ? 0 : 1;
-        bool wheelJoyConnected = Joy::isConnected(wheelJoyId);
-        if (!wheelJoyConnected && wheelJoyId == 1) {
-            sf::Joystick::update();
-            wheelJoyConnected = sf::Joystick::isConnected(1);
-            if (!wheelJoyConnected) {
-                wheelJoyId = 0;  // gamepad condiviso
-                wheelJoyConnected = Joy::isConnected(0);
+        bool wheelUseSFML = false;  // true = usa sf::Joystick; false = usa Joy::
+        bool wheelJoyConnected = false;
+        if (wheelJoyId == 0) {
+            // P1: usa Joy:: (XInput/DirectInput nativo)
+            wheelJoyConnected = Joy::isConnected(0);
+        } else {
+            // P2: prova prima SFML (piu' affidabile), poi Joy::
+            wheelUseSFML = sf::Joystick::isConnected(1);
+            if (wheelUseSFML) {
+                wheelJoyConnected = true;
+            } else {
+                wheelJoyConnected = Joy::isConnected(1);
+                if (!wheelJoyConnected) {
+                    // Nessun joystick 1 rilevato: usa il 0 (condiviso con P1)
+                    wheelJoyId = 0;
+                    wheelJoyConnected = Joy::isConnected(0);
+                }
             }
         }
         if (wheelJoyConnected) {
             int axisX = (selectPlayerStep == 0) ? config.joy_axis_x : config.joy2_axis_x;
-            float x = Joy::getAxisPosition(wheelJoyId, (sf::Joystick::Axis)axisX);
-            // Se Joy:: non ha funzionato, prova SFML direttamente
-            if (wheelJoyId == 1 && fabs(x) < 0.1f) {
+            float x = 0.f;
+            if (wheelUseSFML) {
                 x = sf::Joystick::getAxisPosition(wheelJoyId, (sf::Joystick::Axis)axisX);
+            } else {
+                x = Joy::getAxisPosition(wheelJoyId, (sf::Joystick::Axis)axisX);
+            }
+            // FIX POV: se l'asse X e' ~0 e l'utente ha un arcade stick con
+            // D-pad (POV hat) invece di thumbstick analogico, leggi PovX.
+            // Molti fight stick / arcade stick mappano la leva sul D-pad.
+            if (fabs(x) < 0.1f) {
+                float povX = 0.f;
+                if (wheelUseSFML) {
+                    povX = sf::Joystick::getAxisPosition(wheelJoyId, sf::Joystick::PovX);
+                } else {
+                    povX = Joy::getAxisPosition(wheelJoyId, sf::Joystick::PovX);
+                }
+                if (fabs(povX) > 0.1f) x = povX;
             }
             static bool joyMovedWheel = false;
             if (fabs(x) > 50 && !joyMovedWheel) {
@@ -815,10 +845,11 @@ void Game::update() {
             static bool selJoyBtn = false;
             int jumpBtn = (selectPlayerStep == 0) ? config.joy_jump : config.joy2_jump;
             if (jumpBtn < 0) jumpBtn = 0;
-            bool pressed = Joy::isButtonPressed(wheelJoyId, (unsigned)jumpBtn);
-            // Se Joy:: non trova il pulsante, prova SFML
-            if (!pressed && wheelJoyId == 1) {
+            bool pressed = false;
+            if (wheelUseSFML) {
                 pressed = sf::Joystick::isButtonPressed(wheelJoyId, (unsigned)jumpBtn);
+            } else {
+                pressed = Joy::isButtonPressed(wheelJoyId, (unsigned)jumpBtn);
             }
             if (pressed && !selJoyBtn) {
                 selJoyBtn = true;
@@ -887,36 +918,54 @@ void Game::update() {
     }
 
     // --- STATO CONFIG_JOY_2: configurazione joystick player 2 via polling ---
-    if (state == STATE_CONFIG_JOY_2 && Joy::isConnected(1)) {
-        static bool waitForRelease2 = false;
+    // FIX: come per il gameplay, preferiamo SFML a Joy:: per P2. Su Windows,
+    // Joy:: potrebbe leggere il ghost DirectInput di P1 invece del controller
+    // reale di P2. Usando SFML come primario, la configurazione dei pulsanti
+    // funziona correttamente anche quando Joy:: non rileva P2.
+    if (state == STATE_CONFIG_JOY_2) {
+        // Determina il backend: SFML primario, Joy:: fallback
+        bool cfg2UseSFML = sf::Joystick::isConnected(1);
+        bool cfg2Connected = cfg2UseSFML || Joy::isConnected(1);
+        if (cfg2Connected) {
+            static bool waitForRelease2 = false;
 
-        if (waitForRelease2) {
-            unsigned int maxBtns = Joy::getButtonCount(1);
-            if (maxBtns > 128) maxBtns = 128;
-            bool anyPressed = false;
-            for (unsigned int b = 0; b < maxBtns; b++) {
-                if (Joy::isButtonPressed(1, b)) { anyPressed = true; break; }
-            }
-            if (!anyPressed) waitForRelease2 = false;
-            return;
-        }
-
-        unsigned int maxButtons = Joy::getButtonCount(1);
-        if (maxButtons > 128) maxButtons = 128;
-        for (unsigned int b = 0; b < maxButtons; b++) {
-            if (Joy::isButtonPressed(1, b)) {
-                if (configJoyStep == 0) {
-                    config.joy2_jump = (int)b;
-                    configJoyStep = 1;
-                    audio.playSound(SOUND_MENU_CONFIRM);
-                    waitForRelease2 = true;
-                } else if (configJoyStep == 1) {
-                    config.joy2_shoot = (int)b;
-                    state = STATE_MENU;
-                    audio.playSound(SOUND_MENU_CONFIRM);
-                    waitForRelease2 = true;
+            // Lambda per leggere lo stato dei pulsanti in modo uniforme
+            auto readButton = [&](unsigned int b) -> bool {
+                if (cfg2UseSFML) {
+                    return sf::Joystick::isButtonPressed(1, b);
+                } else {
+                    return Joy::isButtonPressed(1, b);
                 }
-                break;
+            };
+            unsigned int maxButtons = cfg2UseSFML
+                ? sf::Joystick::getButtonCount(1)
+                : Joy::getButtonCount(1);
+            if (maxButtons > 128) maxButtons = 128;
+
+            if (waitForRelease2) {
+                bool anyPressed = false;
+                for (unsigned int b = 0; b < maxButtons; b++) {
+                    if (readButton(b)) { anyPressed = true; break; }
+                }
+                if (!anyPressed) waitForRelease2 = false;
+                return;
+            }
+
+            for (unsigned int b = 0; b < maxButtons; b++) {
+                if (readButton(b)) {
+                    if (configJoyStep == 0) {
+                        config.joy2_jump = (int)b;
+                        configJoyStep = 1;
+                        audio.playSound(SOUND_MENU_CONFIRM);
+                        waitForRelease2 = true;
+                    } else if (configJoyStep == 1) {
+                        config.joy2_shoot = (int)b;
+                        state = STATE_MENU;
+                        audio.playSound(SOUND_MENU_CONFIRM);
+                        waitForRelease2 = true;
+                    }
+                    break;
+                }
             }
         }
     }
@@ -1024,48 +1073,66 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); }
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
 
-        // Joystick P2: usa la STESSA logica di P1 (Joy:: con Joy::update).
-        // FIX DEFINITIVO: il problema e' che isConnected(1) ricalcola
-        // xinputCount ogni volta (chiama g_xinputGetState per 4 slot).
-        // Se il secondo arcade stick e' DirectInput, isConnected(1) ritorna
-        // true solo se diIndex=1-xinputCount e' < g_dinputDeviceCount.
-        // Con 1 XInput + 2 DirectInput: xinputCount=1, diIndex=0 -> OK.
-        // MA getAxisPosition ricalcola xinputCount INDEPENDENTEMENTE.
-        // Se tra le due chiamate lo stato XInput cambia (es. P1 muove lo
-        // stick), xinputCount potrebbe essere diverso -> diIndex diverso ->
-        // legge il device sbagliato.
+        // Joystick P2: preferiamo SFML a Joy:: per il player 2.
         //
-        // FIX: usa SEMPRE p2JoyId=1, e lascia che Joy:: gestisca il
-        // fallback internamente. Joy::isConnected(1) ricalcola ogni volta,
-        // ma getAxisPosition usa la stessa logica, quindi e' consistente.
-        // Se isConnected(1) ritorna false, il codice sotto non esegue,
-        // ma almeno non c'e' mismatch tra isConnected e getAxisPosition.
+        // BUG PRECEDENTE: Joy:: su Windows, quando P1 ha un controller XInput,
+        // legge il "ghost" DirectInput di P1 (enumerato da DirectInput quando
+        // XInput e' attivo). Joy:: mappa joystick ID 1 a DirectInput device 0
+        // (il ghost di P1), NON al controller reale di P2. Risultato: Joy::
+        // restituiva per P2 i valori di P1, causando "mirror" del movimento.
         //
-        // Inoltre: se Joy::isConnected(1) e' false, usa SFML fallback
-        // (sf::Joystick) che su Windows e' separato da XInput/DirectInput.
+        // Il fallback SFML precedente usava la condizione `fabs(x)<0.1 &&
+        // fabs(y)<0.1` (AND), che scattava solo se ENTRAMBI gli assi erano
+        // near-zero. Quando P1 muoveva lo stick (anche solo su un asse),
+        // Joy:: restituiva valori non-zero per P2, il fallback SFML non
+        // scattava, e P2 "specchiava" P1. Sintomo: "P2 non va in alcune
+        // direzioni" (quelle in cui P1 non stava muovendo).
+        //
+        // FIX: usa SFML come backend PRIMARIO per P2. SFML su Windows gestisce
+        // XInput senza ghost, quindi legge correttamente il controller di P2.
+        // Joy:: resta come fallback se SFML non rileva il joystick (es. SFML
+        // vecchia senza supporto XInput, o P2 e' XInput slot 1 non visto da SFML).
         unsigned int p2JoyId = 1;
-        // Controlla se il joystick 1 e' disponibile con qualsiasi metodo
-        bool p2Connected = Joy::isConnected(1);
-        if (!p2Connected) {
-            // Prova SFML direttamente per joystick 1
-            sf::Joystick::update();
-            p2Connected = sf::Joystick::isConnected(1);
-            if (p2Connected) {
-                // SFML vede il joystick 1, usiamo SFML tramite Joy::
-                // (Joy:: fallback a SFML quando XInput/DirectInput non trova)
-                p2JoyId = 1;
-            } else {
+        bool p2UseSFML = false;  // true = usa sf::Joystick; false = usa Joy::
+        bool p2Connected = false;
+        // Prova prima SFML per P2
+        p2UseSFML = sf::Joystick::isConnected(1);
+        if (p2UseSFML) {
+            p2Connected = true;
+        } else {
+            // SFML non rileva il joystick 1, prova Joy::
+            p2Connected = Joy::isConnected(1);
+            if (!p2Connected) {
                 // Nessun joystick 1: usa il joystick 0 (condiviso con P1)
                 p2JoyId = 0;
             }
         }
         // Leggi assi sempre (anche se p2JoyId=0, per gamepad condiviso)
-        float x = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
-        float y = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_y);
-        // Se Joy:: non ha funzionato (valori 0), prova SFML direttamente
-        if (p2JoyId == 1 && fabs(x) < 0.1f && fabs(y) < 0.1f) {
+        float x = 0.f, y = 0.f;
+        if (p2JoyId == 1 && p2UseSFML) {
             x = sf::Joystick::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
             y = sf::Joystick::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_y);
+        } else {
+            x = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
+            y = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_y);
+        }
+        // FIX POV: se X e Y sono ~0, prova a leggere PovX/PovY (D-pad).
+        // Molti arcade stick / fight stick mappano la leva sul D-pad invece
+        // che sul thumbstick analogico. Senza questo fallback, il gioco non
+        // leggerebbe mai la direzione della leva per P2.
+        if (fabs(x) < 0.1f && fabs(y) < 0.1f) {
+            float povX = 0.f, povY = 0.f;
+            if (p2JoyId == 1 && p2UseSFML) {
+                povX = sf::Joystick::getAxisPosition(p2JoyId, sf::Joystick::PovX);
+                povY = sf::Joystick::getAxisPosition(p2JoyId, sf::Joystick::PovY);
+            } else {
+                povX = Joy::getAxisPosition(p2JoyId, sf::Joystick::PovX);
+                povY = Joy::getAxisPosition(p2JoyId, sf::Joystick::PovY);
+            }
+            // PovX/PovY restituiscono -100..100 (o 0 se non premuto).
+            // Usa questi valori solo se effettivamente premuti.
+            if (fabs(povX) > 0.1f) x = povX;
+            if (fabs(povY) > 0.1f) y = povY;
         }
         if (fabs(x) > 25 || fabs(y) > 25) {
             if (fabs(x) > fabs(y)) {
@@ -1078,9 +1145,11 @@ void Game::update() {
         }
         // Sparo joystick
         if (config.joy2_shoot >= 0) {
-            bool shootPressed = Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot);
-            if (!shootPressed && p2JoyId == 1) {
+            bool shootPressed = false;
+            if (p2JoyId == 1 && p2UseSFML) {
                 shootPressed = sf::Joystick::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot);
+            } else {
+                shootPressed = Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot);
             }
             if (shootPressed && player2.getShootCooldown() == 0) {
                 int ammoBefore = player2.getCurrentWeapon().ammo;
@@ -1091,9 +1160,11 @@ void Game::update() {
         }
         // Salto joystick
         if (config.joy2_jump >= 0) {
-            bool jumpPressed = Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump);
-            if (!jumpPressed && p2JoyId == 1) {
+            bool jumpPressed = false;
+            if (p2JoyId == 1 && p2UseSFML) {
                 jumpPressed = sf::Joystick::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump);
+            } else {
+                jumpPressed = Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump);
             }
             if (jumpPressed) {
                 bool wasJumping = player2.isJumping();
