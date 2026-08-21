@@ -68,7 +68,12 @@ public:
 
     bool isDead() const { return health <= 0; }
     sf::Vector2f getPos() const { return pos; }
-    int getSize() const { return size; }
+    // FIX C4244: cambiato da int a float per evitare warning di conversione
+    // implicita int->float nelle ~20 espressioni Vector2f(size*3/10, ...) in
+    // Boss.cpp::renderPrimitives. MSVC /W4 segnala ogni conversione int->float
+    // come C4244. Avendo size come float, tutte le espressioni sono float->float.
+    // I valori assegnati (120, 124, 160, ...) vengono promossi a float.
+    float getSize() const { return size; }
     BossType getType() const { return type; }
     int getHealth() const { return health; }
     int getMaxHealth() const { return maxHealth; }
@@ -82,7 +87,8 @@ public:
 private:
     sf::Vector2f pos;
     int dx, dy;       // direzione di rimbalzo
-    int size;         // dimensione del boss (px); usata anche come raggio per le collisioni
+    // FIX C4244: cambiato da int a float (vedi getSize() sopra per dettagli)
+    float size;       // dimensione del boss (px); usata anche come raggio per le collisioni
     int health, maxHealth;
     int speed;
     BossType type;
