@@ -431,19 +431,17 @@ void Player::render(sf::RenderTarget& target) {
         }
 
         // --- Arma equipaggiata visibile (ramo sprite PNG) ---
-        // L'arma viene posizionata DAVANTI al player nella direzione di
-        // movimento (non dietro a sinistra come prima).
-        // Usa lastDx/lastDy per determinare la direzione:
-        //   * dx > 0 (destra):  arma a destra (px + 14)
-        //   * dx < 0 (sinistra): arma a sinistra (px - 14)
-        //   * fermo: usa lastDx (ultima direzione orizzontale)
-        //   * verticale: arma in basso o in alto rispetto al player
+        // L'arma viene posizionata DAVANTI al player, all'altezza del
+        // centro del corpo (come se fosse imbracciata).
+        // Lo sprite e' 64px con anchor piedi a (32,56), quindi il centro
+        // del corpo e' circa a pos.y + 8 - 24 = pos.y - 16.
+        // Usiamo pos.y - 12 come altezza "imbracciata".
         float weaponX = px;
-        float weaponY = pos.y + 4.f;
+        float weaponY = pos.y - 12.f;  // centro corpo (era pos.y + 4, ai piedi)
         if (lastDx > 0) { weaponX = px + 14.f; }
         else if (lastDx < 0) { weaponX = px - 14.f; }
-        else if (lastDy > 0) { weaponY = pos.y + 14.f; weaponX = px + 4.f; }
-        else if (lastDy < 0) { weaponY = pos.y - 10.f; weaponX = px + 4.f; }
+        else if (lastDy > 0) { weaponY = pos.y + 6.f; weaponX = px + 4.f; }
+        else if (lastDy < 0) { weaponY = pos.y - 20.f; weaponX = px + 4.f; }
         if (isJumping) weaponY -= jumpOffset;
         currentWeapon.renderEquipped(target, weaponX, weaponY);
 
@@ -976,15 +974,15 @@ void Player::renderCharacterFallback(sf::RenderTarget& target, float x, float y,
     }
 
     // --- Arma equipaggiata (fallback procedurale) ---
-    // Stessa logica del ramo sprite: arma DAVANTI al player nella
-    // direzione di movimento (usa lastDx/lastDy).
+    // Stessa logica del ramo sprite: arma DAVANTI al player, all'altezza
+    // del centro corpo (imbracciata, non ai piedi).
     {
         float wX = px;
-        float wY = py + bobY;
+        float wY = py - 12.f;  // centro corpo (era py + bobY, ai piedi)
         if (lastDx > 0) { wX = px + 14.f; }
         else if (lastDx < 0) { wX = px - 14.f; }
-        else if (lastDy > 0) { wY = py + 14.f; wX = px + 4.f; }
-        else if (lastDy < 0) { wY = py - 10.f; wX = px + 4.f; }
+        else if (lastDy > 0) { wY = py + 6.f; wX = px + 4.f; }
+        else if (lastDy < 0) { wY = py - 20.f; wX = px + 4.f; }
         currentWeapon.renderEquipped(target, wX, wY);
     }
 }

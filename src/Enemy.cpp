@@ -899,9 +899,9 @@ void Enemy::renderPrimitives(sf::RenderTarget& target) const {
         sf::Color web(200, 200, 200);
         for(int i=0; i<4; i++) {
             sf::RectangleShape l1(sf::Vector2f(12.f, 2.f)); l1.setFillColor(web);
-            l1.rotate(-30 + i*20); l1.setPosition(px - 8.f, py - 2.f + (float)(i*3)); target.draw(l1);
+            l1.rotate((float)(-30 + i*20)); l1.setPosition(px - 8.f, py - 2.f + (float)(i*3)); target.draw(l1);
             sf::RectangleShape l2(sf::Vector2f(12.f, 2.f)); l2.setFillColor(web);
-            l2.rotate(30 - i*20); l2.setPosition(px + 8.f, py - 2.f + (float)(i*3)); target.draw(l2);
+            l2.rotate((float)(30 - i*20)); l2.setPosition(px + 8.f, py - 2.f + (float)(i*3)); target.draw(l2);
         }
         sf::CircleShape body(10.f); body.setFillColor(sf::Color(30, 30, 30)); body.setOutlineThickness(1.f); body.setOutlineColor(outline);
         body.setPosition(px - 10.f, py - 4.f); target.draw(body);
