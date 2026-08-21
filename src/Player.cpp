@@ -278,7 +278,26 @@ void Player::shoot() {
 
         if (shootDx == 0 && shootDy == 0) shootDx = 1; // Fallback se fermo
 
-        projectiles.push_back({pos, sf::Vector2f((float)shootDx, (float)shootDy), currentWeapon.power, true, currentWeapon.type});
+        // FIX: il proiettile parte dall'estremita' dell'arma, non dal centro
+        // del player. L'arma e' posizionata a pos.y - 12 (centro corpo) e
+        // spostata di 14px nella direzione orizzontale. La canna dell'arma
+        // e' circa 18px oltre il centro dell'arma.
+        // Calcoliamo il punto di partenza del proiettile:
+        //   - Orizzontale: pos.x + shootDx * 18 (18 = metà arma + canna)
+        //   - Verticale:   pos.y - 12 (altezza del centro corpo dove sta l'arma)
+        //                  + shootDy * 14 (spostamento verticale dell'arma)
+        sf::Vector2f shootPos;
+        if (shootDx != 0) {
+            // Sparo orizzontale: parti dalla canna a destra/sinistra
+            shootPos.x = pos.x + (float)shootDx * 20.f;  // 20 = arma + canna
+            shootPos.y = pos.y - 12.f;  // centro corpo dove sta l'arma
+        } else {
+            // Sparo verticale: parti dall'arma a destra del player
+            shootPos.x = pos.x + 4.f;   // arma leggermente a destra
+            shootPos.y = pos.y - 12.f + (float)shootDy * 16.f;  // canna su/giu
+        }
+
+        projectiles.push_back({shootPos, sf::Vector2f((float)shootDx, (float)shootDy), currentWeapon.power, true, currentWeapon.type});
         currentWeapon.ammo--;
         // Triggera animazione di attacco per ~300 ms
         shootAnimTimer = 300;
