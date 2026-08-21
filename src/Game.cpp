@@ -1016,39 +1016,42 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); }
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
 
-        // Joystick 1 (configurabile da STATE_CONFIG_JOY_2).
-        // FIX: se il joystick 1 non e' collegato (DirectInput ha 2 device ma
-        // joystickId 1 potrebbe essere mappato diversamente), usa fallback:
-        // se Joy::isConnected(1) e' false ma Joy::isConnected(0) e' true e
-        // c'e' un solo gamepad, usa il gamepad del player 1 anche per P2.
-        bool p2JoyConnected = Joy::isConnected(1);
+        // Joystick P2: usa la STESSA logica di P1 (Joy:: con fallback).
+        // Il joystick ID per P2 e' determinato da:
+        // - Se ci sono 2+ gamepad: ID 1 (secondo gamepad)
+        // - Se c'e' 1 solo gamepad: ID 0 (condiviso con P1)
+        //
+        // FIX: il problema precedente era che il codice di fallback
+        // (totalConnected == 1) era troppo restrittivo. Con 2 arcade
+        // stick DirectInput, Joy::isConnected(1) poteva ritornare false
+        // perche' la mappatura DirectInput e' offset-based (ID 1 = dopo
+        // gli XInput attivi). Se c'e' 1 XInput + 2 DirectInput, l'ID 1
+        // corrisponde al primo DirectInput device (diIndex = 1 - 1 = 0),
+        // ma isConnected(1) lo rileva. Se invece non ci sono XInput,
+        // l'ID 1 corrisponde al secondo DirectInput device (diIndex = 1).
+        //
+        // Semplificazione: prova ID 1, se non collegato prova ID 0.
         unsigned int p2JoyId = 1;
-        if (!p2JoyConnected) {
-            // Verifica se c'e' solo un gamepad (P1) -> usa quello per P2
-            int totalConnected = 0;
-            for (unsigned int j = 0; j < 4; j++) {
-                if (Joy::isConnected(j)) totalConnected++;
-            }
-            if (totalConnected == 1 && Joy::isConnected(0)) {
-                p2JoyConnected = true;
-                p2JoyId = 0;
+        if (!Joy::isConnected(1)) {
+            p2JoyId = 0;  // fallback: usa il gamepad di P1
+            if (!Joy::isConnected(0)) {
+                p2JoyId = 0;  // nessun gamepad, prova comunque (SFML fallback)
             }
         }
-        if (p2JoyConnected) {
+        if (Joy::isConnected(p2JoyId) || p2JoyId == 0) {
             float x = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
             float y = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_y);
-            if (fabs(x) > 30 || fabs(y) > 30) {
+            // FIX: ridotta deadzone da 30 a 25 per maggiore sensibilita'
+            if (fabs(x) > 25 || fabs(y) > 25) {
                 if (fabs(x) > fabs(y)) {
-                    if (x > 30) { player2.setDirection(1, 0); }
-                    else if (x < -30) { player2.setDirection(-1, 0); }
+                    if (x > 25) { player2.setDirection(1, 0); }
+                    else if (x < -25) { player2.setDirection(-1, 0); }
                 } else {
-                    if (y > 30) { player2.setDirection(0, 1); }
-                    else if (y < -30) { player2.setDirection(0, -1); }
+                    if (y > 25) { player2.setDirection(0, 1); }
+                    else if (y < -25) { player2.setDirection(0, -1); }
                 }
             }
-            // Sparo joystick: autofire con cooldown 150ms
-            // FIX: usa p2JoyId invece di 1 hardcoded
-            // Non sparare se il pulsante non e' stato configurato (-1)
+            // Sparo joystick
             if (config.joy2_shoot >= 0 && Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
@@ -1058,7 +1061,6 @@ void Game::update() {
                 }
             }
             // Salto joystick
-            // Non saltare se il pulsante non e' stato configurato (-1)
             if (config.joy2_jump >= 0 && Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump)) {
                 bool wasJumping = player2.isJumping();
                 player2.activateJump();
