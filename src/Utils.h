@@ -56,8 +56,8 @@ struct Config {
     // --- Player 1 (joystick 0) ---
     int joy_axis_x = 0;   // asse orizzontale
     int joy_axis_y = 1;   // asse verticale
-    int joy_jump   = 0;   // pulsante salto
-    int joy_shoot  = 2;   // pulsante sparo
+    int joy_jump   = -1;  // pulsante salto (-1 = non configurato, da configurare)
+    int joy_shoot  = -1;  // pulsante sparo (-1 = non configurato, da configurare)
 
     // --- Player 2 (tastiera secondaria, fissa) ---
     // WASD per il movimento, Q per saltare, E per sparare.
@@ -69,12 +69,10 @@ struct Config {
     int key2_shoot = sf::Keyboard::E;
 
     // --- Player 2 (joystick 1) ---
-    // Assi solitamente identici al joystick 0; i pulsanti sono configurabili
-    // da menu' (STATE_CONFIG_JOY_2) e quindi inizializzati a default comuni.
     int joy2_axis_x = 0;
     int joy2_axis_y = 1;
-    int joy2_jump   = 0;
-    int joy2_shoot  = 2;
+    int joy2_jump   = -1;  // -1 = non configurato
+    int joy2_shoot  = -1;  // -1 = non configurato
 };
 
 // --- Particella generica --------------------------------------------------

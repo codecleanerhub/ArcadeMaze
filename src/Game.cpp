@@ -974,7 +974,8 @@ void Game::update() {
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (Joy::isButtonPressed(0, config.joy_shoot)) {
+            // Non sparare se il pulsante non e' stato configurato (-1)
+            if (config.joy_shoot >= 0 && Joy::isButtonPressed(0, (unsigned)config.joy_shoot)) {
                 if (player.getShootCooldown() == 0) {
                     int ammoBefore = player.getCurrentWeapon().ammo;
                     player.shoot();
@@ -983,7 +984,7 @@ void Game::update() {
                     player.setShootCooldown(150);
                 }
             }
-            if (Joy::isButtonPressed(0, (unsigned)config.joy_jump)) {
+            if (config.joy_jump >= 0 && Joy::isButtonPressed(0, (unsigned)config.joy_jump)) {
                 bool wasJumping = player.isJumping();
                 player.activateJump();
                 if (!wasJumping && player.isJumping()) audio.playSound(SOUND_JUMP);
@@ -1047,7 +1048,8 @@ void Game::update() {
             }
             // Sparo joystick: autofire con cooldown 150ms
             // FIX: usa p2JoyId invece di 1 hardcoded
-            if (Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot)) {
+            // Non sparare se il pulsante non e' stato configurato (-1)
+            if (config.joy2_shoot >= 0 && Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
                     player2.shoot();
@@ -1056,7 +1058,8 @@ void Game::update() {
                 }
             }
             // Salto joystick
-            if (Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump)) {
+            // Non saltare se il pulsante non e' stato configurato (-1)
+            if (config.joy2_jump >= 0 && Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump)) {
                 bool wasJumping = player2.isJumping();
                 player2.activateJump();
                 if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
