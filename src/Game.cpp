@@ -3537,7 +3537,7 @@ void Game::drawMenu() {
                                           sf::Color(40, 50, 100, 40);
         float yBase = WINDOW_HEIGHT - 180.f + layer * 30.f;
         for (int x = 0; x < WINDOW_WIDTH; x += 16) {
-            float y = yBase + sinf(menuTime * 0.5f + x * 0.01f + layer) * 15.f;
+            float y = yBase + sinf(menuTime * 0.5f + (float)x * 0.01f + (float)layer) * 15.f;
             sf::CircleShape fog(40.f);
             fog.setFillColor(fogCol);
             fog.setPosition((float)x - 40.f, y - 40.f);
@@ -3600,29 +3600,29 @@ void Game::drawMenu() {
     // Rombo centrale
     sf::ConvexShape diamond; diamond.setPointCount(4);
     diamond.setFillColor(ornGold); diamond.setOutlineThickness(1.f); diamond.setOutlineColor(sf::Color(120, 80, 20));
-    diamond.setPoint(0, sf::Vector2f(WINDOW_WIDTH/2.f, ornY - 6.f));
-    diamond.setPoint(1, sf::Vector2f(WINDOW_WIDTH/2.f + 8.f, ornY));
-    diamond.setPoint(2, sf::Vector2f(WINDOW_WIDTH/2.f, ornY + 6.f));
-    diamond.setPoint(3, sf::Vector2f(WINDOW_WIDTH/2.f - 8.f, ornY));
+    diamond.setPoint(0, sf::Vector2f((float)WINDOW_WIDTH/2.f, ornY - 6.f));
+    diamond.setPoint(1, sf::Vector2f((float)WINDOW_WIDTH/2.f + 8.f, ornY));
+    diamond.setPoint(2, sf::Vector2f((float)WINDOW_WIDTH/2.f, ornY + 6.f));
+    diamond.setPoint(3, sf::Vector2f((float)WINDOW_WIDTH/2.f - 8.f, ornY));
     window.draw(diamond);
     // Linee laterali
     sf::RectangleShape ornLineL(sf::Vector2f(180.f, 2.f));
     ornLineL.setFillColor(ornGold);
-    ornLineL.setPosition(WINDOW_WIDTH/2.f - 200.f, ornY - 1.f);
+    ornLineL.setPosition((float)WINDOW_WIDTH/2.f - 200.f, ornY - 1.f);
     window.draw(ornLineL);
     sf::RectangleShape ornLineR(sf::Vector2f(180.f, 2.f));
     ornLineR.setFillColor(ornGold);
-    ornLineR.setPosition(WINDOW_WIDTH/2.f + 20.f, ornY - 1.f);
+    ornLineR.setPosition((float)WINDOW_WIDTH/2.f + 20.f, ornY - 1.f);
     window.draw(ornLineR);
     // Piccoli rombi alle estremita' delle linee
     for (int side = 0; side < 2; side++) {
         float dx = (side == 0) ? -1.f : 1.f;
         sf::ConvexShape dot; dot.setPointCount(4);
         dot.setFillColor(ornGold);
-        dot.setPoint(0, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 200.f, ornY - 4.f));
-        dot.setPoint(1, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 204.f, ornY));
-        dot.setPoint(2, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 200.f, ornY + 4.f));
-        dot.setPoint(3, sf::Vector2f(WINDOW_WIDTH/2.f + dx * 196.f, ornY));
+        dot.setPoint(0, sf::Vector2f((float)WINDOW_WIDTH/2.f + dx * 200.f, ornY - 4.f));
+        dot.setPoint(1, sf::Vector2f((float)WINDOW_WIDTH/2.f + dx * 204.f, ornY));
+        dot.setPoint(2, sf::Vector2f((float)WINDOW_WIDTH/2.f + dx * 200.f, ornY + 4.f));
+        dot.setPoint(3, sf::Vector2f((float)WINDOW_WIDTH/2.f + dx * 196.f, ornY));
         window.draw(dot);
     }
 

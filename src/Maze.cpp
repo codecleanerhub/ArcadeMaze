@@ -410,20 +410,8 @@ void Maze::render(sf::RenderTarget& target) {
 
                 // Macchia chiara centrale (gradiente radiale morbido):
                 // un cerchio piu' chiaro al centro del tile che simula la luce
-                // che cade dall'alto. Solo su ~50% delle celle (alternanza)
-                // per dare ritmo visivo senza appesantire.
-                if (cellHash(c + 33, r + 22) > 0.5f) {
-                    float h1 = cellHash(c + 11, r + 7);
-                    float cx2 = c * TILE_SIZE + TILE_SIZE / 2.f + (h1 - 0.5f) * 8.f;
-                    float cy2 = r * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f + (cellHash(c+5, r+9) - 0.5f) * 8.f;
-                    sf::CircleShape lightSpot(14.f);
-                    lightSpot.setFillColor(sf::Color(
-                        (sf::Uint8)std::min(255, fr + 12),
-                        (sf::Uint8)std::min(255, fg + 10),
-                        (sf::Uint8)std::min(255, fb + 8), 90));
-                    lightSpot.setPosition(cx2 - 14.f, cy2 - 14.f);
-                    target.draw(lightSpot);
-                }
+                // FIX: rimossi i cerchi chiari (lightSpot) che apparivano come
+                // refusi di lanterne sul pavimento.
 
                 // Piccole crepe di terra (terriccio seccato): 1-2 sottilissime
                 // linee scure per cella, posizioni deterministiche. Danno

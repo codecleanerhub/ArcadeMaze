@@ -431,15 +431,21 @@ void Player::render(sf::RenderTarget& target) {
         }
 
         // --- Arma equipaggiata visibile (ramo sprite PNG) ---
-        // FIX: prima l'arma veniva disegnata solo nel fallback procedurale,
-        // ma il ramo sprite faceva return prima di arrivarci. Ora la
-        // disegniamo qui, dopo lo sprite e prima dei proiettili.
-        // Posizionata sul lato in cui il personaggio e' rivolto:
-        //   * flipped=true  (guarda destra)  -> arma a destra  (px + 16)
-        //   * flipped=false (guarda sinistra) -> arma a sinistra (px - 16)
-        float weaponY = pos.y + 8.f;
+        // L'arma viene posizionata DAVANTI al player nella direzione di
+        // movimento (non dietro a sinistra come prima).
+        // Usa lastDx/lastDy per determinare la direzione:
+        //   * dx > 0 (destra):  arma a destra (px + 14)
+        //   * dx < 0 (sinistra): arma a sinistra (px - 14)
+        //   * fermo: usa lastDx (ultima direzione orizzontale)
+        //   * verticale: arma in basso o in alto rispetto al player
+        float weaponX = px;
+        float weaponY = pos.y + 4.f;
+        if (lastDx > 0) { weaponX = px + 14.f; }
+        else if (lastDx < 0) { weaponX = px - 14.f; }
+        else if (lastDy > 0) { weaponY = pos.y + 14.f; weaponX = px + 4.f; }
+        else if (lastDy < 0) { weaponY = pos.y - 10.f; weaponX = px + 4.f; }
         if (isJumping) weaponY -= jumpOffset;
-        currentWeapon.renderEquipped(target, px + (flipped ? 16 : -16), weaponY);
+        currentWeapon.renderEquipped(target, weaponX, weaponY);
 
         drawProjectiles(target);
         return;
@@ -969,9 +975,16 @@ void Player::renderCharacterFallback(sf::RenderTarget& target, float x, float y,
         }
     }
 
-    // --- Arma equipaggiata ---
-    // Posizionata sul lato in cui il personaggio e' rivolto:
-    //   * flipped=true  (guarda destra)  -> arma a destra  (px + 16)
-    //   * flipped=false (guarda sinistra) -> arma a sinistra (px - 16)
-    currentWeapon.renderEquipped(target, px + (flipped ? 16 : -16), py + bobY);
+    // --- Arma equipaggiata (fallback procedurale) ---
+    // Stessa logica del ramo sprite: arma DAVANTI al player nella
+    // direzione di movimento (usa lastDx/lastDy).
+    {
+        float wX = px;
+        float wY = py + bobY;
+        if (lastDx > 0) { wX = px + 14.f; }
+        else if (lastDx < 0) { wX = px - 14.f; }
+        else if (lastDy > 0) { wY = py + 14.f; wX = px + 4.f; }
+        else if (lastDy < 0) { wY = py - 10.f; wX = px + 4.f; }
+        currentWeapon.renderEquipped(target, wX, wY);
+    }
 }
