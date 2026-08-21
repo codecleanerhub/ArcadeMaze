@@ -59,6 +59,11 @@ add_executable(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME} sfml-graphics sfml-audio sfml-system sfml-window)
 
+# Su Windows, linka dinput8.lib e dxguid.lib per DirectInput nativo
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} dinput8 dxguid)
+endif()
+
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 # ===========================================================================
