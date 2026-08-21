@@ -1038,31 +1038,52 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); }
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
 
-        // Joystick: prevale sulla tastiera se fuori dalla deadzone (30%)
+        // Joystick: prevale sulla tastiera se fuori dalla deadzone.
+        // FIX: scansiona TUTTI gli 8 assi del gamepad per trovare quello
+        // attivo. Su Windows (DirectInput), alcuni gamepad (specialmente
+        // controller Xbox e cloni) mappano l'analogico su assi diversi da
+        // X/Y (es. Z/R o U/V). Invece di affidarsi solo a config.joy_axis_x/y,
+        // controlliamo tutti gli assi orizzontali (X=0, Z=2, U=4) e verticali
+        // (Y=1, R=3, V=5) e usiamo quello con il valore piu' alto.
         unsigned joystickId = getJoystickId(0);
         if (joystickId < sf::Joystick::Count) {
-            float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
-            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
-            // DEBUG: stampa i valori degli assi quando sono significativi
-            // (solo per diagnostica joystick, rimuovere dopo fix)
-            if (fabs(x) > 10 || fabs(y) > 10) {
-                static int debugCounter = 0;
-                if (debugCounter++ % 30 == 0) {  // stampa ogni ~0.5s per non spam
-                    std::cout << "JOY P1: jid=" << joystickId
-                              << " axisX=" << config.joy_axis_x
-                              << " axisY=" << config.joy_axis_y
-                              << " x=" << x << " y=" << y << std::endl;
-                }
+            // Leggi tutti gli assi orizzontali e verticali
+            float horizAxes[3] = {
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::X),   // 0
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Z),   // 2
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::U)    // 4
+            };
+            float vertAxes[3] = {
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Y),   // 1
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::R),   // 3
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::V)    // 5
+            };
+            // Trova l'asse orizzontale e verticale con il valore assoluto massimo
+            float bestX = 0.f;
+            for (int i = 0; i < 3; i++) {
+                if (fabsf(horizAxes[i]) > fabsf(bestX)) bestX = horizAxes[i];
             }
-            if (fabs(x) > 30 || fabs(y) > 30) {
-                // Determina l'asse dominante per evitare movimenti diagonali
-                // non intenzionali (utile per labirinto "snap-to-grid").
-                if (fabs(x) > fabs(y)) {
-                    if (x > 30) { player.setDirection(1, 0); }
-                    else if (x < -30) { player.setDirection(-1, 0); }
+            float bestY = 0.f;
+            for (int i = 0; i < 3; i++) {
+                if (fabsf(vertAxes[i]) > fabsf(bestY)) bestY = vertAxes[i];
+            }
+            // DEBUG: stampa i valori di TUTTI gli assi per diagnosticare
+            static int debugCounter = 0;
+            if (debugCounter++ % 30 == 0) {  // ogni ~0.5s
+                std::cout << "JOY P1: jid=" << joystickId
+                          << " X=" << horizAxes[0] << " Z=" << horizAxes[1] << " U=" << horizAxes[2]
+                          << " Y=" << vertAxes[0] << " R=" << vertAxes[1] << " V=" << vertAxes[2]
+                          << " -> bestX=" << bestX << " bestY=" << bestY << std::endl;
+            }
+            // Soglia ridotta da 30 a 20 per maggiore sensibilita'
+            const float JOY_DEADZONE = 20.f;
+            if (fabsf(bestX) > JOY_DEADZONE || fabsf(bestY) > JOY_DEADZONE) {
+                if (fabsf(bestX) > fabsf(bestY)) {
+                    if (bestX > JOY_DEADZONE) { player.setDirection(1, 0); }
+                    else if (bestX < -JOY_DEADZONE) { player.setDirection(-1, 0); }
                 } else {
-                    if (y > 30) { player.setDirection(0, 1); }
-                    else if (y < -30) { player.setDirection(0, -1); }
+                    if (bestY > JOY_DEADZONE) { player.setDirection(0, 1); }
+                    else if (bestY < -JOY_DEADZONE) { player.setDirection(0, -1); }
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
@@ -1108,28 +1129,47 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
 
         // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
-        // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
+        // tastiera se fuori dalla deadzone. Usa joy2_* / joy2_axis_*.
         //
         // FIX: se il player 2 non ha un joystick dedicato (getJoystickId(1)
         // == Count) ma c'e' un solo gamepad collegato, usa quello del player 0.
         // Questo permette di testare il player 2 con lo stesso gamepad quando
         // se ne ha solo uno. Con 2 gamepad, ogni player usa il proprio.
+        //
+        // FIX: scansiona tutti gli assi (X/Z/U orizzontali, Y/R/V verticali)
+        // come per il player 1, per gestire gamepad che mappano l'analogico
+        // su assi non standard.
         unsigned joystickId = getJoystickId(1);
         if (joystickId >= sf::Joystick::Count) {
-            // Nessun secondo gamepad: usa il primo gamepad (player 0) come
-            // fallback per il player 2. Utile con 1 solo gamepad per testare.
             joystickId = getJoystickId(0);
         }
         if (joystickId < sf::Joystick::Count) {
-            float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy2_axis_x);
-            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy2_axis_y);
-            if (fabs(x) > 30 || fabs(y) > 30) {
-                if (fabs(x) > fabs(y)) {
-                    if (x > 30) { player2.setDirection(1, 0); }
-                    else if (x < -30) { player2.setDirection(-1, 0); }
+            float horizAxes[3] = {
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::X),
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Z),
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::U)
+            };
+            float vertAxes[3] = {
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Y),
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::R),
+                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::V)
+            };
+            float bestX = 0.f;
+            for (int i = 0; i < 3; i++) {
+                if (fabsf(horizAxes[i]) > fabsf(bestX)) bestX = horizAxes[i];
+            }
+            float bestY = 0.f;
+            for (int i = 0; i < 3; i++) {
+                if (fabsf(vertAxes[i]) > fabsf(bestY)) bestY = vertAxes[i];
+            }
+            const float JOY_DEADZONE = 20.f;
+            if (fabsf(bestX) > JOY_DEADZONE || fabsf(bestY) > JOY_DEADZONE) {
+                if (fabsf(bestX) > fabsf(bestY)) {
+                    if (bestX > JOY_DEADZONE) { player2.setDirection(1, 0); }
+                    else if (bestX < -JOY_DEADZONE) { player2.setDirection(-1, 0); }
                 } else {
-                    if (y > 30) { player2.setDirection(0, 1); }
-                    else if (y < -30) { player2.setDirection(0, -1); }
+                    if (bestY > JOY_DEADZONE) { player2.setDirection(0, 1); }
+                    else if (bestY < -JOY_DEADZONE) { player2.setDirection(0, -1); }
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
