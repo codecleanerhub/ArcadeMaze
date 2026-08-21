@@ -690,98 +690,11 @@ void Game::handleEvents() {
                 }
             }
         }
+        // FIX: joystick buttons gestiti in update() con polling Joy::
+        // (non qui con eventi SFML, perche' Joy:: usa XInput/DirectInput
+        // nativo che ha numerazione pulsanti diversa da SFML)
         else if (event.type == sf::Event::JoystickButtonPressed) {
-            // Supporto joystick: riproduce la stessa logica del menu' da tastiera.
-            // Pulsante "jump" del joystick e' usato come "conferma" perche' e'
-            // quello piu' intuitivo (es. pulsante A di un pad Xbox).
-            if (state == STATE_MENU) {
-                // Cast a unsigned: event.joystickButton.button e' unsigned int,
-                // config.joy_jump e' int (perche' letto da file INI come intero).
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
-                    audio.playSound(SOUND_MENU_CONFIRM);
-                    if (menuItemIndex == 3) {
-                        // SELECT PLAYER
-                        state = STATE_SELECT_PLAYER;
-                        selectPlayerStep = 0;
-                        wheelIndex = (int)player1Character;
-                        wheelTargetIndex = wheelIndex;
-                        wheelRotation = 0.f;
-                    }
-                    else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 6) {
-                        // Avvia il livello 1
-                        window.setFramerateLimit(60);
-                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                        window.setView(view);
-                        currentLevel = 1;
-                        player.setCharacter(player1Character, 1);
-                        if (numPlayers == 2) player2.setCharacter(player2Character, 2);
-                        startLevel(1);
-                    }
-                }
-            } else if (state == STATE_SELECT_PLAYER) {
-                // Joystick: pulsante jump = conferma personaggio
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
-                    audio.playSound(SOUND_MENU_CONFIRM);
-                    if (selectPlayerStep == 0) {
-                        player1Character = (CharacterType)wheelIndex;
-                        if (numPlayers == 2) {
-                            selectPlayerStep = 1;
-                            wheelIndex = (int)player2Character;
-                            wheelTargetIndex = wheelIndex;
-                        } else {
-                            state = STATE_MENU;
-                        }
-                    } else {
-                        player2Character = (CharacterType)wheelIndex;
-                        state = STATE_MENU;
-                    }
-                }
-            } else if (state == STATE_CONFIG_JOY) {
-                // Configurazione joystick a 2 step:
-                //   step 0: cattura pulsante per salto
-                //   step 1: cattura pulsante per sparo, poi torna al menu'
-                if (event.joystickButton.joystickId == 0) {
-                    if (configJoyStep == 0) { config.joy_jump = (int)event.joystickButton.button; configJoyStep = 1; }
-                    else if (configJoyStep == 1) { config.joy_shoot = (int)event.joystickButton.button;
-                        if (numPlayers == 2) state = STATE_CONFIG_JOY_2;
-                        else state = STATE_MENU;
-                    }
-                }
-            } else if (state == STATE_CONFIG_JOY_2) {
-                // Configurazione joystick secondo giocatore (joystick 1).
-                // Usa i campi joy2_* dedicati: NON tocca config.joy_jump/joy_shoot
-                // del giocatore 1 (bug critico della versione precedente).
-                if (event.joystickButton.joystickId == 1) {
-                    if (configJoyStep == 0) { config.joy2_jump = (int)event.joystickButton.button; configJoyStep = 1; }
-                    else if (configJoyStep == 1) { config.joy2_shoot = (int)event.joystickButton.button; state = STATE_MENU; }
-                }
-            } else if (state == STATE_CONTINUES) {
-                // Joystick: pulsante jump = conferma, pulsante shoot = toggle
-                if (event.joystickButton.joystickId == 0) {
-                    if (event.joystickButton.button == (unsigned)config.joy_jump) {
-                        audio.playSound(SOUND_MENU_CONFIRM);
-                        if (continuesChoice) {
-                            continuesLeft--;
-                            player.reset();
-                            if (numPlayers == 2) player2.reset();
-                            if (diedInBoss) startBossFight(true);
-                            else startLevel(currentLevel);
-                        } else {
-                            state = STATE_LOSE;
-                        }
-                    } else if (event.joystickButton.button == (unsigned)config.joy_shoot) {
-                        continuesChoice = !continuesChoice;
-                        audio.playSound(SOUND_MENU_SELECT);
-                    }
-                }
-            } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
-                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
-                    state = STATE_MENU;
-                    currentLevel = 1;
-                    continuesLeft = 3;
-                }
-            }
+            // Tutti gli stati joystick sono migrati a polling Joy:: in update()
         }
     }
 }
@@ -824,6 +737,32 @@ void Game::update() {
         // Fulmine casuale: ~5/600 di probabilita' per frame, durata 10 frame
         if (rand() % 600 < 5) lightningTimer = 10;
         if (lightningTimer > 0) lightningTimer--;
+        // Polling pulsante jump = conferma menu (con debounce)
+        if (Joy::isConnected(0) && config.joy_jump >= 0) {
+            static bool menuJoyBtn = false;
+            bool pressed = Joy::isButtonPressed(0, (unsigned)config.joy_jump);
+            if (pressed && !menuJoyBtn) {
+                menuJoyBtn = true;
+                audio.playSound(SOUND_MENU_CONFIRM);
+                if (menuItemIndex == 3) {
+                    state = STATE_SELECT_PLAYER;
+                    selectPlayerStep = 0;
+                    wheelIndex = (int)player1Character;
+                    wheelTargetIndex = wheelIndex;
+                    wheelRotation = 0.f;
+                }
+                else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+                else if (menuItemIndex == 6) {
+                    window.setFramerateLimit(60);
+                    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                    window.setView(view);
+                    currentLevel = 1;
+                    player.setCharacter(player1Character, 1);
+                    if (numPlayers == 2) player2.setCharacter(player2Character, 2);
+                    startLevel(1);
+                }
+            } else if (!pressed) menuJoyBtn = false;
+        }
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
@@ -854,9 +793,114 @@ void Game::update() {
                 else if (diff < 0) wheelIndex = (wheelIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
             }
         }
+        // Polling pulsante jump = conferma personaggio (con debounce)
+        if (Joy::isConnected(0) && config.joy_jump >= 0) {
+            static bool selJoyBtn = false;
+            bool pressed = Joy::isButtonPressed(0, (unsigned)config.joy_jump);
+            if (pressed && !selJoyBtn) {
+                selJoyBtn = true;
+                audio.playSound(SOUND_MENU_CONFIRM);
+                if (selectPlayerStep == 0) {
+                    player1Character = (CharacterType)wheelIndex;
+                    if (numPlayers == 2) {
+                        selectPlayerStep = 1;
+                        wheelIndex = (int)player2Character;
+                        wheelTargetIndex = wheelIndex;
+                    } else {
+                        state = STATE_MENU;
+                    }
+                } else {
+                    player2Character = (CharacterType)wheelIndex;
+                    state = STATE_MENU;
+                }
+            } else if (!pressed) selJoyBtn = false;
+        }
     }
 
-    // --- Input giocatore (sia STATE_PLAYING che STATE_BOSS) ---
+    // --- STATO CONFIG_JOY: configurazione joystick player 1 via polling ---
+    // Usa Joy::isButtonPressed (XInput/DirectInput nativo) invece di eventi
+    // SFML, perche' la numerazione dei pulsanti e' diversa tra SFML (DirectInput)
+    // e Joy:: (XInput). Se usassimo eventi SFML, cattureremmo il numero
+    // DirectInput ma in gioco controlleremmo il numero XInput -> mismatch.
+    if (state == STATE_CONFIG_JOY && Joy::isConnected(0)) {
+        // Scansiona tutti i pulsanti (max 16 per XInput, 128 per DirectInput)
+        unsigned int maxButtons = Joy::getButtonCount(0);
+        if (maxButtons > 128) maxButtons = 128;  // safety limit
+        for (unsigned int b = 0; b < maxButtons; b++) {
+            if (Joy::isButtonPressed(0, b)) {
+                if (configJoyStep == 0) {
+                    config.joy_jump = (int)b;
+                    configJoyStep = 1;
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                } else if (configJoyStep == 1) {
+                    config.joy_shoot = (int)b;
+                    if (numPlayers == 2) { state = STATE_CONFIG_JOY_2; configJoyStep = 0; }
+                    else state = STATE_MENU;
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                }
+                break;  // un solo pulsante per frame
+            }
+        }
+    }
+
+    // --- STATO CONFIG_JOY_2: configurazione joystick player 2 via polling ---
+    if (state == STATE_CONFIG_JOY_2 && Joy::isConnected(1)) {
+        unsigned int maxButtons = Joy::getButtonCount(1);
+        if (maxButtons > 128) maxButtons = 128;
+        for (unsigned int b = 0; b < maxButtons; b++) {
+            if (Joy::isButtonPressed(1, b)) {
+                if (configJoyStep == 0) {
+                    config.joy2_jump = (int)b;
+                    configJoyStep = 1;
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                } else if (configJoyStep == 1) {
+                    config.joy2_shoot = (int)b;
+                    state = STATE_MENU;
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                }
+                break;
+            }
+        }
+    }
+
+    // --- Polling joystick per stati menu/continues/win/lose ---
+    // CONTINUES: pulsante jump = conferma, pulsante shoot = toggle
+    if (state == STATE_CONTINUES && Joy::isConnected(0) && config.joy_jump >= 0) {
+        static bool contJoyBtn = false;
+        static bool contShootBtn = false;
+        bool jumpPressed = Joy::isButtonPressed(0, (unsigned)config.joy_jump);
+        bool shootPressed = (config.joy_shoot >= 0) ? Joy::isButtonPressed(0, (unsigned)config.joy_shoot) : false;
+        if (jumpPressed && !contJoyBtn) {
+            contJoyBtn = true;
+            audio.playSound(SOUND_MENU_CONFIRM);
+            if (continuesChoice) {
+                continuesLeft--;
+                player.reset();
+                if (numPlayers == 2) player2.reset();
+                if (diedInBoss) startBossFight(true);
+                else startLevel(currentLevel);
+            } else {
+                state = STATE_LOSE;
+            }
+        } else if (!jumpPressed) contJoyBtn = false;
+        if (shootPressed && !contShootBtn) {
+            contShootBtn = true;
+            continuesChoice = !continuesChoice;
+            audio.playSound(SOUND_MENU_SELECT);
+        } else if (!shootPressed) contShootBtn = false;
+    }
+    // WIN/LOSE: pulsante jump = torna al menu
+    if ((state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) &&
+        Joy::isConnected(0) && config.joy_jump >= 0) {
+        static bool winJoyBtn = false;
+        bool pressed = Joy::isButtonPressed(0, (unsigned)config.joy_jump);
+        if (pressed && !winJoyBtn) {
+            winJoyBtn = true;
+            state = STATE_MENU;
+            currentLevel = 1;
+            continuesLeft = 3;
+        } else if (!pressed) winJoyBtn = false;
+    }
     if (state == STATE_PLAYING || state == STATE_BOSS) {
         // Tastiera: direzioni (mutuamente esclusive con else-if)
         if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); }
