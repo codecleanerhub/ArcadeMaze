@@ -820,31 +820,64 @@ void Game::update() {
     // --- STATO CONFIG_JOY: configurazione joystick player 1 via polling ---
     // Usa Joy::isButtonPressed (XInput/DirectInput nativo) invece di eventi
     // SFML, perche' la numerazione dei pulsanti e' diversa tra SFML (DirectInput)
-    // e Joy:: (XInput). Se usassimo eventi SFML, cattureremmo il numero
-    // DirectInput ma in gioco controlleremmo il numero XInput -> mismatch.
+    // e Joy:: (XInput).
+    //
+    // FIX: dopo aver catturato un pulsante (step 0 o 1), aspetta che TUTTI
+    // i pulsanti siano rilasciati prima di accettare il prossimo input.
+    // Questo evita che lo stesso pulsante ancora premuto venga registrato
+    // automaticamente per lo step successivo.
     if (state == STATE_CONFIG_JOY && Joy::isConnected(0)) {
-        // Scansiona tutti i pulsanti (max 16 per XInput, 128 per DirectInput)
+        static bool waitForRelease = false;  // true = aspetta che tutti i pulsanti siano rilasciati
+
+        // Se stiamo aspettando il rilascio, controlla se tutti i pulsanti sono su
+        if (waitForRelease) {
+            unsigned int maxBtns = Joy::getButtonCount(0);
+            if (maxBtns > 128) maxBtns = 128;
+            bool anyPressed = false;
+            for (unsigned int b = 0; b < maxBtns; b++) {
+                if (Joy::isButtonPressed(0, b)) { anyPressed = true; break; }
+            }
+            if (!anyPressed) waitForRelease = false;  // tutti rilasciati, pronto per prossimo input
+            return;  // salta il resto di update() finche' non sono rilasciati
+        }
+
+        // Scansiona tutti i pulsanti
         unsigned int maxButtons = Joy::getButtonCount(0);
-        if (maxButtons > 128) maxButtons = 128;  // safety limit
+        if (maxButtons > 128) maxButtons = 128;
         for (unsigned int b = 0; b < maxButtons; b++) {
             if (Joy::isButtonPressed(0, b)) {
                 if (configJoyStep == 0) {
                     config.joy_jump = (int)b;
                     configJoyStep = 1;
                     audio.playSound(SOUND_MENU_CONFIRM);
+                    waitForRelease = true;  // aspetta rilascio prima di step 1
                 } else if (configJoyStep == 1) {
                     config.joy_shoot = (int)b;
                     if (numPlayers == 2) { state = STATE_CONFIG_JOY_2; configJoyStep = 0; }
                     else state = STATE_MENU;
                     audio.playSound(SOUND_MENU_CONFIRM);
+                    waitForRelease = true;
                 }
-                break;  // un solo pulsante per frame
+                break;
             }
         }
     }
 
     // --- STATO CONFIG_JOY_2: configurazione joystick player 2 via polling ---
     if (state == STATE_CONFIG_JOY_2 && Joy::isConnected(1)) {
+        static bool waitForRelease2 = false;
+
+        if (waitForRelease2) {
+            unsigned int maxBtns = Joy::getButtonCount(1);
+            if (maxBtns > 128) maxBtns = 128;
+            bool anyPressed = false;
+            for (unsigned int b = 0; b < maxBtns; b++) {
+                if (Joy::isButtonPressed(1, b)) { anyPressed = true; break; }
+            }
+            if (!anyPressed) waitForRelease2 = false;
+            return;
+        }
+
         unsigned int maxButtons = Joy::getButtonCount(1);
         if (maxButtons > 128) maxButtons = 128;
         for (unsigned int b = 0; b < maxButtons; b++) {
@@ -853,10 +886,12 @@ void Game::update() {
                     config.joy2_jump = (int)b;
                     configJoyStep = 1;
                     audio.playSound(SOUND_MENU_CONFIRM);
+                    waitForRelease2 = true;
                 } else if (configJoyStep == 1) {
                     config.joy2_shoot = (int)b;
                     state = STATE_MENU;
                     audio.playSound(SOUND_MENU_CONFIRM);
+                    waitForRelease2 = true;
                 }
                 break;
             }
