@@ -392,19 +392,30 @@ void Maze::render(sf::RenderTarget& target) {
                 // Ripristina dimensione del rettangolo base per il prossimo tile
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE));
             } else {
-                // --- Pavimento terriccio con gradiente radiale morbido ---
-                // Il pavimento ha un gradiente "radiale": leggermente piu'
-                // scuro ai bordi della cella (transizione col muro) e piu'
-                // chiaro al centro (come se la luce venisse dall'alto).
-                // Questo da' l'effetto di un pavimento di dungeon battuto,
-                // non piatto ne' "bucato".
+                // --- Pavimento terriccio con sfumatura continua ---
+                // FIX: sostituito il gradiente "a quadrati" (cellHash per-cell)
+                // con una sfumatura continua basata sulla distanza dal centro
+                // del labirinto. Questo elimina i quadrati chiari/scuri visibili
+                // e crea un effetto omogeneo di illuminazione.
+                //
+                // Il colore base del pavimento varia dolcemente in base alla
+                // distanza dal centro: piu' chiaro al centro (illuminazione
+                // centrale), piu' scuro ai bordi (ombra perimetrale).
 
-                // Base: terriccio scuro (colorato in armonia col bgColor del
-                // livello, leggermente variato per cella per evitare piattezza)
-                float v = cellHash(c + 1, r + 1);
-                sf::Uint8 fr = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.r + 18 + (v - 0.5f) * 10.f)));
-                sf::Uint8 fg = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.g + 12 + (v - 0.5f) *  8.f)));
-                sf::Uint8 fb = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.b +  6 + (v - 0.5f) *  6.f)));
+                // Centro del labirinto
+                float centerCol = MAZE_COLS / 2.f;
+                float centerRow = MAZE_ROWS / 2.f;
+                // Distanza normalizzata (0 = centro, 1 = angolo)
+                float dx = (c - centerCol) / centerCol;
+                float dy = (r - centerRow) / centerRow;
+                float dist = sqrtf(dx * dx + dy * dy);
+                dist = std::min(1.f, dist);  // clamp a [0, 1]
+
+                // Gradiente: piu' chiaro al centro (+24), piu' scuro ai bordi (+6)
+                float brightness = 24.f - dist * 18.f;  // 24 al centro, 6 ai bordi
+                sf::Uint8 fr = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.r + brightness)));
+                sf::Uint8 fg = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.g + brightness * 0.7f)));
+                sf::Uint8 fb = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.b + brightness * 0.4f)));
                 rect.setFillColor(sf::Color(fr, fg, fb));
                 target.draw(rect);
 
