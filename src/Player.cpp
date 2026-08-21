@@ -234,9 +234,17 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         if (fabs(pos.x - centerX) < effectiveSpeed && fabs(pos.y - centerY) < effectiveSpeed) {
             pos.x = centerX; pos.y = centerY;
             // Applica direzione richiesta (se fattibile).
-            if (nextDx != 0 || nextDy != 0) { tryMove(nextDx, nextDy, maze); nextDx = 0; nextDy = 0; }
-            // Se davanti c'e' muro, ferma il movimento.
-            if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
+            if (nextDx != 0 || nextDy != 0) {
+                tryMove(nextDx, nextDy, maze);
+                nextDx = 0; nextDy = 0;
+            }
+            // FIX: se davanti c'e' muro, ferma il movimento (dx/dy a 0).
+            // Non usare else-if perche' tryMove potrebbe aver impostato dx/dy
+            // a 0 se la direzione era bloccata, e questo check e' ridondante
+            // ma sicuro: controlla se la direzione corrente porta a un muro.
+            if (dx != 0 || dy != 0) {
+                if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
+            }
         }
         pos.x += dx * effectiveSpeed; pos.y += dy * effectiveSpeed;
 

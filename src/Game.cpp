@@ -766,9 +766,15 @@ void Game::update() {
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
-        unsigned joystickId = 0;  // FIX: usa joystick ID diretto (non cache)
-        if (joystickId < sf::Joystick::Count) {
-            float x = Joy::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
+        // FIX: usa il joystick corretto in base allo step (P1=0, P2=1 o fallback 0)
+        unsigned int wheelJoyId = (selectPlayerStep == 0) ? 0 : 1;
+        if (selectPlayerStep == 1 && !Joy::isConnected(1) && Joy::isConnected(0)) {
+            wheelJoyId = 0;  // gamepad condiviso
+        }
+        if (Joy::isConnected(wheelJoyId)) {
+            // Usa l'asse configurato per il player corrispondente
+            int axisX = (selectPlayerStep == 0) ? config.joy_axis_x : config.joy2_axis_x;
+            float x = Joy::getAxisPosition(wheelJoyId, (sf::Joystick::Axis)axisX);
             static bool joyMovedWheel = false;
             if (fabs(x) > 50 && !joyMovedWheel) {
                 joyMovedWheel = true;
