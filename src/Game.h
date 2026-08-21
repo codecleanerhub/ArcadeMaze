@@ -252,7 +252,6 @@ private:
     int lightningTimer;                        // durata residua del fulmine nel menu'
     int screenFlashTimer;                      // ms residui del flash bianco schermo (fulmini)
     int configJoyStep;                         // step configurazione joystick (0/1)
-    unsigned int configJoyJoystickId;          // joystickId usato in STATE_CONFIG_JOY (per escluderlo in STATE_CONFIG_JOY_2). sf::Joystick::Count se nessuno.
     int continuesLeft;                         // crediti continues rimanenti (max 3)
     int continuesTimer;                        // conto alla rovescia 10-0 (secondi)
     int continuesTimerMs;                      // ms residui del secondo corrente

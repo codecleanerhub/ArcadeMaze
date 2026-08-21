@@ -5,109 +5,6 @@
 #include <cmath>
 
 // ===========================================================================
-// Gestione joystick cross-platform (Linux + Windows + macOS)
-// ===========================================================================
-// PROBLEMA RISOLTO: su Windows il joystick non veniva rilevato correttamente
-// perche':
-//   1. sf::Joystick::update() era chiamato DENTRO getConnectedJoystick, che
-//      veniva chiamato ad ogni evento joystick in handleEvents(). Questo
-//      interferiva con la coda eventi di DirectInput, facendo perdere eventi.
-//   2. La mappatura "player index -> joystick ID" veniva ricalcolata ad ogni
-//      evento (costoso e potenzialmente errato se i joystick vengono
-//      collegati/scollegati durante il gioco).
-//   3. Non c'era una chiamata iniziale a sf::Joystick::update() in init().
-//
-// FIX:
-//   - updateJoystickMapping() viene chiamato UNA SOLA VOLTA all'inizio di
-//     ogni frame (in update(), PRIMA di handleEvents nel ciclo principale,
-//     oppure all'inizio di handleEvents stesso). Cacheizza la mappatura.
-//   - getJoystickId(playerIndex) restituisce l'ID cached (veloce, niente
-//     chiamate a sf::Joystick::update() durante la gestione eventi).
-//   - isPlayerJoystick() usa la cache invece di ricalcolare.
-//   - sf::Joystick::update() viene chiamato UNA sola volta per frame, in
-//     updateJoystickMapping(), e mai durante handleEvents.
-namespace {
-// Cache dei joystick collegati: g_joystickIds[playerIndex] = joystickId
-// (o sf::Joystick::Count se il player non ha un joystick).
-// Aggiornata una volta per frame da updateJoystickMapping().
-constexpr unsigned int MAX_PLAYERS = 2;
-unsigned int g_joystickIds[MAX_PLAYERS] = {
-    sf::Joystick::Count,  // player 1
-    sf::Joystick::Count   // player 2
-};
-bool g_joystickCacheValid = false;
-
-// Chiama sf::Joystick::update() UNA sola volta per frame e cacheizza la
-// mappatura player -> joystickId. Da chiamare all'inizio di update() o
-// handleEvents(), MAI dentro la gestione di un evento.
-void updateJoystickMapping() {
-    // Su Windows, sf::Joystick::update() e' necessario per rilevare i
-    // collegamenti/scollegamenti e per aggiornare lo stato dei pulsanti.
-    // Chiamarlo una volta sola per frame evita problemi di reentrancy.
-    sf::Joystick::update();
-    unsigned int connectedIndex = 0;
-    // Azzera la cache
-    for (unsigned int p = 0; p < MAX_PLAYERS; ++p) {
-        g_joystickIds[p] = sf::Joystick::Count;
-    }
-    // Popola la cache con i primi N joystick collegati
-    for (unsigned int joystickId = 0; joystickId < sf::Joystick::Count; ++joystickId) {
-        if (sf::Joystick::isConnected(joystickId)) {
-            if (connectedIndex < MAX_PLAYERS) {
-                g_joystickIds[connectedIndex] = joystickId;
-            }
-            ++connectedIndex;
-        }
-    }
-    g_joystickCacheValid = true;
-}
-
-// Restituisce l'ID del joystick associato al player, o sf::Joystick::Count
-// se non ne ha uno. Usa la cache (veloce). Se la cache non e' valida,
-// chiama updateJoystickMapping() per popolarla.
-unsigned int getJoystickId(unsigned int playerIndex) {
-    if (playerIndex >= MAX_PLAYERS) return sf::Joystick::Count;
-    if (!g_joystickCacheValid) {
-        updateJoystickMapping();
-    }
-    return g_joystickIds[playerIndex];
-}
-
-// True se il joystickId specificato corrisponde al player dato.
-// Usa la cache (non chiama sf::Joystick::update()).
-bool isPlayerJoystick(unsigned int joystickId, unsigned int playerIndex) {
-    return joystickId == getJoystickId(playerIndex);
-}
-
-// Inizializza il sottosistema joystick. Da chiamare UNA volta in Game::init().
-void initJoystickSystem() {
-    sf::Joystick::update();
-    updateJoystickMapping();
-    // Log dei joystick rilevati (utile per debug)
-    for (unsigned int p = 0; p < MAX_PLAYERS; ++p) {
-        unsigned int jid = g_joystickIds[p];
-        if (jid < sf::Joystick::Count) {
-            std::cout << "Joystick player " << (p + 1) << ": ID=" << jid
-                      << " (" << sf::Joystick::getButtonCount(jid) << " buttons)" << std::endl;
-            // DEBUG: stampa i valori di tutti gli assi (8 assi max) per
-            // diagnosticare quale asse corrisponde al analogico
-            const char* axisNames[] = {"X", "Y", "Z", "R", "U", "V", "PovX", "PovY"};
-            std::cout << "  Assi joystick " << jid << ": ";
-            for (int a = 0; a < 8; a++) {
-                float val = sf::Joystick::getAxisPosition(jid, (sf::Joystick::Axis)a);
-                std::cout << axisNames[a] << "=" << val << " ";
-            }
-            std::cout << std::endl;
-        } else {
-            std::cout << "Joystick player " << (p + 1) << ": non collegato" << std::endl;
-        }
-    }
-    // DEBUG: stampa anche i valori config per gli assi
-    std::cout << "Config: joy_axis_x=0 joy_axis_y=1 (defaults, X=0, Y=1)" << std::endl;
-}
-}
-
-// ===========================================================================
 // Game.cpp - Implementazione del ciclo di gioco centrale.
 //
 // Flusso di una partita tipica:
@@ -142,7 +39,7 @@ void initJoystickSystem() {
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), configJoyJoystickId(sf::Joystick::Count), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
@@ -199,11 +96,6 @@ bool Game::init() {
     // alle primitive (renderCharacterFallback).
     player.setCharacter(player1Character, 1);
     player2.setCharacter(player2Character, 2);
-    // FIX: inizializza il sottosistema joystick (su Windows e' necessario
-    // chiamare sf::Joystick::update() una volta all'avvio per rilevare i
-    // gamepad collegati, altrimenti gli eventi JoystickButtonPressed non
-    // vengono scatenati).
-    initJoystickSystem();
     return true;
 }
 
@@ -624,13 +516,6 @@ SoundType Game::getWeaponSound(WeaponType wt) {
 // con bande nere (letterbox) se lo schermo non e' quadrato.
 // ---------------------------------------------------------------------------
 void Game::handleEvents() {
-    // FIX: aggiorna la mappatura joystick UNA volta all'inizio di
-    // handleEvents. Su Windows e' fondamentale chiamare
-    // sf::Joystick::update() PRIMA di pollEvent perche' DirectInput
-    // popola la coda eventi solo dopo un update. Chiamandolo qui (una
-    // sola volta per frame) invece che dentro ogni evento, evitiamo
-    // problemi di reentrancy e perdita di eventi.
-    updateJoystickMapping();
     sf::Event event;
     while (window.pollEvent(event)) {
         if (event.type == sf::Event::Closed) isRunning = false;
@@ -802,17 +687,6 @@ void Game::handleEvents() {
                 }
             }
         }
-        // FIX: gestisce collegamento/scollegamento del joystick durante il
-        // gioco. Su Windows, quando l'utente collega un gamepad a partita
-        // avviata, SFML scatena JoystickConnected. Invalidiamo la cache cosi'
-        // al prossimo frame il nuovo gamepad viene rilevato e mappato al
-        // player corretto.
-        else if (event.type == sf::Event::JoystickConnected ||
-                 event.type == sf::Event::JoystickDisconnected) {
-            g_joystickCacheValid = false;
-            // Forza un update subito per avere la mappatura fresca
-            updateJoystickMapping();
-        }
         else if (event.type == sf::Event::JoystickButtonPressed) {
             // Supporto joystick: riproduce la stessa logica del menu' da tastiera.
             // Pulsante "jump" del joystick e' usato come "conferma" perche' e'
@@ -820,7 +694,7 @@ void Game::handleEvents() {
             if (state == STATE_MENU) {
                 // Cast a unsigned: event.joystickButton.button e' unsigned int,
                 // config.joy_jump e' int (perche' letto da file INI come intero).
-                if (isPlayerJoystick(event.joystickButton.joystickId, 0) && event.joystickButton.button == (unsigned)config.joy_jump) {
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     audio.playSound(SOUND_MENU_CONFIRM);
                     if (menuItemIndex == 3) {
                         // SELECT PLAYER
@@ -844,7 +718,7 @@ void Game::handleEvents() {
                 }
             } else if (state == STATE_SELECT_PLAYER) {
                 // Joystick: pulsante jump = conferma personaggio
-                if (isPlayerJoystick(event.joystickButton.joystickId, 0) && event.joystickButton.button == (unsigned)config.joy_jump) {
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     audio.playSound(SOUND_MENU_CONFIRM);
                     if (selectPlayerStep == 0) {
                         player1Character = (CharacterType)wheelIndex;
@@ -864,69 +738,24 @@ void Game::handleEvents() {
                 // Configurazione joystick a 2 step:
                 //   step 0: cattura pulsante per salto
                 //   step 1: cattura pulsante per sparo, poi torna al menu'
-                //
-                // FIX: durante la configurazione accettiamo QUALSIASI joystick
-                // collegato (non solo quello mappato a player 0). Questo perche'
-                // l'utente potrebbe avere un gamepad con ID non convenzionale
-                // (su Windows certi gamepad occupano ID 2+ invece di 0).
-                // La mappatura "player 0 = primo joystick collegato" garantisce
-                // che il gamepad venga poi usato in gioco.
-                //
-                // Registra il joystickId usato per escluderlo in STATE_CONFIG_JOY_2
-                // (solo se ci sono 2+ gamepad). Con 1 solo gamepad, STATE_CONFIG_JOY_2
-                // lo accetterà per permettere all'utente di testare il player 2.
-                if (sf::Joystick::isConnected(event.joystickButton.joystickId)) {
-                    configJoyJoystickId = event.joystickButton.joystickId;  // registra
-                    if (configJoyStep == 0) {
-                        config.joy_jump = (int)event.joystickButton.button;
-                        configJoyStep = 1;
-                    }
-                    else if (configJoyStep == 1) {
-                        config.joy_shoot = (int)event.joystickButton.button;
+                if (event.joystickButton.joystickId == 0) {
+                    if (configJoyStep == 0) { config.joy_jump = (int)event.joystickButton.button; configJoyStep = 1; }
+                    else if (configJoyStep == 1) { config.joy_shoot = (int)event.joystickButton.button;
                         if (numPlayers == 2) state = STATE_CONFIG_JOY_2;
                         else state = STATE_MENU;
                     }
                 }
             } else if (state == STATE_CONFIG_JOY_2) {
-                // Configurazione joystick secondo giocatore.
-                //
-                // LOGICA:
-                // - Se ci sono 2+ gamepad collegati, accetta SOLO il gamepad
-                //   diverso da quello usato in STATE_CONFIG_JOY (configJoyJoystickId).
-                //   Questo forza l'utente a configurare il secondo gamepad per
-                //   il player 2, non lo stesso del player 1.
-                // - Se c'e' 1 solo gamepad, accetta qualsiasi gamepad (l'utente
-                //   sta testando il player 2 con lo stesso gamepad).
-                bool accept = false;
-                unsigned int joyId = event.joystickButton.joystickId;
-                if (sf::Joystick::isConnected(joyId)) {
-                    // Conta quanti gamepad sono collegati
-                    int connectedCount = 0;
-                    for (unsigned int j = 0; j < sf::Joystick::Count; ++j) {
-                        if (sf::Joystick::isConnected(j)) ++connectedCount;
-                    }
-                    if (connectedCount >= 2) {
-                        // 2+ gamepad: accetta solo se e' DIVERSO da quello
-                        // gia' configurato per player 1
-                        accept = (joyId != configJoyJoystickId);
-                    } else {
-                        // 1 solo gamepad: accetta qualsiasi
-                        accept = true;
-                    }
-                }
-                if (accept) {
-                    if (configJoyStep == 0) {
-                        config.joy2_jump = (int)event.joystickButton.button;
-                        configJoyStep = 1;
-                    }
-                    else if (configJoyStep == 1) {
-                        config.joy2_shoot = (int)event.joystickButton.button;
-                        state = STATE_MENU;
-                    }
+                // Configurazione joystick secondo giocatore (joystick 1).
+                // Usa i campi joy2_* dedicati: NON tocca config.joy_jump/joy_shoot
+                // del giocatore 1 (bug critico della versione precedente).
+                if (event.joystickButton.joystickId == 1) {
+                    if (configJoyStep == 0) { config.joy2_jump = (int)event.joystickButton.button; configJoyStep = 1; }
+                    else if (configJoyStep == 1) { config.joy2_shoot = (int)event.joystickButton.button; state = STATE_MENU; }
                 }
             } else if (state == STATE_CONTINUES) {
                 // Joystick: pulsante jump = conferma, pulsante shoot = toggle
-                if (isPlayerJoystick(event.joystickButton.joystickId, 0)) {
+                if (event.joystickButton.joystickId == 0) {
                     if (event.joystickButton.button == (unsigned)config.joy_jump) {
                         audio.playSound(SOUND_MENU_CONFIRM);
                         if (continuesChoice) {
@@ -944,7 +773,7 @@ void Game::handleEvents() {
                     }
                 }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
-                if (isPlayerJoystick(event.joystickButton.joystickId, 0) && event.joystickButton.button == (unsigned)config.joy_jump) {
+                if (event.joystickButton.joystickId == 0 && event.joystickButton.button == (unsigned)config.joy_jump) {
                     state = STATE_MENU;
                     currentLevel = 1;
                     continuesLeft = 3;
@@ -976,7 +805,7 @@ void Game::update() {
 
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
     if (state == STATE_MENU) {
-        unsigned joystickId = getJoystickId(0);
+        unsigned joystickId = 0;  // FIX: usa joystick ID diretto (non cache)
         if (joystickId < sf::Joystick::Count) {
             float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
             // joyMoved e' static: serve da "debounce" per evitare che un
@@ -995,7 +824,7 @@ void Game::update() {
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
-        unsigned joystickId = getJoystickId(0);
+        unsigned joystickId = 0;  // FIX: usa joystick ID diretto (non cache)
         if (joystickId < sf::Joystick::Count) {
             float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
             static bool joyMovedWheel = false;
@@ -1032,80 +861,23 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); }
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
 
-        // Joystick: prevale sulla tastiera se fuori dalla deadzone.
-        // FIX: scansiona TUTTI gli 8 assi del gamepad per trovare quello
-        // attivo. Su Windows (DirectInput), alcuni gamepad (specialmente
-        // controller Xbox e cloni) mappano l'analogico su assi diversi da
-        // X/Y (es. Z/R o U/V). Invece di affidarsi solo a config.joy_axis_x/y,
-        // controlliamo tutti gli assi orizzontali (X=0, Z=2, U=4) e verticali
-        // (Y=1, R=3, V=5) e usiamo quello con il valore piu' alto.
-        unsigned joystickId = getJoystickId(0);
-        if (joystickId < sf::Joystick::Count) {
-            // Leggi tutti gli assi orizzontali e verticali
-            float horizAxes[3] = {
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::X),   // 0
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Z),   // 2
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::U)    // 4
-            };
-            float vertAxes[3] = {
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Y),   // 1
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::R),   // 3
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::V)    // 5
-            };
-            // Trova l'asse orizzontale e verticale con il valore assoluto massimo
-            float bestX = 0.f;
-            for (int i = 0; i < 3; i++) {
-                if (fabsf(horizAxes[i]) > fabsf(bestX)) bestX = horizAxes[i];
-            }
-            float bestY = 0.f;
-            for (int i = 0; i < 3; i++) {
-                if (fabsf(vertAxes[i]) > fabsf(bestY)) bestY = vertAxes[i];
-            }
-            // DEBUG: stampa i valori di TUTTI gli assi per diagnosticare
-            static int debugCounter = 0;
-            if (debugCounter++ % 30 == 0) {  // ogni ~0.5s
-                std::cout << "JOY P1: jid=" << joystickId
-                          << " X=" << horizAxes[0] << " Z=" << horizAxes[1] << " U=" << horizAxes[2]
-                          << " Y=" << vertAxes[0] << " R=" << vertAxes[1] << " V=" << vertAxes[2]
-                          << " -> bestX=" << bestX << " bestY=" << bestY << std::endl;
-            }
-            // Soglia ridotta da 30 a 20 per maggiore sensibilita'
-            const float JOY_DEADZONE = 20.f;
-            if (fabsf(bestX) > JOY_DEADZONE || fabsf(bestY) > JOY_DEADZONE) {
-                if (fabsf(bestX) > fabsf(bestY)) {
-                    if (bestX > JOY_DEADZONE) { player.setDirection(1, 0); }
-                    else if (bestX < -JOY_DEADZONE) { player.setDirection(-1, 0); }
+        // Joystick: prevale sulla tastiera se fuori dalla deadzone (30%)
+        if (sf::Joystick::isConnected(0)) {
+            float x = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+            float y = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+            if (fabs(x) > 30 || fabs(y) > 30) {
+                // Determina l'asse dominante per evitare movimenti diagonali
+                // non intenzionali (utile per labirinto "snap-to-grid").
+                if (fabs(x) > fabs(y)) {
+                    if (x > 30) { player.setDirection(1, 0); }
+                    else if (x < -30) { player.setDirection(-1, 0); }
                 } else {
-                    if (bestY > JOY_DEADZONE) { player.setDirection(0, 1); }
-                    else if (bestY < -JOY_DEADZONE) { player.setDirection(0, -1); }
+                    if (y > 30) { player.setDirection(0, 1); }
+                    else if (y < -30) { player.setDirection(0, -1); }
                 }
-            }
-            // FIX: supporto D-pad (PovX/PovY) come fallback per il movimento.
-            // Su Windows con DirectInput, alcuni gamepad non riportano
-            // l'analogico sugli assi X/Y/Z/U ma il D-pad funziona su
-            // PovX/PovY. Valori: -100 (sinistra/su), +100 (destra/giu), 0 (centro).
-            float povX = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::PovX);
-            float povY = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::PovY);
-            const float POV_THRESHOLD = 50.f;
-            if (fabsf(povX) > POV_THRESHOLD || fabsf(povY) > POV_THRESHOLD) {
-                if (fabsf(povX) > fabsf(povY)) {
-                    if (povX > POV_THRESHOLD) { player.setDirection(1, 0); }
-                    else if (povX < -POV_THRESHOLD) { player.setDirection(-1, 0); }
-                } else {
-                    if (povY > POV_THRESHOLD) { player.setDirection(0, 1); }
-                    else if (povY < -POV_THRESHOLD) { player.setDirection(0, -1); }
-                }
-            }
-            // DEBUG: stampa anche PovX/PovY per diagnosticare
-            static int povDebugCounter = 0;
-            if (povDebugCounter++ % 60 == 0) {
-                std::cout << "POV P1: PovX=" << povX << " PovY=" << povY
-                          << " btnJump=" << (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy_jump) ? "Y" : "N")
-                          << " btnShoot=" << (sf::Joystick::isButtonPressed(joystickId, config.joy_shoot) ? "Y" : "N")
-                          << std::endl;
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(joystickId, config.joy_shoot)) {
+            if (sf::Joystick::isButtonPressed(0, config.joy_shoot)) {
                 if (player.getShootCooldown() == 0) {
                     int ammoBefore = player.getCurrentWeapon().ammo;
                     player.shoot();
@@ -1114,7 +886,7 @@ void Game::update() {
                     player.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy_jump)) {
+            if (sf::Joystick::isButtonPressed(0, (unsigned)config.joy_jump)) {
                 bool wasJumping = player.isJumping();
                 player.activateJump();
                 if (!wasJumping && player.isJumping()) audio.playSound(SOUND_JUMP);
@@ -1147,51 +919,21 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
 
         // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
-        // tastiera se fuori dalla deadzone. Usa joy2_* / joy2_axis_*.
-        //
-        // FIX: se il player 2 non ha un joystick dedicato (getJoystickId(1)
-        // == Count) ma c'e' un solo gamepad collegato, usa quello del player 0.
-        // Questo permette di testare il player 2 con lo stesso gamepad quando
-        // se ne ha solo uno. Con 2 gamepad, ogni player usa il proprio.
-        //
-        // FIX: scansiona tutti gli assi (X/Z/U orizzontali, Y/R/V verticali)
-        // come per il player 1, per gestire gamepad che mappano l'analogico
-        // su assi non standard.
-        unsigned joystickId = getJoystickId(1);
-        if (joystickId >= sf::Joystick::Count) {
-            joystickId = getJoystickId(0);
-        }
-        if (joystickId < sf::Joystick::Count) {
-            float horizAxes[3] = {
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::X),
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Z),
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::U)
-            };
-            float vertAxes[3] = {
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::Y),
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::R),
-                sf::Joystick::getAxisPosition(joystickId, sf::Joystick::V)
-            };
-            float bestX = 0.f;
-            for (int i = 0; i < 3; i++) {
-                if (fabsf(horizAxes[i]) > fabsf(bestX)) bestX = horizAxes[i];
-            }
-            float bestY = 0.f;
-            for (int i = 0; i < 3; i++) {
-                if (fabsf(vertAxes[i]) > fabsf(bestY)) bestY = vertAxes[i];
-            }
-            const float JOY_DEADZONE = 20.f;
-            if (fabsf(bestX) > JOY_DEADZONE || fabsf(bestY) > JOY_DEADZONE) {
-                if (fabsf(bestX) > fabsf(bestY)) {
-                    if (bestX > JOY_DEADZONE) { player2.setDirection(1, 0); }
-                    else if (bestX < -JOY_DEADZONE) { player2.setDirection(-1, 0); }
+        // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
+        if (sf::Joystick::isConnected(1)) {
+            float x = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_x);
+            float y = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_y);
+            if (fabs(x) > 30 || fabs(y) > 30) {
+                if (fabs(x) > fabs(y)) {
+                    if (x > 30) { player2.setDirection(1, 0); }
+                    else if (x < -30) { player2.setDirection(-1, 0); }
                 } else {
-                    if (bestY > JOY_DEADZONE) { player2.setDirection(0, 1); }
-                    else if (bestY < -JOY_DEADZONE) { player2.setDirection(0, -1); }
+                    if (y > 30) { player2.setDirection(0, 1); }
+                    else if (y < -30) { player2.setDirection(0, -1); }
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy2_shoot)) {
+            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
                     player2.shoot();
@@ -1199,7 +941,7 @@ void Game::update() {
                     player2.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(joystickId, (unsigned)config.joy2_jump)) {
+            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_jump)) {
                 bool wasJumping = player2.isJumping();
                 player2.activateJump();
                 if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
