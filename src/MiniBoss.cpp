@@ -707,7 +707,7 @@ void MiniBoss::renderPrimitives(sf::RenderTarget& target) const {
     {
         float barW = (float)size * 0.9f;  // leggermente piu' larga
         float barH = 4.f;                // leggermente piu' alta (visibilita')
-        float barY = cy - bodyH / 2.f - headR - 8.f;
+        float barY = cy - bodyH / 2.f - headR - 20.f;  // alzata (era -8)
         // Sfondo (nero)
         sf::RectangleShape bg(sf::Vector2f(barW, barH));
         bg.setFillColor(COL_BLACK);
@@ -826,12 +826,13 @@ void MiniBoss::render(sf::RenderTarget& target) const {
         target.draw(aura);
 
         // --- Barra HP ROSSA (sopra la testa, sempre visibile) ---
-        // FIX: barra sempre rossa (richiesta utente) e sempre visualizzata
-        // per dare feedback immediato del danno inflitto al mini-boss.
+        // FIX: alzata per non tagliare la testa del mini-boss.
+        // Prima era a size*scale/2 - 10 (troppo vicina alla testa).
+        // Ora e' a size*scale/2 + 30 (sopra lo sprite, con margine).
         {
-            float barW = (float)size * 0.9f * scale;  // piu' larga, scalata
-            float barH = 4.f;                        // piu' alta
-            float barY = pos.y - (float)size * scale / 2.f - 10.f;
+            float barW = (float)size * 0.9f * scale;
+            float barH = 4.f;
+            float barY = pos.y - (float)size * scale / 2.f - 35.f;  // alzata (era -10)
             sf::RectangleShape bg(sf::Vector2f(barW, barH));
             bg.setFillColor(sf::Color(12, 12, 12));
             bg.setOutlineThickness(1.f);

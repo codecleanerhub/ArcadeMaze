@@ -430,6 +430,17 @@ void Player::render(sf::RenderTarget& target) {
             }
         }
 
+        // --- Arma equipaggiata visibile (ramo sprite PNG) ---
+        // FIX: prima l'arma veniva disegnata solo nel fallback procedurale,
+        // ma il ramo sprite faceva return prima di arrivarci. Ora la
+        // disegniamo qui, dopo lo sprite e prima dei proiettili.
+        // Posizionata sul lato in cui il personaggio e' rivolto:
+        //   * flipped=true  (guarda destra)  -> arma a destra  (px + 16)
+        //   * flipped=false (guarda sinistra) -> arma a sinistra (px - 16)
+        float weaponY = pos.y + 8.f;
+        if (isJumping) weaponY -= jumpOffset;
+        currentWeapon.renderEquipped(target, px + (flipped ? 16 : -16), weaponY);
+
         drawProjectiles(target);
         return;
     }
