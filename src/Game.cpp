@@ -794,9 +794,18 @@ void Game::update() {
             }
         }
         // Polling pulsante jump = conferma personaggio (con debounce)
-        if (Joy::isConnected(0) && config.joy_jump >= 0) {
+        // FIX: usa il joystick corretto per P1 (ID 0) e P2 (ID 1 o fallback 0)
+        unsigned int selJoyId = (selectPlayerStep == 0) ? 0 : 1;
+        // Se P2 e il joystick 1 non e' collegato, usa il 0 (gamepad condiviso)
+        if (selectPlayerStep == 1 && !Joy::isConnected(1) && Joy::isConnected(0)) {
+            selJoyId = 0;
+        }
+        if (Joy::isConnected(selJoyId)) {
             static bool selJoyBtn = false;
-            bool pressed = Joy::isButtonPressed(0, (unsigned)config.joy_jump);
+            // Usa i pulsanti configurati per il player corrispondente
+            int jumpBtn = (selectPlayerStep == 0) ? config.joy_jump : config.joy2_jump;
+            if (jumpBtn < 0) jumpBtn = 0;
+            bool pressed = Joy::isButtonPressed(selJoyId, (unsigned)jumpBtn);
             if (pressed && !selJoyBtn) {
                 selJoyBtn = true;
                 audio.playSound(SOUND_MENU_CONFIRM);
@@ -1000,11 +1009,27 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); }
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
 
-        // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
-        // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
-        if (Joy::isConnected(1)) {
-            float x = Joy::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_x);
-            float y = Joy::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_y);
+        // Joystick 1 (configurabile da STATE_CONFIG_JOY_2).
+        // FIX: se il joystick 1 non e' collegato (DirectInput ha 2 device ma
+        // joystickId 1 potrebbe essere mappato diversamente), usa fallback:
+        // se Joy::isConnected(1) e' false ma Joy::isConnected(0) e' true e
+        // c'e' un solo gamepad, usa il gamepad del player 1 anche per P2.
+        bool p2JoyConnected = Joy::isConnected(1);
+        unsigned int p2JoyId = 1;
+        if (!p2JoyConnected) {
+            // Verifica se c'e' solo un gamepad (P1) -> usa quello per P2
+            int totalConnected = 0;
+            for (unsigned int j = 0; j < 4; j++) {
+                if (Joy::isConnected(j)) totalConnected++;
+            }
+            if (totalConnected == 1 && Joy::isConnected(0)) {
+                p2JoyConnected = true;
+                p2JoyId = 0;
+            }
+        }
+        if (p2JoyConnected) {
+            float x = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
+            float y = Joy::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_y);
             if (fabs(x) > 30 || fabs(y) > 30) {
                 if (fabs(x) > fabs(y)) {
                     if (x > 30) { player2.setDirection(1, 0); }
@@ -1014,8 +1039,9 @@ void Game::update() {
                     else if (y < -30) { player2.setDirection(0, -1); }
                 }
             }
-            // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (Joy::isButtonPressed(1, (unsigned)config.joy2_shoot)) {
+            // Sparo joystick: autofire con cooldown 150ms
+            // FIX: usa p2JoyId invece di 1 hardcoded
+            if (Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
                     player2.shoot();
@@ -1023,7 +1049,8 @@ void Game::update() {
                     player2.setShootCooldown(150);
                 }
             }
-            if (Joy::isButtonPressed(1, (unsigned)config.joy2_jump)) {
+            // Salto joystick
+            if (Joy::isButtonPressed(p2JoyId, (unsigned)config.joy2_jump)) {
                 bool wasJumping = player2.isJumping();
                 player2.activateJump();
                 if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
@@ -4107,6 +4134,16 @@ void Game::drawSelectPlayer() {
     if (selectPlayerStep == 1) {
         std::string p1Info = "P1: " + getCharacterName(player1Character);
         drawTextCenteredOutlined(window, p1Info, WINDOW_WIDTH/2, 250, 3, sf::Color(255, 215, 0));
+    }
+    // --- Indicatore "P2: scegliere personaggio" (in 2P, step 1) ---
+    if (selectPlayerStep == 1 && numPlayers == 2) {
+        drawTextCenteredOutlined(window, "P2: SELECT YOUR CHARACTER", WINDOW_WIDTH/2, 280, 2, sf::Color(120, 180, 255));
+    }
+    // --- Indicatore conferma dopo che P2 ha scelto (torna al menu) ---
+    if (selectPlayerStep == 0 && numPlayers == 2) {
+        // Se siamo qui dopo una selezione P2, mostra entrambi per 1 frame
+        // (il state cambia a STATE_MENU subito, quindi questo e' solo visivo
+        // se si torna a SELECT_PLAYER)
     }
 
     // --- Istruzioni in basso ---
