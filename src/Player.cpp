@@ -164,6 +164,13 @@ bool Player::tryMove(int tDx, int tDy, Maze& maze) {
         dx = tDx; dy = tDy; lastDx = tDx; lastDy = tDy;
         return true;
     }
+    // FIX: se la direzione richiesta e' bloccata da un muro, aggiorna
+    // comunque lastDx/lastDy (per orientare sprite e arma) e ferma
+    // il movimento. Prima restituiva false senza toccare dx/dy, il che
+    // causava il blocco permanente del player (dx/dy rimanevano ai
+    // valori precedenti e al frame successivo il muro fermava di nuovo).
+    lastDx = tDx; lastDy = tDy;
+    dx = 0; dy = 0;
     return false;
 }
 
