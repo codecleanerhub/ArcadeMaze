@@ -2168,7 +2168,7 @@ void Game::update() {
             if (scepter.lightningTimer > 16) scepter.lightningTimer -= 16;
             else scepter.lightningTimer = 0;
             if (scepter.lightningTimer == 0) {
-                float lx = 100.f + (rand() % (WINDOW_WIDTH - 200));
+                float lx = 100.f + (float)(rand() % (WINDOW_WIDTH - 200));
                 float ly = UI_HEIGHT + 100.f + (rand() % (WINDOW_HEIGHT - UI_HEIGHT - 200));
                 // Crea fulmine che attraversa tutto lo schermo (verticale
                 // o diagonale) con zigzag pre-calcolato.
@@ -2518,12 +2518,12 @@ void Game::update() {
 // (1 sec a 60 FPS).
 // ---------------------------------------------------------------------------
 void Game::spawnFirework() {
-    float x = 100 + rand() % (WINDOW_WIDTH - 200);
+    float x = (float)(100 + rand() % (WINDOW_WIDTH - 200));
     float y = (float)(100 + rand() % (WINDOW_HEIGHT / 2));  // solo meta' alta dello schermo
     sf::Color colors[] = {sf::Color::Red, sf::Color::Green, sf::Color::Blue, sf::Color::Yellow, sf::Color::Magenta, sf::Color::Cyan};
     sf::Color col = colors[rand() % 6];
     for(int i=0; i<30; i++) {
-        float angle = i * (M_PI * 2 / 30);  // 30 particelle uniformi su 360°
+        float angle = i * ((float)M_PI * 2.f / 30.f);  // 30 particelle uniformi su 360°
         fireworks.push_back({sf::Vector2f(x, y), sf::Vector2f(cosf(angle)*4, sinf(angle)*4), col, 60});
     }
 }
@@ -2630,7 +2630,7 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     // simulando le "rifle" metalliche che tengono il cristallo (come nel
     // bastone di Gandalf nei film di Peter Jackson).
     for (int i = 0; i < 4; i++) {
-        float angle = i * (M_PI / 2.f) + (M_PI / 4.f);  // 45, 135, 225, 315°
+        float angle = i * ((float)M_PI / 2.f) + ((float)M_PI / 4.f);  // 45, 135, 225, 315°
         // Posizione di partenza: cima del bastone (sx, sy-4)
         // Posizione di arrivo: lati della gemma (sx+/-5, sy-18+/-5)
         // Disegna il raggio come piccolo rettangolo inclinato
@@ -2639,7 +2639,7 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
         prong.setOutlineThickness(0.3f);
         prong.setOutlineColor(COL_DARK_WOOD);
         prong.setPosition(sx - 0.6f, (sy - 4.f) - 16.f);
-        float rotDeg = (angle - M_PI / 2.f) * 180.f / M_PI;
+        float rotDeg = (angle - (float)M_PI / 2.f) * 180.f / (float)M_PI;
         prong.rotate(rotDeg);
         target.draw(prong);
     }
@@ -2682,13 +2682,13 @@ void Game::drawMagicScepter(sf::RenderTarget& target, float sx, float sy, float 
     // --- Raggi di luce dalla gemma (4 raggi verso l'esterno) ---
     // Simula la luce magica che emana dal cristallo. Colore bianco-azzurro.
     for (int i = 0; i < 4; i++) {
-        float angle = i * (M_PI / 2.f) + sPulse * 0.3f;  // rotazione lenta
+        float angle = i * ((float)M_PI / 2.f) + sPulse * 0.3f;  // rotazione lenta
         float rayLen = 10.f * sPulse;
         sf::RectangleShape ray(sf::Vector2f(1.f, rayLen));
         ray.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 120));
         ray.setOrigin(0.5f, rayLen);
         ray.setPosition(sx, sy - 18.f);
-        ray.setRotation(angle * 180.f / M_PI - 90.f);
+        ray.setRotation(angle * 180.f / (float)M_PI - 90.f);
         target.draw(ray);
     }
 
@@ -3429,7 +3429,7 @@ void Game::drawMenu() {
                         (tint == 1) ? sf::Color(200, 220, 255, br) :
                                       sf::Color(255, 240, 200, br);
         star.setFillColor(col);
-        star.setPosition(rand()%WINDOW_WIDTH, rand()%(WINDOW_HEIGHT - 200));
+        star.setPosition((float)(rand()%WINDOW_WIDTH), (float)(rand()%(WINDOW_HEIGHT - 200)));
         window.draw(star);
         // Aggiungi un piccolo "cross" di luce alle stelle piu' grandi
         if (radius > 1.8f) {
@@ -3498,7 +3498,7 @@ void Game::drawMenu() {
         // Disegna il fulmine solo nei primi 5 frame (parte alta durata)
         if (lightningTimer > 5) {
             sf::Color lightningCol(255, 255, 200);
-            float lx = WINDOW_WIDTH / 2.0f + (rand()%400 - 200);
+            float lx = WINDOW_WIDTH / 2.0f + (float)(rand()%400 - 200);
             for (int i = 0; i < 6; i++) {
                 sf::RectangleShape line(sf::Vector2f(6.f, 100.f));
                 line.setFillColor(lightningCol);
@@ -3555,7 +3555,7 @@ void Game::drawMenu() {
     float byW = (float)byStr.length()   * 4 * 5;
     float nameW = (float)nameStr.length() * 4 * 5;
     float totalW = byW + nameW;
-    float startX = WINDOW_WIDTH/2 - totalW/2.f;
+    float startX = (float)(WINDOW_WIDTH/2) - totalW/2.f;
     drawTextOutlined(window, byStr,   startX,             260, 5, sf::Color(255, 215, 100));
     drawTextOutlined(window, nameStr, startX + byW,       260, 5, sf::Color(245, 235, 200));
 
@@ -4982,7 +4982,7 @@ void Game::render() {
                 float h1 = wallHash(i + 4, 996);
                 float h2 = wallHash(i + 503, 336);
                 float h3 = wallHash(i + 103, 780);
-                float cx = WINDOW_WIDTH - wallThickness + 6.f + h1 * 12.f;
+                float cx = (float)(WINDOW_WIDTH - wallThickness) + 6.f + h1 * 12.f;
                 float cy = playTop + i * 32.f + 8.f + h2 * 16.f;
                 float radius = 2.f + h3 * 2.f;
                 sf::Uint8 cr = (sf::Uint8)std::min(255, rockBase.r + 15);
@@ -5573,7 +5573,7 @@ void Game::render() {
             }
             // Cumulo di teschi nell'angolo opposto (simmetrico)
             {
-                float pileX = WINDOW_WIDTH - wallThickness - 40.f;
+                float pileX = (float)(WINDOW_WIDTH - wallThickness) - 40.f;
                 float pileY = playTop + wallThickness + 30.f;
                 sf::CircleShape pileShadow(20.f);
                 pileShadow.setFillColor(sf::Color(0, 0, 0, 120));

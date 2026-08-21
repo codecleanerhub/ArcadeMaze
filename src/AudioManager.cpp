@@ -727,7 +727,7 @@ void AudioManager::generateTrack(int trackIdx) {
     trackSamples.reserve(totalSamples);
 
     for(int bar = 0; bar < numBars; ++bar) {
-        int chordRoot = scale[prog[bar % 4]];
+        int chordRoot = (int)scale[prog[bar % 4]];
         bool isChorus = (bar >= 8 && bar <= 11) || (bar >= 20 && bar <= 23);
         // Boss: piu' intenso, chorus piu' frequente
         if (trackIdx == 4) isChorus = (bar % 4 == 0) || (bar % 4 == 1);

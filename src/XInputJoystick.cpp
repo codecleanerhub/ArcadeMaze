@@ -1,6 +1,7 @@
 #include "XInputJoystick.h"
 #include <iostream>
 #include <cstring>
+#include <cmath>
 
 // ===========================================================================
 // XInputJoystick.cpp - Implementazione
@@ -53,7 +54,13 @@
     #define XINPUT_GAMEPAD_B               0x2000
     #define XINPUT_GAMEPAD_X               0x4000
     #define XINPUT_GAMEPAD_Y               0x8000
-    #define ERROR_DEVICE_NOT_CONNECTED     1167
+    // ERROR_DEVICE_NOT_CONNECTED e' gia' definito in Windows SDK (winerror.h = 1167)
+    // NON ridefinirlo qui per evitare warning C4005.
+
+    // M_PI non e' definito in MSVC senza _USE_MATH_DEFINES
+    #ifndef M_PI
+    #define M_PI 3.14159265358979323846
+    #endif
 
     typedef DWORD (WINAPI *XInputGetStateFunc)(DWORD dwUserIndex, XINPUT_STATE* pState);
 
