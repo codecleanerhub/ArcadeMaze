@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "XInputJoystick.h"
 #include <iostream>
 #include <cstdlib>
 #include <algorithm>
@@ -96,6 +97,8 @@ bool Game::init() {
     // alle primitive (renderCharacterFallback).
     player.setCharacter(player1Character, 1);
     player2.setCharacter(player2Character, 2);
+    // Inizializza XInput (Windows) o SFML (Linux/macOS) joystick
+    Joy::init();
     return true;
 }
 
@@ -797,17 +800,17 @@ void Game::handleEvents() {
 // ogni frame, non eventi discreti.
 // ---------------------------------------------------------------------------
 void Game::update() {
-    // FIX CRITICO: sf::Joystick::update() deve essere chiamato qui.
+    // FIX CRITICO: Joy::update() deve essere chiamato qui.
     // Su Windows, alcuni gamepad (specialmente XInput) richiedono che
     // update() sia chiamato IL PIU' TARDI POSSIBILE prima della lettura
     // degli assi. Chiamandolo qui (dopo handleEvents) dovrebbe funzionare.
-    sf::Joystick::update();
+    Joy::update();
 
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
     if (state == STATE_MENU) {
         unsigned joystickId = 0;  // FIX: usa joystick ID diretto (non cache)
         if (joystickId < sf::Joystick::Count) {
-            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
+            float y = Joy::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
             // joyMoved e' static: serve da "debounce" per evitare che un
             // solo movimento dell'analogico faccia scorrere tutte le voci.
             static bool joyMoved = false;
@@ -826,7 +829,7 @@ void Game::update() {
     else if (state == STATE_SELECT_PLAYER) {
         unsigned joystickId = 0;  // FIX: usa joystick ID diretto (non cache)
         if (joystickId < sf::Joystick::Count) {
-            float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
+            float x = Joy::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
             static bool joyMovedWheel = false;
             if (fabs(x) > 50 && !joyMovedWheel) {
                 joyMovedWheel = true;
@@ -862,9 +865,9 @@ void Game::update() {
         else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
 
         // Joystick: prevale sulla tastiera se fuori dalla deadzone (30%)
-        if (sf::Joystick::isConnected(0)) {
-            float x = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
-            float y = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+        if (Joy::isConnected(0)) {
+            float x = Joy::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+            float y = Joy::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
             if (fabs(x) > 30 || fabs(y) > 30) {
                 // Determina l'asse dominante per evitare movimenti diagonali
                 // non intenzionali (utile per labirinto "snap-to-grid").
@@ -877,7 +880,7 @@ void Game::update() {
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(0, config.joy_shoot)) {
+            if (Joy::isButtonPressed(0, config.joy_shoot)) {
                 if (player.getShootCooldown() == 0) {
                     int ammoBefore = player.getCurrentWeapon().ammo;
                     player.shoot();
@@ -886,7 +889,7 @@ void Game::update() {
                     player.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(0, (unsigned)config.joy_jump)) {
+            if (Joy::isButtonPressed(0, (unsigned)config.joy_jump)) {
                 bool wasJumping = player.isJumping();
                 player.activateJump();
                 if (!wasJumping && player.isJumping()) audio.playSound(SOUND_JUMP);
@@ -920,9 +923,9 @@ void Game::update() {
 
         // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
         // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
-        if (sf::Joystick::isConnected(1)) {
-            float x = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_x);
-            float y = sf::Joystick::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_y);
+        if (Joy::isConnected(1)) {
+            float x = Joy::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_x);
+            float y = Joy::getAxisPosition(1, (sf::Joystick::Axis)config.joy2_axis_y);
             if (fabs(x) > 30 || fabs(y) > 30) {
                 if (fabs(x) > fabs(y)) {
                     if (x > 30) { player2.setDirection(1, 0); }
@@ -933,7 +936,7 @@ void Game::update() {
                 }
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
-            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_shoot)) {
+            if (Joy::isButtonPressed(1, (unsigned)config.joy2_shoot)) {
                 if (player2.getShootCooldown() == 0) {
                     int ammoBefore = player2.getCurrentWeapon().ammo;
                     player2.shoot();
@@ -941,7 +944,7 @@ void Game::update() {
                     player2.setShootCooldown(150);
                 }
             }
-            if (sf::Joystick::isButtonPressed(1, (unsigned)config.joy2_jump)) {
+            if (Joy::isButtonPressed(1, (unsigned)config.joy2_jump)) {
                 bool wasJumping = player2.isJumping();
                 player2.activateJump();
                 if (!wasJumping && player2.isJumping()) audio.playSound(SOUND_JUMP);
