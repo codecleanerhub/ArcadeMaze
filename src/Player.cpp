@@ -336,7 +336,7 @@ void Player::render(sf::RenderTarget& target) {
     // py non piu' usato dopo la refactoring del fallback procedurale
 
     // Etichetta arma sopra la testa
-    drawTextCentered(target, currentWeapon.getName(), px, pos.y - 60, 2, sf::Color(255, 255, 0));
+    drawTextCentered(target, currentWeapon.getName(), (int)px, (int)(pos.y - 60), 2, sf::Color(255, 255, 0));
 
     // Tentativo di rendering con sprite.
     // Animazioni: attack (se shootAnimTimer>0) > walk > idle.

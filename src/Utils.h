@@ -112,9 +112,12 @@ Config loadConfig(const std::string& filename);
 // `scale` e' il fattore di ingrandimento di ogni pixel del glifo.
 // Le varianti "Outlined" disegnano 4 copie nere sfalsate dietro al testo
 // per creare un contorno che migliora la leggibiliita' su sfondi chiari.
-void drawText(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color);
-void drawTextCentered(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color);
-void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color);
-void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color);
+// FIX C4244: parametri cx/y cambiati da float a int per evitare warning
+// di conversione int->float nelle ~30 chiamate con WINDOW_WIDTH/2 ecc.
+// Internamente le funzioni castano a float dove serve.
+void drawText(sf::RenderTarget& target, const std::string& text, int x, int y, int scale, sf::Color color);
+void drawTextCentered(sf::RenderTarget& target, const std::string& text, int cx, int y, int scale, sf::Color color);
+void drawTextOutlined(sf::RenderTarget& target, const std::string& text, int x, int y, int scale, sf::Color color);
+void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, int cx, int y, int scale, sf::Color color);
 
 #endif

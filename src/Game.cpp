@@ -89,10 +89,21 @@ void initJoystickSystem() {
         if (jid < sf::Joystick::Count) {
             std::cout << "Joystick player " << (p + 1) << ": ID=" << jid
                       << " (" << sf::Joystick::getButtonCount(jid) << " buttons)" << std::endl;
+            // DEBUG: stampa i valori di tutti gli assi (8 assi max) per
+            // diagnosticare quale asse corrisponde al analogico
+            const char* axisNames[] = {"X", "Y", "Z", "R", "U", "V", "PovX", "PovY"};
+            std::cout << "  Assi joystick " << jid << ": ";
+            for (int a = 0; a < 8; a++) {
+                float val = sf::Joystick::getAxisPosition(jid, (sf::Joystick::Axis)a);
+                std::cout << axisNames[a] << "=" << val << " ";
+            }
+            std::cout << std::endl;
         } else {
             std::cout << "Joystick player " << (p + 1) << ": non collegato" << std::endl;
         }
     }
+    // DEBUG: stampa anche i valori config per gli assi
+    std::cout << "Config: joy_axis_x=0 joy_axis_y=1 (defaults, X=0, Y=1)" << std::endl;
 }
 }
 
@@ -1032,6 +1043,17 @@ void Game::update() {
         if (joystickId < sf::Joystick::Count) {
             float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_x);
             float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
+            // DEBUG: stampa i valori degli assi quando sono significativi
+            // (solo per diagnostica joystick, rimuovere dopo fix)
+            if (fabs(x) > 10 || fabs(y) > 10) {
+                static int debugCounter = 0;
+                if (debugCounter++ % 30 == 0) {  // stampa ogni ~0.5s per non spam
+                    std::cout << "JOY P1: jid=" << joystickId
+                              << " axisX=" << config.joy_axis_x
+                              << " axisY=" << config.joy_axis_y
+                              << " x=" << x << " y=" << y << std::endl;
+                }
+            }
             if (fabs(x) > 30 || fabs(y) > 30) {
                 // Determina l'asse dominante per evitare movimenti diagonali
                 // non intenzionali (utile per labirinto "snap-to-grid").
@@ -4197,7 +4219,7 @@ void Game::drawSelectPlayer() {
     // --- Nome personaggio corrente (sotto la ruota) ---
     std::string charName = getCharacterName((CharacterType)wheelIndex);
     drawTextCenteredOutlined(window, charName, WINDOW_WIDTH/2,
-                              centerY + wheelRadiusY + 80.f, 5, playerColor);
+                              (int)(centerY + wheelRadiusY + 80.f), 5, playerColor);
 
     // --- Indicatore "P1 scelto: XXX" (in 2P, step 1) ---
     if (selectPlayerStep == 1) {
@@ -4930,7 +4952,7 @@ void Game::render() {
             // Indicatore "ENTRA" sopra la porta quando e' aperta
             if (exitDoor.animTimer == 0) {
                 float bobY = sinf(exitDoor.glowPulse * 4.f) * 2.f;
-                drawTextCentered(window, "ENTRA", dx, dy - 30.f + bobY, 1,
+                drawTextCentered(window, "ENTRA", (int)dx, (int)(dy - 30.f + bobY), 1,
                                  sf::Color(255, 220, 80));
             }
         }

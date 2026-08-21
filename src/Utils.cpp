@@ -90,8 +90,9 @@ const uint8_t FONT[37][5] = {
 //   * Disegna un RectangleShape per ogni bit acceso del glifo.
 //   * Avanza di 4*scale in orizzontale (3 pixel di glifo + 1 di spazio).
 // ---------------------------------------------------------------------------
-void drawText(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color) {
-    float currentX = x;
+void drawText(sf::RenderTarget& target, const std::string& text, int x, int y, int scale, sf::Color color) {
+    float currentX = (float)x;
+    float fy = (float)y;
     for (char c : text) {
         int charIndex = 36;  // default: spazio
         if (c >= 'A' && c <= 'Z')      charIndex = c - 'A';
@@ -102,7 +103,7 @@ void drawText(sf::RenderTarget& target, const std::string& text, float x, float 
             for (int col = 0; col < 3; ++col) {
                 if (charData[row] & (1 << (2 - col))) {
                     sf::RectangleShape pixel(sf::Vector2f((float)scale, (float)scale));
-                    pixel.setPosition(currentX + col * scale, y + row * scale);
+                    pixel.setPosition(currentX + col * scale, fy + row * scale);
                     pixel.setFillColor(color);
                     target.draw(pixel);
                 }
@@ -114,14 +115,14 @@ void drawText(sf::RenderTarget& target, const std::string& text, float x, float 
 
 // drawTextCentered: centra orizzontalmente il testo rispetto a `cx`.
 // Larghezza stimata = lunghezza stringa * 4 * scale (3 px glifo + 1 px spazio).
-void drawTextCentered(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color) {
+void drawTextCentered(sf::RenderTarget& target, const std::string& text, int cx, int y, int scale, sf::Color color) {
     float width = (float)text.length() * 4.f * (float)scale;
-    drawText(target, text, cx - width / 2.f, y, scale, color);
+    drawText(target, text, (int)(cx - width / 2.f), y, scale, color);
 }
 
 // drawTextOutlined: disegna il testo con un contorno nero di 1 px su 4 lati.
 // Serve per mantenere la leggibiliita' su sfondi chiari o animati.
-void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x, float y, int scale, sf::Color color) {
+void drawTextOutlined(sf::RenderTarget& target, const std::string& text, int x, int y, int scale, sf::Color color) {
     drawText(target, text, x - scale, y, scale, sf::Color::Black);
     drawText(target, text, x + scale, y, scale, sf::Color::Black);
     drawText(target, text, x, y - scale, scale, sf::Color::Black);
@@ -130,7 +131,7 @@ void drawTextOutlined(sf::RenderTarget& target, const std::string& text, float x
 }
 
 // drawTextCenteredOutlined: combinazione di centered + outlined.
-void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, float cx, float y, int scale, sf::Color color) {
+void drawTextCenteredOutlined(sf::RenderTarget& target, const std::string& text, int cx, int y, int scale, sf::Color color) {
     float width = (float)text.length() * 4.f * (float)scale;
-    drawTextOutlined(target, text, cx - width / 2.f, y, scale, color);
+    drawTextOutlined(target, text, (int)(cx - width / 2.f), y, scale, color);
 }
