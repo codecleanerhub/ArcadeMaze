@@ -4861,10 +4861,8 @@ void Game::render() {
         // static float (menuTime pattern gia' usato nel menu principale).
         {
             // --- Pavimento terra battuta ---
-            // 64 celle da 128x128 px (8x8 griglia) per coprire 1024x944.
-            // Per ogni cella: colore base + variazione hash + ciottoli
-            // sparsi + macchie scure. Identico al pavimento del labirinto
-            // ma con celle piu' grandi (l'arena e' piu' spaziosa).
+            // FIX: sfumatura continua (non a quadrati) basata sulla distanza
+            // dal centro della stanza del boss, come fatto per il labirinto.
             auto floorHash = [](int c, int r) -> float {
                 unsigned int h = (unsigned int)(c * 73856093u) ^ (unsigned int)(r * 19349663u);
                 h ^= h >> 13;
@@ -4873,20 +4871,26 @@ void Game::render() {
                 return (float)(h & 0xFFFFu) / 65535.f;
             };
             const int cellSize = 128;
-            // Area di gioco: da UI_HEIGHT (80) a WINDOW_HEIGHT (1024)
             const int playTop = UI_HEIGHT;
             const int playH = WINDOW_HEIGHT - UI_HEIGHT;
             const int colsFloor = (WINDOW_WIDTH + cellSize - 1) / cellSize;
             const int rowsFloor = (playH + cellSize - 1) / cellSize;
+            // Centro della stanza per il gradiente continuo
+            float centerCol = colsFloor / 2.f;
+            float centerRow = rowsFloor / 2.f;
             for (int fc = 0; fc < colsFloor; fc++) {
                 for (int fr = 0; fr < rowsFloor; fr++) {
                     float fx = fc * cellSize;
                     float fy = playTop + fr * cellSize;
-                    float v = floorHash(fc + 1, fr + 1);
-                    // Colore base terra scura con variazione
-                    sf::Uint8 bgr = (sf::Uint8)(18 + (v - 0.5f) * 12.f);
-                    sf::Uint8 bgg = (sf::Uint8)(13 + (v - 0.5f) * 8.f);
-                    sf::Uint8 bgb = (sf::Uint8)(10 + (v - 0.5f) * 6.f);
+                    // Gradiente continuo: piu' chiaro al centro, scuro ai bordi
+                    float dx = (fc - centerCol) / centerCol;
+                    float dy = (fr - centerRow) / centerRow;
+                    float dist = sqrtf(dx * dx + dy * dy);
+                    dist = std::min(1.f, dist);
+                    float brightness = 22.f - dist * 16.f;  // 22 centro, 6 bordi
+                    sf::Uint8 bgr = (sf::Uint8)std::max(0, std::min(255, (int)(18 + brightness)));
+                    sf::Uint8 bgg = (sf::Uint8)std::max(0, std::min(255, (int)(13 + brightness * 0.7f)));
+                    sf::Uint8 bgb = (sf::Uint8)std::max(0, std::min(255, (int)(10 + brightness * 0.4f)));
                     sf::RectangleShape floorTile(sf::Vector2f((float)cellSize, (float)cellSize));
                     floorTile.setFillColor(sf::Color(bgr, bgg, bgb));
                     floorTile.setPosition(fx, fy);
