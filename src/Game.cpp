@@ -131,7 +131,7 @@ void initJoystickSystem() {
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), configJoyJoystickId(sf::Joystick::Count), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
@@ -860,7 +860,12 @@ void Game::handleEvents() {
                 // (su Windows certi gamepad occupano ID 2+ invece di 0).
                 // La mappatura "player 0 = primo joystick collegato" garantisce
                 // che il gamepad venga poi usato in gioco.
+                //
+                // Registra il joystickId usato per escluderlo in STATE_CONFIG_JOY_2
+                // (solo se ci sono 2+ gamepad). Con 1 solo gamepad, STATE_CONFIG_JOY_2
+                // lo accetterà per permettere all'utente di testare il player 2.
                 if (sf::Joystick::isConnected(event.joystickButton.joystickId)) {
+                    configJoyJoystickId = event.joystickButton.joystickId;  // registra
                     if (configJoyStep == 0) {
                         config.joy_jump = (int)event.joystickButton.button;
                         configJoyStep = 1;
@@ -873,11 +878,32 @@ void Game::handleEvents() {
                 }
             } else if (state == STATE_CONFIG_JOY_2) {
                 // Configurazione joystick secondo giocatore.
-                // FIX: accetta qualsiasi joystick collegato TRANNE quello gia'
-                // mappato a player 0 (per evitare di configurare due volte lo
-                // stesso gamepad per entrambi i player).
-                if (sf::Joystick::isConnected(event.joystickButton.joystickId) &&
-                    !isPlayerJoystick(event.joystickButton.joystickId, 0)) {
+                //
+                // LOGICA:
+                // - Se ci sono 2+ gamepad collegati, accetta SOLO il gamepad
+                //   diverso da quello usato in STATE_CONFIG_JOY (configJoyJoystickId).
+                //   Questo forza l'utente a configurare il secondo gamepad per
+                //   il player 2, non lo stesso del player 1.
+                // - Se c'e' 1 solo gamepad, accetta qualsiasi gamepad (l'utente
+                //   sta testando il player 2 con lo stesso gamepad).
+                bool accept = false;
+                unsigned int joyId = event.joystickButton.joystickId;
+                if (sf::Joystick::isConnected(joyId)) {
+                    // Conta quanti gamepad sono collegati
+                    int connectedCount = 0;
+                    for (unsigned int j = 0; j < sf::Joystick::Count; ++j) {
+                        if (sf::Joystick::isConnected(j)) ++connectedCount;
+                    }
+                    if (connectedCount >= 2) {
+                        // 2+ gamepad: accetta solo se e' DIVERSO da quello
+                        // gia' configurato per player 1
+                        accept = (joyId != configJoyJoystickId);
+                    } else {
+                        // 1 solo gamepad: accetta qualsiasi
+                        accept = true;
+                    }
+                }
+                if (accept) {
                     if (configJoyStep == 0) {
                         config.joy2_jump = (int)event.joystickButton.button;
                         configJoyStep = 1;
@@ -1057,7 +1083,17 @@ void Game::update() {
 
         // Joystick 1 (configurabile da STATE_CONFIG_JOY_2). Prevale sulla
         // tastiera se fuori dalla deadzone (30%). Usa joy2_* / joy2_axis_*.
+        //
+        // FIX: se il player 2 non ha un joystick dedicato (getJoystickId(1)
+        // == Count) ma c'e' un solo gamepad collegato, usa quello del player 0.
+        // Questo permette di testare il player 2 con lo stesso gamepad quando
+        // se ne ha solo uno. Con 2 gamepad, ogni player usa il proprio.
         unsigned joystickId = getJoystickId(1);
+        if (joystickId >= sf::Joystick::Count) {
+            // Nessun secondo gamepad: usa il primo gamepad (player 0) come
+            // fallback per il player 2. Utile con 1 solo gamepad per testare.
+            joystickId = getJoystickId(0);
+        }
         if (joystickId < sf::Joystick::Count) {
             float x = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy2_axis_x);
             float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy2_axis_y);
@@ -1892,13 +1928,23 @@ void Game::update() {
                         if (dx * dx + dy * dy < 2500.f) hit = true;  // raggio 50px
                     }
                     if (hit) {
+                        // FIX: folgora il nemico prima di ucciderlo. L'effetto
+                        // electrified (overlay scarica elettrica) accompagna
+                        // la morte per dare feedback visivo che e' stato il
+                        // fulmine a ucciderlo, non una pallottola normale.
+                        enemy.startElectrified(30);  // 0.5s di scarica elettrica
                         enemy.takeDamage(999);
                         player.addScore(3000);
                         audio.playSound(SOUND_ENEMY_DEATH);
                         audio.playSound(SOUND_BLOOD_SPLAT);
+                        // Particelle elettriche ciano/bianco (NON sangue rosso)
+                        // per distinguere la morte da fulmine da quella da proiettile
                         for (int i = 0; i < 20; i++)
                             particles.push_back({enemy.getPixelPos(), {(float)(rand()%10-5), (float)(rand()%10-5)},
-                                sf::Color(150+rand()%50, 0, 0), 30, 30});
+                                sf::Color(120, 200, 200), 30, 30});  // ciano elettrico
+                        for (int i = 0; i < 10; i++)
+                            particles.push_back({enemy.getPixelPos(), {(float)(rand()%12-6), (float)(rand()%12-6)},
+                                sf::Color(240, 240, 240), 25, 25});  // bianco scintille
                         bloodStains.push_back({enemy.getPixelPos(), 300, 300, 8.f + (rand()%6), sf::Color(120, 0, 0, 200)});
                         lightnings.back().hitEnemy = true;
                     }
@@ -2969,27 +3015,42 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
     // bianco (240,240,240) per la saetta e il flash, giallo (200,200,80)
     // per le scintille. Tutti colori della palette.
     const sf::Color COL_GEM_BLUE(80, 160, 220);   // halo/glow
+    const sf::Color COL_CYAN    (120, 200, 200);  // glow elettrico
     const sf::Color COL_WHITE    (240, 240, 240); // saetta + flash
     const sf::Color COL_YELLOW   (200, 200, 80);  // scintille
 
+    // FIX: fulmine piu' realistico e sottile.
+    // Prima: saetta 4px + glow 8px (troppo spessa, sembrava un tubo)
+    // Ora: 3 strati sovrapposti per effetto "elettrico" realistico:
+    //   1. Glow esterno largo (azzurro, alpha basso) - 6px
+    //   2. Glow medio (ciano, alpha medio) - 3px
+    //   3. Nucleo centrale bianco sottile - 1.5px (molto sottile)
+
     // --- 1. Halo esterno (bagliore grande attorno al punto di impatto) ---
-    float haloR = 60.f;
+    float haloR = 55.f;
     sf::CircleShape halo(haloR);
     halo.setFillColor(sf::Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b,
-                                (sf::Uint8)(alpha * 0.18f)));
+                                (sf::Uint8)(alpha * 0.15f)));
     halo.setPosition(lx - haloR, ly - haloR);
     target.draw(halo);
 
-    // --- 2. Glow medio ---
-    sf::CircleShape glow(30.f);
-    glow.setFillColor(sf::Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b,
-                                (sf::Uint8)(alpha * 0.45f)));
-    glow.setPosition(lx - 30.f, ly - 30.f);
+    // --- 2. Glow medio (piu' piccolo, piu' intenso) ---
+    sf::CircleShape glow(28.f);
+    glow.setFillColor(sf::Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
+                                (sf::Uint8)(alpha * 0.35f)));
+    glow.setPosition(lx - 28.f, ly - 28.f);
     target.draw(glow);
 
-    // --- 3. Saetta zigzag (attraversa tutto lo schermo) ---
-    // Disegna ogni segmento del path zigzag come rettangolo inclinato.
-    // Larghezza 4px con outline bianca per massima visibilita'.
+    // --- 3. Glow interno (piccolo, bianco-ciano) ---
+    sf::CircleShape glowInner(14.f);
+    glowInner.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                      (sf::Uint8)(alpha * 0.5f)));
+    glowInner.setPosition(lx - 14.f, ly - 14.f);
+    target.draw(glowInner);
+
+    // --- 4. Saetta zigzag (attraversa tutto lo schermo) ---
+    // FIX: 3 strati per ogni segmento (glow esterno + glow medio + nucleo)
+    // per un effetto "elettrico" realistico con nucleo sottile bianco.
     const std::vector<sf::Vector2f>& pts = lt.zigzagPoints;
     for (size_t i = 0; i + 1 < pts.size(); i++) {
         sf::Vector2f p0 = pts[i];
@@ -2998,53 +3059,77 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
         float segDy = p1.y - p0.y;
         float segLen = sqrtf(segDx * segDx + segDy * segDy);
         if (segLen < 0.001f) continue;
-        sf::RectangleShape bolt(sf::Vector2f(4.f, segLen));
-        bolt.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
-                                    (sf::Uint8)alpha));
-        bolt.setOutlineThickness(0.5f);
-        bolt.setOutlineColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
-                                        (sf::Uint8)alpha));
-        bolt.setOrigin(2.f, 0.f);
-        bolt.setPosition(p0.x, p0.y);
         float angle = atan2f(segDx, segDy) * 180.f / (float)M_PI;
-        bolt.rotate(angle);
-        target.draw(bolt);
-        // --- 4. Glow attorno al segmento ---
-        sf::RectangleShape boltGlow(sf::Vector2f(8.f, segLen));
+
+        // Strato 1: glow esterno largo azzurro (6px)
+        sf::RectangleShape boltGlow(sf::Vector2f(6.f, segLen));
         boltGlow.setFillColor(sf::Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g,
                                          COL_GEM_BLUE.b,
-                                         (sf::Uint8)(alpha * 0.25f)));
-        boltGlow.setOrigin(4.f, 0.f);
+                                         (sf::Uint8)(alpha * 0.2f)));
+        boltGlow.setOrigin(3.f, 0.f);
         boltGlow.setPosition(p0.x, p0.y);
         boltGlow.rotate(angle);
         target.draw(boltGlow);
+
+        // Strato 2: glow medio ciano (3px)
+        sf::RectangleShape boltMid(sf::Vector2f(3.f, segLen));
+        boltMid.setFillColor(sf::Color(COL_CYAN.r, COL_CYAN.g,
+                                        COL_CYAN.b,
+                                        (sf::Uint8)(alpha * 0.5f)));
+        boltMid.setOrigin(1.5f, 0.f);
+        boltMid.setPosition(p0.x, p0.y);
+        boltMid.rotate(angle);
+        target.draw(boltMid);
+
+        // Strato 3: nucleo centrale bianco MOLTO SOTTILE (1.5px)
+        // Questo e' il "filo" del fulmine, deve essere sottile e brillante
+        sf::RectangleShape boltCore(sf::Vector2f(1.5f, segLen));
+        boltCore.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g,
+                                         COL_WHITE.b,
+                                         (sf::Uint8)alpha));
+        boltCore.setOrigin(0.75f, 0.f);
+        boltCore.setPosition(p0.x, p0.y);
+        boltCore.rotate(angle);
+        target.draw(boltCore);
     }
 
     // --- 5. Flash centrale al punto di impatto ---
-    sf::CircleShape flash(14.f);
+    sf::CircleShape flash(10.f);
     flash.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
                                   (sf::Uint8)alpha));
-    flash.setPosition(lx - 14.f, ly - 14.f);
+    flash.setPosition(lx - 10.f, ly - 10.f);
     target.draw(flash);
 
-    // --- 6. Ramificazioni laterali (3 rami casuali lungo il path) ---
-    for (int b = 0; b < 3; b++) {
+    // --- 6. Ramificazioni laterali (4 rami casuali lungo il path) ---
+    // FIX: piu' rami (4 invece di 3) e piu' sottili (1px invece di 2px)
+    for (int b = 0; b < 4; b++) {
         if (pts.size() < 4) break;
         int segIdx = 1 + (rand() % (int)(pts.size() - 2));
         sf::Vector2f bCur = pts[segIdx];
-        // 4 segmenti brevi per ogni ramo
-        for (int s = 0; s < 4; s++) {
+        // 5 segmenti brevi per ogni ramo (era 4)
+        for (int s = 0; s < 5; s++) {
             float bx = bCur.x + ((rand() % 17) - 8);
             float by = bCur.y + 4.f + (rand() % 6);
             float blen = sqrtf((bx - bCur.x) * (bx - bCur.x) +
                                (by - bCur.y) * (by - bCur.y));
-            sf::RectangleShape branch(sf::Vector2f(2.f, blen));
+            if (blen < 0.1f) continue;
+            // Glow del ramo (2px ciano)
+            sf::RectangleShape branchGlow(sf::Vector2f(2.f, blen));
+            branchGlow.setFillColor(sf::Color(COL_CYAN.r, COL_CYAN.g,
+                                               COL_CYAN.b,
+                                               (sf::Uint8)(alpha * 0.4f)));
+            branchGlow.setOrigin(1.f, 0.f);
+            branchGlow.setPosition(bCur.x, bCur.y);
+            float bang = atan2f(bx - bCur.x, by - bCur.y) * 180.f / (float)M_PI;
+            branchGlow.rotate(bang);
+            target.draw(branchGlow);
+            // Nucleo del ramo (1px bianco)
+            sf::RectangleShape branch(sf::Vector2f(1.f, blen));
             branch.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g,
                                           COL_WHITE.b,
-                                          (sf::Uint8)(alpha * 0.7f)));
-            branch.setOrigin(1.f, 0.f);
+                                          (sf::Uint8)(alpha * 0.8f)));
+            branch.setOrigin(0.5f, 0.f);
             branch.setPosition(bCur.x, bCur.y);
-            float bang = atan2f(bx - bCur.x, by - bCur.y) * 180.f / (float)M_PI;
             branch.rotate(bang);
             target.draw(branch);
             bCur = sf::Vector2f(bx, by);
@@ -3052,15 +3137,23 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
     }
 
     // --- 7. Scintille radiali attorno al punto di impatto ---
-    for (int i = 0; i < 8; i++) {
-        float a = (i / 8.f) * 2.f * (float)M_PI;
-        float r = 12.f + (rand() % 10);
-        sf::CircleShape spark(1.8f);
-        spark.setFillColor(sf::Color(COL_YELLOW.r, COL_YELLOW.g,
-                                     COL_YELLOW.b,
-                                     (sf::Uint8)(alpha * 0.85f)));
-        spark.setPosition(lx + cos(a) * r - 1.8f,
-                          ly + sin(a) * r - 1.8f);
+    for (int i = 0; i < 10; i++) {
+        float a = (i / 10.f) * 2.f * (float)M_PI;
+        float r = 10.f + (rand() % 12);
+        // Scintilla: 2 strati (glow + nucleo)
+        sf::CircleShape sparkGlow(2.5f);
+        sparkGlow.setFillColor(sf::Color(COL_CYAN.r, COL_CYAN.g,
+                                          COL_CYAN.b,
+                                          (sf::Uint8)(alpha * 0.5f)));
+        sparkGlow.setPosition(lx + cos(a) * r - 2.5f,
+                              ly + sin(a) * r - 2.5f);
+        target.draw(sparkGlow);
+        sf::CircleShape spark(1.2f);
+        spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g,
+                                     COL_WHITE.b,
+                                     (sf::Uint8)(alpha * 0.9f)));
+        spark.setPosition(lx + cos(a) * r - 1.2f,
+                          ly + sin(a) * r - 1.2f);
         target.draw(spark);
     }
 
@@ -3068,9 +3161,9 @@ void Game::drawLightning(sf::RenderTarget& target, const Lightning& lt) {
     float shockR = (1.f - (float)lt.life / (float)lt.maxLife) * 50.f;
     sf::CircleShape shock(shockR);
     shock.setFillColor(sf::Color(0, 0, 0, 0));
-    shock.setOutlineThickness(2.f);
+    shock.setOutlineThickness(1.5f);  // piu' sottile (era 2px)
     shock.setOutlineColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
-                                     (sf::Uint8)(alpha * 0.5f)));
+                                     (sf::Uint8)(alpha * 0.4f)));
     shock.setPosition(lx - shockR, ly - shockR);
     target.draw(shock);
 }

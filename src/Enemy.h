@@ -116,6 +116,14 @@ public:
     // resettato da clearBurnedFlag() dopo che Game ha gestito la transizione.
     bool wasBurned() const { return burnedFlag; }
     void clearBurnedFlag() { burnedFlag = false; }
+    // --- STATO ELECTRIFIED (folgorato dal fulmine dello scettro) ---
+    // Quando il fulmine colpisce il nemico, questo entra in stato "electrified"
+    // per ~30 frame (0.5s). Durante questo stato, sopra il nemico viene
+    // disegnato un overlay di scarica elettrica (archi blu-bianchi + glow).
+    // A fine electrified, il nemico muore (se il danno del fulmine lo ha
+    // ucciso, takeDamage e' gia' stato chiamato).
+    bool isElectrified() const { return electrifiedTimer > 0; }
+    void startElectrified(int frames = 30);  // folgora il nemico per `frames` frame
 
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei nemici dalla cartella data. Da chiamare
@@ -139,6 +147,8 @@ private:
     uint32_t burningTimer;    // >0 = nemico che brucia (player invincibile)
     uint32_t burnAnimTime;    // tempo accumulato per animazione fiamme overlay
     bool burnedFlag;          // true se e' stato in burning (per finalizzazione morte)
+    uint32_t electrifiedTimer;  // >0 = nemico folgorato (fulmine dello scettro). Effetto visivo di scarica elettrica.
+    uint32_t electrifiedAnimTime; // tempo accumulato per animazione scarica elettrica
 
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);

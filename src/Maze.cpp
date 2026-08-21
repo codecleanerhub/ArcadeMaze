@@ -592,8 +592,8 @@ void Maze::render(sf::RenderTarget& target) {
                         // Otto punti a forma di diamante stellato
                         for (int i = 0; i < 8; i++) {
                             float ang = i * (float)M_PI / 4.f;
-                            float r = (i % 2 == 0) ? 14.f : 7.f;  // alterna raggio (stella)
-                            gem.setPoint(i, sf::Vector2f(cx + cos(ang) * r, cy + sin(ang) * r));
+                            float radius = (i % 2 == 0) ? 14.f : 7.f;  // alterna raggio (stella)
+                            gem.setPoint(i, sf::Vector2f(cx + cos(ang) * radius, cy + sin(ang) * radius));
                         }
                         target.draw(gem);
 
@@ -857,8 +857,8 @@ void Maze::render(sf::RenderTarget& target) {
                         star.setFillColor(sf::Color(180, 130, 30));
                         for (int i = 0; i < 10; i++) {
                             float ang = i * (float)M_PI / 5.f - (float)M_PI / 2.f;
-                            float r = (i % 2 == 0) ? 3.f : 1.2f;
-                            star.setPoint(i, sf::Vector2f(cx + cos(ang) * r, cy - 5.f + sin(ang) * r));
+                            float starR = (i % 2 == 0) ? 3.f : 1.2f;  // FIX -Wshadow: rinominato r -> starR
+                            star.setPoint(i, sf::Vector2f(cx + cos(ang) * starR, cy - 5.f + sin(ang) * starR));
                         }
                         target.draw(star);
 

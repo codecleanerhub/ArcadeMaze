@@ -558,17 +558,17 @@ void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
             float armOffsetL = sin(animTime * 3.0f) * 12.0f;
             float armOffsetR = -armOffsetL;
             for (int side = 0; side < 2; side++) {
-                float dx = (side == 0) ? -1.f : 1.f;
+                float dirX = (side == 0) ? -1.f : 1.f;
                 float off = (side == 0) ? armOffsetL : armOffsetR;
                 sf::RectangleShape arm(sf::Vector2f(size*0.18f, size*0.55f));
                 arm.setFillColor(armCol); arm.setOutlineThickness(3.f); arm.setOutlineColor(outline);
                 arm.setOrigin(size*0.09f, size*0.05f);  // origine in alto (spalla)
-                arm.setPosition(cx + dx * bw * 0.55f, cy - size*0.2f + off);
-                arm.rotate(dx * (15.f + sin(animTime*3.f + side*M_PI)*10.f));
+                arm.setPosition(cx + dirX * bw * 0.55f, cy - size*0.2f + off);
+                arm.rotate(dirX * (15.f + sin(animTime*3.f + side*M_PI)*10.f));
                 target.draw(arm);
                 // Pugno
                 sf::CircleShape fist(size*0.09f); fist.setFillColor(armCol); fist.setOutlineThickness(2.f); fist.setOutlineColor(outline);
-                float fistX = cx + dx * bw * 0.55f + dx * sin(animTime*3.f + side*M_PI) * 15.f;
+                float fistX = cx + dirX * bw * 0.55f + dirX * sin(animTime*3.f + side*M_PI) * 15.f;
                 float fistY = cy - size*0.2f + size*0.55f + off;
                 fist.setPosition(fistX - size*0.09f, fistY - size*0.09f);
                 target.draw(fist);
@@ -586,13 +586,13 @@ void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
             float wingFlap = sin(animTime * 6.0f) * 0.5f + 0.7f;
             sf::Color wingCol(60, 10, 10, 220);
             for (int side = 0; side < 2; side++) {
-                float dx = (side == 0) ? -1.f : 1.f;
+                float dirX = (side == 0) ? -1.f : 1.f;
                 sf::ConvexShape wing; wing.setPointCount(4);
                 wing.setFillColor(wingCol); wing.setOutlineThickness(3.f); wing.setOutlineColor(outline);
                 wing.setPoint(0, sf::Vector2f(cx, cy - size*0.1f));
-                wing.setPoint(1, sf::Vector2f(cx + dx * size*0.9f, cy - size*0.55f * wingFlap));
-                wing.setPoint(2, sf::Vector2f(cx + dx * size*0.85f, cy + size*0.2f * wingFlap));
-                wing.setPoint(3, sf::Vector2f(cx + dx * size*0.15f, cy + size*0.05f));
+                wing.setPoint(1, sf::Vector2f(cx + dirX * size*0.9f, cy - size*0.55f * wingFlap));
+                wing.setPoint(2, sf::Vector2f(cx + dirX * size*0.85f, cy + size*0.2f * wingFlap));
+                wing.setPoint(3, sf::Vector2f(cx + dirX * size*0.15f, cy + size*0.05f));
                 target.draw(wing);
             }
             // Occhi gialli pulsanti
@@ -607,18 +607,18 @@ void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
             sf::Color legCol(40, 0, 50);
             for (int i = 0; i < 4; i++) {
                 for (int side = 0; side < 2; side++) {
-                    float dx = (side == 0) ? -1.f : 1.f;
+                    float dirX = (side == 0) ? -1.f : 1.f;
                     // Prima sezione zampa
                     sf::RectangleShape l1(sf::Vector2f(size*0.35f, size*0.05f));
                     l1.setFillColor(legCol); l1.setOutlineThickness(2.f); l1.setOutlineColor(outline);
                     l1.setOrigin(0.f, size*0.025f);
-                    l1.setPosition(cx + dx * bw * 0.3f, cy + (i - 1.5f) * size*0.08f);
-                    float rot1 = dx * (45.f + i * 20.f) + sin(animTime*6.f + i + side*M_PI) * 8.f;
+                    l1.setPosition(cx + dirX * bw * 0.3f, cy + (i - 1.5f) * size*0.08f);
+                    float rot1 = dirX * (45.f + i * 20.f) + sin(animTime*6.f + i + side*M_PI) * 8.f;
                     l1.rotate(rot1);
                     target.draw(l1);
                     // Seconda sezione zampa (ginocchio -> piede)
                     float a1 = rot1 * (float)M_PI / 180.f;
-                    float kneeX = cx + dx * bw * 0.3f + cos(a1) * size*0.35f;
+                    float kneeX = cx + dirX * bw * 0.3f + cos(a1) * size*0.35f;
                     float kneeY = cy + (i - 1.5f) * size*0.08f + sin(a1) * size*0.35f;
                     sf::RectangleShape l2(sf::Vector2f(size*0.3f, size*0.04f));
                     l2.setFillColor(legCol); l2.setOutlineThickness(2.f); l2.setOutlineColor(outline);
@@ -690,14 +690,14 @@ void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
             float wingFlap = sin(animTime * 5.0f) * 0.4f + 0.7f;
             sf::Color wingCol(50, 50, 50, 220);
             for (int side = 0; side < 2; side++) {
-                float dx = (side == 0) ? -1.f : 1.f;
+                float dirX = (side == 0) ? -1.f : 1.f;
                 sf::ConvexShape wing; wing.setPointCount(5);
                 wing.setFillColor(wingCol); wing.setOutlineThickness(3.f); wing.setOutlineColor(outline);
                 wing.setPoint(0, sf::Vector2f(cx, cy - size*0.1f));
-                wing.setPoint(1, sf::Vector2f(cx + dx * size*0.8f,  cy - size*0.5f * wingFlap));
-                wing.setPoint(2, sf::Vector2f(cx + dx * size*0.95f, cy - size*0.1f * wingFlap));
-                wing.setPoint(3, sf::Vector2f(cx + dx * size*0.7f,  cy + size*0.05f));
-                wing.setPoint(4, sf::Vector2f(cx + dx * size*0.2f,  cy + size*0.0f));
+                wing.setPoint(1, sf::Vector2f(cx + dirX * size*0.8f,  cy - size*0.5f * wingFlap));
+                wing.setPoint(2, sf::Vector2f(cx + dirX * size*0.95f, cy - size*0.1f * wingFlap));
+                wing.setPoint(3, sf::Vector2f(cx + dirX * size*0.7f,  cy + size*0.05f));
+                wing.setPoint(4, sf::Vector2f(cx + dirX * size*0.2f,  cy + size*0.0f));
                 target.draw(wing);
             }
             // Coda che ondeggia dietro
@@ -754,15 +754,15 @@ void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
             // Mantello ondulato ai lati del corpo
             sf::Color cloakCol(60, 0, 20, 200);
             for (int side = 0; side < 2; side++) {
-                float dx = (side == 0) ? -1.f : 1.f;
+                float dirX = (side == 0) ? -1.f : 1.f;
                 sf::ConvexShape cloak; cloak.setPointCount(5);
                 cloak.setFillColor(cloakCol); cloak.setOutlineThickness(3.f); cloak.setOutlineColor(outline);
                 float wave = sin(animTime * 3.0f + side * M_PI) * size*0.06f;
-                cloak.setPoint(0, sf::Vector2f(cx + dx * bw*0.3f, cy - size*0.2f));
-                cloak.setPoint(1, sf::Vector2f(cx + dx * bw*0.7f, cy + size*0.1f));
-                cloak.setPoint(2, sf::Vector2f(cx + dx * bw*0.6f + wave, cy + size*0.4f));
-                cloak.setPoint(3, sf::Vector2f(cx + dx * bw*0.4f + wave*0.5f, cy + size*0.45f));
-                cloak.setPoint(4, sf::Vector2f(cx + dx * bw*0.2f, cy + size*0.2f));
+                cloak.setPoint(0, sf::Vector2f(cx + dirX * bw*0.3f, cy - size*0.2f));
+                cloak.setPoint(1, sf::Vector2f(cx + dirX * bw*0.7f, cy + size*0.1f));
+                cloak.setPoint(2, sf::Vector2f(cx + dirX * bw*0.6f + wave, cy + size*0.4f));
+                cloak.setPoint(3, sf::Vector2f(cx + dirX * bw*0.4f + wave*0.5f, cy + size*0.45f));
+                cloak.setPoint(4, sf::Vector2f(cx + dirX * bw*0.2f, cy + size*0.2f));
                 target.draw(cloak);
             }
             // Sigilli rotanti sopra la testa
@@ -850,13 +850,13 @@ void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
             }
             // Braccia flailing laterali
             for (int side = 0; side < 2; side++) {
-                float dx = (side == 0) ? -1.f : 1.f;
+                float dirX = (side == 0) ? -1.f : 1.f;
                 float wave = sin(animTime * 4.f + side*M_PI) * 25.f;
                 sf::RectangleShape arm(sf::Vector2f(size*0.12f, size*0.5f));
                 arm.setFillColor(sf::Color(140, 160, 120, 240)); arm.setOutlineThickness(2.5f); arm.setOutlineColor(outline);
                 arm.setOrigin(size*0.06f, size*0.05f);
-                arm.setPosition(cx + dx * bw*0.5f, cy - size*0.15f);
-                arm.rotate(dx * (20.f + wave*0.5f));
+                arm.setPosition(cx + dirX * bw*0.5f, cy - size*0.15f);
+                arm.rotate(dirX * (20.f + wave*0.5f));
                 target.draw(arm);
             }
             break;

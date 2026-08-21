@@ -176,7 +176,7 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false) {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0) {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
@@ -281,6 +281,19 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
     if (attackingTimer > 16) attackingTimer -= 16; else attackingTimer = 0;
     if (dyingTimer > 16) dyingTimer -= 16; else dyingTimer = 0;
 
+    // --- STATO ELECTRIFIED: nemico folgorato dal fulmine dello scettro ---
+    // Decrementa electrifiedTimer. Mentre e' folgorato, il nemico e' FERMO
+    // (non si muove, non spara) e sopra di lui viene disegnato un overlay
+    // di scarica elettrica.
+    if (electrifiedTimer > 0) {
+        if (electrifiedTimer > 1) electrifiedTimer--;
+        else electrifiedTimer = 0;
+        electrifiedAnimTime += 16;
+        // Non blocca con return: lascia scorrere anche gli altri timer
+        // (electrified e' un effetto visivo che accompagna la morte, il
+        // nemico di solito muore subito dopo).
+    }
+
     // --- STATO BURNING: nemico che brucia (player invincibile) ---
     // Decrementa burningTimer. Mentre brucia, il nemico e' FERMO (non si
     // muove, non spara) e sopra di lui viene disegnato un overlay di fiamme.
@@ -358,6 +371,17 @@ void Enemy::startBurning(int frames) {
     burningTimer = (uint32_t)frames;
     burnAnimTime = 0;
     burnedFlag = true;
+}
+
+// startElectrified: folgora il nemico per `frames` frame. Durante lo stato
+// electrified, il nemico e' fermo e sopra di lui viene disegnato un overlay
+// di scarica elettrica (archi blu-bianchi + glow ciano). Non setta flag di
+// morte perche' il danno del fulmine viene applicato subito da Game (il
+// nemico muore istantaneamente con takeDamage(999), e l'electrified e' solo
+// un effetto visivo che accompagna la morte).
+void Enemy::startElectrified(int frames) {
+    electrifiedTimer = (uint32_t)frames;
+    electrifiedAnimTime = 0;
 }
 
 Vec2 Enemy::getGridPos() const { return { (int)(pos.x / TILE_SIZE), (int)((pos.y - UI_HEIGHT) / TILE_SIZE) }; }
@@ -597,6 +621,88 @@ void Enemy::render(sf::RenderTarget& target) const {
                                            (sf::Uint8)(100 * intensity)));
             smoke.setPosition(smokeX - smokeR, smokeY - smokeR);
             target.draw(smoke);
+        }
+    }
+
+    // --- OVERLAY FOLGORAZIONE quando il nemico e' electrified (fulmine) ---
+    // Il fulmine dello scettro colpisce il nemico -> il nemico viene
+    // folgorato per ~30 frame (0.5s) con un effetto di scarica elettrica:
+    //   1. Glow radiale ciano-blu attorno al nemico (tint elettrico)
+    //   2. 5 archi elettrici zigzag che partono dal centro del nemico
+    //      verso l'esterno (simulano scariche)
+    //   3. 4 scintille bianco-ciano che saettano attorno al nemico
+    //   4. Tint bianco-ciano applicato allo sprite del nemico per dare
+    //      l'effetto "illuminato dalla scarica"
+    if (electrifiedTimer > 0) {
+        // Palette elettrica: ciano (120,200,200), blu (80,160,220), bianco (240,240,240)
+        const sf::Color COL_CYAN  (120, 200, 200);
+        const sf::Color COL_BLUE  (80, 160, 220);
+        const sf::Color COL_WHITE (240, 240, 240);
+
+        // Intensita' pulsante (effetto "elettrico" che flickera)
+        float pulse = 0.7f + 0.3f * sin(electrifiedAnimTime * 0.05f);
+        float alpha = (float)electrifiedTimer / 30.f;  // fade-out negli ultimi frame
+
+        // 1. Glow radiale ciano-blu attorno al nemico
+        float glowR = 22.f * pulse;
+        sf::CircleShape glow(glowR);
+        glow.setFillColor(sf::Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
+                                      (sf::Uint8)(90 * alpha)));
+        glow.setPosition(px - glowR, py - 8.f - glowR);
+        target.draw(glow);
+
+        // Glow interno piu' piccolo e intenso (bianco-ciano)
+        float glow2R = 14.f * pulse;
+        sf::CircleShape glow2(glow2R);
+        glow2.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                       (sf::Uint8)(120 * alpha)));
+        glow2.setPosition(px - glow2R, py - 8.f - glow2R);
+        target.draw(glow2);
+
+        // 2. Archi elettrici zigzag (5 scariche che partono dal nemico)
+        // Ogni arco ha 4 segmenti con jitter casuale per sembrare elettrico
+        for (int arc = 0; arc < 5; arc++) {
+            float baseAngle = (arc / 5.f) * 2.f * (float)M_PI +
+                              sin(electrifiedAnimTime * 0.03f + arc) * 0.3f;
+            float curX = px;
+            float curY = py - 8.f;
+            // 4 segmenti per arco
+            for (int seg = 0; seg < 4; seg++) {
+                float segLen = 5.f + (rand() % 4);
+                float jitterAngle = baseAngle + ((rand() % 100) - 50) / 100.f * 0.8f;
+                float nextX = curX + cos(jitterAngle) * segLen;
+                float nextY = curY + sin(jitterAngle) * segLen;
+                float segDx = nextX - curX;
+                float segDy = nextY - curY;
+                float segLen2 = sqrtf(segDx * segDx + segDy * segDy);
+                if (segLen2 > 0.1f) {
+                    // Disegna il segmento come rettangolo sottile (1.5px)
+                    sf::RectangleShape arcSeg(sf::Vector2f(1.5f, segLen2));
+                    arcSeg.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                                    (sf::Uint8)(220 * alpha)));
+                    arcSeg.setOrigin(0.75f, 0.f);
+                    arcSeg.setPosition(curX, curY);
+                    float angleDeg = atan2f(segDx, segDy) * 180.f / (float)M_PI;
+                    arcSeg.rotate(angleDeg);
+                    target.draw(arcSeg);
+                }
+                curX = nextX;
+                curY = nextY;
+            }
+        }
+
+        // 3. Scintille bianco-ciano che saettano attorno al nemico
+        for (int i = 0; i < 4; i++) {
+            float sAngle = (i / 4.f) * 2.f * (float)M_PI +
+                           electrifiedAnimTime * 0.04f;
+            float sDist = 12.f + sin(electrifiedAnimTime * 0.06f + i) * 4.f;
+            float sx = px + cos(sAngle) * sDist;
+            float sy = py - 8.f + sin(sAngle) * sDist;
+            sf::CircleShape spark(1.5f);
+            spark.setFillColor(sf::Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                           (sf::Uint8)(240 * alpha)));
+            spark.setPosition(sx - 1.5f, sy - 1.5f);
+            target.draw(spark);
         }
     }
 }
