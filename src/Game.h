@@ -32,6 +32,7 @@ enum GameState {
     STATE_SELECT_PLAYER,  // selezione personaggio (ruota 8 personaggi)
     STATE_CONFIG_JOY,     // configurazione joystick giocatore 1 (2 step)
     STATE_CONFIG_JOY_2,   // configurazione joystick giocatore 2 (2 step)
+    STATE_INTRO,          // intro cutscene a fumetti (4 immagini, 8s ciascuna)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
     STATE_BOSS,           // scontro con il boss
     STATE_CONTINUES,      // schermata continues (conto alla rovescia 10-0)
@@ -294,6 +295,18 @@ private:
     bool testSkipKeyPressed;                   // debounce: true finche' Space resta premuto
 #endif
 
+    // --- INTRO CUTSCENE (storia a fumetti prima del gameplay) ---
+    // 4 immagini composite (3 vignette ciascuna) mostrate in sequenza
+    // dopo la selezione personaggio + configurazione tasti, prima di
+    // avviare il livello. Ogni immagine dura 8 secondi (8000 ms). Il
+    // player puo' saltare alla successiva con un tasto (Enter/attacco)
+    // o saltare tutta l'intro con ESC.
+    sf::Texture introTextures[4];              // 4 immagini assets/cutscene/intro_N.png
+    bool introLoaded[4];                       // flag di caricamento per ogni immagine
+    int introCurrentFrame;                     // immagine corrente (0..3)
+    int introFrameTimer;                       // ms residui immagine corrente (parte da 8000)
+    bool introSkipKeyHeld;                     // debounce: true finche' il tasto resta premuto
+
     // --- DEMO MODE (modalita' demo automatica) ---
     // Quando l'utente non interagisce col menu per 30 secondi, il gioco si
     // avvia automaticamente in modalita' Demo: 2 giocatori controllati dal
@@ -404,6 +417,19 @@ private:
     // Ferma la demo e torna al menu principale, resettando il timer di
     // inattivita' a 30 secondi.
     void stopDemoMode();
+
+    // --- INTRO CUTSCENE ---
+    // Avvia l'intro cutscene a fumetti: imposta la prima immagine (frame 0)
+    // e il timer a 8000 ms. Chiamato da startGameAfterSelectPlayer() dopo
+    // la selezione personaggio + eventuale configurazione tasti.
+    void startIntro();
+    // Aggiorna l'intro: decrementa il timer, passa alla prossima immagine
+    // quando scade o quando il player preme un tasto (skip), e al termine
+    // dell'ultima immagine avvia il livello 1 (startLevel).
+    void updateIntro();
+    // Disegna l'immagine corrente dell'intro a schermo intero + didascalia
+    // + indicatore "PREMI UN TASTO PER SALTARE".
+    void drawIntro();
 
     // --- FLUSSO PARTITA ---
     // Chiamato dopo che P1 (1P) o P2 (2P) hanno finito la selezione personaggio.

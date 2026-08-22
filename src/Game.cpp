@@ -46,8 +46,10 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
 #endif
     , demoInactivityTimer(30000), demoDurationTimer(0), demoIsBoss(false),
       demoAiTimerP1(0), demoAiTimerP2(0), demoAiDirP1(0), demoAiDirP2(0),
-      demoAiShootTimerP1(0), demoAiShootTimerP2(0)
+      demoAiShootTimerP1(0), demoAiShootTimerP2(0),
+      introCurrentFrame(0), introFrameTimer(0), introSkipKeyHeld(false)
 {
+    for (int i = 0; i < 4; i++) introLoaded[i] = false;
     exitDoor.active = false;
     exitDoor.animTimer = 0;
     exitDoor.glowPulse = 0.f;
@@ -111,6 +113,13 @@ bool Game::init() {
     if (bgWinLoaded) std::cout << "Sfondo vittoria caricato" << std::endl;
     if (bgGameOverLoaded) std::cout << "Sfondo game over caricato" << std::endl;
     if (bgContinuesLoaded) std::cout << "Sfondo continues caricato" << std::endl;
+    // Carica le 4 immagini dell'intro cutscene da assets/cutscene/.
+    // I file mancanti vengono saltati: l'intro mostra solo il testo se mancano.
+    for (int i = 0; i < 4; i++) {
+        std::string path = "assets/cutscene/intro_" + std::to_string(i + 1) + ".png";
+        introLoaded[i] = introTextures[i].loadFromFile(path);
+        if (introLoaded[i]) std::cout << "Immagine intro " << (i+1) << " caricata" << std::endl;
+    }
     // Inizializza XInput (Windows) o SFML (Linux/macOS) joystick
     Joy::init();
     return true;
@@ -832,6 +841,14 @@ void Game::update() {
         if (state != STATE_DEMO) return;  // demo interrotta, esci
     }
 
+    // --- STATO INTRO: cutscene a fumetti ---
+    // Mostra 4 immagini in sequenza (8s ciascuna). Il player puo' saltare
+    // alla prossima con Enter/attacco o saltare tutto con ESC.
+    if (state == STATE_INTRO) {
+        updateIntro();
+        return;  // l'intro gestisce tutto da sola, salta il resto di update()
+    }
+
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
     // FIX DEFINITIVO: usa sf::Joystick (SFML) invece di Joy::. Su Windows,
     // sf::Joystick gestisce correttamente i controller XInput e DirectInput
@@ -1093,18 +1110,14 @@ void Game::update() {
                     audio.playSound(SOUND_MENU_CONFIRM);
                     waitForRelease = true;
                     // FIX FLUSSO PARTITA: dopo configurazione P1, se 1P avvia
-                    // il livello; se 2P, passa a STATE_CONFIG_JOY_2.
+                    // l'intro cutscene; se 2P, passa a STATE_CONFIG_JOY_2.
                     if (numPlayers == 2) {
                         state = STATE_CONFIG_JOY_2;
                         configJoyStep = 0;
                     } else {
-                        // 1P: avvia il livello (i personaggi sono gia' stati
-                        // scelti in STATE_SELECT_PLAYER prima di CONFIG_JOY)
-                        window.setFramerateLimit(60);
-                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                        window.setView(view);
-                        currentLevel = 1;
-                        startLevel(1);
+                        // 1P: avvia l'intro cutscene (i personaggi sono gia'
+                        // stati scelti in STATE_SELECT_PLAYER prima di CONFIG_JOY)
+                        startIntro();
                     }
                 }
                 break;
@@ -1206,13 +1219,9 @@ void Game::update() {
                         waitForRelease2 = true;
                         lastDetectedJoyId = -1;  // reset per prossima configurazione
                         // FIX FLUSSO PARTITA: dopo configurazione P2, avvia
-                        // il livello (i personaggi sono gia' stati scelti in
-                        // STATE_SELECT_PLAYER prima di CONFIG_JOY).
-                        window.setFramerateLimit(60);
-                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                        window.setView(view);
-                        currentLevel = 1;
-                        startLevel(1);
+                        // l'intro cutscene (i personaggi sono gia' stati scelti
+                        // in STATE_SELECT_PLAYER prima di CONFIG_JOY).
+                        startIntro();
                     }
                     break;
                 }
@@ -4774,6 +4783,9 @@ void Game::render() {
     else if (state == STATE_CONFIG_JOY_2) {
         drawConfigJoy2();
     }
+    else if (state == STATE_INTRO) {
+        drawIntro();
+    }
     else if (state == STATE_CONTINUES) {
         drawContinues();
     }
@@ -8025,6 +8037,200 @@ void Game::render() {
     window.display();
 }
 
+// ===========================================================================
+// INTRO CUTSCENE
+// ===========================================================================
+
+// Didascalie per ogni immagine dell'intro (4 immagini, 3 vignette l'una).
+// Mostrate in basso allo schermo, stile voce fuori campo/narratore.
+static const char* INTRO_CAPTIONS[] = {
+    "Ottobre 1937. La spedizione Greco-Moreau cerco' l'Isola che non appare sulle mappe...\n"
+    "Ma la tempesta ci scelse prima noi.\n"
+    "L'Isola ci accolse con scogliere nere e una giungla che non voleva finire mai.",
+
+    "Marciavamo verso la montagna. Qualcosa ci chiamava. E qualcosa ci guardava.\n"
+    "Una fossa. Una scalinata. Rune che Mara riconobbe dal Libro dei Morti.\n"
+    "La via del cielo ci si chiuse alle spalle. Non c'era ritorno.",
+
+    "Sotto la montagna ci aspettava un labirinto. E nei suoi corridoi, ricchezze... e affamati.\n"
+    "I morti camminavano. E non erano i peggiori.\n"
+    "Il Calice. Mara disse che poteva renderci immortali. Per un poco.",
+
+    "Non eravamo soli. Altri cercavano una via d'uscita. Il Mago ne conosceva una... oltre i diciassette Guardiani.\n"
+    "Diciassette Guardiani. Diciassette chiavi. Solo sconfiggendoli tutti la montagna ci avrebbe lasciati andare.\n"
+    "Che l'avventura abbia inizio."
+};
+
+// ---------------------------------------------------------------------------
+// startIntro: avvia l'intro cutscene a fumetti.
+// Imposta la prima immagine (frame 0) e il timer a 8000 ms.
+// Imposta la view corretta e avvia la musica epica di sottofondo.
+// ---------------------------------------------------------------------------
+void Game::startIntro() {
+    window.setFramerateLimit(60);
+    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+    window.setView(view);
+    state = STATE_INTRO;
+    introCurrentFrame = 0;
+    introFrameTimer = 8000;  // 8 secondi per la prima immagine
+    introSkipKeyHeld = false;
+    // Musica epica/tragica per l'intro: usa la traccia del menu' (corale
+    // fantasy) se la musica e' attiva. In futuro si puo' aggiungere una
+    // traccia dedicata TRACK_EPIC_INTRO.
+    if (musicEnabled) audio.playMenuMusic();
+}
+
+// ---------------------------------------------------------------------------
+// updateIntro: aggiorna l'intro cutscene.
+// Decrementa il timer (16 ms per frame). Quando scade (o il player preme
+// un tasto), passa alla prossima immagine. Dopo l'ultima (frame 3), avvia
+// il livello 1.
+//
+// Skip:
+//   - Enter / Space / LAlt / tasto attacco joystick P1 o P2 = prossima img
+//   - ESC = salta tutta l'intro, vai al livello 1
+// ---------------------------------------------------------------------------
+void Game::updateIntro() {
+    // Decrementa timer
+    if (introFrameTimer > 16) introFrameTimer -= 16;
+    else introFrameTimer = 0;
+
+    // Controlla input skip (tastiera)
+    bool skipNext = false;
+    bool skipAll = false;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Return) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Space) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt)) {
+        skipNext = true;
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape)) {
+        skipAll = true;
+    }
+    // Controlla input skip (joystick P1 o P2: pulsante jump o shoot)
+    int p1Btn = (config.joy_jump >= 0) ? config.joy_jump
+              : (config.joy_shoot >= 0) ? config.joy_shoot : 0;
+    int p2Btn = (config.joy2_jump >= 0) ? config.joy2_jump
+              : (config.joy2_shoot >= 0) ? config.joy2_shoot : 0;
+    unsigned int p2JoyId = (config.joy2_id > 0) ? (unsigned int)config.joy2_id : 1;
+    if (sf::Joystick::isConnected(0) &&
+        sf::Joystick::isButtonPressed(0, (unsigned)p1Btn)) {
+        skipNext = true;
+    }
+    if (sf::Joystick::isConnected(p2JoyId) &&
+        sf::Joystick::isButtonPressed(p2JoyId, (unsigned)p2Btn)) {
+        skipNext = true;
+    }
+
+    // ESC: salta tutto
+    if (skipAll) {
+        // Ferma la musica dell'intro e avvia il livello
+        audio.stopMusic();
+        window.setFramerateLimit(60);
+        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+        window.setView(view);
+        currentLevel = 1;
+        startLevel(1);
+        return;
+    }
+
+    // Skip alla prossima immagine (con debounce per non saltare piu' frame)
+    if (skipNext && !introSkipKeyHeld) {
+        introSkipKeyHeld = true;
+        introFrameTimer = 0;  // forza il passaggio alla prossima
+    } else if (!skipNext) {
+        introSkipKeyHeld = false;
+    }
+
+    // Se il timer e' scaduto, passa alla prossima immagine
+    if (introFrameTimer <= 0) {
+        introCurrentFrame++;
+        introFrameTimer = 8000;  // 8 secondi per la prossima
+        if (introCurrentFrame >= 4) {
+            // Fine intro: avvia il livello 1
+            audio.stopMusic();
+            window.setFramerateLimit(60);
+            sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+            window.setView(view);
+            currentLevel = 1;
+            startLevel(1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// drawIntro: disegna l'immagine corrente dell'intro a schermo intero.
+// L'immagine viene scalata con "cover fit" (copre tutta la finestra
+// mantenendo le proporzioni, eventuale overflow ritagliato).
+// Sotto l'immagine: didascalia in oro con contorno nero.
+// In basso a destra: indicatore "PREMI UN TASTO PER SALTARE".
+// ---------------------------------------------------------------------------
+void Game::drawIntro() {
+    // Sfondo nero (in caso l'immagine non copra tutto)
+    window.clear(sf::Color(0, 0, 0));
+
+    // Disegna l'immagine corrente se caricata
+    if (introCurrentFrame >= 0 && introCurrentFrame < 4 && introLoaded[introCurrentFrame]) {
+        sf::Sprite imgSprite(introTextures[introCurrentFrame]);
+        sf::Vector2u texSize = introTextures[introCurrentFrame].getSize();
+        if (texSize.x > 0 && texSize.y > 0) {
+            // Cover fit: la dimensione piu' piccola copre la finestra
+            float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
+            float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
+            float scale = (scaleX > scaleY) ? scaleX : scaleY;
+            imgSprite.setScale(scale, scale);
+            imgSprite.setPosition(
+                (WINDOW_WIDTH - texSize.x * scale) / 2.f,
+                (WINDOW_HEIGHT - texSize.y * scale) / 2.f);
+        }
+        window.draw(imgSprite);
+    }
+
+    // --- Overlay scuro in basso per leggibilita' della didascalia ---
+    sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, 180.f));
+    overlay.setFillColor(sf::Color(0, 0, 0, 180));
+    overlay.setPosition(0.f, WINDOW_HEIGHT - 180.f);
+    window.draw(overlay);
+
+    // --- Didascalia (testo narratore) ---
+    // Mostra il testo della vignetta corrente, in oro con contorno nero.
+    // Il testo e' su piu' righe (separate da \n nella stringa).
+    if (introCurrentFrame >= 0 && introCurrentFrame < 4) {
+        const char* caption = INTRO_CAPTIONS[introCurrentFrame];
+        // Disegna ogni riga separatamente (split su \n)
+        std::string text(caption);
+        int y = WINDOW_HEIGHT - 160;
+        size_t pos = 0;
+        while (pos < text.size()) {
+            size_t nl = text.find('\n', pos);
+            std::string line = (nl == std::string::npos)
+                             ? text.substr(pos)
+                             : text.substr(pos, nl - pos);
+            if (!line.empty()) {
+                drawTextCenteredOutlined(window, line, WINDOW_WIDTH/2, y, 2,
+                                         sf::Color(255, 215, 0));
+            }
+            y += 28;
+            if (nl == std::string::npos) break;
+            pos = nl + 1;
+        }
+    }
+
+    // --- Indicatore "PREMI UN TASTO PER SALTARE" in basso a destra ---
+    // Lampeggiante per attirare l'attenzione.
+    static float blinkTime = 0.f;
+    blinkTime += 0.05f;
+    bool visible = (sinf(blinkTime * 4.f) > 0.f);
+    if (visible) {
+        drawTextOutlined(window, "SKIP >", WINDOW_WIDTH - 100, WINDOW_HEIGHT - 30, 2,
+                         sf::Color(200, 200, 200));
+    }
+
+    // --- Indicatore progresso (1/4, 2/4, ecc.) in alto a destra ---
+    std::string progress = std::to_string(introCurrentFrame + 1) + "/4";
+    drawTextOutlined(window, progress, WINDOW_WIDTH - 60, 20, 2,
+                     sf::Color(255, 215, 0));
+}
+
 // ---------------------------------------------------------------------------
 // run: ciclo principale. Resta in esecuzione finche' isRunning e' true.
 // L'ordine e' fisso: events -> update -> render. A 60 FPS ogni iterazione
@@ -8071,12 +8277,8 @@ void Game::startGameAfterSelectPlayer() {
                         : true;  // 1P: P2 non rilevante
 
     if (p1Configured && p2Configured) {
-        // Tasti gia' configurati: avvia il livello direttamente
-        window.setFramerateLimit(60);
-        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-        window.setView(view);
-        currentLevel = 1;
-        startLevel(1);
+        // Tasti gia' configurati: avvia l'intro cutscene, poi il livello
+        startIntro();
     } else {
         // Vai a configurazione joystick (P1 prima, poi P2 in 2P)
         state = STATE_CONFIG_JOY;
