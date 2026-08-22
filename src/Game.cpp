@@ -8063,7 +8063,7 @@ static const char* INTRO_CAPTIONS[] = {
 
 // ---------------------------------------------------------------------------
 // startIntro: avvia l'intro cutscene a fumetti.
-// Imposta la prima immagine (frame 0) e il timer a 8000 ms.
+// Imposta la prima immagine (frame 0) e il timer a 60000 ms (1 minuto).
 // Imposta la view corretta e avvia la musica epica di sottofondo.
 // ---------------------------------------------------------------------------
 void Game::startIntro() {
@@ -8072,7 +8072,7 @@ void Game::startIntro() {
     window.setView(view);
     state = STATE_INTRO;
     introCurrentFrame = 0;
-    introFrameTimer = 8000;  // 8 secondi per la prima immagine
+    introFrameTimer = 60000;  // 60 secondi (1 minuto) per la prima immagine
     introSkipKeyHeld = false;
     // Musica epica/tragica per l'intro: usa la traccia del menu' (corale
     // fantasy) se la musica e' attiva. In futuro si puo' aggiungere una
@@ -8144,7 +8144,7 @@ void Game::updateIntro() {
     // Se il timer e' scaduto, passa alla prossima immagine
     if (introFrameTimer <= 0) {
         introCurrentFrame++;
-        introFrameTimer = 8000;  // 8 secondi per la prossima
+        introFrameTimer = 60000;  // 60 secondi (1 minuto) per la prossima
         if (introCurrentFrame >= 4) {
             // Fine intro: avvia il livello 1
             audio.stopMusic();

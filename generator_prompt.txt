@@ -243,7 +243,7 @@ INTRO CUTSCENE (STATE_INTRO)
 Mostrata dopo SELECT_PLAYER + CONFIG_JOY, prima di avviare il livello 1.
 4 immagini composite in assets/cutscene/intro_1..4.png (1344x768), ognuna
 contiene 3 vignette della storia (12 vignette totali). Ogni immagine
-dura 8 secondi (introFrameTimer = 8000 ms). Musica epica di sottofondo
+dura 60 secondi (1 minuto, introFrameTimer = 60000 ms). Musica epica di sottofondo
 (playMenuMusic, traccia corale fantasy). Didascalie in oro in basso con
 overlay scuro per leggibilita. Skip: Enter/Space/LAlt/pulsante attacco =
 prossima immagine; ESC = salta tutta l'intro e vai al livello 1. Al
