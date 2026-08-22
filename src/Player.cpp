@@ -369,8 +369,13 @@ void Player::render(sf::RenderTarget& target) {
     float px = pos.x;
     // py non piu' usato dopo la refactoring del fallback procedurale
 
-    // Etichetta arma sopra la testa
-    drawTextCentered(target, currentWeapon.getName(), (int)px, (int)(pos.y - 60), 2, sf::Color(255, 255, 0));
+    // Etichetta arma sopra la testa.
+    // FIX: mostra il nome dell'arma SOLO se ci sono ancora munizioni.
+    // Se ammo=0, il player ha finito i colpi e l'arma e' di fatto scarica:
+    // non ha senso mostrare ancora il nome (es. "LASER") come se la avesse.
+    if (currentWeapon.ammo > 0) {
+        drawTextCentered(target, currentWeapon.getName(), (int)px, (int)(pos.y - 60), 2, sf::Color(255, 255, 0));
+    }
 
     // Tentativo di rendering con sprite.
     // Animazioni: attack (se shootAnimTimer>0) > walk > idle.

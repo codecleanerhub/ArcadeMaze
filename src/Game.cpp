@@ -725,54 +725,85 @@ void Game::update() {
     // FIX DEFINITIVO: usa sf::Joystick (SFML) invece di Joy::. Su Windows,
     // sf::Joystick gestisce correttamente i controller XInput e DirectInput
     // senza i bug del layer Joy:: custom (ghost XInput, Acquire fallito).
+    //
+    // FIX MENU MULTIPLEPLAYER: sia P1 che P2 possono navigare il menu.
+    // P1 usa joyId=0, P2 usa joyId=config.joy2_id (o 1 di default).
+    // La conferma di una voce puo' essere fatta con il pulsante di salto
+    // (joy_jump/joy2_jump) oppure di fuoco (joy_shoot/joy2_shoot). Se non
+    // configurati, si usa il pulsante 0 come default.
     if (state == STATE_MENU) {
-        unsigned joystickId = 0;
-        if (sf::Joystick::isConnected(joystickId)) {
-            float y = sf::Joystick::getAxisPosition(joystickId, (sf::Joystick::Axis)config.joy_axis_y);
-            // FIX POV: se l'asse Y e' ~0, prova PovY (D-pad su/giu)
-            if (fabs(y) < 0.1f) {
-                float povY = sf::Joystick::getAxisPosition(joystickId, sf::Joystick::PovY);
-                if (fabs(povY) > 0.1f) y = povY;
+        // --- Navigazione su/giu: P1 OR P2 ---
+        static bool joyMoved = false;
+        // Leggi asse Y di P1
+        float yP1 = 0.f;
+        if (sf::Joystick::isConnected(0)) {
+            yP1 = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_y);
+            if (fabs(yP1) < 0.1f) {
+                float povY = sf::Joystick::getAxisPosition(0, sf::Joystick::PovY);
+                if (fabs(povY) > 0.1f) yP1 = povY;
             }
-            // joyMoved e' static: serve da "debounce" per evitare che un
-            // solo movimento dell'analogico faccia scorrere tutte le voci.
-            static bool joyMoved = false;
-            if (fabs(y) > 50 && !joyMoved) {
-                joyMoved = true;
-                if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
-                else { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
-            } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
         }
+        // Leggi asse Y di P2 (se configurato)
+        float yP2 = 0.f;
+        unsigned int p2JoyId = (config.joy2_id > 0) ? (unsigned int)config.joy2_id : 1;
+        if (sf::Joystick::isConnected(p2JoyId)) {
+            yP2 = sf::Joystick::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_y);
+            if (fabs(yP2) < 0.1f) {
+                float povY = sf::Joystick::getAxisPosition(p2JoyId, sf::Joystick::PovY);
+                if (fabs(povY) > 0.1f) yP2 = povY;
+            }
+        }
+        // Scegli l'asse con valore assoluto maggiore (P1 o P2)
+        float y = (fabs(yP2) > fabs(yP1)) ? yP2 : yP1;
+        // joyMoved e' static: serve da "debounce" per evitare che un
+        // solo movimento dell'analogico faccia scorrere tutte le voci.
+        if (fabs(y) > 50 && !joyMoved) {
+            joyMoved = true;
+            if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+            else { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
+        } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
 
         // Fulmine casuale: ~5/600 di probabilita' per frame, durata 10 frame
         if (rand() % 600 < 5) lightningTimer = 10;
         if (lightningTimer > 0) lightningTimer--;
-        // Polling pulsante jump = conferma menu (con debounce)
-        if (sf::Joystick::isConnected(0) && config.joy_jump >= 0) {
-            static bool menuJoyBtn = false;
-            bool pressed = sf::Joystick::isButtonPressed(0, (unsigned)config.joy_jump);
-            if (pressed && !menuJoyBtn) {
-                menuJoyBtn = true;
-                audio.playSound(SOUND_MENU_CONFIRM);
-                if (menuItemIndex == 3) {
-                    state = STATE_SELECT_PLAYER;
-                    selectPlayerStep = 0;
-                    wheelIndex = (int)player1Character;
-                    wheelTargetIndex = wheelIndex;
-                    wheelRotation = 0.f;
-                }
-                else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                else if (menuItemIndex == 6) {
-                    window.setFramerateLimit(60);
-                    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                    window.setView(view);
-                    currentLevel = 1;
-                    player.setCharacter(player1Character, 1);
-                    if (numPlayers == 2) player2.setCharacter(player2Character, 2);
-                    startLevel(1);
-                }
-            } else if (!pressed) menuJoyBtn = false;
+        // --- Conferma menu: P1 OR P2 ---
+        // Pulsante configurato (joy_jump o joy_shoot). Default: pulsante 0
+        // se nessuno dei due e' configurato.
+        static bool menuJoyBtn = false;
+        bool pressed = false;
+        // P1: joy_jump se >= 0, altrimenti joy_shoot se >= 0, altrimenti 0
+        int p1Btn = (config.joy_jump >= 0) ? config.joy_jump
+                  : (config.joy_shoot >= 0) ? config.joy_shoot : 0;
+        // P2: joy2_jump se >= 0, altrimenti joy2_shoot se >= 0, altrimenti 0
+        int p2Btn = (config.joy2_jump >= 0) ? config.joy2_jump
+                  : (config.joy2_shoot >= 0) ? config.joy2_shoot : 0;
+        if (sf::Joystick::isConnected(0)) {
+            pressed = sf::Joystick::isButtonPressed(0, (unsigned)p1Btn);
         }
+        if (!pressed && sf::Joystick::isConnected(p2JoyId)) {
+            pressed = sf::Joystick::isButtonPressed(p2JoyId, (unsigned)p2Btn);
+        }
+        if (pressed && !menuJoyBtn) {
+            menuJoyBtn = true;
+            audio.playSound(SOUND_MENU_CONFIRM);
+            if (menuItemIndex == 3) {
+                state = STATE_SELECT_PLAYER;
+                selectPlayerStep = 0;
+                wheelIndex = (int)player1Character;
+                wheelTargetIndex = wheelIndex;
+                wheelRotation = 0.f;
+            }
+            else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
+            else if (menuItemIndex == 6) {
+                window.setFramerateLimit(60);
+                sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                window.setView(view);
+                currentLevel = 1;
+                player.setCharacter(player1Character, 1);
+                if (numPlayers == 2) player2.setCharacter(player2Character, 2);
+                startLevel(1);
+            }
+        } else if (!pressed) menuJoyBtn = false;
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
@@ -3787,8 +3818,8 @@ void Game::drawMenu() {
     float nameW = (float)nameStr.length() * 4 * 5;
     float totalW = byW + nameW;
     float startX = (float)(WINDOW_WIDTH/2) - totalW/2.f;
-    drawTextOutlined(window, byStr,   startX,             260, 5, sf::Color(255, 215, 100));
-    drawTextOutlined(window, nameStr, startX + byW,       260, 5, sf::Color(245, 235, 200));
+    drawTextOutlined(window, byStr,   (int)startX,             260, 5, sf::Color(255, 215, 100));
+    drawTextOutlined(window, nameStr, (int)(startX + byW),       260, 5, sf::Color(245, 235, 200));
 
     // --- Riquadro pergamena con bordo marrone antico + angoli decorati ---
     sf::RectangleShape border(sf::Vector2f((float)(WINDOW_WIDTH - 240), 500.f));
@@ -3845,7 +3876,7 @@ void Game::drawMenu() {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
         float itemY = 410.f + (float)(i * 50);
-        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, itemY, 3, color);
+        drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, (int)itemY, 3, color);
 
         // Fiammella laterale animata per la voce selezionata
         if (i == menuItemIndex) {
