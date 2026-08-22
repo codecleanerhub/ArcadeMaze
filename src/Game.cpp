@@ -4355,12 +4355,10 @@ void Game::drawSelectPlayer() {
     float perspectiveRatio = 0.32f;                   // compressione verticale
     float wheelRadiusY = wheelRadiusX * perspectiveRatio;  // ~108 px
 
-    // Tempo per animazione ingranaggi (static per persistere tra i frame)
+    // Tempo per animazioni (glow di selezione, ombre). Static per persistere
+    // tra i frame. (In precedenza animava anche gli ingranaggi, ora rimossi.)
     static float gearAnimTime = 0.f;
     gearAnimTime += 0.04f;
-    bool isRotating = (wheelIndex != wheelTargetIndex);
-    float gearSpeed = isRotating ? 0.12f : 0.04f;
-    float gearRotation = gearAnimTime * gearSpeed * (wheelTargetIndex > wheelIndex ? 1.f : -1.f);
 
     // --- Angolo di rotazione della ruota (personaggi girano attorno al perno) ---
     // Ogni personaggio occupa un settore di 2pi/8. L'angolo 0 = destra,
@@ -4478,39 +4476,10 @@ void Game::drawSelectPlayer() {
     wheelBolt.setPosition(centerX - 14.f, centerY - 14.f * perspectiveRatio);
     window.draw(wheelBolt);
 
-    // --- 7. Ingranaggi decorativi attorno alla ruota (lato dietro, in alto) ---
-    // Disposti a semicerchio sul retro della ruota (parte alta dell'ellisse),
-    // non sul front, per non coprire i personaggi davanti.
-    for (int g = 0; g < 6; g++) {
-        // Distribuiti da 200° a 340° (parte alta dell'ellisse)
-        float angle = (200.f + g * 28.f) * (float)M_PI / 180.f;
-        float gx = centerX + cosf(angle) * (wheelRadiusX + 38.f);
-        float gy = centerY + sinf(angle) * (wheelRadiusY + 30.f);
-        float gearR = 22.f;
-        sf::CircleShape gear(gearR);
-        gear.setFillColor(COL_METAL_DARK);
-        gear.setOutlineThickness(3.f);
-        gear.setOutlineColor(COL_GOLD);
-        gear.setOrigin(gearR, gearR);
-        gear.setPosition(gx, gy);
-        gear.rotate(gearRotation * 180.f / (float)M_PI + g * 60.f);
-        window.draw(gear);
-        // Denti dell'ingranaggio (8 piccoli rettangoli attorno)
-        for (int t = 0; t < 8; t++) {
-            float tAngle = t * (2.f * (float)M_PI / 8.f);
-            sf::RectangleShape tooth(sf::Vector2f(6.f, 10.f));
-            tooth.setFillColor(COL_METAL_LIGHT);
-            tooth.setOrigin(3.f, 5.f);
-            tooth.setPosition(gx + cosf(tAngle) * gearR, gy + sinf(tAngle) * gearR);
-            tooth.rotate(tAngle * 180.f / (float)M_PI + gearRotation * 180.f / (float)M_PI + g * 60.f);
-            window.draw(tooth);
-        }
-        // Centro ingranaggio (perno)
-        sf::CircleShape gearHub(6.f);
-        gearHub.setFillColor(COL_GOLD);
-        gearHub.setPosition(gx - 6.f, gy - 6.f);
-        window.draw(gearHub);
-    }
+    // FIX: gli ingranaggi gialli decorativi sono stati rimossi perche'
+    // erano disposti male (sopra la ruota invece che sotto) e coprivano
+    // i personaggi. La ruota mantiene ombra, base, bordo interno, raggi,
+    // hub centrale, bulloni e glow di selezione.
 
     // --- 8. Personaggi SOPRA la ruota (in prospettiva, attorno al perimetro) ---
     // Per ogni personaggio calcoliamo posizione sull'ellisse, profondita'
