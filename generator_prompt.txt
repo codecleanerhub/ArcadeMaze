@@ -1,0 +1,522 @@
+================================================================================
+GENERATOR PROMPT - ARCADE MAZE FANTASY (template di gioco)
+================================================================================
+
+ISTRUZIONI D'USO
+-----------------
+Questo file è un PROMPT completo per rigenerare il gioco da zero.
+
+Struttura:
+  - SEZIONE TECNICA (NON MODIFICARE): contiene la tecnologia, la struttura
+    del progetto, le soluzioni ai bug già risolti, il sistema di sprite,
+    il sistema joystick, l'audio, il build system. È INVARIABILE: deve
+    essere mantenuta uguale in ogni derivazione del gioco.
+  - SEZIONE DESCRITTIVA (MODIFICABILE): contiene il gameplay, lo scopo,
+    i personaggi, i nemici, i boss, le meccaniche. Può essere sostituita
+    con una diversa per ottenere un NUOVO gioco mantenendo lo stesso
+    engine, lo stesso stile grafico e le stesse soluzioni tecniche.
+
+Per creare un nuovo gioco: sostituisci SOLO la SEZIONE DESCRITTIVA con
+una nuova (es. "gioco di corse", "gioco di piattaforme", "RPG") e mantieni
+intatta la SEZIONE TECNICA. Il risultato sarà un nuovo gioco con lo stesso
+motore, senza dover ri-risolvere i bug già fissati (joystick P2 su Windows,
+demo mode, speed boost permanente, ecc.).
+
+
+################################################################################
+# SEZIONE TECNICA (NON MODIFICARE)
+################################################################################
+
+STACK TECNOLOGICO
+-----------------
+- Linguaggio: C++17 (CMAKE_CXX_STANDARD 17, CMAKE_CXX_STANDARD_REQUIRED ON)
+- Libreria principale: SFML 2.5 (componenti graphics, audio, system, window)
+- Build system: CMake >= 3.10
+- Link aggiuntivi Windows: dinput8.lib, dxguid.lib (DirectInput nativo)
+- Nessuna dipendenza esterna per JSON/audio/font: tutto procedurale
+- Generatore CMake: Unix Makefiles (Linux/macOS), Visual Studio 16/17 o
+  MinGW Makefiles (Windows)
+
+PIATTAFORME SUPPORTATE
+----------------------
+- Linux: GCC + SFML system-install, percorsi assets relativi dalla root
+- Windows: MSVC (Visual Studio 2017/2019/2022) o MinGW; SFML in C:/SFML,
+  C:/SFML-2.5.1, C:/vcpkg/installed/x64-windows, C:/msys64/mingw64
+- macOS: clang + SFML Homebrew (/opt/homebrew o /usr/local)
+- Copia post-build automatica (WIN32 o APPLE): cartella assets/ + config.ini
+  copiate accanto all'eseguibile
+- Eseguibile: ArcadeMazeFantasy (Linux/macOS), ArcadeMazeFantasy.exe (Windows)
+
+STRUTTURA FILE DEL PROGETTO
+---------------------------
+```
+ArcadeMazeFantasy/
+├── CMakeLists.txt              # Build system cross-platform
+├── build_and_run.sh            # Script bash (Linux/macOS/Git Bash)
+├── build_and_run.bat           # Wrapper CMD per Windows
+├── build_and_run.ps1           # Script PowerShell per Windows
+├── config.ini                  # Configurazione tasti (KEY_*=codici SFML)
+├── assets/
+│   ├── sprites/                # ~250 PNG 64x64 + *_meta.json
+│   │   ├── player1_*, player2_*           # Eroi originali (6 sheet ciascuno)
+│   │   ├── char_<name>_*                  # 7 personaggi fantasy (6 sheet ciascuno)
+│   │   ├── monster_001..029_*             # 28 nemici (1 sheet ciascuno)
+│   │   ├── boss_021..037_*                # 17 boss (1 sheet ciascuno)
+│   │   ├── miniboss_01..17_*              # 17 mini-boss (1 sheet ciascuno)
+│   │   ├── effect_*                       # Effetti (fireaura, ashpile, fireburst)
+│   │   └── bonus_speedboots_*             # Bonus scarpe alate
+│   └── backgrounds/            # 4 JPG sfondi schermate
+│       ├── bg_menu.jpg
+│       ├── bg_win.jpg
+│       ├── bg_gameover.jpg
+│       └── bg_continues.jpg
+├── src/                        # Sorgenti C++ (.cpp + .h accoppiati)
+│   ├── main.cpp                # Entry point: Game game; game.init(); game.run();
+│   ├── Game.{h,cpp}            # Classe centrale: stati, ciclo, entità
+│   ├── Maze.{h,cpp}            # Griglia 21x19, generazione DFS, palette
+│   ├── Player.{h,cpp}          # Movimento, vite, energia, salto, personaggi
+│   ├── Enemy.{h,cpp}           # 28 tipi nemici, AI BFS/greedy, stati burning
+│   ├── Boss.{h,cpp}            # 17 tipi boss, sparo a ventaglio, scaling
+│   ├── MiniBoss.{h,cpp}        # 17 tipi mini-boss, BFS, armi melee
+│   ├── Weapon.{h,cpp}          # 4 WeaponType, Projectile, factory
+│   ├── UI.{h,cpp}              # HUD 80px: score, vite, energia, arma, ammo
+│   ├── Utils.{h,cpp}           # Costanti, Config, Particle, font bitmap 3x5
+│   ├── AudioManager.{h,cpp}    # Audio chiptune sintetizzato runtime
+│   ├── SpriteSheet.{h,cpp}     # Caricamento PNG + JSON meta, animazioni
+│   └── XInputJoystick.{h,cpp}  # Wrapper joystick cross-platform (Joy::)
+├── tools/bestiary/             # Generatori sprite Python (opzionali)
+└── scripts/                    # Script Python generatori/fix sprite
+```
+
+COSTANTI DI GIOCO (Utils.h)
+---------------------------
+- WINDOW_WIDTH = 1024, WINDOW_HEIGHT = 1024 (finestra quadrata)
+- TILE_SIZE = 48
+- MAZE_COLS = 21, MAZE_ROWS = 19 (21*48=1008 <= 1024; 19*48=912 <= 1024-80)
+- UI_HEIGHT = 80 (barra HUD in alto, area di gioco inizia a y=80)
+- Font bitmap custom 3x5 (37 glifi A-Z/0-9/spazio), 4 varianti:
+  drawText, drawTextCentered, drawTextOutlined, drawTextCenteredOutlined
+  (parametri int x,y,scale per evitare warning C4244 float->int)
+
+SISTEMA SPRITE (SpriteSheet.h/cpp)
+----------------------------------
+- SpriteSheet::load(basePath) carica <basePath>_sheet.png + <basePath>_meta.json
+  (prova anche <basePath>.png + <basePath>.json come fallback)
+- Frame nativi: 64x64 pixel, RGBA con trasparenza
+- Griglia default: 6 colonne x 4 righe (24 frame totali); se il JSON indica
+  columns:1, rows:1 le dimensioni effettive sono 64x64 singoli
+- Anchor piedi: (x:32, y:56) - il punto (32,56) del frame corrisponde alla
+  posizione del personaggio; scalato proporzionalmente se le dimensioni differiscono
+- Animazioni standard: idle (row 0), walk (row 1), attack (row 2), death (row 3)
+- 3 overload render(): base / con scale (boss con size variabile) / con tint
+  (P2 colorato se stesso personaggio di P1: Color(200,200,255))
+- loadMetaOrDefault() parsifica JSON minimale (no nlohmann): cerca sottostringhe
+  "chiave":valore. Se assente usa default 6x4 con idle=0/4, walk=1/6, ecc.
+- Flag spriteDefaultFacesRight(CharacterType) decide la logica di flip
+- Fallback: se il PNG manca, renderPrimitives() disegna primitive SFML
+
+GENERAZIONE SPRITE (per AI generatrici di immagini)
+---------------------------------------------------
+Per ogni sprite generare PNG 64x64 con trasparenza, pixel art 16-bit dark
+fantasy, palette viola notte (30,20,60) + oro (255,215,0) + rosso sangue
+(180,30,30) + osso bianco + grigio pietra. Personaggio centrato, piedi a
+y=56, orientamento default a destra. Stile: Diablo 1 / Castlevania SOTN /
+Gauntlet. Outline scuro sottile 1px, illuminazione da sinistra-alto.
+
+Personaggi giocabili: 6 sheet ciascuno (idle + walk0..3 + jump).
+Nemici/Boss/Mini-boss: 1 sheet ciascuno (singolo frame per tutte le animazioni).
+Meta.json standard:
+{"image":"<id>_sheet.png","frameWidth":64,"frameHeight":64,"columns":1,
+ "rows":1,"anchor":{"x":32,"y":56},"animations":{"idle":{"row":0,"frames":1,
+ "frameDuration":200},"walk":{...},"attack":{...},"death":{...}}}
+
+SISTEMA JOYSTICK (XInputJoystick.h/cpp) - CRITICO
+-------------------------------------------------
+Namespace Joy:: wrapper cross-platform, API identica a sf::Joystick:
+  init(), update(), isConnected(id), getAxisPosition(id, axis),
+  isButtonPressed(id, btn), getButtonCount(id)
+
+SOLUZIONI AI BUG GIA' RISOLTI (NON MODIFICARE):
+1. GHOST XINPUT SU WINDOWS: quando P1 ha un controller XInput, DirectInput
+   enumera anche un "ghost" di P1. Joy:: mappa joyId=1 al ghost di P1 (NON
+   al controller P2 reale). SOLUZIONE: usare sf::Joystick (SFML) come
+   backend PRIMARIO per tutti gli input, NON Joy::. Joy:: resta solo per
+   init()/update() (che internamente chiama sf::Joystick::update()).
+   Tutti i Joy::getAxisPosition/isButtonPressed sono stati sostituiti con
+   sf::Joystick:: equivalents. SFML su Windows filtra correttamente i
+   ghost XInput e usa l'HWND della finestra reale per Acquire.
+
+2. CONFIG JOY P2 NON RILEVAVA PULSANTI: joyId=1 hardcoded puntava al ghost
+   di P1. SOLUZIONE: STATE_CONFIG_JOY_2 scansiona tutti i joystick ID 1..7
+   con sf::Joystick e trova quello dove P2 preme un pulsante. L'ID rilevato
+   viene salvato in config.joy2_id e usato in gameplay.
+
+3. MIRROR MOVIMENTO P1->P2: Joy:: per P2 restituiva i valori di P1 (ghost).
+   SOLUZIONE: gameplay P2 usa config.joy2_id (rilevato in configurazione)
+   invece di joyId=1 hardcoded.
+
+4. SUPPORTO POV/D-PAD: molti arcade stick mappano la leva sul D-pad.
+   SOLUZIONE: se X e Y sono ~0, legge PovX/PovY come fallback.
+
+5. CONFIG JOY ANTI-DOUBLE-CAPTURE: dopo aver catturato un pulsante (step 0
+   o 1), aspetta che TUTTI i pulsanti siano rilasciati prima di accettare
+   il prossimo input (waitForRelease).
+
+6. VELOCITA' NEMICI MAX = PLAYER: nessun nemico puo' essere piu' veloce del
+   player (speed=2 base, 3 con speed boost). Tutti i nemici con speed=3
+   sono stati ridotti a 2. Boss: speed = 1 + lvl/8, cap 2.
+
+7. SPEED BOOST PERMANENTE: le scarpe alate danno boost PERMANENTE fino alla
+   morte completa del player (non 5 secondi). permanentSpeedBoost sopravvive
+   a resetPosition() (cambio livello, respawn dopo vita persa) ma e' azzerato
+   da reset() (game over). Le scarpette appaiono anche nel labirinto (1 per
+   livello, casuale), non solo nella stanza del boss.
+
+8. DEMO MODE INTELLIGENTE: AI cerca target (boss/nemico piu' vicino/tesoro),
+   si muove verso di esso, spara quando allineata. Non random.
+
+9. IN DEMO MODE, MORTE PLAYER -> MENU: non va ai continues, torna al menu.
+
+10. NOMI BOSS IN INGLESE: getBossName() ritorna nomi inglesi (Stone Golem,
+    Lich Necromancer, ecc.).
+
+11. SFONDI IMMAGINI AI: 4 JPG per menu/win/gameover/continues, con fallback
+    procedurale se i file mancano.
+
+12. MENU P1+P2 JOYSTICK: entrambi i giocatori possono navigare il menu e
+    confermare con il joystick. Opzioni (players/music/test/gamemode)
+    modificabili con joystick L/R.
+
+13. CONTINUES YES/NO CON JOYSTICK: toggle YES/NO anche con asse X del
+    joystick (non solo pulsanti).
+
+Supporto P1+P2: due blocchi config separati (joy_* per P1, joy2_* per P2).
+joy2_id dinamico: default 1, riassegnato in STATE_CONFIG_JOY_2.
+Supporto POV/D-pad via sf::Joystick::PovX/PovY.
+
+SISTEMA AUDIO (AudioManager.h/cpp)
+----------------------------------
+- Tutto sintetizzato a runtime: PCM 16-bit mono 44100 Hz, nessun file esterno
+- Waveforms chiptune: pulseWave(duty), triangleWave, sawtoothWave, noiseGen
+- SoundType enum (25 SFX): 4 armi, 6 gameplay, 5 retro, 10 effects
+- 9 tracce musicali (MUSIC_TRACK_COUNT=9): 4 livelli, 1 boss, 1 portale,
+  2 jingle epici (calice/scettro), 1 menu
+- Canali separati: music (gameplay) + epicSound (jingle, non interferisce)
+- Pool 30 voci sf::Sound polifoniche, findFreeSound() round-robin
+
+CONFIG (Utils.h + config.ini)
+-----------------------------
+Struct Config con 3 blocchi:
+- P1 tastiera (key_up/down/left/right/jump/shoot): default frecce + Space/Alt
+- P1 joystick 0 (joy_axis_x/y=0/1, joy_jump/shoot=-1 non configurati)
+- P2 tastiera fissa (key2_*): WASD + Q (jump) + E (shoot)
+- P2 joystick (joy2_id=1 dinamico, joy2_axis_x/y=0/1, joy2_jump/shoot=-1)
+loadConfig(filename) parsifica config.ini (formato KEY=value)
+
+STATI DI GIOCO (GameState)
+--------------------------
+enum GameState {
+  STATE_MENU,           // menu principale (6 voci: players, gamemode, music,
+                        // test mode, configure joy, start game)
+  STATE_SELECT_PLAYER,  // selezione personaggio (ruota 8 personaggi)
+  STATE_CONFIG_JOY,     // configurazione joystick P1 (2 step)
+  STATE_CONFIG_JOY_2,   // configurazione joystick P2 (2 step)
+  STATE_PLAYING,        // labirinto: tesori + nemici + mini-boss + bonus
+  STATE_BOSS,           // scontro boss + armi a terra
+  STATE_CONTINUES,      // countdown 10-0, Yes/No, max 3 crediti
+  STATE_LOSE,           // game over
+  STATE_WIN_STORY,      // vittoria story (fuochi d'artificio)
+  STATE_WIN_INFINITE,   // vittoria infinite (placeholder)
+  STATE_DEMO            // AI controlla P1, dopo 30s inattivita'
+};
+
+FLUSSO PARTITA
+--------------
+MENU -> SELECT_PLAYER -> (CONFIG_JOY se non configurato) -> PLAYING ->
+BOSS -> livello successivo -> ... -> WIN_STORY
+Morte -> CONTINUES (se crediti > 0) o LOSE -> Enter torna a MENU
+
+CICLO PRINCIPALE
+----------------
+Game::run() -> while isRunning: handleEvents() -> update() -> render()
+Framerate limit 60 FPS fissi (window.setFramerateLimit(60))
+Timer in "ms simulati": decrementati di 16 per frame (~60 FPS)
+
+ENTITA' DINAMICHE IN GAME
+-------------------------
+- std::vector<Enemy> enemies (5 per livello)
+- Boss* boss (1, dinamico)
+- MiniBoss* miniBoss (1, al respawn del portale)
+- std::vector<Projectile> bossProjectiles, enemyProjectiles
+- std::vector<Particle> particles
+- std::vector<BloodStain> bloodStains, ashPiles, fireBursts
+- std::vector<Lightning> lightnings, fireworks
+- Struct singole: speedBoots, speedBoots2, exitDoor, magicPortal, mine,
+  chalice, scepter
+
+INIT (Game::init())
+-------------------
+- Crea sf::RenderWindow 1024x1024 (fullscreen alla risoluzione desktop)
+- Imposta view logica 1024x1024 con letterboxing
+- Carica config.ini
+- Carica sprite statici (Enemy::loadAllSprites, Boss::loadAllSprites)
+- Carica sfondi JPG (bg_menu/win/gameover/continues)
+- Pre-sintetizza audio
+- Joy::init()
+
+
+################################################################################
+# SEZIONE DESCRITTIVA (MODIFICABILE)
+################################################################################
+
+DESCRIZIONE GIOCO: ARCADE MAZE FANTASY
+======================================
+
+GENERE: Dark fantasy arcade maze, dungeon crawler ispirato a D&D / LOTR /
+Gauntlet / Diablo 1. Atmosfera gotico-notturna.
+
+SCOPO: Il player (o due player in co-op) esplora un labirinto procedurale,
+raccoglie tutti i tesori, elimina o evita i nemici e affronta un boss di
+fine livello. Sconfiggendo il boss si guadagna una vita e si passa al
+livello successivo. Obiettivo finale in STORY: completare 17 livelli con
+17 boss diversi.
+
+MODALITA'
+---------
+- STORY: 17 livelli (STORY_LEVELS_COUNT=17), ogni boss appare una sola
+  volta. Vittoria -> STATE_WIN_STORY con fuochi d'artificio.
+- INFINITE: currentLevel cresce senza fine, tipi boss/nemici ciclano.
+
+PERSONAGGI GIOCABILI (8+1)
+--------------------------
+CharacterType: HERO_M, HERO_F, MAGE, ORC, ELF, KNIGHT, GOLEM, DRAGON,
+VAMPIRE (CHARACTER_TYPE_COUNT=8). Selezione da STATE_SELECT_PLAYER: ruota
+carosello con Left/Right o joystick, Enter conferma. In 2P, P1 sceglie
+prima, poi P2; se stesso personaggio, P2 riceve tint bluastro (200,200,255).
+Tutti i personaggi condividono le stesse statistiche: cambia solo sprite e
+orientamento (spriteDefaultFacesRight).
+
+LABIRINTO
+---------
+- Griglia MAZE_COLS=21 x MAZE_ROWS=19, TILE_SIZE=48, UI_HEIGHT=80
+- Finestra logica 1024x1024
+- Generazione DFS iterativa (recursive backtracker) con ~15 passaggi extra
+  per creare anelli
+- 8 tesori per livello (corona/oro/forziere/gemma/coppa, distanziati >=4 celle)
+- 5 armi casuali a terra (distanziate >=5 celle)
+- 8 palette cromatiche tematiche (caverna grigia, dungeon blu, cripta viola,
+  inferno rosso, deserto, foresta, sangue, abisso) che ciclano col livello
+- Movimento player "snap-to-grid": si allinea al centro cella prima di girare
+- Quando getRemainingTreasures()==0 appare ExitDoor in cella casuale
+- Quando 50% nemici uccisi appare MagicPortal al centro: si apre in 1s,
+  fa uscire 3 nemici respawnati a 4s di intervallo, poi si chiude (1 sola
+  volta per livello)
+
+NEMICI (28 tipi)
+----------------
+ENEMY_TYPE_COUNT=28: 15 originali (ZOMBIE, SKELETON, GHOST, BAT, SPIDER,
+SLIME, DEMON, ROBOT, GOBLIN, ORC, WRAITH, GHOUL, IMP, RAT, CULTIST) + 13
+dal bestiary fantasy horror (MIMIC, WOLF, WITCH, BONE_GOLEM, ASH_SERPENT,
+DAMNED_KNIGHT, MAD_WIZARD, DEMONIC_CROW, TENTACLE, GARGOYLE, WELL_SPIRIT,
+CURSED_BOAR, PREDATOR_FUNGUS).
+- 5 nemici casuali per livello, posizionati fuori dall'angolo 5x5 iniziale
+- AI: 7 tipi "pensanti" (ROBOT, SLIME, DEMON, ORC, BONE_GOLEM,
+  DAMNED_KNIGHT, GARGOYLE) usano BFS pathfinding ricalcolato ogni 250 ms;
+  gli altri moveGreedy
+- 7 tipi sparano a distanza (SKELETON, CULTIST, DEMON, WRAITH, ROBOT,
+  WITCH, MAD_WIZARD) entro 500 px, cooldown 1-2.5 s
+- Velocita' max = 2 = player speed (mai piu' veloci del player)
+- HP 1-6; tank (ROBOT/ORC/BONE_GOLEM 5-6 HP) vs fragili/veloci (BAT/IMP/
+  RAT/WOLF/CROW 1 HP)
+- Stati burning (da calice) ed electrified (da fulmine scettro)
+
+MINI-BOSS (17 tipi)
+-------------------
+MINIBOSS_TYPE_COUNT=17 ispirati a LOTR/D&D: GOBLIN_CHIEFTAIN, CAVE_TROLL,
+ORC_BERSERKER, WARG_RIDER, URUK_HAI, NAZGUL, OGRE_BRUTE, GNOLL_PACKLORD,
+BUGBEAR_CHIEF, MINOTAUR, WIGHT_LORD, CAVE_GIANT, DEATH_KNIGHT, ILLITHID,
+ETTIN, FOMORIAN, BALROG_CULTIST.
+- Appaiono 1 sola volta per livello, quando il portale magico si attiva
+- HP 18-35 (+3 per livello), speed 1 o 2, dimensioni 32-40 px
+- AI insegue il player con BFS; attacco MEELE con 8 tipi di arma bianca
+  (ascia, mazza, spada, pugnale, catena, mazzafrusto, frusta, tentacoli)
+- Danno 12-25 HP, raggio 30-56 px
+- Drop score 5000-10000
+
+BOSS (17 tipi)
+--------------
+BOSS_TYPE_COUNT=17, uno per livello STORY:
+  GOLEM (Stone Golem), LICH (Lich Necromancer), DEMON (Abyssal Demon),
+  SPIDER (Giant Spider), ABOMINATION, KRAKEN, DRAGON (Ancient Dragon),
+  WRAITH_LORD (Wraith Lord), VAMPIRE (Vampire Lord), BEHOLDER,
+  GHOUL_LORD (Ghoul Lord), SPECTRAL_ALPHA (Spectral Alpha Wolf),
+  CULT_HERALD (Cult Herald), COLOSSAL_MIMIC (Colossal Mimic),
+  RAT_KING (Rat King), SUPREME_WITCH (Supreme Witch),
+  TWILIGHT_KNIGHT (Twilight Knight).
+- Stanza dedicata (STATE_BOSS, movimento libero in pixel)
+- Movimento diagonale a rimbalzo sui bordi
+- Ogni tipo ha pattern di sparo unico (17 BossProjKind): GOLEM massi,
+  LICH saette necrotiche verdi a ventaglio, DEMON palle di fuoco + bomba,
+  SPIDER ragnatele, DRAGON soffio di fuoco a 5 colpi, BEHOLDER 4 raggi
+  oculari, VAMPIRE 3 dardi di sangue + homing, ecc.
+- Cooldown base max(1000, 2500 - level*100) ms
+- HP scaling: 50 + lvl*20 (250 al livello 10)
+- Size 124-180 px (cap asintotico), speed 1 + lvl/8 cap 2
+- Animazione attacco triggerata per 500 ms dopo ogni sparo
+- Sconfitto: player.addLife(), currentLevel++, se STORY e >17 -> WIN_STORY
+
+ARMI (4 tipi)
+-------------
+- WPN_PISTOL (power 1, ammo 15)
+- WPN_SHOTGUN (power 3, ammo 8)
+- WPN_LASER (power 2, ammo 20)
+- WPN_ROCKET (power 5, ammo 4)
+- Arma iniziale: pistol
+- Munizioni finite; a zero il nome arma sopra la testa non viene mostrato
+- 5 armi casuali nel labirinto + 3 armi casuali nella stanza del boss
+  (ammo 5 ciascuna, a 300 px di distanza)
+- Proiettile player: 8 px/frame; in labirinto si disattiva sui muri
+- Sparo con cooldown 150 ms, animazione attacco 300 ms
+
+BONUS
+-----
+- CALICE DELL'IMMORTALITA' (GoldenChalice): 1 per livello, solo labirinto.
+  Raccolto -> playerInvincibleTimer = 15000 ms (15s). Player avvolto da
+  aura di fuoco; tocca nemico -> burning 50 frame poi muore (AshPile).
+  Jingle epico TRACK_EPIC_CHALICE (~6s fanfara eroica) su canale separato.
+
+- SCETTRO MAGICO (MagicScepter): 1 per livello, labirinto E stanza boss.
+  Raccolto -> 5 fulmini a 3s di intervalone in posizioni casuali. Ogni
+  fulmine attraversa tutto lo schermo (zigzag pre-calcolato), toglie 50%
+  HP ai nemici (electrified 30 frame) e 15% HP al boss. Jingle
+  TRACK_EPIC_SCEPTER (~7s arcano).
+
+- MINA (Mine): 1 per livello, labirinto E stanza boss. Se calpestata dal
+  player, entra in fase bouncing rimbalzando; colpisce nemico -> uccide.
+
+- SCARPE ALATE (SpeedBootsBonus): nel labirinto (1 per livello, casuale) E
+  nella stanza del boss. In 1P 1 paio (owner=0), in 2P due paia (owner=1
+  P1, owner=2 P2). Speed boost PERMANENTE fino alla morte completa del
+  player: permanentSpeedBoost sopravvive a resetPosition() ma e' azzerato
+  da reset(). Speed effettivo 2 -> 3.
+
+- PORTA DI USCITA (ExitDoor): appare quando tutti i tesori sono raccolti.
+  Toccandola si passa al boss.
+
+- PORTALE MAGICO (MagicPortal): al 50% nemici uccisi, fa respawn 3 nemici.
+
+SISTEMA VITE
+------------
+- lives = 3 iniziali, maxEnergy = 5, energy per vita corrente
+- takeDamage(): -1 energia, ignorato se isJumping() (salto = dodge) o se
+  damageTimer > 0 (invulnerabilita' ~1000 ms post-colpo)
+- A energia 0: -1 vita, energia ripristinata, resetPosition() (respawn 1,1)
+- Vita extra ogni 100000 punti + 1 vita bonus dopo ogni boss ucciso
+- Salto: jumpTimer 40 frame, arco sinusoidale max 25 px
+
+CONTINUES
+---------
+- 3 crediti iniziali (continuesLeft = 3)
+- Alla morte (tutte le vite a 0): se STATE_DEMO -> stopDemoMode() (no
+  continues); se continuesLeft > 0 -> STATE_CONTINUES con countdown 10-0,
+  scelta YES/NO con Left/Right o joystick L/R, Enter conferma
+- YES: continuesLeft--, player.reset() (3 vite, 5 energia, pistol, perde
+  permanentSpeedBoost), se diedInBoss -> startBossFight(true) che MANTIENE
+  HP/posizione/tipo attacco del boss (anti-farming); altrimenti
+  startLevel(currentLevel)
+- NO o timeout -> STATE_LOSE
+
+DEMO MODE
+---------
+- Dopo 30s di inattivita' nel menu (demoInactivityTimer=30000), startDemoMode()
+- 1 giocatore, personaggio casuale (8 tipi), livello 1-17 casuale
+- Decide casualmente se partire dal labirinto o dalla stanza del boss
+- Durata 30s (demoDurationTimer=30000)
+- AI intelligente: cerca target (boss in stanza boss, nemico piu' vicino
+  in labirinto, tesoro piu' vicino se non ci sono nemici), sceglie asse
+  con maggiore differenza, 20% probabilita' direzione casuale, cambio
+  ogni 400 ms, sparo ogni ~800 ms, salto occasionale
+- Qualsiasi tasto (frecce, WASD, space, enter, esc, Q, E) o movimento
+  joystick (assi >30% o qualsiasi pulsante) interrompe la demo
+- In demo mode, morte player -> torna al menu (no continues)
+- Overlay "DEMO MODE" in basso al centro, rosso intermittente
+
+CONTROLLI
+---------
+- Tastiera P1 (config.ini): frecce, LAlt salto, Space sparo
+- Tastiera P2 (hardcoded): WASD, Q salto, E sparo
+- Joystick P1+P2: configurabili da menu (CONFIGURE JOYSTICK, 2 step per
+  giocatore: salto + sparo). Supporta assi X/Y e PovX/PovY (D-pad),
+  deadzone 30%, asse dominante
+- Menu navigabile con tastiera (Up/Down/Left/Right/Enter) o joystick
+  (asse Y + pulsante configurato). P1 e P2 possono entrambi navigare.
+- Opzioni menu (players/music/test/gamemode) modificabili con joystick L/R
+- Continues YES/NO con joystick L/R oltre ai pulsanti
+
+HUD (UI_HEIGHT=80)
+------------------
+- 1P: SCORE, LIVES (cuori rossi), ENERGY (barra magenta su grigio, su 5),
+  WPN (nome nel colore dell'arma), AMMO (barra gialla su 15), TRES
+- 2P: stats P1 a sinistra, TRES al centro, stats P2 a destra
+
+RENDERING
+---------
+- Finestra fullscreen alla risoluzione desktop, view logica 1024x1024 con
+  letterboxing per aspect ratio
+- Labirinto stile "dungeon scavato nella roccia": muri 3D a 5 strati di
+  luminosita' (cima luce, fondo ombra), pavimento terra battuta con
+  ciottoli, gradiente continuo (no quadrati chiari)
+- Player e nemici in snap-to-grid; boss in free-movement
+- Sprite PNG con fallback a primitive SFML; flip per-character
+- Animazioni idle/walk/attack/jump via SpriteSheet
+- Sfondi JPG dedicati per menu/win/gameover/continues (cover fit, centrati)
+  con fallback procedurale. Elementi UI (titolo, voci, pergamena, fiammella)
+  disegnati sopra gli sfondi.
+- Etichetta arma sopra la testa: mostra SOLO se ammo > 0
+- Nome boss in alto nella stanza del boss: "BOSS: <nome inglese>"
+  (es. "BOSS: Stone Golem"), NON "BOSS LEVEL N"
+
+AUDIO
+-----
+- 25 SFX chiptune + 9 tracce musicali:
+  - 4 tracce livello (0..3, drammatiche/oscuri)
+  - 1 boss (4, epico 130 BPM)
+  - 1 portale (5, mistico)
+  - 2 jingle epici (6 calice fanfara ~6s, 7 scettro arcano ~7s)
+  - 1 menu (8, corale fantasy etereo)
+- Jingle epici su canale SEPARATO (epicSound) per non interrompere la musica
+- SFX: sparo per arma (pistol/shotgun/rocket/laser), salto, tesoro,
+  enemy_death, lose_life, win, boss_hit, boss_death, door_open, trap,
+  mine_bounce, potion_drink, lightning, scepter_pickup, portal_open/close,
+  weapon_pickup, enemy_explode, blood_splat, menu_select, menu_confirm
+
+MORTE PLAYER
+------------
+- In STATE_DEMO: stopDemoMode() -> torna al menu (no continues)
+- In gioco normale (1P o entrambi morti in 2P): se continuesLeft > 0 ->
+  STATE_CONTINUES con diedInBoss impostato in base allo stato; se
+  continuesLeft == 0 -> STATE_LOSE diretto
+
+TEST MODE (compilabile)
+-----------------------
+#define TEST_MODE_FEATURE (commentabile per disabilitare). Permette di
+skippare il boss premendo Space (testModeEnabled toggle da menu).
+
+FLUSSO PARTITA COMPLETO
+-----------------------
+STATE_MENU (6 voci: players, gamemode, music, test mode, configure joy,
+start game) -> STATE_SELECT_PLAYER (P1 poi P2 in 2P) ->
+startGameAfterSelectPlayer(): se joystick gia' configurato va direttamente
+a STATE_PLAYING, altrimenti STATE_CONFIG_JOY (P1) -> STATE_CONFIG_JOY_2
+(P2 in 2P) -> startLevel(1) -> STATE_PLAYING (labirinto: raccogli tesori,
+uccidi/schiva nemici, raccogli bonus, portale al 50% nemici, mini-boss,
+porta di uscita a 0 tesori) -> STATE_BOSS (fight con armi a terra, scarpe,
+mina, scettro) -> boss morto -> addLife(), currentLevel++ -> se STORY e
+currentLevel > 17 -> STATE_WIN_STORY (fuochi d'artificio), altrimenti
+nuovo startLevel() -> ... -> morte -> STATE_CONTINUES (10s YES/NO) ->
+restart o STATE_LOSE -> Enter torna a STATE_MENU con continuesLeft=3.
+
+
+################################################################################
+# FINE DEL PROMPT
+################################################################################
