@@ -47,7 +47,8 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
     , demoInactivityTimer(30000), demoDurationTimer(0), demoIsBoss(false),
       demoAiTimerP1(0), demoAiTimerP2(0), demoAiDirP1(0), demoAiDirP2(0),
       demoAiShootTimerP1(0), demoAiShootTimerP2(0),
-      introCurrentFrame(0), introFrameTimer(0), introSkipKeyHeld(false)
+      introCurrentFrame(0), introFrameTimer(0), introSkipKeyHeld(false),
+      introFontLoaded(false)
 {
     for (int i = 0; i < 4; i++) introLoaded[i] = false;
     exitDoor.active = false;
@@ -120,6 +121,9 @@ bool Game::init() {
         introLoaded[i] = introTextures[i].loadFromFile(path);
         if (introLoaded[i]) std::cout << "Immagine intro " << (i+1) << " caricata" << std::endl;
     }
+    // Carica il font TTF per il testo dell'intro (piu' leggibile del font bitmap)
+    introFontLoaded = introFont.loadFromFile("assets/fonts/intro_font.ttf");
+    if (introFontLoaded) std::cout << "Font intro caricato" << std::endl;
     // Inizializza XInput (Windows) o SFML (Linux/macOS) joystick
     Joy::init();
     return true;
@@ -653,6 +657,11 @@ void Game::handleEvents() {
             if (key == sf::Keyboard::Escape) {
                 if (state == STATE_CONFIG_JOY || state == STATE_CONFIG_JOY_2) state = STATE_MENU;
                 else if (state == STATE_MENU) isRunning = false;
+                else if (state == STATE_INTRO) {
+                    // ESC durante l'intro: non fare nulla qui.
+                    // Lo skip e' gestito da updateIntro() via isKeyPressed,
+                    // che salta tutto e avvia il livello 1.
+                }
                 else {
                     // Torna al menu': ferma la musica di gioco e (se l'opzione
                     // musica e' attiva) riprende la traccia DEDICATA del menu'
@@ -8082,8 +8091,12 @@ void Game::startIntro() {
     window.setView(view);
     state = STATE_INTRO;
     introCurrentFrame = 0;
-    introFrameTimer = 60000;  // 60 secondi (1 minuto) per la prima immagine
-    introSkipKeyHeld = false;
+    introFrameTimer = 180000;  // 3 minuti (180 secondi) per la prima immagine
+    // FIX CRITICO: inizializza introSkipKeyHeld = true per evitare che il
+    // tasto/pulsante ancora premuto (usato per confermare la selezione
+    // personaggio o la configurazione tasti) salti immediatamente la prima
+    // immagine. Il player deve RILASCIARE il tasto e premerlo di nuovo.
+    introSkipKeyHeld = true;
     // Musica epica/tragica per l'intro: SEMPRE attiva, anche se l'opzione
     // musica del gioco e' su OFF. La musica dell'intro e' slegata dalla
     // opzione musicEnabled perche' fa parte dell'esperienza narrativa.
@@ -8156,7 +8169,7 @@ void Game::updateIntro() {
     // Se il timer e' scaduto, passa alla prossima immagine
     if (introFrameTimer <= 0) {
         introCurrentFrame++;
-        introFrameTimer = 60000;  // 60 secondi (1 minuto) per la prossima
+        introFrameTimer = 180000;  // 3 minuti per la prossima
         if (introCurrentFrame >= 4) {
             // Fine intro: avvia il livello 1
             audio.stopMusic();
@@ -8210,43 +8223,98 @@ void Game::drawIntro() {
     window.draw(overlay);
 
     // --- Didascalia (testo narratore) ---
-    // Mostra il testo della vignetta corrente, in oro con contorno nero.
-    // Il testo e' su piu' righe (separate da \n nella stringa).
+    // Mostra il testo della vignetta corrente. Usa sf::Text con font TTF
+    // (piu' leggibile del font bitmap 3x5) se disponibile, altrimenti
+    // fallback al font bitmap.
     if (introCurrentFrame >= 0 && introCurrentFrame < 4) {
         const char* caption = INTRO_CAPTIONS[introCurrentFrame];
-        // Disegna ogni riga separatamente (split su \n)
-        std::string text(caption);
-        int y = WINDOW_HEIGHT - 220;
-        size_t pos = 0;
-        while (pos < text.size()) {
-            size_t nl = text.find('\n', pos);
-            std::string line = (nl == std::string::npos)
-                             ? text.substr(pos)
-                             : text.substr(pos, nl - pos);
-            if (!line.empty()) {
-                drawTextCenteredOutlined(window, line, WINDOW_WIDTH/2, y, 2,
-                                         sf::Color(255, 215, 0));
+        std::string textStr(caption);
+        if (introFontLoaded) {
+            // Font TTF: testo crisp, dimensione 22, oro con contorno nero
+            int y = WINDOW_HEIGHT - 220;
+            size_t pos = 0;
+            while (pos < textStr.size()) {
+                size_t nl = textStr.find('\n', pos);
+                std::string line = (nl == std::string::npos)
+                                 ? textStr.substr(pos)
+                                 : textStr.substr(pos, nl - pos);
+                if (!line.empty()) {
+                    sf::Text text;
+                    text.setFont(introFont);
+                    text.setString(line);
+                    text.setCharacterSize(22);
+                    text.setFillColor(sf::Color(255, 215, 0));
+                    text.setOutlineColor(sf::Color(0, 0, 0));
+                    text.setOutlineThickness(2.f);
+                    // Centra orizzontalmente
+                    sf::FloatRect bounds = text.getLocalBounds();
+                    text.setPosition(
+                        (WINDOW_WIDTH - bounds.width) / 2.f,
+                        (float)y);
+                    window.draw(text);
+                }
+                y += 32;
+                if (nl == std::string::npos) break;
+                pos = nl + 1;
             }
-            y += 28;
-            if (nl == std::string::npos) break;
-            pos = nl + 1;
+        } else {
+            // Fallback: font bitmap (meno leggibile)
+            int y = WINDOW_HEIGHT - 220;
+            size_t pos = 0;
+            while (pos < textStr.size()) {
+                size_t nl = textStr.find('\n', pos);
+                std::string line = (nl == std::string::npos)
+                                 ? textStr.substr(pos)
+                                 : textStr.substr(pos, nl - pos);
+                if (!line.empty()) {
+                    drawTextCenteredOutlined(window, line, WINDOW_WIDTH/2, y, 2,
+                                             sf::Color(255, 215, 0));
+                }
+                y += 28;
+                if (nl == std::string::npos) break;
+                pos = nl + 1;
+            }
         }
     }
 
-    // --- Indicatore "PREMI UN TASTO PER SALTARE" in basso a destra ---
+    // --- Indicatore "SKIP >" in basso a destra ---
     // Lampeggiante per attirare l'attenzione.
     static float blinkTime = 0.f;
     blinkTime += 0.05f;
     bool visible = (sinf(blinkTime * 4.f) > 0.f);
     if (visible) {
-        drawTextOutlined(window, "SKIP >", WINDOW_WIDTH - 100, WINDOW_HEIGHT - 30, 2,
-                         sf::Color(200, 200, 200));
+        if (introFontLoaded) {
+            sf::Text skipText;
+            skipText.setFont(introFont);
+            skipText.setString("SKIP >");
+            skipText.setCharacterSize(18);
+            skipText.setFillColor(sf::Color(200, 200, 200));
+            skipText.setOutlineColor(sf::Color(0, 0, 0));
+            skipText.setOutlineThickness(1.5f);
+            skipText.setPosition(WINDOW_WIDTH - 100.f, WINDOW_HEIGHT - 35.f);
+            window.draw(skipText);
+        } else {
+            drawTextOutlined(window, "SKIP >", WINDOW_WIDTH - 100, WINDOW_HEIGHT - 30, 2,
+                             sf::Color(200, 200, 200));
+        }
     }
 
     // --- Indicatore progresso (1/4, 2/4, ecc.) in alto a destra ---
     std::string progress = std::to_string(introCurrentFrame + 1) + "/4";
-    drawTextOutlined(window, progress, WINDOW_WIDTH - 60, 20, 2,
-                     sf::Color(255, 215, 0));
+    if (introFontLoaded) {
+        sf::Text progText;
+        progText.setFont(introFont);
+        progText.setString(progress);
+        progText.setCharacterSize(18);
+        progText.setFillColor(sf::Color(255, 215, 0));
+        progText.setOutlineColor(sf::Color(0, 0, 0));
+        progText.setOutlineThickness(1.5f);
+        progText.setPosition(WINDOW_WIDTH - 60.f, 15.f);
+        window.draw(progText);
+    } else {
+        drawTextOutlined(window, progress, WINDOW_WIDTH - 60, 20, 2,
+                         sf::Color(255, 215, 0));
+    }
 }
 
 // ---------------------------------------------------------------------------

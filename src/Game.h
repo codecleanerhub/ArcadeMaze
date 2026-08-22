@@ -298,14 +298,16 @@ private:
     // --- INTRO CUTSCENE (storia a fumetti prima del gameplay) ---
     // 4 immagini composite (3 vignette ciascuna) mostrate in sequenza
     // dopo la selezione personaggio + configurazione tasti, prima di
-    // avviare il livello. Ogni immagine dura 60 secondi (1 minuto). Il
+    // avviare il livello. Ogni immagine dura 3 minuti (180000 ms). Il
     // player puo' saltare alla successiva con un tasto (Enter/attacco)
     // o saltare tutta l'intro con ESC.
     sf::Texture introTextures[4];              // 4 immagini assets/cutscene/intro_N.png
     bool introLoaded[4];                       // flag di caricamento per ogni immagine
     int introCurrentFrame;                     // immagine corrente (0..3)
-    int introFrameTimer;                       // ms residui immagine corrente (parte da 60000)
+    int introFrameTimer;                       // ms residui immagine corrente (parte da 180000)
     bool introSkipKeyHeld;                     // debounce: true finche' il tasto resta premuto
+    sf::Font introFont;                        // font TTF per testo intro (piu' leggibile del bitmap)
+    bool introFontLoaded;                      // true se il font TTF e' caricato
 
     // --- DEMO MODE (modalita' demo automatica) ---
     // Quando l'utente non interagisce col menu per 30 secondi, il gioco si
