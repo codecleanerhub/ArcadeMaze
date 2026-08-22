@@ -247,6 +247,19 @@ private:
     GameState state;
     GameMode gameMode;
     bool isRunning;
+
+    // --- Sfondi immagini (PNG/JPG caricati da assets/backgrounds) ---
+    // Usati per le schermate: menu, win, game over, continues. Se il file
+    // manca, il gioco usa il fallback procedurale (primitive SFML).
+    sf::Texture bgMenuTexture;       // assets/backgrounds/bg_menu.jpg
+    sf::Texture bgWinTexture;        // assets/backgrounds/bg_win.jpg
+    sf::Texture bgGameOverTexture;   // assets/backgrounds/bg_gameover.jpg
+    sf::Texture bgContinuesTexture;  // assets/backgrounds/bg_continues.jpg
+    bool bgMenuLoaded = false;
+    bool bgWinLoaded = false;
+    bool bgGameOverLoaded = false;
+    bool bgContinuesLoaded = false;
+
     int currentLevel;                          // 1..STORY_LEVELS_COUNT (story) o illimitato (infinite)
     int menuItemIndex;                         // voce menu' selezionata (0..5)
     bool musicEnabled;

@@ -100,6 +100,17 @@ bool Game::init() {
     // alle primitive (renderCharacterFallback).
     player.setCharacter(player1Character, 1);
     player2.setCharacter(player2Character, 2);
+    // Carica gli sfondi delle schermate (menu, win, game over, continues)
+    // da assets/backgrounds/. I file mancanti vengono saltati: il render
+    // fara' fallback al disegno procedurale.
+    bgMenuLoaded = bgMenuTexture.loadFromFile("assets/backgrounds/bg_menu.jpg");
+    bgWinLoaded = bgWinTexture.loadFromFile("assets/backgrounds/bg_win.jpg");
+    bgGameOverLoaded = bgGameOverTexture.loadFromFile("assets/backgrounds/bg_gameover.jpg");
+    bgContinuesLoaded = bgContinuesTexture.loadFromFile("assets/backgrounds/bg_continues.jpg");
+    if (bgMenuLoaded) std::cout << "Sfondo menu caricato" << std::endl;
+    if (bgWinLoaded) std::cout << "Sfondo vittoria caricato" << std::endl;
+    if (bgGameOverLoaded) std::cout << "Sfondo game over caricato" << std::endl;
+    if (bgContinuesLoaded) std::cout << "Sfondo continues caricato" << std::endl;
     // Inizializza XInput (Windows) o SFML (Linux/macOS) joystick
     Joy::init();
     return true;
@@ -3774,18 +3785,39 @@ void Game::drawAshPiles(sf::RenderTarget& target) {
 //   * Istruzioni in basso
 // ---------------------------------------------------------------------------
 void Game::drawMenu() {
-    // --- Sfondo gradiente notte ---
-    // Disegna 32 bande orizzontali che vanno dal viola scuro (alto) al
-    // nero-bluastro (basso). Costo trascurabile (32 rettangoli).
-    for (int i = 0; i < 32; i++) {
-        float t = (float)i / 31.f;
-        sf::Uint8 r = (sf::Uint8)(30  + (1.f - t) * 25.f);
-        sf::Uint8 g = (sf::Uint8)(20  + (1.f - t) * 10.f);
-        sf::Uint8 b = (sf::Uint8)(60  + (1.f - t) * 30.f);
-        sf::RectangleShape band(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT / 32.f + 1.f));
-        band.setFillColor(sf::Color(r, g, b));
-        band.setPosition(0.f, i * (WINDOW_HEIGHT / 32.f));
-        window.draw(band);
+    // --- Sfondo ---
+    // Se l'immagine di sfondo (bg_menu.jpg) e' caricata, la disegna scalata
+    // a coprire tutta la finestra. Altrimenti fallback al gradiente viola
+    // notte a 32 bande.
+    if (bgMenuLoaded) {
+        sf::Sprite bgSprite(bgMenuTexture);
+        // Scala per coprire tutta la finestra mantenendo le proporzioni
+        // (cover fit: la dimensione piu' piccola dello sprite viene scalata
+        // per coprire la finestra, eventuale overflow viene ritagliato)
+        sf::Vector2u texSize = bgMenuTexture.getSize();
+        if (texSize.x > 0 && texSize.y > 0) {
+            float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
+            float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
+            float scale = (scaleX > scaleY) ? scaleX : scaleY;
+            bgSprite.setScale(scale, scale);
+            // Centra lo sprite (eventuale overflow ritagliato ai bordi)
+            bgSprite.setPosition(
+                (WINDOW_WIDTH - texSize.x * scale) / 2.f,
+                (WINDOW_HEIGHT - texSize.y * scale) / 2.f);
+        }
+        window.draw(bgSprite);
+    } else {
+        // Fallback: gradiente notte a 32 bande
+        for (int i = 0; i < 32; i++) {
+            float t = (float)i / 31.f;
+            sf::Uint8 r = (sf::Uint8)(30  + (1.f - t) * 25.f);
+            sf::Uint8 g = (sf::Uint8)(20  + (1.f - t) * 10.f);
+            sf::Uint8 b = (sf::Uint8)(60  + (1.f - t) * 30.f);
+            sf::RectangleShape band(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT / 32.f + 1.f));
+            band.setFillColor(sf::Color(r, g, b));
+            band.setPosition(0.f, i * (WINDOW_HEIGHT / 32.f));
+            window.draw(band);
+        }
     }
 
     // --- Stelle: seed fisso per layout stabile ---
@@ -4034,9 +4066,27 @@ void Game::drawConfigJoy() {
 
 // drawContinues: schermata "Continues?" con conto alla rovescia 10-0 e Yes/No.
 void Game::drawContinues() {
-    sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-    bg.setFillColor(sf::Color(10, 0, 20));
-    window.draw(bg);
+    // --- Sfondo ---
+    // Se l'immagine di sfondo (bg_continues.jpg) e' caricata, la disegna
+    // scalata a coprire tutta la finestra. Altrimenti fallback nero-viola.
+    if (bgContinuesLoaded) {
+        sf::Sprite bgSprite(bgContinuesTexture);
+        sf::Vector2u texSize = bgContinuesTexture.getSize();
+        if (texSize.x > 0 && texSize.y > 0) {
+            float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
+            float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
+            float scale = (scaleX > scaleY) ? scaleX : scaleY;
+            bgSprite.setScale(scale, scale);
+            bgSprite.setPosition(
+                (WINDOW_WIDTH - texSize.x * scale) / 2.f,
+                (WINDOW_HEIGHT - texSize.y * scale) / 2.f);
+        }
+        window.draw(bgSprite);
+    } else {
+        sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+        bg.setFillColor(sf::Color(10, 0, 20));
+        window.draw(bg);
+    }
 
     // Titolo
     drawTextCenteredOutlined(window, "CONTINUES?", WINDOW_WIDTH/2, 200, 5, sf::Color(255, 50, 50));
@@ -4604,7 +4654,7 @@ void Game::render() {
     else if (state == STATE_CONTINUES) {
         drawContinues();
     }
-    else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE
+    else if (state == STATE_PLAYING || state == STATE_WIN_INFINITE
              || (state == STATE_DEMO && !demoIsBoss)) {
         // Rendering comune per gameplay/schermate finali
         maze.render(window);
@@ -5143,14 +5193,34 @@ void Game::render() {
             }
         }
 
-        // Overlay GAME OVER (solo in STATE_LOSE)
-        if (state == STATE_LOSE) {
-            sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-            overlay.setFillColor(sf::Color(0, 0, 0, 200));
-            window.draw(overlay);
-            drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 5, sf::Color::Red);
-            drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
+        // STATE_LOSE ora ha un branch di rendering dedicato (vedi sotto),
+        // quindi questo blocco non viene piu' raggiunto per STATE_LOSE.
+    }
+    else if (state == STATE_LOSE) {
+        // --- Schermata GAME OVER ---
+        // Usa l'immagine di sfondo dedicata (bg_gameover.jpg) se caricata,
+        // altrimenti fallback a nero. I messaggi "GAME OVER" e "PRESS ENTER"
+        // vengono disegnati sopra l'immagine.
+        if (bgGameOverLoaded) {
+            sf::Sprite bgSprite(bgGameOverTexture);
+            sf::Vector2u texSize = bgGameOverTexture.getSize();
+            if (texSize.x > 0 && texSize.y > 0) {
+                float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
+                float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
+                float scale = (scaleX > scaleY) ? scaleX : scaleY;
+                bgSprite.setScale(scale, scale);
+                bgSprite.setPosition(
+                    (WINDOW_WIDTH - texSize.x * scale) / 2.f,
+                    (WINDOW_HEIGHT - texSize.y * scale) / 2.f);
+            }
+            window.draw(bgSprite);
+        } else {
+            sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+            bg.setFillColor(sf::Color(0, 0, 0));
+            window.draw(bg);
         }
+        drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 5, sf::Color::Red);
+        drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
     }
     else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
         // --- Stanza del boss: caverna scavata nella roccia ---
@@ -7683,10 +7753,27 @@ void Game::render() {
         }
     }
     else if (state == STATE_WIN_STORY) {
-        // Sfondo scuro + fuochi d'artificio + messaggi di vittoria
-        sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-        bg.setFillColor(sf::Color(10, 10, 30));
-        window.draw(bg);
+        // --- Sfondo ---
+        // Se l'immagine di sfondo (bg_win.jpg) e' caricata, la disegna
+        // scalata a coprire tutta la finestra. Altrimenti fallback blu notte.
+        if (bgWinLoaded) {
+            sf::Sprite bgSprite(bgWinTexture);
+            sf::Vector2u texSize = bgWinTexture.getSize();
+            if (texSize.x > 0 && texSize.y > 0) {
+                float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
+                float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
+                float scale = (scaleX > scaleY) ? scaleX : scaleY;
+                bgSprite.setScale(scale, scale);
+                bgSprite.setPosition(
+                    (WINDOW_WIDTH - texSize.x * scale) / 2.f,
+                    (WINDOW_HEIGHT - texSize.y * scale) / 2.f);
+            }
+            window.draw(bgSprite);
+        } else {
+            sf::RectangleShape bg(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+            bg.setFillColor(sf::Color(10, 10, 30));
+            window.draw(bg);
+        }
 
         // Fuochi d'artificio con alpha proporzionale alla vita
         for (const auto& fw : fireworks) {
