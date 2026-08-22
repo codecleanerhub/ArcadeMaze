@@ -3820,96 +3820,102 @@ void Game::drawMenu() {
         }
     }
 
-    // --- Stelle: seed fisso per layout stabile ---
-    srand(42);
-    for(int i=0; i<140; i++) {
-        // Stelle leggermente variate: alcune grandi, altre piccole
-        float radius = 0.8f + (rand() % 30) * 0.05f;
-        sf::CircleShape star(radius);
-        // Colore: bianco/giallo/azzurro per dare profondita' al cielo
-        sf::Uint8 br = 150 + (sf::Uint8)(rand() % 105);
-        int tint = rand() % 3;
-        sf::Color col = (tint == 0) ? sf::Color(255, 255, 220, br) :
-                        (tint == 1) ? sf::Color(200, 220, 255, br) :
-                                      sf::Color(255, 240, 200, br);
-        star.setFillColor(col);
-        star.setPosition((float)(rand()%WINDOW_WIDTH), (float)(rand()%(WINDOW_HEIGHT - 200)));
-        window.draw(star);
-        // Aggiungi un piccolo "cross" di luce alle stelle piu' grandi
-        if (radius > 1.8f) {
-            sf::RectangleShape cross1(sf::Vector2f(radius * 5.f, 1.f));
-            cross1.setFillColor(sf::Color(255, 255, 200, br / 3));
-            cross1.setPosition(star.getPosition().x - radius * 2.f, star.getPosition().y + radius * 0.5f);
-            window.draw(cross1);
-            sf::RectangleShape cross2(sf::Vector2f(1.f, radius * 5.f));
-            cross2.setFillColor(sf::Color(255, 255, 200, br / 3));
-            cross2.setPosition(star.getPosition().x + radius * 0.5f, star.getPosition().y - radius * 2.f);
-            window.draw(cross2);
-        }
-    }
-    // Ripristina il seed randomico per il resto del gioco
-    srand((unsigned int)time(NULL));
-
-    // --- Nebbia bassa: onde semitrasparenti viola/azzurre ---
-    // 3 strati di nebbia che fluttuano lentamente con animazione sinusoidale.
-    // L'animazione usa un tempo derivato da lightningTimer? No, sarebbe troppo
-    // instabile: usiamo una static che persiste tra le frame.
+    // --- Elementi atmosferici (solo se NON si usa l'immagine di sfondo) ---
+    // L'immagine bg_menu.jpg contiene gia' stelle, luna, nebbia e fulmine,
+    // quindi disegnarli sopra sarebbe ridondante. Li saltiamo quando lo
+    // sfondo e' caricato. Manteniamo invece menuTime (usato per la fiammella)
+    // e tutti gli elementi UI (titolo, pergamena, voci).
     static float menuTime = 0.f;
     menuTime += 0.016f;
-    for (int layer = 0; layer < 3; layer++) {
-        sf::Color fogCol = (layer == 0) ? sf::Color(80, 40, 120, 60) :
-                           (layer == 1) ? sf::Color(60, 70, 130, 50) :
-                                          sf::Color(40, 50, 100, 40);
-        float yBase = WINDOW_HEIGHT - 180.f + layer * 30.f;
-        for (int x = 0; x < WINDOW_WIDTH; x += 16) {
-            float y = yBase + sinf(menuTime * 0.5f + (float)x * 0.01f + (float)layer) * 15.f;
-            sf::CircleShape fog(40.f);
-            fog.setFillColor(fogCol);
-            fog.setPosition((float)x - 40.f, y - 40.f);
-            window.draw(fog);
+
+    if (!bgMenuLoaded) {
+        // --- Stelle: seed fisso per layout stabile ---
+        srand(42);
+        for(int i=0; i<140; i++) {
+            // Stelle leggermente variate: alcune grandi, altre piccole
+            float radius = 0.8f + (rand() % 30) * 0.05f;
+            sf::CircleShape star(radius);
+            // Colore: bianco/giallo/azzurro per dare profondita' al cielo
+            sf::Uint8 br = 150 + (sf::Uint8)(rand() % 105);
+            int tint = rand() % 3;
+            sf::Color col = (tint == 0) ? sf::Color(255, 255, 220, br) :
+                            (tint == 1) ? sf::Color(200, 220, 255, br) :
+                                          sf::Color(255, 240, 200, br);
+            star.setFillColor(col);
+            star.setPosition((float)(rand()%WINDOW_WIDTH), (float)(rand()%(WINDOW_HEIGHT - 200)));
+            window.draw(star);
+            // Aggiungi un piccolo "cross" di luce alle stelle piu' grandi
+            if (radius > 1.8f) {
+                sf::RectangleShape cross1(sf::Vector2f(radius * 5.f, 1.f));
+                cross1.setFillColor(sf::Color(255, 255, 200, br / 3));
+                cross1.setPosition(star.getPosition().x - radius * 2.f, star.getPosition().y + radius * 0.5f);
+                window.draw(cross1);
+                sf::RectangleShape cross2(sf::Vector2f(1.f, radius * 5.f));
+                cross2.setFillColor(sf::Color(255, 255, 200, br / 3));
+                cross2.setPosition(star.getPosition().x + radius * 0.5f, star.getPosition().y - radius * 2.f);
+                window.draw(cross2);
+            }
         }
-    }
+        // Ripristina il seed randomico per il resto del gioco
+        srand((unsigned int)time(NULL));
 
-    // --- Luna con alone luminoso e due crateri ---
-    // Alone esterno: grande cerchio semitrasparente giallo-avorio
-    sf::CircleShape moonGlow(140.f);
-    moonGlow.setFillColor(sf::Color(230, 230, 180, 40));
-    moonGlow.setPosition(WINDOW_WIDTH - 240.f, 40.f);
-    window.draw(moonGlow);
-    sf::CircleShape moonGlow2(110.f);
-    moonGlow2.setFillColor(sf::Color(240, 240, 200, 60));
-    moonGlow2.setPosition(WINDOW_WIDTH - 210.f, 70.f);
-    window.draw(moonGlow2);
-    // Luna piena
-    sf::CircleShape moon(80.f);
-    moon.setFillColor(sf::Color(240, 240, 200));
-    moon.setOutlineThickness(4.f);
-    moon.setOutlineColor(sf::Color(200, 200, 150));
-    moon.setPosition(WINDOW_WIDTH - 200.f, 100.f);
-    window.draw(moon);
-    // Crateri
-    sf::CircleShape crater1(10.f); crater1.setFillColor(sf::Color(210, 210, 160));
-    crater1.setPosition(WINDOW_WIDTH - 160.f, 140.f); window.draw(crater1);
-    crater1.setPosition(WINDOW_WIDTH - 180.f, 180.f); window.draw(crater1);
-    crater1.setRadius(6.f); crater1.setPosition(WINDOW_WIDTH - 140.f, 170.f); window.draw(crater1);
+        // --- Nebbia bassa: onde semitrasparenti viola/azzurre ---
+        // 3 strati di nebbia che fluttuano lentamente con animazione sinusoidale.
+        for (int layer = 0; layer < 3; layer++) {
+            sf::Color fogCol = (layer == 0) ? sf::Color(80, 40, 120, 60) :
+                               (layer == 1) ? sf::Color(60, 70, 130, 50) :
+                                              sf::Color(40, 50, 100, 40);
+            float yBase = WINDOW_HEIGHT - 180.f + layer * 30.f;
+            for (int x = 0; x < WINDOW_WIDTH; x += 16) {
+                float y = yBase + sinf(menuTime * 0.5f + (float)x * 0.01f + (float)layer) * 15.f;
+                sf::CircleShape fog(40.f);
+                fog.setFillColor(fogCol);
+                fog.setPosition((float)x - 40.f, y - 40.f);
+                window.draw(fog);
+            }
+        }
 
-    // --- Effetto fulmine: flash bianco che si dissolve + saetta verticale a zigzag ---
-    if (lightningTimer > 0) {
-        sf::RectangleShape flash(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
-        // Intensita' proporzionale al tempo residuo (fade out)
-        flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)(150 * (lightningTimer / 10.f))));
-        window.draw(flash);
-        // Disegna il fulmine solo nei primi 5 frame (parte alta durata)
-        if (lightningTimer > 5) {
-            sf::Color lightningCol(255, 255, 200);
-            float lx = WINDOW_WIDTH / 2.0f + (float)(rand()%400 - 200);
-            for (int i = 0; i < 6; i++) {
-                sf::RectangleShape line(sf::Vector2f(6.f, 100.f));
-                line.setFillColor(lightningCol);
-                line.setPosition(lx, i * 100.f);
-                line.rotate((float)(rand()%30 - 15));  // inclinazione casuale per zigzag
-                window.draw(line);
-                lx += (rand()%100 - 50);
+        // --- Luna con alone luminoso e due crateri ---
+        // Alone esterno: grande cerchio semitrasparente giallo-avorio
+        sf::CircleShape moonGlow(140.f);
+        moonGlow.setFillColor(sf::Color(230, 230, 180, 40));
+        moonGlow.setPosition(WINDOW_WIDTH - 240.f, 40.f);
+        window.draw(moonGlow);
+        sf::CircleShape moonGlow2(110.f);
+        moonGlow2.setFillColor(sf::Color(240, 240, 200, 60));
+        moonGlow2.setPosition(WINDOW_WIDTH - 210.f, 70.f);
+        window.draw(moonGlow2);
+        // Luna piena
+        sf::CircleShape moon(80.f);
+        moon.setFillColor(sf::Color(240, 240, 200));
+        moon.setOutlineThickness(4.f);
+        moon.setOutlineColor(sf::Color(200, 200, 150));
+        moon.setPosition(WINDOW_WIDTH - 200.f, 100.f);
+        window.draw(moon);
+        // Crateri
+        sf::CircleShape crater1(10.f); crater1.setFillColor(sf::Color(210, 210, 160));
+        crater1.setPosition(WINDOW_WIDTH - 160.f, 140.f); window.draw(crater1);
+        crater1.setPosition(WINDOW_WIDTH - 180.f, 180.f); window.draw(crater1);
+        crater1.setRadius(6.f); crater1.setPosition(WINDOW_WIDTH - 140.f, 170.f); window.draw(crater1);
+
+        // --- Effetto fulmine: flash bianco che si dissolve + saetta verticale a zigzag ---
+        if (lightningTimer > 0) {
+            sf::RectangleShape flash(sf::Vector2f(WINDOW_WIDTH, WINDOW_HEIGHT));
+            // Intensita' proporzionale al tempo residuo (fade out)
+            flash.setFillColor(sf::Color(255, 255, 255, (sf::Uint8)(150 * (lightningTimer / 10.f))));
+            window.draw(flash);
+            // Disegna il fulmine solo nei primi 5 frame (parte alta durata)
+            if (lightningTimer > 5) {
+                sf::Color lightningCol(255, 255, 200);
+                float lx = WINDOW_WIDTH / 2.0f + (float)(rand()%400 - 200);
+                for (int i = 0; i < 6; i++) {
+                    sf::RectangleShape line(sf::Vector2f(6.f, 100.f));
+                    line.setFillColor(lightningCol);
+                    line.setPosition(lx, i * 100.f);
+                    line.rotate((float)(rand()%30 - 15));  // inclinazione casuale per zigzag
+                    window.draw(line);
+                    lx += (rand()%100 - 50);
+                }
             }
         }
     }
