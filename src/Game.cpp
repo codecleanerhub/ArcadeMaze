@@ -7744,30 +7744,28 @@ void Game::startGameAfterSelectPlayer() {
 
 // ---------------------------------------------------------------------------
 // startDemoMode: avvia la modalita' demo automatica.
-//   * Imposta 2 giocatori
-//   * Sceglie personaggi casuali per P1 e P2
+//   * Imposta 1 giocatore (solo P1, controllato dal computer)
+//   * Sceglie un personaggio casuale per P1
 //   * Sceglie casualmente se partire dal labirinto o dalla stanza del boss
-//   * Imposta il timer di durata a 2 minuti (120000 ms)
+//   * Imposta il timer di durata a 30 secondi (30000 ms)
 //   * Passa allo stato STATE_DEMO (che usa lo stesso codice di STATE_PLAYING
-//     o STATE_BOSS, ma con AI che controlla P1 e P2)
+//     o STATE_BOSS, ma con AI che controlla P1)
 // ---------------------------------------------------------------------------
 void Game::startDemoMode() {
-    // Forza modalita' 2 giocatori per la demo
-    numPlayers = 2;
+    // Modalita' 1 giocatore per la demo (solo P1, controllato dal computer)
+    numPlayers = 1;
 
-    // Personaggi casuali per P1 e P2 (8 personaggi totali)
+    // Personaggio casuale per P1 (8 personaggi totali)
     player1Character = (CharacterType)(rand() % CHARACTER_TYPE_COUNT);
-    player2Character = (CharacterType)(rand() % CHARACTER_TYPE_COUNT);
 
     // Sceglie casualmente se iniziare dal labirinto o dal boss
     demoIsBoss = (rand() % 2 == 0);
 
-    // Applica i personaggi ai player
+    // Applica il personaggio al player
     player.setCharacter(player1Character, 1);
-    player2.setCharacter(player2Character, 2);
 
-    // Imposta il timer di durata demo a 2 minuti (120000 ms)
-    demoDurationTimer = 120000;
+    // Imposta il timer di durata demo a 30 secondi (30000 ms)
+    demoDurationTimer = 30000;
 
     // Reset AI timers
     demoAiTimerP1 = 0;
@@ -7958,7 +7956,7 @@ void Game::updateDemoMode() {
 }
 
 // ---------------------------------------------------------------------------
-// drawDemoOverlay: disegna la scritta "DEMO MODE" in alto a sinistra,
+// drawDemoOverlay: disegna la scritta "DEMO MODE" in basso al centro,
 // rossa e intermittente, in stile fantasy (con contorno nero).
 // L'intermittenza e' data da sinf(time * 5) che oscilla tra -1 e 1.
 // ---------------------------------------------------------------------------
@@ -7969,9 +7967,10 @@ void Game::drawDemoOverlay(sf::RenderTarget& target) {
     float pulse = (sinf(demoOverlayTime * 5.f) + 1.f) * 0.5f;  // 0..1
     int alpha = (int)(100 + pulse * 155);  // 100..255
     sf::Color demoColor(255, 40, 40, (sf::Uint8)alpha);
-    // Titolo "DEMO MODE" in alto a sinistra, scala 4
-    drawTextOutlined(target, "DEMO MODE", 20, 20, 4, demoColor);
-    // Sotto-titolo: "PRESS ANY KEY TO EXIT" (piu' piccolo)
+    // Titolo "DEMO MODE" in basso al centro, scala 4
+    // WINDOW_WIDTH/2 = centro orizzontale, WINDOW_HEIGHT - 60 = in basso
+    drawTextCenteredOutlined(target, "DEMO MODE", WINDOW_WIDTH/2, WINDOW_HEIGHT - 60, 4, demoColor);
+    // Sotto-titolo: "PRESS ANY KEY TO EXIT" (piu' piccolo, sotto al titolo)
     sf::Color subColor(255, 200, 200, (sf::Uint8)alpha);
-    drawText(target, "PRESS ANY KEY TO EXIT", 20, 60, 2, subColor);
+    drawTextCentered(target, "PRESS ANY KEY TO EXIT", WINDOW_WIDTH/2, WINDOW_HEIGHT - 24, 2, subColor);
 }
