@@ -69,6 +69,15 @@ struct Config {
     int key2_shoot = sf::Keyboard::E;
 
     // --- Player 2 (joystick 1) ---
+    // joy2_id: ID del joystick usato da P2. Default 1, ma viene riassegnato
+    // dinamicamente durante STATE_CONFIG_JOY_2 quando P2 preme un pulsante.
+    // Questo e' necessario perche' su Windows, quando P1 ha un controller
+    // XInput, DirectInput enumera anche un "ghost" di P1. Joy:: mappa
+    // joystick ID 1 al ghost di P1 (non al controller P2 reale), quindi
+    // l'ID corretto per P2 puo' essere 2 o superiore. Salvando l'ID
+    // rilevato durante la configurazione, il gameplay usa il joystick
+    // giusto.
+    int joy2_id     = 1;
     int joy2_axis_x = 0;
     int joy2_axis_y = 1;
     int joy2_jump   = -1;  // -1 = non configurato
