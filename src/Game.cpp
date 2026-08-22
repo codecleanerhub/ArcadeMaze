@@ -5437,9 +5437,11 @@ void Game::render() {
         // flicker tra frame. Le torce lungo i muri sono animate con una
         // static float (menuTime pattern gia' usato nel menu principale).
         {
-            // --- Pavimento terra battuta ---
-            // FIX: sfumatura continua (non a quadrati) basata sulla distanza
-            // dal centro della stanza del boss, come fatto per il labirinto.
+            // --- Pavimento terra battuta (gradiente continuo, no quadrati) ---
+            // FIX: disegna il pavimento come un unico gradiente radiale usando
+            // sf::VertexArray con Quads e colori per-vertice. SFML interpola
+            // linearmente i colori tra i vertici, eliminando i bordi dei
+            // quadrati 128x128 che erano visibili prima.
             auto floorHash = [](int c, int r) -> float {
                 unsigned int h = (unsigned int)(c * 73856093u) ^ (unsigned int)(r * 19349663u);
                 h ^= h >> 13;
@@ -5447,37 +5449,65 @@ void Game::render() {
                 h ^= h >> 15;
                 return (float)(h & 0xFFFFu) / 65535.f;
             };
-            const int cellSize = 128;
             const int playTop = UI_HEIGHT;
             const int playH = WINDOW_HEIGHT - UI_HEIGHT;
+            const float playW = (float)WINDOW_WIDTH;
+
+            // Gradiente radiale con VertexArray (colori per-vertice)
+            // IMPORTANTE: il colore viene calcolato per ogni VERTICE in base
+            // alla sua posizione, non per il centro del quad. Solo così i
+            // vertici condivisi tra quad adiacenti hanno lo stesso colore e
+            // l'interpolazione di SFML è continua (senza bordi visibili).
+            const int SEG_X = 9, SEG_Y = 9;  // 9x9 vertici = 8x8 quad
+            float stepX = playW / (SEG_X - 1);
+            float stepY = (float)playH / (SEG_Y - 1);
+            float centerCol = playW / 2.f;
+            float centerRow = (float)playTop + playH / 2.f;
+            sf::VertexArray floorGrad(sf::Quads, (SEG_X - 1) * (SEG_Y - 1) * 4);
+            auto vertexColor = [&](float vx, float vy) -> sf::Color {
+                float dx = (vx - centerCol) / centerCol;
+                float dy = (vy - centerRow) / centerRow;
+                float dist = sqrtf(dx * dx + dy * dy);
+                if (dist > 1.f) dist = 1.f;
+                float brightness = 22.f - dist * 16.f;
+                sf::Uint8 r = (sf::Uint8)std::max(0, std::min(255, (int)(18 + brightness)));
+                sf::Uint8 g = (sf::Uint8)std::max(0, std::min(255, (int)(13 + brightness * 0.7f)));
+                sf::Uint8 b = (sf::Uint8)std::max(0, std::min(255, (int)(10 + brightness * 0.4f)));
+                return sf::Color(r, g, b);
+            };
+            int qi = 0;
+            for (int sy = 0; sy < SEG_Y - 1; ++sy) {
+                for (int sx = 0; sx < SEG_X - 1; ++sx) {
+                    float x0 = sx * stepX;
+                    float y0 = (float)(playTop + sy * stepY);
+                    float x1 = (sx + 1) * stepX;
+                    float y1 = (float)(playTop + (sy + 1) * stepY);
+                    floorGrad[qi].position = sf::Vector2f(x0, y0);
+                    floorGrad[qi].color = vertexColor(x0, y0);
+                    floorGrad[qi + 1].position = sf::Vector2f(x1, y0);
+                    floorGrad[qi + 1].color = vertexColor(x1, y0);
+                    floorGrad[qi + 2].position = sf::Vector2f(x1, y1);
+                    floorGrad[qi + 2].color = vertexColor(x1, y1);
+                    floorGrad[qi + 3].position = sf::Vector2f(x0, y1);
+                    floorGrad[qi + 3].color = vertexColor(x0, y1);
+                    qi += 4;
+                }
+            }
+            window.draw(floorGrad);
+
+            // Ciottoli sparsi sul pavimento (sopra il gradiente, posizioni deterministiche)
+            const int cellSize = 128;
             const int colsFloor = (WINDOW_WIDTH + cellSize - 1) / cellSize;
             const int rowsFloor = (playH + cellSize - 1) / cellSize;
-            // Centro della stanza per il gradiente continuo
-            float centerCol = colsFloor / 2.f;
-            float centerRow = rowsFloor / 2.f;
-            for (int fc = 0; fc < colsFloor; fc++) {
-                for (int fr = 0; fr < rowsFloor; fr++) {
-                    float fx = (float)(fc * cellSize);
-                    float fy = (float)(playTop + fr * cellSize);
-                    // Gradiente continuo: piu' chiaro al centro, scuro ai bordi
-                    float dx = (fc - centerCol) / centerCol;
-                    float dy = (fr - centerRow) / centerRow;
-                    float dist = sqrtf(dx * dx + dy * dy);
-                    dist = std::min(1.f, dist);
-                    float brightness = 22.f - dist * 16.f;  // 22 centro, 6 bordi
-                    sf::Uint8 bgr = (sf::Uint8)std::max(0, std::min(255, (int)(18 + brightness)));
-                    sf::Uint8 bgg = (sf::Uint8)std::max(0, std::min(255, (int)(13 + brightness * 0.7f)));
-                    sf::Uint8 bgb = (sf::Uint8)std::max(0, std::min(255, (int)(10 + brightness * 0.4f)));
-                    sf::RectangleShape floorTile(sf::Vector2f((float)cellSize, (float)cellSize));
-                    floorTile.setFillColor(sf::Color(bgr, bgg, bgb));
-                    floorTile.setPosition(fx, fy);
-                    window.draw(floorTile);
-                    // 2-3 ciottoli sparsi sul pavimento per cella
-                    int nPeb = 2 + (int)(floorHash(fc + 200, fr + 100) * 2.f);
+            for (int fc2 = 0; fc2 < colsFloor; fc2++) {
+                for (int fr2 = 0; fr2 < rowsFloor; fr2++) {
+                    float fx = (float)(fc2 * cellSize);
+                    float fy = (float)(playTop + fr2 * cellSize);
+                    int nPeb = 2 + (int)(floorHash(fc2 + 200, fr2 + 100) * 2.f);
                     for (int i = 0; i < nPeb; i++) {
-                        float h1 = floorHash(fc * 17 + i + 100, fr * 3 + i + 50);
-                        float h2 = floorHash(fc * 7 + i + 200, fr * 13 + i + 70);
-                        float h3 = floorHash(fc * 23 + i + 1,  fr * 11 + i + 13);
+                        float h1 = floorHash(fc2 * 17 + i + 100, fr2 * 3 + i + 50);
+                        float h2 = floorHash(fc2 * 7 + i + 200, fr2 * 13 + i + 70);
+                        float h3 = floorHash(fc2 * 23 + i + 1,  fr2 * 11 + i + 13);
                         float px = fx + 8.f + h1 * (cellSize - 16.f);
                         float py = fy + 8.f + h2 * (cellSize - 16.f);
                         float radius = 2.f + h3 * 2.5f;
@@ -5490,9 +5520,9 @@ void Game::render() {
                         window.draw(pebble);
                     }
                     // Macchie di terra scura in ~15% delle celle
-                    if (floorHash(fc + 700, fr + 350) > 0.85f) {
-                        float h1 = floorHash(fc + 800, fr + 400);
-                        float h2 = floorHash(fc + 900, fr + 500);
+                    if (floorHash(fc2 + 700, fr2 + 350) > 0.85f) {
+                        float h1 = floorHash(fc2 + 800, fr2 + 400);
+                        float h2 = floorHash(fc2 + 900, fr2 + 500);
                         float sx = fx + 16.f + h1 * (cellSize - 48.f);
                         float sy = fy + 16.f + h2 * (cellSize - 48.f);
                         sf::CircleShape stain(6.f + h1 * 5.f);

@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <random>
+#include <cmath>
 
 // ===========================================================================
 // Maze.cpp - Implementazione del labirinto.
@@ -289,7 +290,61 @@ void Maze::render(sf::RenderTarget& target) {
     static float animTime = 0.f;
     animTime += 0.016f;
 
-    // Prima passata: celle del labirinto (muri, pavimento, tesori, armi).
+    // --- Gradiente pavimento continuo (no quadrati) ---
+    // FIX: disegna il pavimento come un unico gradiente radiale usando
+    // sf::VertexArray con Quads e colori per-vertice. SFML interpola
+    // linearmente i colori tra i vertici, eliminando i bordi dei quadrati.
+    // Il gradiente copre tutta l'area del labirinto (i muri vengono
+    // disegnati sopra, quindi il pavimento sotto i muri non si vede).
+    //
+    // IMPORTANTE: il colore viene calcolato per ogni VERTICE in base alla
+    // sua posizione, non per il centro del quad. Solo così i vertici
+    // condivisi tra quad adiacenti hanno lo stesso colore e l'interpolazione
+    // è continua (senza bordi visibili).
+    {
+        float cCol = MAZE_COLS / 2.f;
+        float cRow = MAZE_ROWS / 2.f;
+        const int SEG_X = 9, SEG_Y = 9;  // 9x9 vertici = 8x8 quad
+        float stepX = (float)(MAZE_COLS * TILE_SIZE) / (SEG_X - 1);
+        float stepY = (float)(MAZE_ROWS * TILE_SIZE) / (SEG_Y - 1);
+        sf::VertexArray floorGrad(sf::Quads, (SEG_X - 1) * (SEG_Y - 1) * 4);
+        // Funzione helper: colore in base alla posizione (in celle)
+        auto vertexColor = [&](float cx, float cy) -> sf::Color {
+            float dx = (cx - cCol) / cCol;
+            float dy = (cy - cRow) / cRow;
+            float dist = sqrtf(dx * dx + dy * dy);
+            if (dist > 1.f) dist = 1.f;
+            float brightness = 24.f - dist * 18.f;
+            sf::Uint8 r = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.r + brightness)));
+            sf::Uint8 g = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.g + brightness * 0.7f)));
+            sf::Uint8 b = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.b + brightness * 0.4f)));
+            return sf::Color(r, g, b);
+        };
+        int qi = 0;
+        for (int sy = 0; sy < SEG_Y - 1; ++sy) {
+            for (int sx = 0; sx < SEG_X - 1; ++sx) {
+                float x0 = sx * stepX;
+                float y0 = UI_HEIGHT + sy * stepY;
+                float x1 = (sx + 1) * stepX;
+                float y1 = UI_HEIGHT + (sy + 1) * stepY;
+                // Posizione in celle per ogni vertice
+                float cx0 = x0 / TILE_SIZE, cy0 = (y0 - UI_HEIGHT) / TILE_SIZE;
+                float cx1 = x1 / TILE_SIZE, cy1 = (y1 - UI_HEIGHT) / TILE_SIZE;
+                floorGrad[qi].position = sf::Vector2f(x0, y0);
+                floorGrad[qi].color = vertexColor(cx0, cy0);
+                floorGrad[qi + 1].position = sf::Vector2f(x1, y0);
+                floorGrad[qi + 1].color = vertexColor(cx1, cy0);
+                floorGrad[qi + 2].position = sf::Vector2f(x1, y1);
+                floorGrad[qi + 2].color = vertexColor(cx1, cy1);
+                floorGrad[qi + 3].position = sf::Vector2f(x0, y1);
+                floorGrad[qi + 3].color = vertexColor(cx0, cy1);
+                qi += 4;
+            }
+        }
+        target.draw(floorGrad);
+    }
+
+    // Prima passata: celle del labirinto (muri, tesori, armi).
     for (int c = 0; c < MAZE_COLS; ++c) {
         for (int r = 0; r < MAZE_ROWS; ++r) {
             rect.setPosition((float)(c * TILE_SIZE), (float)(r * TILE_SIZE + UI_HEIGHT));
@@ -392,37 +447,17 @@ void Maze::render(sf::RenderTarget& target) {
                 // Ripristina dimensione del rettangolo base per il prossimo tile
                 rect.setSize(sf::Vector2f(TILE_SIZE, TILE_SIZE));
             } else {
-                // --- Pavimento terriccio con sfumatura continua ---
-                // FIX: sostituito il gradiente "a quadrati" (cellHash per-cell)
-                // con una sfumatura continua basata sulla distanza dal centro
-                // del labirinto. Questo elimina i quadrati chiari/scuri visibili
-                // e crea un effetto omogeneo di illuminazione.
+                // --- Pavimento terriccio ---
+                // FIX: il gradiente radiale continuo è già stato disegnato
+                // sopra (sf::VertexArray) prima del loop delle celle. Qui
+                // disegniamo SOLO i dettagli (crepe, ciottoli, macchie)
+                // sopra il gradiente, senza più usare rect per il pavimento.
+                // Questo elimina completamente i quadrati di colore.
                 //
-                // Il colore base del pavimento varia dolcemente in base alla
-                // distanza dal centro: piu' chiaro al centro (illuminazione
-                // centrale), piu' scuro ai bordi (ombra perimetrale).
-
-                // Centro del labirinto
-                float centerCol = MAZE_COLS / 2.f;
-                float centerRow = MAZE_ROWS / 2.f;
-                // Distanza normalizzata (0 = centro, 1 = angolo)
-                float dx = (c - centerCol) / centerCol;
-                float dy = (r - centerRow) / centerRow;
-                float dist = sqrtf(dx * dx + dy * dy);
-                dist = std::min(1.f, dist);  // clamp a [0, 1]
-
-                // Gradiente: piu' chiaro al centro (+24), piu' scuro ai bordi (+6)
-                float brightness = 24.f - dist * 18.f;  // 24 al centro, 6 ai bordi
-                sf::Uint8 fr = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.r + brightness)));
-                sf::Uint8 fg = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.g + brightness * 0.7f)));
-                sf::Uint8 fb = (sf::Uint8)std::max(0, std::min(255, (int)(bgColor.b + brightness * 0.4f)));
-                rect.setFillColor(sf::Color(fr, fg, fb));
-                target.draw(rect);
-
-                // Macchia chiara centrale (gradiente radiale morbido):
-                // un cerchio piu' chiaro al centro del tile che simula la luce
-                // FIX: rimossi i cerchi chiari (lightSpot) che apparivano come
-                // refusi di lanterne sul pavimento.
+                // (Il vecchio codice disegnava rect.setFillColor per ogni
+                // cella, creando quadrati di 48px con colore uniforme che
+                // erano visibili come "mattonelle". Ora il gradiente VertexArray
+                // copre tutta l'area con interpolazione lineare dei colori.)
 
                 // Piccole crepe di terra (terriccio seccato): 1-2 sottilissime
                 // linee scure per cella, posizioni deterministiche. Danno
