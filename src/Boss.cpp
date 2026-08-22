@@ -105,30 +105,30 @@ std::string Boss::getSpriteId(BossType t) {
 }
 
 // ---------------------------------------------------------------------------
-// getBossName: mappa BossType -> nome descrittivo in italiano.
-// Usato per la scritta in alto nella stanza del boss (es. "Boss: Golem").
+// getBossName: mappa BossType -> nome descrittivo in inglese.
+// Usato per la scritta in alto nella stanza del boss (es. "BOSS: Stone Golem").
 // ---------------------------------------------------------------------------
 std::string Boss::getBossName(BossType t) {
     switch (t) {
-        case BOSS_GOLEM:            return "Golem di Pietra";
-        case BOSS_LICH:             return "Lich Necromante";
-        case BOSS_DEMON:            return "Demone degli Abissi";
-        case BOSS_SPIDER:           return "Ragno Gigante";
-        case BOSS_ABOMINATION:      return "Abominazione";
+        case BOSS_GOLEM:            return "Stone Golem";
+        case BOSS_LICH:             return "Lich Necromancer";
+        case BOSS_DEMON:            return "Abyssal Demon";
+        case BOSS_SPIDER:           return "Giant Spider";
+        case BOSS_ABOMINATION:      return "Abomination";
         case BOSS_KRAKEN:           return "Kraken";
-        case BOSS_DRAGON:           return "Drago Antico";
-        case BOSS_WRAITH_LORD:      return "Signore dei Wraith";
-        case BOSS_VAMPIRE:          return "Vampiro Signore";
+        case BOSS_DRAGON:           return "Ancient Dragon";
+        case BOSS_WRAITH_LORD:      return "Wraith Lord";
+        case BOSS_VAMPIRE:          return "Vampire Lord";
         case BOSS_BEHOLDER:         return "Beholder";
-        case BOSS_GHOUL_LORD:       return "Signore dei Ghoul";
-        case BOSS_SPECTRAL_ALPHA:   return "Lupo Alpha Spettrale";
-        case BOSS_CULT_HERALD:      return "Araldo del Culto";
-        case BOSS_COLOSSAL_MIMIC:   return "Mimic Colossale";
-        case BOSS_RAT_KING:         return "Re dei Topi";
-        case BOSS_SUPREME_WITCH:    return "Strega Suprema";
-        case BOSS_TWILIGHT_KNIGHT:  return "Cavaliere del Crepuscolo";
+        case BOSS_GHOUL_LORD:       return "Ghoul Lord";
+        case BOSS_SPECTRAL_ALPHA:   return "Spectral Alpha Wolf";
+        case BOSS_CULT_HERALD:      return "Cult Herald";
+        case BOSS_COLOSSAL_MIMIC:   return "Colossal Mimic";
+        case BOSS_RAT_KING:         return "Rat King";
+        case BOSS_SUPREME_WITCH:    return "Supreme Witch";
+        case BOSS_TWILIGHT_KNIGHT:  return "Twilight Knight";
     }
-    return "Sconosciuto";
+    return "Unknown";
 }
 
 // ---------------------------------------------------------------------------
@@ -197,10 +197,11 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTime
     // Direzione iniziale alternata per evitare pattern sempre uguali
     dx = (lvl % 2 == 0) ? 2 : -2; dy = (lvl % 3 == 0) ? 1 : -1;
     // Speed: crescita LENTA per non rendere i boss ingestibili.
-    // Livello 1: speed 1, Livello 17: speed 5, cap 5.
-    // (prima era 1 + lvl/2 = 9 al lvl 17, capped a 8: troppo veloce)
-    speed = 1 + lvl / 4;
-    if (speed > 5) speed = 5;
+    // FIX: il boss non deve essere piu' veloce del player (player speed = 2
+    // base, 3 con speed boost). Cap a 2 (stessa velocita' del player base).
+    // (prima era 1 + lvl/4 = 5 al lvl 17, capped a 5: troppo veloce)
+    speed = 1 + lvl / 8;
+    if (speed > 2) speed = 2;
     health = 50 + lvl * 20; maxHealth = health;
     // Tipo ciclico sui 17 tipi disponibili
     type = static_cast<BossType>((lvl - 1) % BOSS_TYPE_COUNT);

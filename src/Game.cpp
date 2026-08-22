@@ -1138,10 +1138,12 @@ void Game::update() {
 
     // --- Polling joystick per stati menu/continues/win/lose ---
     // FIX DEFINITIVO: usa sf::Joystick su tutte le piattaforme.
-    // CONTINUES: pulsante jump = conferma, pulsante shoot = toggle
+    // CONTINUES: pulsante jump = conferma, pulsante shoot = toggle,
+    // asse X (sinistra/destra) = toggle YES/NO (come le frecce tastiera).
     if (state == STATE_CONTINUES && sf::Joystick::isConnected(0) && config.joy_jump >= 0) {
         static bool contJoyBtn = false;
         static bool contShootBtn = false;
+        static bool contJoyMovedX = false;
         bool jumpPressed = sf::Joystick::isButtonPressed(0, (unsigned)config.joy_jump);
         bool shootPressed = (config.joy_shoot >= 0) ? sf::Joystick::isButtonPressed(0, (unsigned)config.joy_shoot) : false;
         if (jumpPressed && !contJoyBtn) {
@@ -1162,6 +1164,31 @@ void Game::update() {
             continuesChoice = !continuesChoice;
             audio.playSound(SOUND_MENU_SELECT);
         } else if (!shootPressed) contShootBtn = false;
+        // Toggle YES/NO con asse X (sinistra/destra) del joystick P1 o P2.
+        // Stessa logica delle frecce tastiera Left/Right.
+        float xP1 = 0.f;
+        if (sf::Joystick::isConnected(0)) {
+            xP1 = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+            if (fabs(xP1) < 0.1f) {
+                float povX = sf::Joystick::getAxisPosition(0, sf::Joystick::PovX);
+                if (fabs(povX) > 0.1f) xP1 = povX;
+            }
+        }
+        float xP2 = 0.f;
+        unsigned int p2JoyId = (config.joy2_id > 0) ? (unsigned int)config.joy2_id : 1;
+        if (sf::Joystick::isConnected(p2JoyId)) {
+            xP2 = sf::Joystick::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
+            if (fabs(xP2) < 0.1f) {
+                float povX = sf::Joystick::getAxisPosition(p2JoyId, sf::Joystick::PovX);
+                if (fabs(povX) > 0.1f) xP2 = povX;
+            }
+        }
+        float x = (fabs(xP2) > fabs(xP1)) ? xP2 : xP1;
+        if (fabs(x) > 50 && !contJoyMovedX) {
+            contJoyMovedX = true;
+            continuesChoice = !continuesChoice;
+            audio.playSound(SOUND_MENU_SELECT);
+        } else if (fabs(x) < 20) contJoyMovedX = false;
     }
     // WIN/LOSE: pulsante jump = torna al menu
     if ((state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) &&

@@ -187,7 +187,7 @@ Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shoo
     if (type == ENEMY_ZOMBIE)          { speed = 1; health = 4; maxHealth = 4; }
     else if (type == ENEMY_SKELETON)   { speed = 2; health = 2; maxHealth = 2; }
     else if (type == ENEMY_GHOST)      { speed = 2; health = 1; maxHealth = 1; }
-    else if (type == ENEMY_BAT)        { speed = 3; health = 1; maxHealth = 1; }
+    else if (type == ENEMY_BAT)        { speed = 2; health = 1; maxHealth = 1; }  // era 3, ridotto a 2 (max = player speed)
     else if (type == ENEMY_SPIDER)     { speed = 2; health = 2; maxHealth = 2; }
     else if (type == ENEMY_SLIME)      { speed = 1; health = 5; maxHealth = 5; }
     else if (type == ENEMY_DEMON)      { speed = 1; health = 5; maxHealth = 5; }
@@ -196,18 +196,18 @@ Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shoo
     else if (type == ENEMY_ORC)        { speed = 1; health = 6; maxHealth = 6; }
     else if (type == ENEMY_WRAITH)     { speed = 2; health = 3; maxHealth = 3; }
     else if (type == ENEMY_GHOUL)      { speed = 2; health = 3; maxHealth = 3; }
-    else if (type == ENEMY_IMP)        { speed = 3; health = 1; maxHealth = 1; }
-    else if (type == ENEMY_RAT)        { speed = 3; health = 2; maxHealth = 2; }
+    else if (type == ENEMY_IMP)        { speed = 2; health = 1; maxHealth = 1; }  // era 3, ridotto a 2 (max = player speed)
+    else if (type == ENEMY_RAT)        { speed = 2; health = 2; maxHealth = 2; }  // era 3, ridotto a 2 (max = player speed)
     else if (type == ENEMY_CULTIST)    { speed = 1; health = 3; maxHealth = 3; }
     // 13 nuovi tipi dal bestiary fantasy horror
     else if (type == ENEMY_MIMIC)          { speed = 1; health = 4; maxHealth = 4; }
-    else if (type == ENEMY_WOLF)           { speed = 3; health = 2; maxHealth = 2; }
+    else if (type == ENEMY_WOLF)           { speed = 2; health = 2; maxHealth = 2; }  // era 3, ridotto a 2 (max = player speed)
     else if (type == ENEMY_WITCH)          { speed = 1; health = 3; maxHealth = 3; }
     else if (type == ENEMY_BONE_GOLEM)     { speed = 1; health = 6; maxHealth = 6; }
     else if (type == ENEMY_ASH_SERPENT)    { speed = 2; health = 2; maxHealth = 2; }
     else if (type == ENEMY_DAMNED_KNIGHT)  { speed = 1; health = 5; maxHealth = 5; }
     else if (type == ENEMY_MAD_WIZARD)     { speed = 1; health = 3; maxHealth = 3; }
-    else if (type == ENEMY_DEMONIC_CROW)   { speed = 3; health = 1; maxHealth = 1; }
+    else if (type == ENEMY_DEMONIC_CROW)   { speed = 2; health = 1; maxHealth = 1; }  // era 3, ridotto a 2 (max = player speed)
     else if (type == ENEMY_TENTACLE)       { speed = 1; health = 3; maxHealth = 3; }
     else if (type == ENEMY_GARGOYLE)       { speed = 1; health = 5; maxHealth = 5; }
     else if (type == ENEMY_WELL_SPIRIT)    { speed = 2; health = 2; maxHealth = 2; }
