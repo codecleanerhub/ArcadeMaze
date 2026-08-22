@@ -169,8 +169,12 @@ public:
     void loadCharacterSprite();
 
     // --- Speed boost (da bonus scarpe alate) ---
-    void activateSpeedBoost() { speedBoostTimer = 5000; }  // 5 secondi
-    bool hasSpeedBoost() const { return speedBoostTimer > 0; }
+    // FIXED: il boost da scarpe alate ora e' PERMANENTE fino alla morte del
+    // player (perdita di tutte le vite). Prima durava 5 secondi (timer).
+    // permanentSpeedBoost survives resetPosition() (cambio livello, respawn
+    // dopo aver perso 1 vita) ma viene azzerato da reset() (morte completa).
+    void activateSpeedBoost() { permanentSpeedBoost = true; }
+    bool hasSpeedBoost() const { return permanentSpeedBoost || speedBoostTimer > 0; }
 
 private:
     sf::Vector2f pos;       // posizione in pixel (centro personaggio)
@@ -187,7 +191,8 @@ private:
     uint32_t jumpTimer, maxJumpTime, damageTimer, shootCooldown;
     uint32_t shootAnimTimer;  // >0 = animazione attacco in corso
     uint32_t animTime;        // tempo accumulato per animazioni idle/walk
-    uint32_t speedBoostTimer; // >0 = speed boost attivo (ms simulati)
+    uint32_t speedBoostTimer; // >0 = speed boost attivo (ms simulati) - per boost temporanei
+    bool permanentSpeedBoost; // true = boost permanente da scarpe alate (fino a morte)
     float jumpOffset;       // altezza visiva del salto (pixel)
 
     // SpriteSheet del giocatore: sprite principale (idle/stand)

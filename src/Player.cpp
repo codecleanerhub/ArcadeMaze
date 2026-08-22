@@ -95,6 +95,7 @@ bool spriteDefaultFacesRight(CharacterType ct) {
 
 // Reset completo (nuova partita): oltre alla posizione, resetta vite,
 // energia, punteggio, soglia prossima vita e arma iniziale (pistola).
+// FIXED: azzera anche permanentSpeedBoost (morte completa = perde il boost).
 void Player::reset() {
     resetPosition();
     lives = 3; maxEnergy = 5; energy = maxEnergy;
@@ -102,10 +103,13 @@ void Player::reset() {
     currentWeapon = Weapon::generate(WPN_PISTOL);
     projectiles.clear();
     pickedWeaponThisFrame = false;
+    permanentSpeedBoost = false;  // morte completa: perde il boost
 }
 
-// Reset solo posizione/stato movimento (mantiene punteggio/vite). Usato
-// all'inizio di ogni livello e dopo aver perso una vita.
+// Reset solo posizione/stato movimento (mantiene punteggio/vite E
+// permanentSpeedBoost). Usato all'inizio di ogni livello e dopo aver perso
+// 1 vita. Il boost da scarpe alate sopravvive a questo reset (l'utente lo
+// raccoglie nel labirinto e lo mantiene nel passaggio labirinto->boss).
 void Player::resetPosition() {
     // Posizione iniziale: centro della cella (1,1) del labirinto.
     pos.x = 1 * TILE_SIZE + TILE_SIZE / 2.0f;
@@ -115,6 +119,9 @@ void Player::resetPosition() {
     shootAnimTimer = 0;
     animTime = 0;
     speedBoostTimer = 0;
+    // NOTA: permanentSpeedBoost NON viene azzerato qui (solo in reset()).
+    // Questo permette al boost di sopravvivere al cambio livello e al
+    // respawn dopo aver perso 1 vita.
     jumpOffset = 0.0f;
 }
 
@@ -210,8 +217,8 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
     // Decrementa speed boost timer
     if (speedBoostTimer > 16) speedBoostTimer -= 16; else speedBoostTimer = 0;
 
-    // Speed effettivo: base 2, con boost diventa 3
-    int effectiveSpeed = (speedBoostTimer > 0) ? (speed + 1) : speed;
+    // Speed effettivo: base 2, con boost (permanente o temporaneo) diventa 3
+    int effectiveSpeed = (permanentSpeedBoost || speedBoostTimer > 0) ? (speed + 1) : speed;
 
     if (freeMovement) {
         // --- Modalita' stanza del boss: movimento libero ---
@@ -457,7 +464,7 @@ void Player::render(sf::RenderTarget& target) {
         }
 
         // Speed boost: effetto discreto (piccoli pixel gialli ai piedi, non cerchio)
-        if (speedBoostTimer > 0) {
+        if (hasSpeedBoost()) {
             sf::Color sparkColor(255, 220, 80, 200);
             for (int i = 0; i < 3; i++) {
                 float sparkX = px + (rand() % 12 - 6);
@@ -509,7 +516,7 @@ void Player::render(sf::RenderTarget& target) {
                                   flipped, walking, bobY);
 
         // Speed boost (stesso del ramo sprite)
-        if (speedBoostTimer > 0) {
+        if (hasSpeedBoost()) {
             sf::Color sparkColor(255, 220, 80, 200);
             for (int i = 0; i < 3; i++) {
                 float sparkX = px + (rand() % 12 - 6);

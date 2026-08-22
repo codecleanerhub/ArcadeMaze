@@ -256,6 +256,90 @@ void Game::startLevel(int lvl) {
             scepter.lightningTimer = 0;
         }
     }
+    // --- Spawn scarpe alate nel labirinto (1 per livello, casuale) ---
+    // Le scarpette appaiono una volta sola per livello in posizione casuale.
+    // In 1P: 1 paio (owner=0, libera). In 2P: 2 paia (owner=1 per P1,
+    // owner=2 per P2). Il boost e' permanente fino alla morte del player
+    // (vedi Player::permanentSpeedBoost), quindi sopravvive al passaggio
+    // labirinto->boss e al respawn dopo aver perso 1 vita.
+    //
+    // NOTA: se il player ha GIA' il boost permanente (raccolto in un livello
+    // precedente e non e' ancora morto), NON spawniamo le scarpette perche'
+    // sarebbero inutili. Questo evita clutter visivo.
+    {
+        int mineC = (int)(mine.pos.x / TILE_SIZE);
+        int mineR = (int)((mine.pos.y - UI_HEIGHT) / TILE_SIZE);
+        int chalC = chalice.active ? (int)(chalice.pos.x / TILE_SIZE) : -1;
+        int chalR = chalice.active ? (int)((chalice.pos.y - UI_HEIGHT) / TILE_SIZE) : -1;
+        int sceptC = scepter.active ? (int)(scepter.pos.x / TILE_SIZE) : -1;
+        int sceptR = scepter.active ? (int)((scepter.pos.y - UI_HEIGHT) / TILE_SIZE) : -1;
+
+        // Spawn scarpette P1 solo se P1 non ha gia' il boost permanente
+        if (!player.hasSpeedBoost()) {
+            std::vector<Vec2> bootsCells;
+            for (int c = 1; c < MAZE_COLS - 1; c++) {
+                for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                    if (maze.getCellType(c, r) == CELL_EMPTY) {
+                        sf::Vector2f ppos = player.getPixelPos();
+                        int pc = (int)(ppos.x / TILE_SIZE);
+                        int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                        if (abs(c - pc) + abs(r - pr) >= 5
+                            && abs(c - mineC) + abs(r - mineR) >= 4
+                            && abs(c - chalC) + abs(r - chalR) >= 4
+                            && abs(c - sceptC) + abs(r - sceptR) >= 4) {
+                            bootsCells.push_back({c, r});
+                        }
+                    }
+                }
+            }
+            if (!bootsCells.empty()) {
+                Vec2 chosen = bootsCells[rand() % bootsCells.size()];
+                speedBoots.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
+                speedBoots.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                speedBoots.active = true;
+                speedBoots.bobOffset = 0.f;
+                speedBoots.owner = (numPlayers == 2) ? 1 : 0;
+            } else {
+                speedBoots.active = false;
+            }
+        } else {
+            speedBoots.active = false;
+        }
+        // Spawn scarpette P2 (solo 2P, solo se P2 non ha gia' il boost)
+        if (numPlayers == 2 && !player2.hasSpeedBoost()) {
+            int boots1C = speedBoots.active ? (int)(speedBoots.pos.x / TILE_SIZE) : -1;
+            int boots1R = speedBoots.active ? (int)((speedBoots.pos.y - UI_HEIGHT) / TILE_SIZE) : -1;
+            std::vector<Vec2> boots2Cells;
+            for (int c = 1; c < MAZE_COLS - 1; c++) {
+                for (int r = 1; r < MAZE_ROWS - 1; r++) {
+                    if (maze.getCellType(c, r) == CELL_EMPTY) {
+                        sf::Vector2f ppos = player2.getPixelPos();
+                        int pc = (int)(ppos.x / TILE_SIZE);
+                        int pr = (int)((ppos.y - UI_HEIGHT) / TILE_SIZE);
+                        if (abs(c - pc) + abs(r - pr) >= 5
+                            && abs(c - mineC) + abs(r - mineR) >= 4
+                            && abs(c - chalC) + abs(r - chalR) >= 4
+                            && abs(c - sceptC) + abs(r - sceptR) >= 4
+                            && abs(c - boots1C) + abs(r - boots1R) >= 4) {
+                            boots2Cells.push_back({c, r});
+                        }
+                    }
+                }
+            }
+            if (!boots2Cells.empty()) {
+                Vec2 chosen = boots2Cells[rand() % boots2Cells.size()];
+                speedBoots2.pos.x = chosen.x * TILE_SIZE + TILE_SIZE / 2.f;
+                speedBoots2.pos.y = chosen.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+                speedBoots2.active = true;
+                speedBoots2.bobOffset = 0.f;
+                speedBoots2.owner = 2;
+            } else {
+                speedBoots2.active = false;
+            }
+        } else {
+            speedBoots2.active = false;
+        }
+    }
     state = STATE_PLAYING;
     if (musicEnabled) audio.playLevelMusic(currentLevel, false);
 }
@@ -1932,6 +2016,43 @@ void Game::update() {
                 for (int i = 0; i < 20; i++)
                     particles.push_back({chalice.pos, {(float)(rand()%8-4), (float)(rand()%8-4)},
                         sf::Color(255, 215, 0), 40, 40});
+            }
+        }
+
+        // --- Aggiornamento scarpe alate (speed boost) nel labirinto ---
+        // Le scarpette fluttuano e vengono raccolte per proximity.
+        // Il boost e' PERMANENTE fino alla morte del player (vedi
+        // Player::activateSpeedBoost -> permanentSpeedBoost).
+        static float bootsAnimTime = 0.f;
+        bootsAnimTime += 0.016f;
+        if (speedBoots.active) {
+            speedBoots.bobOffset = sinf(bootsAnimTime * 3.f) * 4.f;
+            // Collisione con player1 (owner 0 o 1)
+            float dx1 = player.getPixelPos().x - speedBoots.pos.x;
+            float dy1 = player.getPixelPos().y - speedBoots.pos.y;
+            if (dx1 * dx1 + dy1 * dy1 < 400
+                && (speedBoots.owner == 0 || speedBoots.owner == 1)) {
+                speedBoots.active = false;
+                player.activateSpeedBoost();
+                audio.playSound(SOUND_WEAPON_PICKUP);
+                for (int i = 0; i < 15; i++)
+                    particles.push_back({speedBoots.pos,
+                        {(float)(rand()%6-3), (float)(rand()%6-3)},
+                        sf::Color(255, 220, 80), 30, 30});
+            }
+        }
+        if (numPlayers == 2 && speedBoots2.active) {
+            speedBoots2.bobOffset = sinf(bootsAnimTime * 3.f) * 4.f;
+            float dx2 = player2.getPixelPos().x - speedBoots2.pos.x;
+            float dy2 = player2.getPixelPos().y - speedBoots2.pos.y;
+            if (dx2 * dx2 + dy2 * dy2 < 400 && speedBoots2.owner == 2) {
+                speedBoots2.active = false;
+                player2.activateSpeedBoost();
+                audio.playSound(SOUND_WEAPON_PICKUP);
+                for (int i = 0; i < 15; i++)
+                    particles.push_back({speedBoots2.pos,
+                        {(float)(rand()%6-3), (float)(rand()%6-3)},
+                        sf::Color(255, 220, 80), 30, 30});
             }
         }
 
@@ -4919,6 +5040,55 @@ void Game::render() {
         if (numPlayers == 2 && player2InvincibleTimer > 0) {
             drawFireAura(window, player2.getPixelPos(), player2InvincibleTimer);
         }
+
+        // --- Rendering delle scarpe alate (speed boost) nel labirinto ---
+        // Le scarpette fluttuano con animazione sinusoidale e aura gialla.
+        // Stesso stile del rendering nella stanza del boss.
+        auto drawMazeBoots = [&](const SpeedBootsBonus& boots) {
+            if (!boots.active) return;
+            float bx = boots.pos.x;
+            float by = boots.pos.y + boots.bobOffset;
+            // Aura gialla pulsante
+            sf::CircleShape aura(18.f + sinf(boots.bobOffset * 0.5f) * 3.f);
+            aura.setFillColor(sf::Color(255, 220, 80, 50));
+            aura.setPosition(bx - 18.f, by - 18.f);
+            window.draw(aura);
+            // Scarpa sinistra (stessa forma del rendering boss)
+            sf::ConvexShape boot1;
+            boot1.setPointCount(5);
+            boot1.setPoint(0, sf::Vector2f(bx - 8.f, by - 4.f));
+            boot1.setPoint(1, sf::Vector2f(bx - 4.f, by - 6.f));
+            boot1.setPoint(2, sf::Vector2f(bx - 2.f, by + 2.f));
+            boot1.setPoint(3, sf::Vector2f(bx - 8.f, by + 4.f));
+            boot1.setPoint(4, sf::Vector2f(bx - 10.f, by));
+            boot1.setFillColor(sf::Color(180, 140, 30));
+            boot1.setOutlineThickness(1.f);
+            boot1.setOutlineColor(sf::Color(120, 90, 20));
+            window.draw(boot1);
+            // Scarpa destra (specchiata)
+            sf::ConvexShape boot2;
+            boot2.setPointCount(5);
+            boot2.setPoint(0, sf::Vector2f(bx + 8.f, by - 4.f));
+            boot2.setPoint(1, sf::Vector2f(bx + 4.f, by - 6.f));
+            boot2.setPoint(2, sf::Vector2f(bx + 2.f, by + 2.f));
+            boot2.setPoint(3, sf::Vector2f(bx + 8.f, by + 4.f));
+            boot2.setPoint(4, sf::Vector2f(bx + 10.f, by));
+            boot2.setFillColor(sf::Color(180, 140, 30));
+            boot2.setOutlineThickness(1.f);
+            boot2.setOutlineColor(sf::Color(120, 90, 20));
+            window.draw(boot2);
+            // Ali bianche sopra le scarpe (piccole)
+            sf::ConvexShape wing;
+            wing.setPointCount(4);
+            wing.setPoint(0, sf::Vector2f(bx - 6.f, by - 8.f));
+            wing.setPoint(1, sf::Vector2f(bx + 6.f, by - 8.f));
+            wing.setPoint(2, sf::Vector2f(bx + 4.f, by - 4.f));
+            wing.setPoint(3, sf::Vector2f(bx - 4.f, by - 4.f));
+            wing.setFillColor(sf::Color(240, 240, 240, 200));
+            window.draw(wing);
+        };
+        drawMazeBoots(speedBoots);
+        if (numPlayers == 2) drawMazeBoots(speedBoots2);
 
         // --- Rendering della mina ---
         if (mine.active) {
