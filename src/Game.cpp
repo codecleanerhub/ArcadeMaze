@@ -8043,21 +8043,31 @@ void Game::render() {
 
 // Didascalie per ogni immagine dell'intro (4 immagini, 3 vignette l'una).
 // Mostrate in basso allo schermo, stile voce fuori campo/narratore.
+// Scritte in italiano letterario, tono epico-tragico, per pubblico adulto
+// amante di storie alla "Signore degli Anelli".
 static const char* INTRO_CAPTIONS[] = {
-    "Ottobre 1937. La spedizione Greco-Moreau cerco' l'Isola che non appare sulle mappe...\n"
-    "Ma la tempesta ci scelse prima noi.\n"
-    "L'Isola ci accolse con scogliere nere e una giungla che non voleva finire mai.",
+    "Ottobre del 1937. La spedizione Greco-Moreau solcava i cieli dell'Oceano\n"
+    "alla ricerca dell'Isola che non appare su alcuna mappa.\n"
+    "Fummo noi a scegliere la rotta. Fu la tempesta a scegliere noi.\n"
+    "L'Isola ci accolse con scogliere nere come il ferro e una giungla\n"
+    "cosi' fitta che il sole non riusciva a penetrarla.",
 
-    "Marciavamo verso la montagna. Qualcosa ci chiamava. E qualcosa ci guardava.\n"
-    "Una fossa. Una scalinata. Rune che Mara riconobbe dal Libro dei Morti.\n"
-    "La via del cielo ci si chiuse alle spalle. Non c'era ritorno.",
+    "Marciavamo verso la montagna, attratti da un richiamo che non aveva voce\n"
+    "ma che sentivamo nelle ossa. E qualcosa, tra le foglie, ci guardava.\n"
+    "Ai piedi del monte trovammo una fossa, una scalinata, e rune che Mara\n"
+    "riconobbe dal Libro dei Morti. Scendemmo. E la montagna, alle nostre\n"
+    "spalle, si richiuse per sempre. Non c'era piu' ritorno.",
 
-    "Sotto la montagna ci aspettava un labirinto. E nei suoi corridoi, ricchezze... e affamati.\n"
-    "I morti camminavano. E non erano i peggiori.\n"
-    "Il Calice. Mara disse che poteva renderci immortali. Per un poco.",
+    "Sotto il monte ci attendeva un labirinto, antico e spietato, le cui\n"
+    "pareti custodivano tesori e creature affamate. I morti camminavano\n"
+    "nei suoi corridoi, e non erano la peggiore delle minacce. Trovammo\n"
+    "un Calice d'oro, e Mara disse che poteva renderci immortali.\n"
+    "Ma solo per un poco, e a caro prezzo.",
 
-    "Non eravamo soli. Altri cercavano una via d'uscita. Il Mago ne conosceva una... oltre i diciassette Guardiani.\n"
-    "Diciassette Guardiani. Diciassette chiavi. Solo sconfiggendoli tutti la montagna ci avrebbe lasciati andare.\n"
+    "Non eravamo soli. Altri, in cerca di una via, vagavano in quelle\n"
+    "sale di pietra. Un Mago ne conosceva una, ma oltre i Diciassette\n"
+    "Guardiani: altrettante chiavi, altrettante prove. Solo sconfiggendoli\n"
+    "tutti la montagna ci avrebbe restituiti al cielo.\n"
     "Che l'avventura abbia inizio."
 };
 
@@ -8074,10 +8084,12 @@ void Game::startIntro() {
     introCurrentFrame = 0;
     introFrameTimer = 60000;  // 60 secondi (1 minuto) per la prima immagine
     introSkipKeyHeld = false;
-    // Musica epica/tragica per l'intro: usa la traccia del menu' (corale
-    // fantasy) se la musica e' attiva. In futuro si puo' aggiungere una
-    // traccia dedicata TRACK_EPIC_INTRO.
-    if (musicEnabled) audio.playMenuMusic();
+    // Musica epica/tragica per l'intro: SEMPRE attiva, anche se l'opzione
+    // musica del gioco e' su OFF. La musica dell'intro e' slegata dalla
+    // opzione musicEnabled perche' fa parte dell'esperienza narrativa.
+    // Usa la traccia del menu' (corale fantasy). In futuro si puo' aggiungere
+    // una traccia dedicata TRACK_EPIC_INTRO.
+    audio.playMenuMusic();
 }
 
 // ---------------------------------------------------------------------------
@@ -8168,15 +8180,20 @@ void Game::drawIntro() {
     // Sfondo nero (in caso l'immagine non copra tutto)
     window.clear(sf::Color(0, 0, 0));
 
-    // Disegna l'immagine corrente se caricata
+    // Disegna l'immagine corrente se caricata.
+    // FIX: usa "contain fit" (l'immagine viene scalata per stare INTERAMENTE
+    // nella finestra, con barre nere sui lati). Prima usava "cover fit" che
+    // ritagliava i lati dell'immagine 1344x768 nella finestra quadrata 1024x1024,
+    // nascondendo le vignette laterali. Ora l'immagine completa e' visibile.
     if (introCurrentFrame >= 0 && introCurrentFrame < 4 && introLoaded[introCurrentFrame]) {
         sf::Sprite imgSprite(introTextures[introCurrentFrame]);
         sf::Vector2u texSize = introTextures[introCurrentFrame].getSize();
         if (texSize.x > 0 && texSize.y > 0) {
-            // Cover fit: la dimensione piu' piccola copre la finestra
+            // Contain fit: la dimensione piu' GRANDE determina la scala,
+            // cosi' l'immagine intera rientra nella finestra (barre nere ai lati)
             float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
             float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
-            float scale = (scaleX > scaleY) ? scaleX : scaleY;
+            float scale = (scaleX < scaleY) ? scaleX : scaleY;
             imgSprite.setScale(scale, scale);
             imgSprite.setPosition(
                 (WINDOW_WIDTH - texSize.x * scale) / 2.f,
@@ -8186,9 +8203,10 @@ void Game::drawIntro() {
     }
 
     // --- Overlay scuro in basso per leggibilita' della didascalia ---
-    sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, 180.f));
-    overlay.setFillColor(sf::Color(0, 0, 0, 180));
-    overlay.setPosition(0.f, WINDOW_HEIGHT - 180.f);
+    // Aumentato a 240px per ospitare le didascalie piu' lunghe (4-5 righe).
+    sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, 240.f));
+    overlay.setFillColor(sf::Color(0, 0, 0, 200));
+    overlay.setPosition(0.f, WINDOW_HEIGHT - 240.f);
     window.draw(overlay);
 
     // --- Didascalia (testo narratore) ---
@@ -8198,7 +8216,7 @@ void Game::drawIntro() {
         const char* caption = INTRO_CAPTIONS[introCurrentFrame];
         // Disegna ogni riga separatamente (split su \n)
         std::string text(caption);
-        int y = WINDOW_HEIGHT - 160;
+        int y = WINDOW_HEIGHT - 220;
         size_t pos = 0;
         while (pos < text.size()) {
             size_t nl = text.find('\n', pos);
