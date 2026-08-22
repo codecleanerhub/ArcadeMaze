@@ -78,6 +78,10 @@ public:
     int getHealth() const { return health; }
     int getMaxHealth() const { return maxHealth; }
 
+    // Mappa BossType -> nome descrittivo (es. "Golem di Pietra", "Lich").
+    // Usato per la scritta in alto nella stanza del boss.
+    static std::string getBossName(BossType t);
+
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei boss dalla cartella data. Da chiamare una
     // volta in Game::init(). I file mancanti vengono saltati: il render

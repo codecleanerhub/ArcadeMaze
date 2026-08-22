@@ -785,6 +785,49 @@ void Game::update() {
             menuActivity = true;
         } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
 
+        // --- Navigazione sx/dx: modifica opzione selezionata ---
+        // P1 OR P2 possono cambiare il valore dell'opzione (players, game
+        // mode, music, test mode) muovendo il joystick a sinistra o destra.
+        // Stessa logica della tastiera (Left/Right).
+        float xP1 = 0.f;
+        if (sf::Joystick::isConnected(0)) {
+            xP1 = sf::Joystick::getAxisPosition(0, (sf::Joystick::Axis)config.joy_axis_x);
+            if (fabs(xP1) < 0.1f) {
+                float povX = sf::Joystick::getAxisPosition(0, sf::Joystick::PovX);
+                if (fabs(povX) > 0.1f) xP1 = povX;
+            }
+        }
+        float xP2 = 0.f;
+        if (sf::Joystick::isConnected(p2JoyId)) {
+            xP2 = sf::Joystick::getAxisPosition(p2JoyId, (sf::Joystick::Axis)config.joy2_axis_x);
+            if (fabs(xP2) < 0.1f) {
+                float povX = sf::Joystick::getAxisPosition(p2JoyId, sf::Joystick::PovX);
+                if (fabs(povX) > 0.1f) xP2 = povX;
+            }
+        }
+        float x = (fabs(xP2) > fabs(xP1)) ? xP2 : xP1;
+        static bool joyMovedX = false;
+        if (fabs(x) > 50 && !joyMovedX) {
+            joyMovedX = true;
+            menuActivity = true;
+            audio.playSound(SOUND_MENU_SELECT);
+            bool goLeft = (x < 0);
+            // Stessa logica della tastiera: modifica l'opzione selezionata
+            if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
+            else if (menuItemIndex == 1) gameMode = (gameMode == MODE_STORY) ? MODE_INFINITE : MODE_STORY;
+            else if (menuItemIndex == 2) {
+                musicEnabled = !musicEnabled;
+                if (musicEnabled) audio.playMenuMusic();
+                else audio.stopMusic();
+            }
+#ifdef TEST_MODE_FEATURE
+            else if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
+#endif
+            // goLeft e goRight hanno lo stesso effetto su tutte le opzioni
+            // (sono toggle), ma lo usiamo per futura estensione
+            (void)goLeft;
+        } else if (fabs(x) < 20) joyMovedX = false;
+
         // Fulmine casuale: ~5/600 di probabilita' per frame, durata 10 frame
         if (rand() % 600 < 5) lightningTimer = 10;
         if (lightningTimer > 0) lightningTimer--;
@@ -1541,14 +1584,20 @@ void Game::update() {
         }
 
         // Transizioni di stato: morte -> continues (se crediti) o lose
+        // FIX DEMO MODE: in demo mode, se il player muore, NON andare ai
+        // continues. Torna direttamente al menu principale.
         if (numPlayers == 1 && player.getLives() <= 0) {
-            if (continuesLeft > 0) {
+            if (state == STATE_DEMO) {
+                stopDemoMode();
+            } else if (continuesLeft > 0) {
                 state = STATE_CONTINUES; diedInBoss = false;
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
         }
         if (numPlayers == 2 && player.getLives() <= 0 && player2.getLives() <= 0) {
-            if (continuesLeft > 0) {
+            if (state == STATE_DEMO) {
+                stopDemoMode();
+            } else if (continuesLeft > 0) {
                 state = STATE_CONTINUES; diedInBoss = false;
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
@@ -2759,9 +2808,13 @@ void Game::update() {
         // In 1P: GAME OVER quando il player 1 muore.
         // In 2P: GAME OVER quando ENTRAMBI i giocatori sono morti (uno dei due
         // puo' continuare a giocare da solo finche' ha vite).
+        // FIX DEMO MODE: in demo mode, se il player muore nel boss, NON
+        // andare ai continues. Torna direttamente al menu principale.
         if (player.getLives() <= 0
             && (numPlayers == 1 || player2.getLives() <= 0)) {
-            if (continuesLeft > 0) {
+            if (state == STATE_DEMO) {
+                stopDemoMode();
+            } else if (continuesLeft > 0) {
                 state = STATE_CONTINUES; diedInBoss = true;
                 continuesTimer = 10; continuesTimerMs = 0; continuesChoice = true;
             } else state = STATE_LOSE;
@@ -7622,8 +7675,12 @@ void Game::render() {
             drawFireAura(window, player2.getPixelPos(), player2InvincibleTimer);
         }
 
-        // Etichetta del livello boss in alto
-        drawTextCenteredOutlined(window, "BOSS LEVEL " + std::to_string(currentLevel), WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
+        // Etichetta del boss in alto: mostra solo il nome del boss
+        // (es. "Boss: Golem di Pietra") invece del numero di livello.
+        if (boss) {
+            std::string bossName = Boss::getBossName(boss->getType());
+            drawTextCenteredOutlined(window, "BOSS: " + bossName, WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
+        }
     }
     else if (state == STATE_WIN_STORY) {
         // Sfondo scuro + fuochi d'artificio + messaggi di vittoria
@@ -7892,26 +7949,118 @@ void Game::updateDemoMode() {
         }
     }
 
-    // --- AI Player 1 ---
-    // Cambia direzione ogni ~500ms (30 frame a 60 FPS)
+    // --- AI Player 1 (intelligente) ---
+    // L'AI cerca di giocare come un giocatore reale:
+    //   * Stanza del boss (demoIsBoss=true): insegue il boss e gli spara
+    //   * Labirinto: cerca il nemico piu' vicino e gli spara; se non ci sono
+    //     nemici vivi, cerca il tesoro piu' vicino per raccoglierlo
+    //
+    // La logica di movimento usa le coordinate pixel del player e del target.
+    // Sceglie l'asse (X o Y) con la maggiore differenza e si muove in quella
+    // direzione. Cambia direzione ogni ~400ms per evitare di bloccarsi ai muri
+    // (se bloccato, dopo 400ms prova un'altra direzione).
+
+    // Trova il target: nemico piu' vicino (labirinto) o boss (stanza boss)
+    sf::Vector2f targetPos = player.getPixelPos();  // default: posizione corrente
+    bool hasTarget = false;
+
+    if (demoIsBoss && boss && !boss->isDead()) {
+        // Stanza del boss: il target e' il boss
+        targetPos = boss->getPos();
+        hasTarget = true;
+    } else if (!demoIsBoss) {
+        // Labirinto: cerca il nemico vivo piu' vicino
+        float minDist = 1e9f;
+        for (const auto& enemy : enemies) {
+            if (enemy.isDead() || enemy.isDeathAnimDone()) continue;
+            sf::Vector2f ePos = enemy.getPixelPos();
+            float dx = ePos.x - player.getPixelPos().x;
+            float dy = ePos.y - player.getPixelPos().y;
+            float dist = dx * dx + dy * dy;
+            if (dist < minDist) {
+                minDist = dist;
+                targetPos = ePos;
+                hasTarget = true;
+            }
+        }
+        // Se non ci sono nemici vivi, cerca il tesoro piu' vicino
+        if (!hasTarget) {
+            int pCol = (int)(player.getPixelPos().x / TILE_SIZE);
+            int pRow = (int)((player.getPixelPos().y - UI_HEIGHT) / TILE_SIZE);
+            float minTDist = 1e9f;
+            for (int r = 0; r < MAZE_ROWS; r++) {
+                for (int c = 0; c < MAZE_COLS; c++) {
+                    if (maze.getCellType(c, r) == CELL_TREASURE) {
+                        int dx = c - pCol;
+                        int dy = r - pRow;
+                        float dist = (float)(dx * dx + dy * dy);
+                        if (dist < minTDist) {
+                            minTDist = dist;
+                            // Posizione pixel del tesoro (centro della cella)
+                            targetPos = sf::Vector2f(
+                                c * TILE_SIZE + TILE_SIZE / 2.f,
+                                r * TILE_SIZE + TILE_SIZE / 2.f + UI_HEIGHT);
+                            hasTarget = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Cambia direzione ogni ~400ms (o subito se abbiamo un nuovo target)
     demoAiTimerP1 -= 16;
-    if (demoAiTimerP1 <= 0) {
-        demoAiTimerP1 = 300 + (rand() % 500);  // 300-800ms
-        demoAiDirP1 = rand() % 5;  // 0=fermo, 1=su, 2=giu, 3=sx, 4=dx
+    if (demoAiTimerP1 <= 0 || !hasTarget) {
+        demoAiTimerP1 = 400;  // 400ms prima di ricalcolare
+
+        if (hasTarget) {
+            // Scegli direzione verso il target: asse con differenza maggiore
+            float dx = targetPos.x - player.getPixelPos().x;
+            float dy = targetPos.y - player.getPixelPos().y;
+            if (fabs(dx) > fabs(dy)) {
+                // Movimento orizzontale
+                demoAiDirP1 = (dx > 0) ? 4 : 3;  // 4=dx, 3=sx
+            } else {
+                // Movimento verticale
+                demoAiDirP1 = (dy > 0) ? 2 : 1;  // 2=giu, 1=su
+            }
+            // 20% di probabilita' di scegliere una direzione casuale
+            // (per evitare di bloccarsi in pattern fissi sui muri)
+            if ((rand() % 100) < 20) {
+                demoAiDirP1 = 1 + (rand() % 4);  // 1..4
+            }
+        } else {
+            // Nessun target: direzione casuale
+            demoAiDirP1 = 1 + (rand() % 4);  // 1..4
+        }
     }
     // Applica direzione
     switch (demoAiDirP1) {
-        case 1: player.setDirection(0, -1); break;
-        case 2: player.setDirection(0, 1); break;
-        case 3: player.setDirection(-1, 0); break;
-        case 4: player.setDirection(1, 0); break;
-        default: break;  // 0 = fermo (non impostare direzione)
+        case 1: player.setDirection(0, -1); break;  // su
+        case 2: player.setDirection(0, 1);  break;  // giu
+        case 3: player.setDirection(-1, 0); break;  // sx
+        case 4: player.setDirection(1, 0);  break;  // dx
+        default: break;  // 0 = fermo
     }
-    // Sparo ogni ~600-1000ms
+
+    // Sparo: se c'e' un target e il player e' allineato (stessa riga o colonna),
+    // spara. Altrimenti spara occasionalmente (20% ogni 500ms).
     demoAiShootTimerP1 -= 16;
     if (demoAiShootTimerP1 <= 0) {
-        demoAiShootTimerP1 = 600 + (rand() % 400);
-        if (player.getShootCooldown() == 0) {
+        demoAiShootTimerP1 = 500;  // controlla ogni 500ms
+        bool shouldShoot = false;
+        if (hasTarget) {
+            float dx = fabs(targetPos.x - player.getPixelPos().x);
+            float dy = fabs(targetPos.y - player.getPixelPos().y);
+            // Allineato se la differenza e' < TILE_SIZE (mezza cella di tolleranza)
+            if (dx < TILE_SIZE / 2.f || dy < TILE_SIZE / 2.f) {
+                shouldShoot = true;
+            }
+        }
+        // 20% di probabilita' di sparare anche senza allineamento
+        if (!shouldShoot && (rand() % 100) < 20) shouldShoot = true;
+
+        if (shouldShoot && player.getShootCooldown() == 0) {
             int ammoBefore = player.getCurrentWeapon().ammo;
             player.shoot();
             if (player.getCurrentWeapon().ammo < ammoBefore) {
@@ -7920,38 +8069,64 @@ void Game::updateDemoMode() {
             player.setShootCooldown(150);
         }
     }
-    // Salto occasionale (10% di probabilita' ogni ~1s)
+    // Salto occasionale (2% di probabilita' per frame ~ 1 salto/sec)
     if ((rand() % 100) < 2) {
         player.activateJump();
     }
 
-    // --- AI Player 2 ---
-    demoAiTimerP2 -= 16;
-    if (demoAiTimerP2 <= 0) {
-        demoAiTimerP2 = 300 + (rand() % 500);
-        demoAiDirP2 = rand() % 5;
-    }
-    switch (demoAiDirP2) {
-        case 1: player2.setDirection(0, -1); break;
-        case 2: player2.setDirection(0, 1); break;
-        case 3: player2.setDirection(-1, 0); break;
-        case 4: player2.setDirection(1, 0); break;
-        default: break;
-    }
-    demoAiShootTimerP2 -= 16;
-    if (demoAiShootTimerP2 <= 0) {
-        demoAiShootTimerP2 = 600 + (rand() % 400);
-        if (player2.getShootCooldown() == 0) {
-            int ammoBefore = player2.getCurrentWeapon().ammo;
-            player2.shoot();
-            if (player2.getCurrentWeapon().ammo < ammoBefore) {
-                audio.playSound(getWeaponSound(player2.getCurrentWeapon().type));
+    // --- AI Player 2 (solo se 2 giocatori) ---
+    // In demo mode 1P questo blocco non viene eseguito (numPlayers == 1).
+    if (numPlayers == 2) {
+        demoAiTimerP2 -= 16;
+        if (demoAiTimerP2 <= 0) {
+            demoAiTimerP2 = 400;
+            // P2 usa la stessa logica di P1 ma con player2
+            sf::Vector2f t2 = player2.getPixelPos();
+            bool ht2 = false;
+            if (demoIsBoss && boss && !boss->isDead()) {
+                t2 = boss->getPos();
+                ht2 = true;
+            } else if (!demoIsBoss) {
+                float minDist = 1e9f;
+                for (const auto& enemy : enemies) {
+                    if (enemy.isDead() || enemy.isDeathAnimDone()) continue;
+                    sf::Vector2f ePos = enemy.getPixelPos();
+                    float dx = ePos.x - player2.getPixelPos().x;
+                    float dy = ePos.y - player2.getPixelPos().y;
+                    float dist = dx * dx + dy * dy;
+                    if (dist < minDist) { minDist = dist; t2 = ePos; ht2 = true; }
+                }
             }
-            player2.setShootCooldown(150);
+            if (ht2) {
+                float dx = t2.x - player2.getPixelPos().x;
+                float dy = t2.y - player2.getPixelPos().y;
+                if (fabs(dx) > fabs(dy)) demoAiDirP2 = (dx > 0) ? 4 : 3;
+                else demoAiDirP2 = (dy > 0) ? 2 : 1;
+                if ((rand() % 100) < 20) demoAiDirP2 = 1 + (rand() % 4);
+            } else {
+                demoAiDirP2 = 1 + (rand() % 4);
+            }
         }
-    }
-    if ((rand() % 100) < 2) {
-        player2.activateJump();
+        switch (demoAiDirP2) {
+            case 1: player2.setDirection(0, -1); break;
+            case 2: player2.setDirection(0, 1);  break;
+            case 3: player2.setDirection(-1, 0); break;
+            case 4: player2.setDirection(1, 0);  break;
+            default: break;
+        }
+        demoAiShootTimerP2 -= 16;
+        if (demoAiShootTimerP2 <= 0) {
+            demoAiShootTimerP2 = 500;
+            if (player2.getShootCooldown() == 0) {
+                int ammoBefore = player2.getCurrentWeapon().ammo;
+                player2.shoot();
+                if (player2.getCurrentWeapon().ammo < ammoBefore) {
+                    audio.playSound(getWeaponSound(player2.getCurrentWeapon().type));
+                }
+                player2.setShootCooldown(150);
+            }
+        }
+        if ((rand() % 100) < 2) player2.activateJump();
     }
 }
 

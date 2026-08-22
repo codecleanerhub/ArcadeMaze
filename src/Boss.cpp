@@ -105,6 +105,33 @@ std::string Boss::getSpriteId(BossType t) {
 }
 
 // ---------------------------------------------------------------------------
+// getBossName: mappa BossType -> nome descrittivo in italiano.
+// Usato per la scritta in alto nella stanza del boss (es. "Boss: Golem").
+// ---------------------------------------------------------------------------
+std::string Boss::getBossName(BossType t) {
+    switch (t) {
+        case BOSS_GOLEM:            return "Golem di Pietra";
+        case BOSS_LICH:             return "Lich Necromante";
+        case BOSS_DEMON:            return "Demone degli Abissi";
+        case BOSS_SPIDER:           return "Ragno Gigante";
+        case BOSS_ABOMINATION:      return "Abominazione";
+        case BOSS_KRAKEN:           return "Kraken";
+        case BOSS_DRAGON:           return "Drago Antico";
+        case BOSS_WRAITH_LORD:      return "Signore dei Wraith";
+        case BOSS_VAMPIRE:          return "Vampiro Signore";
+        case BOSS_BEHOLDER:         return "Beholder";
+        case BOSS_GHOUL_LORD:       return "Signore dei Ghoul";
+        case BOSS_SPECTRAL_ALPHA:   return "Lupo Alpha Spettrale";
+        case BOSS_CULT_HERALD:      return "Araldo del Culto";
+        case BOSS_COLOSSAL_MIMIC:   return "Mimic Colossale";
+        case BOSS_RAT_KING:         return "Re dei Topi";
+        case BOSS_SUPREME_WITCH:    return "Strega Suprema";
+        case BOSS_TWILIGHT_KNIGHT:  return "Cavaliere del Crepuscolo";
+    }
+    return "Sconosciuto";
+}
+
+// ---------------------------------------------------------------------------
 // loadAllSprites: carica tutti gli sprite dei boss dalla cartella `basePath`.
 // Per ogni tipo (tutti i 17), prova a caricare `<basePath>/<id>`. I file
 // mancanti vengono saltati silenziosamente.
