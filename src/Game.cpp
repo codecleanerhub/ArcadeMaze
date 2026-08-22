@@ -44,6 +44,9 @@ Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
+    , demoInactivityTimer(30000), demoDurationTimer(0), demoIsBoss(false),
+      demoAiTimerP1(0), demoAiTimerP2(0), demoAiDirP1(0), demoAiDirP2(0),
+      demoAiShootTimerP1(0), demoAiShootTimerP2(0)
 {
     exitDoor.active = false;
     exitDoor.animTimer = 0;
@@ -560,9 +563,9 @@ void Game::handleEvents() {
 
             // Navigazione menu'
             if (state == STATE_MENU) {
-                // Su/Giu: cambio voce selezionata (7 voci totali, wrap con +7 %7)
-                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
-                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
+                // Su/Giu: cambio voce selezionata (6 voci totali, wrap con +6 %6)
+                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
                 // Sinistra/Destra: modifica dell'opzione selezionata
                 else if (key == sf::Keyboard::Left) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
@@ -576,7 +579,7 @@ void Game::handleEvents() {
                         else audio.stopMusic();
                     }
 #ifdef TEST_MODE_FEATURE
-                    if (menuItemIndex == 4) testModeEnabled = !testModeEnabled;
+                    if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
 #endif
                 }
                 else if (key == sf::Keyboard::Right) {
@@ -588,32 +591,31 @@ void Game::handleEvents() {
                         else audio.stopMusic();
                     }
 #ifdef TEST_MODE_FEATURE
-                    if (menuItemIndex == 4) testModeEnabled = !testModeEnabled;
+                    if (menuItemIndex == 3) testModeEnabled = !testModeEnabled;
 #endif
                 }
-                // Return: conferma (3 = select player, 5 = config joystick, 6 = avvia partita)
+                // Return: conferma (4 = config joystick, 5 = avvia partita)
+                // FIX FLUSSO PARTITA: quando si avvia la partita, si passa
+                // prima a STATE_SELECT_PLAYER (selezione personaggio), poi
+                // se i tasti non sono configurati si va a STATE_CONFIG_JOY,
+                // infine si avvia il livello. La voce "SELECT PLAYER" non
+                // e' piu' nel menu (rimossa).
                 else if (key == sf::Keyboard::Return) {
                     audio.playSound(SOUND_MENU_CONFIRM);
-                    if (menuItemIndex == 3) {
-                        // SELECT PLAYER: apre la schermata di selezione personaggio
+                    if (menuItemIndex == 4) {
+                        // CONFIGURE JOYSTICK: apre schermata configurazione P1
+                        state = STATE_CONFIG_JOY;
+                        configJoyStep = 0;
+                    }
+                    else if (menuItemIndex == 5) {
+                        // START GAME: vai a selezione personaggio.
+                        // Da li, dopo la selezione, si andra' a CONFIG_JOY se
+                        // necessario, oppure direttamente al gioco.
                         state = STATE_SELECT_PLAYER;
                         selectPlayerStep = 0;  // P1 sceglie per primo
                         wheelIndex = (int)player1Character;
                         wheelTargetIndex = wheelIndex;
                         wheelRotation = 0.f;
-                    }
-                    else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-                    else if (menuItemIndex == 6) {
-                        // Avvia il livello 1. La finestra resta in fullscreen
-                        // alla risoluzione nativa gia' impostata nel costruttore.
-                        window.setFramerateLimit(60);
-                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                        window.setView(view);
-                        currentLevel = 1;
-                        // Applica i personaggi scelti ai player prima di iniziare
-                        player.setCharacter(player1Character, 1);
-                        if (numPlayers == 2) player2.setCharacter(player2Character, 2);
-                        startLevel(1);
                     }
                 }
             } else if (state == STATE_SELECT_PLAYER) {
@@ -639,19 +641,23 @@ void Game::handleEvents() {
                             wheelIndex = (int)player2Character;
                             wheelTargetIndex = wheelIndex;
                         } else {
-                            // In 1P: torna al menu
-                            state = STATE_MENU;
+                            // 1P: avvia partita (con eventuale config joy)
+                            startGameAfterSelectPlayer();
                         }
                     } else {
-                        // P2 ha scelto
+                        // P2 ha scelto: avvia partita (con eventuale config joy)
                         player2Character = (CharacterType)wheelIndex;
-                        state = STATE_MENU;
+                        startGameAfterSelectPlayer();
                     }
                 }
                 else if (key == sf::Keyboard::Escape) {
                     // ESC: torna al menu senza confermare
                     state = STATE_MENU;
                 }
+            } else if (state == STATE_DEMO) {
+                // Durante la demo, qualsiasi tasto premuto (eccetto eventi
+                // speciali) interrompe la demo e torna al menu.
+                stopDemoMode();
             } else if (state == STATE_CONTINUES) {
                 // Schermata continues: Left/Right scegli Yes/No, Enter conferma
                 if (key == sf::Keyboard::Left || key == sf::Keyboard::Right) {
@@ -721,6 +727,16 @@ void Game::update() {
     // layer Joy:: custom (ghost XInput, SetCooperativeLevel fallito).
     Joy::update();
 
+    // --- STATO DEMO: AI per P1 e P2 + controllo input utente (interrupt) ---
+    // La demo usa la stessa logica di STATE_PLAYING o STATE_BOSS (in base a
+    // demoIsBoss), ma l'input proviene dall'AI invece che dall'utente.
+    // Se l'utente preme un tasto, updateDemoMode() chiama stopDemoMode() e
+    // il resto dell'update viene saltato (return).
+    if (state == STATE_DEMO) {
+        updateDemoMode();
+        if (state != STATE_DEMO) return;  // demo interrotta, esci
+    }
+
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
     // FIX DEFINITIVO: usa sf::Joystick (SFML) invece di Joy::. Su Windows,
     // sf::Joystick gestisce correttamente i controller XInput e DirectInput
@@ -731,6 +747,9 @@ void Game::update() {
     // La conferma di una voce puo' essere fatta con il pulsante di salto
     // (joy_jump/joy2_jump) oppure di fuoco (joy_shoot/joy2_shoot). Se non
     // configurati, si usa il pulsante 0 come default.
+    //
+    // FIX INACTIVITY TIMER: se l'utente non fa nulla per 30 secondi, si
+    // avvia automaticamente la modalita' Demo (2 giocatori AI).
     if (state == STATE_MENU) {
         // --- Navigazione su/giu: P1 OR P2 ---
         static bool joyMoved = false;
@@ -757,10 +776,13 @@ void Game::update() {
         float y = (fabs(yP2) > fabs(yP1)) ? yP2 : yP1;
         // joyMoved e' static: serve da "debounce" per evitare che un
         // solo movimento dell'analogico faccia scorrere tutte le voci.
+        // 6 voci: wrap con +6 %6
+        bool menuActivity = false;  // true se l'utente ha mosso qualcosa
         if (fabs(y) > 50 && !joyMoved) {
             joyMoved = true;
-            if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
-            else { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
+            if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
+            else { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+            menuActivity = true;
         } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
 
         // Fulmine casuale: ~5/600 di probabilita' per frame, durata 10 frame
@@ -783,27 +805,39 @@ void Game::update() {
         if (!pressed && sf::Joystick::isConnected(p2JoyId)) {
             pressed = sf::Joystick::isButtonPressed(p2JoyId, (unsigned)p2Btn);
         }
+        if (pressed) menuActivity = true;
         if (pressed && !menuJoyBtn) {
             menuJoyBtn = true;
             audio.playSound(SOUND_MENU_CONFIRM);
-            if (menuItemIndex == 3) {
+            // 6 voci: 4 = config joystick, 5 = start game
+            if (menuItemIndex == 4) {
+                // CONFIGURE JOYSTICK
+                state = STATE_CONFIG_JOY;
+                configJoyStep = 0;
+            }
+            else if (menuItemIndex == 5) {
+                // START GAME: vai a selezione personaggio.
+                // Da li, dopo la selezione, si andra' a CONFIG_JOY se
+                // necessario, oppure direttamente al gioco.
                 state = STATE_SELECT_PLAYER;
                 selectPlayerStep = 0;
                 wheelIndex = (int)player1Character;
                 wheelTargetIndex = wheelIndex;
                 wheelRotation = 0.f;
             }
-            else if (menuItemIndex == 5) { state = STATE_CONFIG_JOY; configJoyStep = 0; }
-            else if (menuItemIndex == 6) {
-                window.setFramerateLimit(60);
-                sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                window.setView(view);
-                currentLevel = 1;
-                player.setCharacter(player1Character, 1);
-                if (numPlayers == 2) player2.setCharacter(player2Character, 2);
-                startLevel(1);
-            }
         } else if (!pressed) menuJoyBtn = false;
+
+        // --- Timer inattivita' -> Demo mode ---
+        // Se l'utente e' stato inattivo (nessun movimento e nessun pulsante)
+        // per 30 secondi, avvia la modalita' demo automatica.
+        if (menuActivity) {
+            demoInactivityTimer = 30000;  // reset a 30s
+        } else {
+            demoInactivityTimer -= 16;  // ~16ms per frame a 60 FPS
+            if (demoInactivityTimer <= 0) {
+                startDemoMode();
+            }
+        }
     }
     // --- Stato SELECT_PLAYER: navigazione ruota personaggi con joystick ---
     else if (state == STATE_SELECT_PLAYER) {
@@ -867,11 +901,13 @@ void Game::update() {
                         wheelIndex = (int)player2Character;
                         wheelTargetIndex = wheelIndex;
                     } else {
-                        state = STATE_MENU;
+                        // 1P: avvia partita (con eventuale config joy)
+                        startGameAfterSelectPlayer();
                     }
                 } else {
+                    // P2 ha scelto: avvia partita (con eventuale config joy)
                     player2Character = (CharacterType)wheelIndex;
-                    state = STATE_MENU;
+                    startGameAfterSelectPlayer();
                 }
             } else if (!pressed) selJoyBtn = false;
         }
@@ -916,10 +952,22 @@ void Game::update() {
                     waitForRelease = true;  // aspetta rilascio prima di step 1
                 } else if (configJoyStep == 1) {
                     config.joy_shoot = (int)b;
-                    if (numPlayers == 2) { state = STATE_CONFIG_JOY_2; configJoyStep = 0; }
-                    else state = STATE_MENU;
                     audio.playSound(SOUND_MENU_CONFIRM);
                     waitForRelease = true;
+                    // FIX FLUSSO PARTITA: dopo configurazione P1, se 1P avvia
+                    // il livello; se 2P, passa a STATE_CONFIG_JOY_2.
+                    if (numPlayers == 2) {
+                        state = STATE_CONFIG_JOY_2;
+                        configJoyStep = 0;
+                    } else {
+                        // 1P: avvia il livello (i personaggi sono gia' stati
+                        // scelti in STATE_SELECT_PLAYER prima di CONFIG_JOY)
+                        window.setFramerateLimit(60);
+                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                        window.setView(view);
+                        currentLevel = 1;
+                        startLevel(1);
+                    }
                 }
                 break;
             }
@@ -1016,10 +1064,17 @@ void Game::update() {
                 if (readButton(scanJoyId, b)) {
                     if (configJoyStep == 1) {
                         config.joy2_shoot = (int)b;
-                        state = STATE_MENU;
                         audio.playSound(SOUND_MENU_CONFIRM);
                         waitForRelease2 = true;
                         lastDetectedJoyId = -1;  // reset per prossima configurazione
+                        // FIX FLUSSO PARTITA: dopo configurazione P2, avvia
+                        // il livello (i personaggi sono gia' stati scelti in
+                        // STATE_SELECT_PLAYER prima di CONFIG_JOY).
+                        window.setFramerateLimit(60);
+                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+                        window.setView(view);
+                        currentLevel = 1;
+                        startLevel(1);
                     }
                     break;
                 }
@@ -1231,7 +1286,8 @@ void Game::update() {
     }
 
     // --- Logica STATE_PLAYING: labirinto ---
-    if (state == STATE_PLAYING) {
+    // STATE_DEMO con demoIsBoss=false usa la stessa logica di STATE_PLAYING.
+    if (state == STATE_PLAYING || (state == STATE_DEMO && !demoIsBoss)) {
         // Tesori: rileva raccolta confrontando il conteggio prima/dopo update
         int treasuresBefore = maze.getRemainingTreasures();
         player.update(maze, false, particles);
@@ -2247,7 +2303,8 @@ void Game::update() {
 #endif
     }
     // --- Logica STATE_BOSS: stanza del boss ---
-    else if (state == STATE_BOSS) {
+    // STATE_DEMO con demoIsBoss=true usa la stessa logica di STATE_BOSS.
+    else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
         // freeMovement=true: il giocatore si muove liberamente (non snap-to-grid)
         player.update(maze, true, particles);
         if (numPlayers == 2) player2.update(maze, true, particles);
@@ -3852,12 +3909,13 @@ void Game::drawMenu() {
     drawCorner(120.f, 860.f);
     drawCorner(WINDOW_WIDTH - 120.f, 860.f);
 
-    // Voci di menu': valori dinamici per le prime 3 (giocatori/modalita'/musica)
+    // Voci di menu': 6 voci (rimosso "SELECT PLAYER" - ora la selezione
+    // personaggio avviene automaticamente prima di iniziare la partita).
+    // Indici: 0=players, 1=gamemode, 2=music, 3=test mode, 4=configure joy, 5=start game
     std::string items[] = {
         "NUMBER OF PLAYERS: " + std::to_string(numPlayers),
         "GAME MODE: " + std::string(gameMode == MODE_STORY ? "STORY" : "INFINITE"),
         "MUSIC: " + std::string(musicEnabled ? "ON" : "OFF"),
-        "SELECT PLAYER",                        // nuova voce: selezione personaggio
 #ifdef TEST_MODE_FEATURE
         "TEST MODE: " + std::string(testModeEnabled ? "ON" : "OFF"),
 #else
@@ -3866,16 +3924,15 @@ void Game::drawMenu() {
         "CONFIGURE JOYSTICK",
         "START GAME"
     };
+    const int MENU_ITEM_COUNT = 6;
 
-    // Disegna le 7 voci; quella selezionata e' in giallo con "> ... <"
+    // Disegna le voci; quella selezionata e' in giallo con "> ... <"
     // e una piccola fiammella pulsante alla sua sinistra.
-    // Distanza ridotta a 50px (era 65) per evitare che l'ultima voce esca
-    // dal riquadro pergamena (360-860). Prima voce a Y=410 (era 360) per
-    // lasciare margine superiore e non attaccarsi al bordo.
-    for(int i=0; i<7; i++) {
+    // Distanza ridotta a 60px per evitare che l'ultima voce esca dal riquadro.
+    for(int i=0; i<MENU_ITEM_COUNT; i++) {
         std::string text = (i == menuItemIndex) ? ("> " + items[i] + " <") : items[i];
         sf::Color color = (i == menuItemIndex) ? sf::Color::Yellow : sf::Color(180, 180, 180);
-        float itemY = 410.f + (float)(i * 50);
+        float itemY = 410.f + (float)(i * 60);
         drawTextCenteredOutlined(window, text, WINDOW_WIDTH/2, (int)itemY, 3, color);
 
         // Fiammella laterale animata per la voce selezionata
@@ -4494,7 +4551,8 @@ void Game::render() {
     else if (state == STATE_CONTINUES) {
         drawContinues();
     }
-    else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE) {
+    else if (state == STATE_PLAYING || state == STATE_LOSE || state == STATE_WIN_INFINITE
+             || (state == STATE_DEMO && !demoIsBoss)) {
         // Rendering comune per gameplay/schermate finali
         maze.render(window);
         if (numPlayers == 2)
@@ -5041,7 +5099,7 @@ void Game::render() {
             drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
         }
     }
-    else if (state == STATE_BOSS) {
+    else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
         // --- Stanza del boss: caverna scavata nella roccia ---
         // Sostituisce il vecchio sfondo nero piatto. Lo stile e' coerente
         // con quello del labirinto (Maze::render): pavimento terra battuta
@@ -7612,6 +7670,12 @@ void Game::render() {
         window.draw(flashOverlay);
     }
 
+    // --- Overlay DEMO MODE ---
+    // Disegna la scritta "DEMO MODE" in alto a sinistra se siamo in demo.
+    if (state == STATE_DEMO) {
+        drawDemoOverlay(window);
+    }
+
     window.display();
 }
 
@@ -7626,4 +7690,288 @@ void Game::run() {
         update();
         render();
     }
+}
+
+// ===========================================================================
+// FLUSSO PARTITA
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// startGameAfterSelectPlayer: chiamato dopo che P1 (1P) o P2 (2P) hanno
+// terminato la selezione del personaggio. Decide se avviare direttamente
+// il gioco (se i tasti sono gia' configurati) o passare prima per la
+// configurazione joystick.
+//
+// Logica:
+//   * 1P: se joy_jump >= 0 AND joy_shoot >= 0 -> avvia livello
+//         altrimenti -> STATE_CONFIG_JOY (che poi andra' al livello)
+//   * 2P: se joy_jump, joy_shoot, joy2_jump, joy2_shoot tutti >= 0 -> avvia
+//         altrimenti -> STATE_CONFIG_JOY (P1), poi STATE_CONFIG_JOY_2 (P2),
+//         poi avvia il livello.
+//
+// In STATE_CONFIG_JOY/STATE_CONFIG_JOY_2, dopo la configurazione, si chiama
+// startLevel(1) (vedi codice esistente). Per farlo, modifichiamo CONFIG_JOY
+// e CONFIG_JOY_2 per usare questo stesso helper.
+// ---------------------------------------------------------------------------
+void Game::startGameAfterSelectPlayer() {
+    // Applica i personaggi scelti ai player
+    player.setCharacter(player1Character, 1);
+    if (numPlayers == 2) player2.setCharacter(player2Character, 2);
+
+    // Controlla se i tasti sono configurati
+    bool p1Configured = (config.joy_jump >= 0 && config.joy_shoot >= 0);
+    bool p2Configured = (numPlayers == 2)
+                        ? (config.joy2_jump >= 0 && config.joy2_shoot >= 0)
+                        : true;  // 1P: P2 non rilevante
+
+    if (p1Configured && p2Configured) {
+        // Tasti gia' configurati: avvia il livello direttamente
+        window.setFramerateLimit(60);
+        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+        window.setView(view);
+        currentLevel = 1;
+        startLevel(1);
+    } else {
+        // Vai a configurazione joystick (P1 prima, poi P2 in 2P)
+        state = STATE_CONFIG_JOY;
+        configJoyStep = 0;
+    }
+}
+
+// ===========================================================================
+// DEMO MODE
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// startDemoMode: avvia la modalita' demo automatica.
+//   * Imposta 2 giocatori
+//   * Sceglie personaggi casuali per P1 e P2
+//   * Sceglie casualmente se partire dal labirinto o dalla stanza del boss
+//   * Imposta il timer di durata a 2 minuti (120000 ms)
+//   * Passa allo stato STATE_DEMO (che usa lo stesso codice di STATE_PLAYING
+//     o STATE_BOSS, ma con AI che controlla P1 e P2)
+// ---------------------------------------------------------------------------
+void Game::startDemoMode() {
+    // Forza modalita' 2 giocatori per la demo
+    numPlayers = 2;
+
+    // Personaggi casuali per P1 e P2 (8 personaggi totali)
+    player1Character = (CharacterType)(rand() % CHARACTER_TYPE_COUNT);
+    player2Character = (CharacterType)(rand() % CHARACTER_TYPE_COUNT);
+
+    // Sceglie casualmente se iniziare dal labirinto o dal boss
+    demoIsBoss = (rand() % 2 == 0);
+
+    // Applica i personaggi ai player
+    player.setCharacter(player1Character, 1);
+    player2.setCharacter(player2Character, 2);
+
+    // Imposta il timer di durata demo a 2 minuti (120000 ms)
+    demoDurationTimer = 120000;
+
+    // Reset AI timers
+    demoAiTimerP1 = 0;
+    demoAiTimerP2 = 0;
+    demoAiDirP1 = 0;
+    demoAiDirP2 = 0;
+    demoAiShootTimerP1 = 0;
+    demoAiShootTimerP2 = 0;
+
+    // Avvia il livello (labirinto o boss)
+    window.setFramerateLimit(60);
+    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+    window.setView(view);
+
+    if (demoIsBoss) {
+        // Sceglie un boss casuale (livello 1..STORY_LEVELS_COUNT)
+        currentLevel = (rand() % STORY_LEVELS_COUNT) + 1;
+        startLevel(currentLevel);
+        // Passa subito alla stanza del boss
+        startBossFight(false);
+        state = STATE_DEMO;  // sovrascrive STATE_BOSS impostato da startBossFight
+    } else {
+        // Labirinto casuale (livello 1..STORY_LEVELS_COUNT)
+        currentLevel = (rand() % STORY_LEVELS_COUNT) + 1;
+        startLevel(currentLevel);
+        state = STATE_DEMO;  // sovrascrive STATE_PLAYING impostato da startLevel
+    }
+}
+
+// ---------------------------------------------------------------------------
+// stopDemoMode: ferma la demo e torna al menu principale.
+//   * Resetta il timer di inattivita' a 30 secondi (per non far ripartire
+//     subito la demo)
+//   * Passa a STATE_MENU
+//   * Ferma eventuali musiche di gioco e riprende la traccia del menu'
+// ---------------------------------------------------------------------------
+void Game::stopDemoMode() {
+    state = STATE_MENU;
+    currentLevel = 1;
+    demoInactivityTimer = 30000;  // reset a 30s per non far ripartire subito
+    // Ferma la musica di gioco e riprende quella del menu' se attiva
+    audio.stopMusic();
+    if (musicEnabled) audio.playMenuMusic();
+    // Pulisce eventuali entita' residue
+    if (boss) { delete boss; boss = nullptr; }
+    if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
+    miniBossSpawned = false;
+    enemies.clear();
+    bossProjectiles.clear();
+    enemyProjectiles.clear();
+    bossRoomWeapons.clear();
+    lightnings.clear();
+    particles.clear();
+    bloodStains.clear();
+    ashPiles.clear();
+    fireBursts.clear();
+    fireworks.clear();
+}
+
+// ---------------------------------------------------------------------------
+// updateDemoMode: aggiorna la logica demo.
+//   * Decrementa il timer di durata (2 min). A 0, ferma la demo.
+//   * AI per P1 e P2: cambia direzione casualemente ogni ~500ms, spara ogni
+//     ~800ms, salta occasionalmente.
+//   * Controlla input utente: se preme qualsiasi tasto o muove il joystick,
+//     interrompe la demo.
+//
+// L'AI imposta le direzioni chiamando player.setDirection() e player2.
+// setDirection(), esattamente come farebbe un giocatore umano. Lo sparo e
+// il salto chiamano player.shoot() / player.activateJump() con cooldown.
+//
+// Nota: lo stato STATE_DEMO usa lo stesso codice di update di STATE_PLAYING
+// o STATE_BOSS per le collisioni e la logica del mondo. L'unica differenza
+// e' che l'input proviene dall'AI invece che dall'utente.
+// ---------------------------------------------------------------------------
+void Game::updateDemoMode() {
+    // --- Decrementa timer durata demo ---
+    demoDurationTimer -= 16;  // ~16ms per frame a 60 FPS
+    if (demoDurationTimer <= 0) {
+        // Demo finita: torna al menu
+        stopDemoMode();
+        return;
+    }
+
+    // --- Controlla input utente (interrupt demo) ---
+    // Se l'utente preme qualsiasi tasto o muove il joystick, interrompi.
+    // Tastiera: controlla i tasti piu' comuni (frecce, WASD, spazio, enter, ESC)
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Down) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Left) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Right) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Space) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Return) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Escape) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::W) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::A) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::S) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::D) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Q) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
+        stopDemoMode();
+        return;
+    }
+    // Joystick: controlla assi e pulsanti di P1 e P2
+    for (unsigned int jid = 0; jid < 8; jid++) {
+        if (!sf::Joystick::isConnected(jid)) continue;
+        // Assi X, Y, PovX, PovY: se fuori deadzone, interrompi
+        float x = sf::Joystick::getAxisPosition(jid, sf::Joystick::X);
+        float y = sf::Joystick::getAxisPosition(jid, sf::Joystick::Y);
+        float povX = sf::Joystick::getAxisPosition(jid, sf::Joystick::PovX);
+        float povY = sf::Joystick::getAxisPosition(jid, sf::Joystick::PovY);
+        if (fabs(x) > 30 || fabs(y) > 30 || fabs(povX) > 30 || fabs(povY) > 30) {
+            stopDemoMode();
+            return;
+        }
+        // Pulsanti: se uno qualsiasi e' premuto, interrompi
+        unsigned int maxBtns = sf::Joystick::getButtonCount(jid);
+        if (maxBtns > 16) maxBtns = 16;  // limita per performance
+        for (unsigned int b = 0; b < maxBtns; b++) {
+            if (sf::Joystick::isButtonPressed(jid, b)) {
+                stopDemoMode();
+                return;
+            }
+        }
+    }
+
+    // --- AI Player 1 ---
+    // Cambia direzione ogni ~500ms (30 frame a 60 FPS)
+    demoAiTimerP1 -= 16;
+    if (demoAiTimerP1 <= 0) {
+        demoAiTimerP1 = 300 + (rand() % 500);  // 300-800ms
+        demoAiDirP1 = rand() % 5;  // 0=fermo, 1=su, 2=giu, 3=sx, 4=dx
+    }
+    // Applica direzione
+    switch (demoAiDirP1) {
+        case 1: player.setDirection(0, -1); break;
+        case 2: player.setDirection(0, 1); break;
+        case 3: player.setDirection(-1, 0); break;
+        case 4: player.setDirection(1, 0); break;
+        default: break;  // 0 = fermo (non impostare direzione)
+    }
+    // Sparo ogni ~600-1000ms
+    demoAiShootTimerP1 -= 16;
+    if (demoAiShootTimerP1 <= 0) {
+        demoAiShootTimerP1 = 600 + (rand() % 400);
+        if (player.getShootCooldown() == 0) {
+            int ammoBefore = player.getCurrentWeapon().ammo;
+            player.shoot();
+            if (player.getCurrentWeapon().ammo < ammoBefore) {
+                audio.playSound(getWeaponSound(player.getCurrentWeapon().type));
+            }
+            player.setShootCooldown(150);
+        }
+    }
+    // Salto occasionale (10% di probabilita' ogni ~1s)
+    if ((rand() % 100) < 2) {
+        player.activateJump();
+    }
+
+    // --- AI Player 2 ---
+    demoAiTimerP2 -= 16;
+    if (demoAiTimerP2 <= 0) {
+        demoAiTimerP2 = 300 + (rand() % 500);
+        demoAiDirP2 = rand() % 5;
+    }
+    switch (demoAiDirP2) {
+        case 1: player2.setDirection(0, -1); break;
+        case 2: player2.setDirection(0, 1); break;
+        case 3: player2.setDirection(-1, 0); break;
+        case 4: player2.setDirection(1, 0); break;
+        default: break;
+    }
+    demoAiShootTimerP2 -= 16;
+    if (demoAiShootTimerP2 <= 0) {
+        demoAiShootTimerP2 = 600 + (rand() % 400);
+        if (player2.getShootCooldown() == 0) {
+            int ammoBefore = player2.getCurrentWeapon().ammo;
+            player2.shoot();
+            if (player2.getCurrentWeapon().ammo < ammoBefore) {
+                audio.playSound(getWeaponSound(player2.getCurrentWeapon().type));
+            }
+            player2.setShootCooldown(150);
+        }
+    }
+    if ((rand() % 100) < 2) {
+        player2.activateJump();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// drawDemoOverlay: disegna la scritta "DEMO MODE" in alto a sinistra,
+// rossa e intermittente, in stile fantasy (con contorno nero).
+// L'intermittenza e' data da sinf(time * 5) che oscilla tra -1 e 1.
+// ---------------------------------------------------------------------------
+void Game::drawDemoOverlay(sf::RenderTarget& target) {
+    // Pulsazione: sinf oscillante, alpha tra 100 e 255
+    static float demoOverlayTime = 0.f;
+    demoOverlayTime += 0.05f;
+    float pulse = (sinf(demoOverlayTime * 5.f) + 1.f) * 0.5f;  // 0..1
+    int alpha = (int)(100 + pulse * 155);  // 100..255
+    sf::Color demoColor(255, 40, 40, (sf::Uint8)alpha);
+    // Titolo "DEMO MODE" in alto a sinistra, scala 4
+    drawTextOutlined(target, "DEMO MODE", 20, 20, 4, demoColor);
+    // Sotto-titolo: "PRESS ANY KEY TO EXIT" (piu' piccolo)
+    sf::Color subColor(255, 200, 200, (sf::Uint8)alpha);
+    drawText(target, "PRESS ANY KEY TO EXIT", 20, 60, 2, subColor);
 }

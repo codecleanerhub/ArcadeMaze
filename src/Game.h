@@ -37,7 +37,8 @@ enum GameState {
     STATE_CONTINUES,      // schermata continues (conto alla rovescia 10-0)
     STATE_LOSE,           // schermata game over
     STATE_WIN_STORY,      // vittoria modalita' story (con fuochi d'artificio)
-    STATE_WIN_INFINITE    // vittoria modalita' infinite (placeholder)
+    STATE_WIN_INFINITE,   // vittoria modalita' infinite (placeholder)
+    STATE_DEMO            // modalita' demo automatica (AI controlla P1 e P2)
 };
 
 enum GameMode { MODE_STORY, MODE_INFINITE };
@@ -280,6 +281,22 @@ private:
     bool testSkipKeyPressed;                   // debounce: true finche' Space resta premuto
 #endif
 
+    // --- DEMO MODE (modalita' demo automatica) ---
+    // Quando l'utente non interagisce col menu per 30 secondi, il gioco si
+    // avvia automaticamente in modalita' Demo: 2 giocatori controllati dal
+    // computer, personaggi casuali, livello casuale (labirinto o boss).
+    // La demo dura 2 minuti, poi torna al menu. Se l'utente preme un tasto
+    // o muove il joystick durante la demo, questa si interrompe.
+    int demoInactivityTimer;     // ms residui di inattivita' prima della demo (30000 = 30s)
+    int demoDurationTimer;       // ms residui di durata demo (120000 = 2min)
+    bool demoIsBoss;             // true = demo nella stanza del boss, false = labirinto
+    int demoAiTimerP1;           // timer per cambio direzione AI P1
+    int demoAiTimerP2;           // timer per cambio direzione AI P2
+    int demoAiDirP1;             // direzione corrente AI P1 (0=fermo,1=su,2=giu,3=sx,4=dx)
+    int demoAiDirP2;             // direzione corrente AI P2 (0=fermo,1=su,2=giu,3=sx,4=dx)
+    int demoAiShootTimerP1;      // timer per sparo AI P1
+    int demoAiShootTimerP2;      // timer per sparo AI P2
+
     // Sottometodi del ciclo principale
     void handleEvents();
     void update();
@@ -361,6 +378,26 @@ private:
     // Disegna i mucchi di cenere. Usa spritesheet PNG (effect_ashpile) +
     // braci incandescenti + fumo procedurale.
     void drawAshPiles(sf::RenderTarget& target);
+
+    // --- DEMO MODE ---
+    // Avvia la modalita' demo: sceglie personaggi casuali, modalita' 2P,
+    // livello casuale (labirinto o boss), resetta timer durata a 2 minuti.
+    void startDemoMode();
+    // Aggiorna la logica demo: AI per P1 e P2 (movimento + sparo casuale),
+    // gestione timer durata, interruzione se l'utente preme un tasto.
+    void updateDemoMode();
+    // Disegna l'overlay "DEMO MODE" in alto (rosso intermittente stile fantasy).
+    void drawDemoOverlay(sf::RenderTarget& target);
+    // Ferma la demo e torna al menu principale, resettando il timer di
+    // inattivita' a 30 secondi.
+    void stopDemoMode();
+
+    // --- FLUSSO PARTITA ---
+    // Chiamato dopo che P1 (1P) o P2 (2P) hanno finito la selezione personaggio.
+    // Controlla se i tasti sono configurati: se lo sono, avvia il livello;
+    // altrimenti, va a STATE_CONFIG_JOY (che poi portera' a STATE_CONFIG_JOY_2
+    // in 2P, e infine al livello).
+    void startGameAfterSelectPlayer();
 };
 
 #endif
