@@ -8052,32 +8052,32 @@ void Game::render() {
 
 // Didascalie per ogni immagine dell'intro (4 immagini, 3 vignette l'una).
 // Mostrate in basso allo schermo, stile voce fuori campo/narratore.
-// Scritte in italiano letterario, tono epico-tragico, per pubblico adulto
+// Scritte in inglese, tono epico-tragico, per pubblico adulto
 // amante di storie alla "Signore degli Anelli".
 static const char* INTRO_CAPTIONS[] = {
-    "Ottobre del 1937. La spedizione Greco-Moreau solcava i cieli dell'Oceano\n"
-    "alla ricerca dell'Isola che non appare su alcuna mappa.\n"
-    "Fummo noi a scegliere la rotta. Fu la tempesta a scegliere noi.\n"
-    "L'Isola ci accolse con scogliere nere come il ferro e una giungla\n"
-    "cosi' fitta che il sole non riusciva a penetrarla.",
+    "It all began with the search for an island that appears on no map.\n"
+    "We chose the course. It was the storm that chose us.\n"
+    "The island welcomed us with cliffs black and hard as steel,\n"
+    "and a jungle so dense that the sun could not pierce it.",
 
-    "Marciavamo verso la montagna, attratti da un richiamo che non aveva voce\n"
-    "ma che sentivamo nelle ossa. E qualcosa, tra le foglie, ci guardava.\n"
-    "Ai piedi del monte trovammo una fossa, una scalinata, e rune che Mara\n"
-    "riconobbe dal Libro dei Morti. Scendemmo. E la montagna, alle nostre\n"
-    "spalle, si richiuse per sempre. Non c'era piu' ritorno.",
+    "We marched toward the mountain, drawn by a call that had no voice\n"
+    "yet that we felt in our bones. And something, among the leaves,\n"
+    "watched us. At the foot of the peak we found a pit, a stairway,\n"
+    "and runes that Mara recognized from the Book of the Dead.\n"
+    "We descended. And the mountain, behind us, sealed itself forever.\n"
+    "There was no way back.",
 
-    "Sotto il monte ci attendeva un labirinto, antico e spietato, le cui\n"
-    "pareti custodivano tesori e creature affamate. I morti camminavano\n"
-    "nei suoi corridoi, e non erano la peggiore delle minacce. Trovammo\n"
-    "un Calice d'oro, e Mara disse che poteva renderci immortali.\n"
-    "Ma solo per un poco, e a caro prezzo.",
+    "Beneath the mountain awaited a labyrinth, ancient and merciless,\n"
+    "whose walls guarded treasures and ravenous creatures. The dead\n"
+    "walked its corridors, and they were not the worst of the threats.\n"
+    "We found a golden Chalice, and Mara said it could make us immortal.\n"
+    "But only for a while, and at a dear price.",
 
-    "Non eravamo soli. Altri, in cerca di una via, vagavano in quelle\n"
-    "sale di pietra. Un Mago ne conosceva una, ma oltre i Diciassette\n"
-    "Guardiani: altrettante chiavi, altrettante prove. Solo sconfiggendoli\n"
-    "tutti la montagna ci avrebbe restituiti al cielo.\n"
-    "Che l'avventura abbia inizio."
+    "We were not alone. Others, seeking a way out, wandered through\n"
+    "those halls of stone. A wizard knew of one, but beyond the Seventeen\n"
+    "Guardians: as many keys, as many trials. Only by defeating them all\n"
+    "would the mountain return us to the sky.\n"
+    "Courage... let us begin."
 };
 
 // ---------------------------------------------------------------------------
