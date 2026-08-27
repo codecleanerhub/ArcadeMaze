@@ -56,15 +56,15 @@ PALETTE = [
 BOSSES = [
     ("boss_031", "Stone Golem",
      "Pixel art sprite of a massive stone golem boss, bulky rectangular body made of grey stone blocks, glowing green eyes in carved eye sockets, thick arms hanging at sides, no legs, gothic fantasy D&D style, 16-color palette, side view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, only empty background around the character is transparent, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark",
-     ["Slightly raise both arms forward to 20 degrees, keep body and head identical",
-      "Raise both arms forward to 45 degrees, keep body and head identical",
-      "Lower both arms back to 20 degrees forward, keep body and head identical"]),
+     ["Rotate both arms forward by exactly 20 degrees, ONLY the arms rotate. The body, head, legs, eyes, AND canvas size MUST remain IDENTICAL to the input image. Do NOT zoom, do NOT scale, do NOT resize the character. Keep identical position, identical size, identical colors. The character bounding box MUST NOT change.",
+      "Rotate both arms forward to exactly 45 degrees from the body, ONLY the arms rotate. The body, head, legs, eyes, AND canvas size MUST remain IDENTICAL. Do NOT zoom, do NOT scale, do NOT resize. Keep identical position, identical size, identical colors.",
+      "Rotate both arms back to 20 degrees forward, ONLY the arms rotate. The body, head, legs, eyes, AND canvas size MUST remain IDENTICAL. Do NOT zoom, do NOT scale, do NOT resize. Keep identical position, identical size, identical colors."]),
 
     ("boss_032", "Lich Necromancer",
      "Pixel art sprite of a lich necromancer boss, floating skeletal mage with purple hooded robe, glowing purple eye sockets in skull face, ornate staff held vertical, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark",
-     ["Tilt the staff slightly to the right at 15 degrees and sway the robe gently to the right, keep body and face identical",
-      "Tilt the staff more to the right at 30 degrees and sway the robe further to the right, keep body and face identical",
-      "Return the staff to vertical and return the robe to center, keep body and face identical"]),
+     ["Tilt ONLY the staff to the right by 15 degrees at the top. The torso, robe, hood, skull, eyes, body shape, body color, body position, AND canvas size MUST remain PIXEL-IDENTICAL to the input image. Do NOT change the torso color. Do NOT change the robe drawing. Do NOT redraw the character. Only rotate the staff.",
+      "Tilt ONLY the staff further to the right by 30 degrees at the top. The torso, robe, hood, skull, eyes, body shape, body color, body position, AND canvas size MUST remain PIXEL-IDENTICAL to the input image. Do NOT change the torso color. Do NOT redraw the character. Only rotate the staff.",
+      "Return ONLY the staff to vertical. The torso, robe, hood, skull, eyes, body shape, body color, body position, AND canvas size MUST remain PIXEL-IDENTICAL to the input image. Do NOT change anything except the staff angle."]),
 
     ("boss_033", "Abyssal Demon",
      "Pixel art sprite of an abyssal demon boss, muscular red-skinned humanoid with massive bat wings folded at rest against the body, curved black horns, glowing yellow eyes, sharp claws, arms at sides, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark",
@@ -86,9 +86,9 @@ BOSSES = [
 
     ("boss_030", "Kraken",
      "Pixel art sprite of a kraken boss, colossal purple cephalopod with eight long tentacles curled inward close to body, massive yellow eye, sharp beak, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark",
-     ["Extend four tentacles outward to half length and raise body slightly, keep eye and beak identical",
-      "Extend all eight tentacles fully wide spread and raise body high, keep eye and beak identical",
-      "Curl tentacles back inward to half extended and lower body slightly, keep eye and beak identical"]),
+     ["Extend ONLY four tentacles outward to half length. The central body (head with eye and beak) MUST remain PIXEL-IDENTICAL to the input image: same size, same position, same color, same shape. Do NOT zoom, do NOT scale, do NOT resize, do NOT move the body. The character overall bounding box may grow only because tentacles extend, but the body stays fixed.",
+      "Extend ALL eight tentacles fully wide spread outward. The central body (head with eye and beak) MUST remain PIXEL-IDENTICAL to the input image: same size, same position, same color, same shape. Do NOT zoom, do NOT scale, do NOT resize, do NOT move the body.",
+      "Curl tentacles back inward to half extended. The central body (head with eye and beak) MUST remain PIXEL-IDENTICAL to the input image: same size, same position, same color, same shape. Do NOT zoom, do NOT scale, do NOT resize, do NOT move the body."]),
 
     ("boss_035", "Ancient Dragon",
      "Pixel art sprite of an ancient skeletal dragon boss, massive body with rich red crimson scales on lower half, dark grey bone structure on upper body, large leathery red wings folded at rest against back, long tail hanging straight down, sharp horns, glowing red eye, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark",
@@ -346,12 +346,29 @@ def apply_palette(rgba):
     return np.dstack([new_rgb, alpha]).astype(np.uint8)
 
 
-def process_frame(raw_path, target_bbox=None):
+def process_frame(raw_path, target_height=None):
     """
     Processa un raw 1024x1024 -> 64x64 RGBA.
-    Se target_bbox e' fornito (rmin, rmax, cmin, cmax in coordinate 1024),
-    ritaglia esattamente a quel bbox (per allineare i 4 frame).
-    Altrimenti ritaglia al bbox del personaggio corrente.
+
+    NUOVO APPROCCIO PER EVITARE L'EFFETTO ZOOM:
+    Invece di usare un target_bbox fisso (che causava l'effetto "salto/zoom"
+    quando l'AI generava frame con personaggi di dimensioni leggermente
+    diverse), usiamo un approccio di SCALA UNIFORME BASATA SULL'ALTEZZA:
+
+    1. Per ogni frame, trova il proprio bbox.
+    2. Se target_height e' fornito (riferito all'altezza del frame 0 in px
+       del raw 1024), ridimensiona il crop in modo che l'altezza del
+       personaggio sia ESATTAMENTE target_height. Questo garantisce che
+       tutti i 4 frame abbiano lo stesso ingrandimento del personaggio.
+    3. Centra il personaggio sul canvas 64x64 (in base al centroide).
+
+    Per il kraken (che ha tentacoli che si estendono), l'altezza del corpo
+    centrale resta costante anche se il bbox totale cresce: in quel caso
+    il target_height va calcolato solo sul "core body", non su tutto il
+    bbox (vedi funzione find_core_bbox).
+
+    Per gli altri boss (golem, lich) il bbox coincide col corpo, quindi
+    target_height = altezza del bbox del frame 0.
     """
     if not raw_path.exists():
         return None, None
@@ -363,47 +380,286 @@ def process_frame(raw_path, target_bbox=None):
     bg_mask = flood_fill_transparency(arr)
     arr[bg_mask, 3] = 0
 
-    # 2) Trova bbox (o usa quello fornito per allineamento)
-    if target_bbox is not None:
-        rmin, rmax, cmin, cmax = target_bbox
+    # 2) Trova bbox del personaggio
+    bbox = find_bbox(arr[..., 3])
+    if bbox is None:
+        return None, None
+    rmin, rmax, cmin, cmax = bbox
+    body_h = rmax - rmin + 1
+    body_w = cmax - cmin + 1
+
+    # 3) Calcola il fattore di scala per uniformare l'altezza
+    # Se target_height e' fornito (altezza del frame 0), usa quello.
+    # Altrimenti usa body_h di questo frame (sara' lui il riferimento).
+    if target_height is None:
+        # Frame 0: imposta il riferimento
+        target_height = body_h
+        target_width_ref = body_w
     else:
-        bbox = find_bbox(arr[..., 3])
-        if bbox is None:
-            return None, None
-        rmin, rmax, cmin, cmax = bbox
-        # Salva il bbox come riferimento per i frame successivi
-        target_bbox = (rmin, rmax, cmin, cmax)
+        # Frame successivi: imposta l'altezza al riferimento, mantieni
+        # l'aspect ratio del frame 0 per la larghezza (per coerenza).
+        pass
 
-    # 3) Crop al bbox + margine
-    y0 = max(0, rmin - CROP_MARGIN)
-    y1 = min(h, rmax + CROP_MARGIN + 1)
-    x0 = max(0, cmin - CROP_MARGIN)
-    x1 = min(w, cmax + CROP_MARGIN + 1)
-    arr = arr[y0:y1, x0:x1]
+    # Fattore di scala = target_height / body_h (cosi' il personaggio
+    # ha sempre la stessa altezza in pixel raw). Poi applichiamo
+    # margine e resize a 64x64.
+    scale = float(target_height) / float(body_h) if body_h > 0 else 1.0
 
-    # 4) Fill buchi intra-corpo
-    arr = fill_internal_holes(arr)
+    # 4) Crop al bbox + margine. Il margine va calcolato proporzionalmente
+    # al target_height, cosi' se il personaggio del frame e' piu' piccolo
+    # di quello del frame 0 (es. kraken con tentacoli retratti che risulta
+    # con body_h=400 vs target_height=970 del frame 0), il margine sara'
+    # proporzionale e il personaggio finale sara' dello stesso ingrandimento.
+    # scale = target_height / body_h: se il frame ha personaggio piu'
+    # piccolo, scale > 1 -> il crop finale includera' un'area piu' grande
+    # attorno al personaggio (margine proporzionale).
+    margin_y = int(CROP_MARGIN * scale) if scale > 1.0 else CROP_MARGIN
+    margin_x = int(CROP_MARGIN * scale) if scale > 1.0 else CROP_MARGIN
+    # Se l'aspect ratio del personaggio e' molto largo (es. drago con
+    # ali spiegate), aumentiamo margin_x.
+    if body_w > body_h * 1.5:
+        margin_x = int(margin_x * 1.5)
 
-    # 5) Resize a 64x64 LANCZOS
-    img = Image.fromarray(arr, 'RGBA')
-    img = img.resize((SPRITE_SIZE, SPRITE_SIZE), resample=Image.LANCZOS)
-    arr = np.array(img)
+    y0 = max(0, rmin - margin_y)
+    y1 = min(h, rmax + margin_y + 1)
+    x0 = max(0, cmin - margin_x)
+    x1 = min(w, cmax + margin_x + 1)
+    arr_crop = arr[y0:y1, x0:x1]
 
-    # 6) Soglia alpha
+    # 5) Fill buchi intra-corpo
+    arr_crop = fill_internal_holes(arr_crop)
+
+    # 6) Ridimensiona a canvas 64x64 LANCZOS, con SCALA BASATA SUL
+    # target_height (NON sul crop totale). Questo e' il CHIAVE per evitare
+    # l'effetto zoom:
+    #   - Tutti i 4 frame devono avere il personaggio con la stessa
+    #     altezza finale nel canvas 64x64.
+    #   - L'altezza del personaggio nel raw 1024 e' body_h.
+    #   - Vogliamo che nel canvas 64x64, il personaggio abbia altezza
+    #     = target_canvas_h (es. 56px) RAPPRESENTATA NELLE UNITA' DEL
+    #     FRAME 0. Cioe': il personaggio del frame 0 ha body_h =
+    #     target_height nel raw, e deve diventare ~target_canvas_h nel
+    #     canvas. Quindi la scala e': target_canvas_h / target_height.
+    #   - Applichiamo la STESSA scala a tutti i 4 frame: questo garantisce
+    #     che il personaggio abbia sempre le stesse proporzioni finali.
+    crop_h, crop_w = arr_crop.shape[:2]
+    target_canvas_w = SPRITE_SIZE - 4  # 60
+    target_canvas_h = SPRITE_SIZE - 8  # 56 (lascia spazio sopra per HP bar)
+    # Scala uniforme: basata sul target_height (riferimento del frame 0)
+    # e NON sul crop locale. Cosi' tutti i frame hanno lo stesso
+    # ingrandimento del personaggio.
+    final_scale = float(target_canvas_h) / float(target_height)
+    new_w = max(1, int(crop_w * final_scale))
+    new_h = max(1, int(crop_h * final_scale))
+
+    # Se il personaggio e' troppo largo per il canvas 60, scala in base
+    # alla larghezza (mantenendo aspect ratio). Questo puo' capitare per
+    # boss molto larghi (es. drago con ali spiegate).
+    if new_w > target_canvas_w:
+        ratio = float(target_canvas_w) / float(new_w)
+        new_w = target_canvas_w
+        new_h = max(1, int(new_h * ratio))
+
+    img = Image.fromarray(arr_crop, 'RGBA')
+    img = img.resize((new_w, new_h), resample=Image.LANCZOS)
+    arr_resized = np.array(img)
+
+    # 7) Centra su canvas 64x64.
+    # L'ancora del boss nel codice C++ e' (32, 56): i piedi sono a y=56
+    # circa, il top della testa a y=0..8. Allineamo in basso (piedi
+    # fissi a y=56) e centrriamo orizzontalmente.
+    canvas = np.zeros((SPRITE_SIZE, SPRITE_SIZE, 4), dtype=np.uint8)
+    # Piedi a y=56: offset_y in modo che il bottom del personaggio sia a 56
+    feet_y = 56
+    offset_y = feet_y - new_h
+    if offset_y < 0:
+        offset_y = 0
+    # Se il personaggio e' piu' alto di 56, lo centriamo verticalmente
+    # e lo tagliamo (caso raro, solo personaggi molto alti).
+    if new_h > feet_y:
+        offset_y = 0
+    offset_x = (SPRITE_SIZE - new_w) // 2
+    if offset_x < 0:
+        offset_x = 0
+    canvas[offset_y:offset_y + new_h, offset_x:offset_x + new_w] = arr_resized[:min(new_h, SPRITE_SIZE-offset_y), :min(new_w, SPRITE_SIZE-offset_x)]
+    arr = canvas
+
+    # 8) Soglia alpha
     alpha = arr[..., 3]
     arr[alpha < 32, 3] = 0
     arr[alpha >= 32, 3] = 255
 
-    # 7) Post-fill micro-buchi
+    # 9) Post-fill micro-buchi
     arr = fill_internal_holes(arr)
 
-    # 8) Applica palette
+    # 10) Applica palette
     arr = apply_palette(arr)
-    return arr, target_bbox
+    return arr, target_height
+
+
+def normalize_frame_sizes(frames):
+    """
+    Normalizza le dimensioni dei 4 frame per evitare l'effetto zoom/salto.
+
+    PROBLEMA: anche con prompt enfatici, l'AI a volte genera frame con
+    personaggi di dimensioni leggermente diverse (es. kraken con tentacoli
+    estesi risulta con un corpo centrale piu' piccolo per fare spazio).
+    Questo causa l'effetto "salto/zoom" durante l'animazione.
+
+    SOLUZIONE: dopo il processing, calcoliamo l'altezza del bbox di
+    ciascun frame. Se un frame ha un'altezza molto diversa dalla media
+    (oltre il 25% di differenza), lo ridimensioniamo uniformemente per
+    farlo corrispondere all'altezza media. Il ridimensionamento mantiene
+    l'aspect ratio e centra il personaggio sul canvas.
+
+    Questo NON risolve il problema alla radice (la AI disegna comunque
+    corpi diversi), ma AMMAZZA l'effetto visivo di zoom/salto: il
+    personaggio appare stabile nel canvas, le parti mobili si muovono ma
+    il corpo centrale resta della stessa dimensione apparente.
+    """
+    if len(frames) < 2:
+        return frames
+
+    # 1) Calcola l'altezza del bbox per ogni frame
+    heights = []
+    bboxes = []
+    for f in frames:
+        if f is None:
+            heights.append(0)
+            bboxes.append(None)
+            continue
+        alpha = f[..., 3]
+        rows = np.any(alpha > 0, axis=1)
+        if not rows.any():
+            heights.append(0)
+            bboxes.append(None)
+            continue
+        rmin, rmax = np.where(rows)[0][[0, -1]]
+        h = rmax - rmin + 1
+        heights.append(h)
+        bboxes.append((rmin, rmax))
+
+    # 2) Calcola altezza target.
+    # Usiamo il VALORE MASSIMO delle altezze come target: questo significa
+    # che i frame con personaggio piu' piccolo vengono ingranditi fino a
+    # raggiungere le dimensioni del frame piu' grande. L'assunto e' che
+    # il frame piu' grande rappresenti il personaggio alla sua dimensione
+    # "naturale" (solitamente il frame 0 con posa neutra). Questo e'
+    # migliore della mediana perche' i frame difettosi (piu' piccoli) vengono
+    # portati alla dimensione corretta, non verso una media che includerebbe
+    # il difetto.
+    valid_heights = [h for h in heights if h > 0]
+    if not valid_heights:
+        return frames
+    target_h = max(valid_heights)
+
+    # 3) Per ogni frame che differisce dal target per piu' del 10%,
+    # ridimensiona uniformemente per farlo corrispondere al target_h.
+    new_frames = []
+    for i, f in enumerate(frames):
+        if f is None or bboxes[i] is None:
+            new_frames.append(f)
+            continue
+        h_i = heights[i]
+        if h_i == 0:
+            new_frames.append(f)
+            continue
+        # Differenza percentuale rispetto al target
+        diff_pct = abs(h_i - target_h) / float(target_h)
+        if diff_pct < 0.10:
+            # Gia' coerente, non ridimensionare
+            new_frames.append(f)
+            continue
+
+        # Ridimensiona: scala = target_h / h_i
+        # Se il frame ha personaggio piu' piccolo (h_i < target_h),
+        # scala > 1 -> ingrandisce. Se piu' grande, scala < 1 -> rimpicciolisce.
+        scale = float(target_h) / float(h_i)
+        # Nuove dimensioni del frame (mantenendo 64x64 canvas)
+        # Ridimensioniamo solo il contenuto (bbox + piccolo margine), poi
+        # ri-centriamo sul canvas 64x64.
+        rmin, rmax = bboxes[i]
+        # Estrai il bbox + 2px margine (clamped a 0..63)
+        sub_rmin = max(0, rmin - 2)
+        sub_rmax = min(SPRITE_SIZE - 1, rmax + 2)
+        sub_cmin = 0
+        sub_cmax = SPRITE_SIZE - 1
+        # Trova bbox orizzontale effettivo
+        alpha = f[..., 3]
+        cols = np.any(alpha > 0, axis=0)
+        if cols.any():
+            cmin, cmax = np.where(cols)[0][[0, -1]]
+            sub_cmin = max(0, cmin - 2)
+            sub_cmax = min(SPRITE_SIZE - 1, cmax + 2)
+
+        sub_h = sub_rmax - sub_rmin + 1
+        sub_w = sub_cmax - sub_cmin + 1
+        # Ridimensiona
+        new_w = max(1, int(sub_w * scale))
+        new_h = max(1, int(sub_h * scale))
+        # Clampa a 64x64
+        if new_w > SPRITE_SIZE:
+            ratio = float(SPRITE_SIZE) / new_w
+            new_w = SPRITE_SIZE
+            new_h = max(1, int(new_h * ratio))
+        if new_h > SPRITE_SIZE:
+            ratio = float(SPRITE_SIZE) / new_h
+            new_h = SPRITE_SIZE
+            new_w = max(1, int(new_w * ratio))
+
+        sub_arr = f[sub_rmin:sub_rmax + 1, sub_cmin:sub_cmax + 1]
+        img = Image.fromarray(sub_arr, 'RGBA')
+        img = img.resize((new_w, new_h), resample=Image.LANCZOS)
+        arr_resized = np.array(img)
+
+        # Centra su canvas 64x64.
+        # Importante: centra VERTICALMENTE in base al centroide del personaggio
+        # (NON allineando i piedi a y=56), perche' se il frame e' stato
+        # ridimensionato in modo significativo, l'allineamento piedi-a-56
+        # causerebbe clipping in alto. Invece, calcoliamo l'offset_y in
+        # modo che il centro verticale del personaggio coincida col
+        # centro verticale degli altri frame.
+        canvas = np.zeros((SPRITE_SIZE, SPRITE_SIZE, 4), dtype=np.uint8)
+        if new_h >= SPRITE_SIZE:
+            # Personaggio piu' alto del canvas: centra e taglia
+            offset_y = 0
+            offset_x = (SPRITE_SIZE - new_w) // 2
+            if offset_x < 0:
+                offset_x = 0
+            canvas[:, offset_x:offset_x + new_w] = arr_resized[:SPRITE_SIZE, :min(new_w, SPRITE_SIZE - offset_x)]
+        else:
+            # Personaggio piu' piccolo del canvas: centra verticalmente
+            # usando come riferimento i "piedi" (y=56). Se il ridimensionamento
+            # porta il personaggio a essere piu' alto di 56, centra invece
+            # in base al centroide.
+            feet_y = 56
+            if new_h <= feet_y:
+                offset_y = feet_y - new_h
+            else:
+                # Personaggio piu' alto dei piedi: centra verticalmente
+                offset_y = (SPRITE_SIZE - new_h) // 2
+            offset_x = (SPRITE_SIZE - new_w) // 2
+            if offset_x < 0:
+                offset_x = 0
+            # Copia con clipping sicuro
+            copy_h = min(new_h, SPRITE_SIZE - offset_y)
+            copy_w = min(new_w, SPRITE_SIZE - offset_x)
+            canvas[offset_y:offset_y + copy_h, offset_x:offset_x + copy_w] = \
+                arr_resized[:copy_h, :copy_w]
+        new_frames.append(canvas)
+
+    return new_frames
 
 
 def compose_spritesheet(frames, out_path):
-    """Composizione orizzontale: 4 frame 64x64 -> 256x64."""
+    """Composizione orizzontale: 4 frame 64x64 -> 256x64.
+
+    Prima di comporre, normalizza le dimensioni dei frame per evitare
+    l'effetto zoom/salto (vedi normalize_frame_sizes).
+    """
+    # Normalizza dimensioni frame
+    frames = normalize_frame_sizes(frames)
+
     sheet = np.zeros((SPRITE_SIZE, SPRITE_SIZE * N_FRAMES, 4), dtype=np.uint8)
     for i, frame in enumerate(frames):
         if frame is not None:
@@ -461,13 +717,13 @@ def process_boss(boss_def):
             print(f"  [ERROR] Generazione base fallita per {sprite_id}")
             return False
 
-    # --- 2. Processa frame base per trovare il bbox ---
-    print(f"  Frame 0: post-processing per trovare bbox...")
-    frame0, target_bbox = process_frame(base_raw_path)
+    # --- 2. Processa frame base per trovare l'altezza di riferimento ---
+    print(f"  Frame 0: post-processing per trovare altezza riferimento...")
+    frame0, target_height = process_frame(base_raw_path)
     if frame0 is None:
         print(f"  [ERROR] Post-processing frame 0 fallito")
         return False
-    print(f"     BBox rilevato: y={target_bbox[0]}..{target_bbox[1]}, x={target_bbox[2]}..{target_bbox[3]}")
+    print(f"     Altezza di riferimento (raw 1024): {target_height}px")
 
     # --- 3. Genera 3 varianti con image-edit ---
     # Ogni edit parte dal frame base (NON dal frame precedente) per
@@ -479,12 +735,19 @@ def process_boss(boss_def):
             print(f"  Frame {i}: gia' esistente, skip edit")
         else:
             print(f"  Frame {i}: image-edit AI dal frame 0...")
-            # Il prompt enffatizza il mantenimento dell'identita'
+            # Il prompt rafforza MASSIMAMENTE la coerenza: il personaggio
+            # deve restare IDENTICO in posizione, dimensione, colori e stile.
+            # Solo le parti mobili specificate devono cambiare.
             full_prompt = (
                 f"{edit_prompt}. "
-                f"MUST keep the character identical in style, proportions, "
-                f"colors, position in canvas. ONLY the specified parts move. "
-                f"Maintain solid flat pure black RGB(0,0,0) background."
+                f"CRITICAL CONSTRAINTS: the character MUST remain PIXEL-IDENTICAL "
+                f"to the input image in: body shape, body size, body position in "
+                f"canvas, body colors, body proportions, art style, and pixel art "
+                f"outlines. Do NOT zoom, do NOT scale, do NOT resize, do NOT move "
+                f"the body, do NOT change body colors, do NOT redraw the character. "
+                f"ONLY the explicitly specified moving parts (arms/wings/tentacles/"
+                f"staff/cloak) should change. Maintain solid flat pure black "
+                f"RGB(0,0,0) background."
             )
             if not edit_image(full_prompt, base_raw_path, edit_raw_path):
                 print(f"  [WARN] Edit fallito per frame {i}, uso frame 0 come fallback")
@@ -492,9 +755,11 @@ def process_boss(boss_def):
                 frames.append(frame0.copy())
                 continue
 
-        # Processa usando lo stesso bbox del frame 0 per allineamento
-        print(f"  Frame {i}: post-processing (stesso bbox del frame 0)...")
-        frame_i, _ = process_frame(edit_raw_path, target_bbox=target_bbox)
+        # Processa usando la stessa altezza di riferimento del frame 0
+        # per evitare l'effetto zoom (tutti i 4 frame ridimensionati
+        # in modo che il personaggio abbia la stessa altezza finale).
+        print(f"  Frame {i}: post-processing (stessa altezza del frame 0)...")
+        frame_i, _ = process_frame(edit_raw_path, target_height=target_height)
         if frame_i is None:
             print(f"  [WARN] Post-processing frame {i} fallito, uso frame 0")
             frames.append(frame0.copy())
