@@ -88,22 +88,18 @@ std::string Enemy::getSpriteId(EnemyType t) {
     }
 }
 
-// True se il tipo usa BFS per l'AI di movimento; false se usa greedy.
-// Tipi "pensanti" (lenti ma determinati): robot/slime/demon/orc originali
-// + nuovi tipi coriacei (bone_golem, damned_knight, gargoyle).
+// True se il tipo usa BFS per l'AI di movimento.
+//
+// NOTA: in origine solo 7 tipi su 28 usavano BFS; gli altri usavano
+// moveGreedy, che e' un'euristica locale soggetta a minimi locali (nemici
+// "bloccati" in vicoli ciechi o in oscillazione, specialmente quando il
+// player e' lontano). Ora TUTTI i nemici usano BFS per garantire che
+// inseguano sempre il player e non rimangano fermi. La funzione e'
+// mantenuta per compatibilita' con il resto del codice (e per futuri
+// ribilanciamenti), ma restituisce sempre true.
 bool Enemy::usesBFS(EnemyType t) {
-    switch(t) {
-        case ENEMY_ROBOT:
-        case ENEMY_SLIME:
-        case ENEMY_DEMON:
-        case ENEMY_ORC:
-        case ENEMY_BONE_GOLEM:
-        case ENEMY_DAMNED_KNIGHT:
-        case ENEMY_GARGOYLE:
-            return true;
-        default:
-            return false;
-    }
+    (void)t;  // parametro non piu' usato: tutti i tipi usano BFS
+    return true;
 }
 
 // True se il tipo puo' sparare al giocatore (a distanza, non corpo a corpo).
@@ -176,10 +172,11 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0) {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos() {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
+    lastPos = pos;  // inizializza lastPos = pos, cosi' al primo frame non risulta "stuck"
     dx = 0; dy = 0;
 
     // --- Statistiche per tipo ---
@@ -247,35 +244,86 @@ bool Enemy::bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep) {
     return false;
 }
 
-// moveGreedy: euristica semplice (invariata rispetto all'originale).
+// moveGreedy: euristica semplice. Sceglie la cella adiacente che minimizza
+// la distanza in linea d'aria (squared) verso target, con penalita' per
+// tornare indietro. Migliorato: se nessuna direzione "migliora" la distanza
+// (vicolo cieco), sceglie comunque una direzione aperta casuale invece di
+// lasciare dx=0, dy=0 (che bloccherebbe il nemico).
 void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
     int col = (int)(pos.x / TILE_SIZE);
     int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);
     int bestDx = 0, bestDy = 0;
     float minDist = 999999.0f;
     int dc[] = {0, 1, 0, -1}, dr[] = {-1, 0, 1, 0};
+    bool anyOpen = false;
     for (int i = 0; i < 4; ++i) {
         int nc = col + dc[i], nr = row + dr[i];
         if (!maze.isWall(nc, nr)) {
+            anyOpen = true;
             float dist = (float)((nc - target.x) * (nc - target.x) + (nr - target.y) * (nr - target.y));
             if (dc[i] == -dx && dr[i] == -dy) dist += 10;
             if (dist < minDist) { minDist = dist; bestDx = dc[i]; bestDy = dr[i]; }
         }
     }
+    // Fallback anti-stuck: se tutte le 4 direzioni sono muri, resta fermo
+    // (caso rarissimo, solo se il nemico e' circondato). Altrimenti, se
+    // bestDx/bestDy sono ancora 0 (nessuna direzione "migliorava"), scegli
+    // una direzione aperta casuale per smuoversi.
+    if (anyOpen && bestDx == 0 && bestDy == 0) {
+        pickRandomOpenDir(maze, col, row);
+        return;
+    }
     dx = bestDx; dy = bestDy;
+}
+
+// pickRandomOpenDir: sceglie una direzione aperta casuale tra le 4 cardinali.
+// Usato come ultima risorsa quando BFS e greedy sono entrambi bloccati,
+// per evitare che il nemico rimanga "congelato" in cella. Imposta dx, dy
+// direttamente. Restituisce true se ha trovato una direzione, false se e'
+// circondato da muri (caso rarissimo).
+bool Enemy::pickRandomOpenDir(Maze& maze, int col, int row) {
+    int dc[] = {0, 1, 0, -1}, dr[] = {-1, 0, 1, 0};
+    // Randomizza l'ordine di partenza per evitare bias direzionale
+    int start = rand() % 4;
+    for (int i = 0; i < 4; ++i) {
+        int idx = (start + i) % 4;
+        int nc = col + dc[idx], nr = row + dr[idx];
+        if (!maze.isWall(nc, nr)) {
+            dx = dc[idx]; dy = dr[idx];
+            return true;
+        }
+    }
+    dx = 0; dy = 0;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
 // update: aggiorna movimento e sparo del nemico.
-// Logica movimento (snap-to-grid):
+// Logica movimento (snap-to-grid) - AGGRESSIVA:
 //   * Se vicino al centro cella, si allinea al centro esatto.
-//   * Se usesBFS(type): ricalcola il path ogni ~250 ms.
-//   * Altrimenti: greedy ad ogni centro cella.
-//   * Se davanti c'e' muro, si ferma.
+//   * TUTTI i nemici usano BFS per inseguire il player (cammino minimo).
+//   * Ricalcolo del path: ogni ~200 ms, MA ANCHE immediatamente se:
+//       - dx==0 && dy==0 (nemico fermo in cella)
+//       - stuckTimer > STUCK_THRESHOLD_MS (posizione immobile da troppo)
+//   * Se BFS fallisce (player irraggiungibile), fallback a moveGreedy.
+//   * Se anche moveGreedy e' bloccato, pickRandomOpenDir sceglie una
+//     direzione aperta casuale per smuovere il nemico.
+//   * Se davanti c'e' muro, si ferma (ma al prossimo frame verra'
+//     ricalcolato il path, grazie alla condizione dx==0 && dy==0).
 // Logica sparo:
 //   * Solo tipi canShoot(type), con cooldown 1-2.5 sec.
 //   * Sparano se il giocatore e' nel raggio di 500 px.
 // ---------------------------------------------------------------------------
+// Soglia di "stallo": se la posizione resta ~immobile per piu' di 600 ms
+// simulati (~36 frame a 60 FPS), si forza il ricalcolo del path e, se
+// necessario, una direzione casuale. Previene il caso in cui un nemico
+// lontano dal player rimanga "bloccato" per via di oscillazioni o di
+// vicoli ciechi del pathfinding greedy (ora sostituito da BFS, ma il
+// salvaguardia resta per casi limite).
+static constexpr uint32_t STUCK_THRESHOLD_MS = 600;
+// Intervallo normale di ricalcolo del path BFS (in ms simulati).
+static constexpr uint32_t PATH_RECALC_INTERVAL_MS = 200;
+
 void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& playerPixelPos, std::vector<Projectile>& enemyProjectiles) {
     // Decrementa i timer delle animazioni (16 ms per frame a 60 FPS)
     if (attackingTimer > 16) attackingTimer -= 16; else attackingTimer = 0;
@@ -314,20 +362,79 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
     float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
     float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
     pathUpdateTimer += 16;
+
+    // --- ANTI-STUCK TRACKING ---
+    // Confronta posizione attuale con quella del frame precedente. Se il
+    // movimento e' inferiore a ~1px, il nemico e' considerato "fermo" e
+    // stuckTimer viene incrementato; altrimenti viene azzerato. Quando
+    // stuckTimer supera STUCK_THRESHOLD_MS, viene forzato un ricalcolo del
+    // path al prossimo centro cella (vedi sotto).
+    float dxPos = pos.x - lastPos.x;
+    float dyPos = pos.y - lastPos.y;
+    if (dxPos * dxPos + dyPos * dyPos < 1.0f) {
+        stuckTimer += 16;
+    } else {
+        stuckTimer = 0;
+    }
+    lastPos = pos;
+
     if (fabs(pos.x - centerX) < speed && fabs(pos.y - centerY) < speed) {
         pos.x = centerX; pos.y = centerY;
 
-        if (usesBFS(type)) {
-            if (pathUpdateTimer > 250) {
-                pathUpdateTimer = 0;
+        // Condizioni per ricalcolare il path BFS:
+        //  (a) timer normale scaduto (ogni ~200 ms): cadenza standard
+        //  (b) dx==0 && dy==0: nemico fermo (appena spawnato, o bloccato
+        //      da un muro al frame precedente). Forza ricalcolo immediato
+        //      per evitare il "freeze" in cella.
+        //  (c) stuckTimer > STUCK_THRESHOLD_MS: posizione immobile da
+        //      troppo. Forza ricalcolo + fallback direzione casuale.
+        bool mustRecompute = (pathUpdateTimer >= PATH_RECALC_INTERVAL_MS)
+                          || (dx == 0 && dy == 0)
+                          || (stuckTimer > STUCK_THRESHOLD_MS);
+
+        if (mustRecompute) {
+            pathUpdateTimer = 0;
+            bool pathFound = false;
+            // Sempre BFS (tutti i nemici). Usa usesBFS() per coerenza
+            // con eventuali futuri ribilanciamenti.
+            if (usesBFS(type)) {
                 Vec2 nextStep;
                 if (bfsPath(maze, {col, row}, playerGridPos, nextStep)) {
-                    dx = nextStep.x - col; dy = nextStep.y - row;
+                    dx = nextStep.x - col;
+                    dy = nextStep.y - row;
+                    pathFound = true;
+                    // Se abbiamo trovato un path valido, resettiamo lo
+                    // stuckTimer (stiamo per muoverci).
+                    stuckTimer = 0;
                 }
             }
-        } else {
-            moveGreedy(maze, playerGridPos);
+            // Fallback 1: se BFS fallisce (player irraggiungibile - raro)
+            // o se usesBFS fosse false (non succede ora), usa greedy.
+            if (!pathFound) {
+                moveGreedy(maze, playerGridPos);
+                if (dx != 0 || dy != 0) {
+                    pathFound = true;
+                    stuckTimer = 0;
+                }
+            }
+            // Fallback 2: se BFS e greedy sono entrambi bloccati
+            // (nessuna direzione "migliore"), scegli una direzione
+            // aperta casuale. Questo rompe gli stalli in cui il
+            // nemico rimarrebbe fermo in cella per sempre.
+            if (!pathFound) {
+                if (stuckTimer > STUCK_THRESHOLD_MS) {
+                    // Solo se siamo in stallo: scegli direzione random.
+                    pickRandomOpenDir(maze, col, row);
+                    if (dx != 0 || dy != 0) {
+                        stuckTimer = 0;
+                    }
+                }
+                // Se non siamo ancora in stallo, lascia dx=0,dy=0:
+                // al prossimo accumulo di stuckTimer verra' forzato.
+            }
         }
+        // (else: mantieni direzione corrente, non ricalcolare)
+
         if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
     }
     pos.x += dx * speed; pos.y += dy * speed;
