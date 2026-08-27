@@ -666,11 +666,19 @@ void Game::handleEvents() {
                     // Torna al menu': ferma la musica di gioco e (se l'opzione
                     // musica e' attiva) riprende la traccia DEDICATA del menu'
                     // (corale fantasy, diversa dalle musiche di gioco).
+                    // --- FIX CRITICO: pulisce tutte le entita' di gioco
+                    // (boss, miniBoss, enemies, projectiles, mine, ecc.)
+                    // per evitare memory leak e stati sporchi che causavano
+                    // crash al riavvio della demo. Prima, se l'utente premeva
+                    // ESC da STATE_CONTINUES/STATE_LOSE, il boss restava
+                    // allocato e al riavvio della demo poteva causare
+                    // comportamenti imprevedibili.
                     state = STATE_MENU;
                     currentLevel = 1;
                     audio.stopEpicMusic();  // ferma eventuali jingle epici
                     if (musicEnabled) audio.playMenuMusic();
                     else audio.stopMusic();
+                    cleanupGameEntities();
                 }
             }
 
@@ -806,6 +814,10 @@ void Game::handleEvents() {
                     audio.stopEpicMusic();
                     if (musicEnabled) audio.playMenuMusic();
                     else audio.stopMusic();
+                    // --- FIX: pulisce tutte le entita' di gioco (boss,
+                    // miniBoss, enemies, projectiles, ecc.) per evitare
+                    // memory leak e stati sporchi al riavvio della demo.
+                    cleanupGameEntities();
                 }
             }
         }
@@ -1785,6 +1797,17 @@ void Game::update() {
                 }
                 if (p1Hit || p2Hit) {
                     exitDoor.active = false;
+                    // --- FIX DEMO MODE: se siamo in demo e il player demo
+                    // entra nella porta di uscita, NON avviare il boss fight.
+                    // Altrimenti state passerebbe da STATE_DEMO a STATE_BOSS
+                    // ma demoIsBoss resterebbe false: updateDemoMode() non
+                    // verrebbe piu' chiamato (state != STATE_DEMO), la demo
+                    // si "romperebbe" e il timer resterebbe bloccato.
+                    // Invece, fermiamo subito la demo e torniamo al menu'.
+                    if (state == STATE_DEMO) {
+                        stopDemoMode();
+                        return;  // evita di proseguire con startBossFight
+                    }
                     startBossFight();
                 }
             }
@@ -3016,6 +3039,17 @@ void Game::update() {
             audio.playSound(SOUND_BOSS_DEATH);
             player.addLife(); // Guadagni una vita dopo aver sconfitto il boss
             currentLevel++;
+
+            // --- FIX DEMO MODE: se la demo ha ucciso il boss, NON avanzare
+            // al livello successivo. Altrimenti startLevel() cambierebbe
+            // state a STATE_PLAYING, demoIsBoss resterebbe true, e
+            // updateDemoMode() non verrebbe piu' chiamato (la demo resterebbe
+            // "bloccata" in STATE_PLAYING con AI demo spenta). Invece,
+            // fermiamo subito la demo e torniamo al menu'.
+            if (state == STATE_DEMO) {
+                stopDemoMode();
+                return;
+            }
 
             // Modalita' story: vittoria dopo STORY_LEVELS_COUNT livelli
             // (boss dell'ultimo livello morto -> currentLevel superiore al max)
@@ -8398,6 +8432,21 @@ void Game::startDemoMode() {
     // Applica il personaggio al player
     player.setCharacter(player1Character, 1);
 
+    // --- FIX CRITICO: reset completo del player ---
+    // startLevel(N) con N>1 chiama solo resetPosition() (NON resetta
+    // vite/energia/arma/score). Se la demo precedente è finita con
+    // player.lives=0 (player morto), la demo successiva partiva già con
+    // vite=0 e si chiudeva immediatamente alla prima collisione.
+    // Chiamiamo player.reset() qui per garantire che ogni demo parta con
+    // vite=3, energia=massima, arma=pistola, score=0, indipendentemente
+    // dallo stato lasciato dalla demo precedente.
+    player.reset();
+    if (numPlayers == 2) player2.reset();
+    // Reset anche dei crediti continua (la demo non li consuma, ma per
+    // coerenza con una nuova partita):
+    continuesLeft = 3;
+    diedInBoss = false;
+
     // Imposta il timer di durata demo a 30 secondi (30000 ms)
     demoDurationTimer = 30000;
 
@@ -8430,6 +8479,78 @@ void Game::startDemoMode() {
 }
 
 // ---------------------------------------------------------------------------
+// cleanupGameEntities: pulisce TUTTE le entita' di gioco allocate
+// dinamicamente o contenute nei vector. Da chiamare ogni volta che si
+// lascia una partita/demo per tornare al menu' principale.
+//
+// Previene:
+//   * Memory leak: boss/miniBoss allocati con `new` ma mai deallocati
+//     (es. quando l'utente preme ESC da STATE_CONTINUES o STATE_LOSE)
+//   * Stati sporchi: enemies/projectiles/magicPortal.deadEnemyIndices
+//     residui che potevano causare crash alla ripartenza della demo
+//   * Bug "seconda demo si chiude": se il boss della demo precedente
+//     restava allocato, al riavvio con demoIsBoss=false il puntatore
+//     era dangling (non deallocato, ma non gestito)
+// ---------------------------------------------------------------------------
+void Game::cleanupGameEntities() {
+    // Dealloca boss e miniBoss (allocati con new)
+    if (boss) { delete boss; boss = nullptr; }
+    if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
+    miniBossSpawned = false;
+
+    // Pulisce tutti i vector di entita'
+    enemies.clear();
+    bossProjectiles.clear();
+    enemyProjectiles.clear();
+    bossRoomWeapons.clear();
+    lightnings.clear();
+    particles.clear();
+    bloodStains.clear();
+    ashPiles.clear();
+    fireBursts.clear();
+    fireworks.clear();
+
+    // Pulisce i proiettili dei player (Player::projectiles e' un vector
+    // membro della classe Player, non visibile direttamente qui, ma viene
+    // ripulito da player.resetPosition()? NO: resetPosition NON pulisce i
+    // proiettili. Solo player.reset() lo fa. Per sicurezza, chiamiamo
+    // reset() qui per pulire anche i proiettili del player.)
+    // NOTA: non chiamiamo player.reset() qui perche' questo metodo puo'
+    // essere chiamato anche a meta' partita. I proiettili del player
+    // verranno ripuliti al prossimo startLevel/startDemoMode.
+
+    // Resetta stato di mine, chalice, scepter, speedBoots (potrebbero
+    // restare active=true da una demo precedente e causare comportamenti
+    // strani al riavvio)
+    mine.active = false;
+    mine.bouncing = false;
+    mine.bounceTimer = 0;
+    mine.inBossRoom = false;
+    chalice.active = false;
+    chaliceUsed = false;
+    scepter.active = false;
+    scepter.triggered = false;
+    scepter.lightningsLeft = 0;
+    scepter.lightningTimer = 0;
+    scepterUsed = false;
+    speedBoots.active = false;
+    speedBoots2.active = false;
+    exitDoor.active = false;
+    magicPortal.active = false;
+    magicPortal.phase = 3;
+    magicPortal.phaseTimer = 0;
+    magicPortal.enemiesToSpawn = 0;
+    magicPortal.spawnTimer = 0;
+    magicPortal.deadEnemyIndices.clear();
+    portalUsed = false;
+
+    // Resetta timer di invincibilita' e flash schermo
+    playerInvincibleTimer = 0;
+    player2InvincibleTimer = 0;
+    screenFlashTimer = 0;
+}
+
+// ---------------------------------------------------------------------------
 // stopDemoMode: ferma la demo e torna al menu principale.
 //   * Resetta il timer di inattivita' a 30 secondi (per non far ripartire
 //     subito la demo)
@@ -8443,20 +8564,9 @@ void Game::stopDemoMode() {
     // Ferma la musica di gioco e riprende quella del menu' se attiva
     audio.stopMusic();
     if (musicEnabled) audio.playMenuMusic();
-    // Pulisce eventuali entita' residue
-    if (boss) { delete boss; boss = nullptr; }
-    if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
-    miniBossSpawned = false;
-    enemies.clear();
-    bossProjectiles.clear();
-    enemyProjectiles.clear();
-    bossRoomWeapons.clear();
-    lightnings.clear();
-    particles.clear();
-    bloodStains.clear();
-    ashPiles.clear();
-    fireBursts.clear();
-    fireworks.clear();
+    // Pulisce tutte le entita' residue (boss, miniBoss, enemies, projectiles,
+    // mine, scepter, chalice, ecc.) usando l'helper centralizzato.
+    cleanupGameEntities();
 }
 
 // ---------------------------------------------------------------------------

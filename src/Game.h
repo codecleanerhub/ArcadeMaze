@@ -420,6 +420,14 @@ private:
     // inattivita' a 30 secondi.
     void stopDemoMode();
 
+    // --- GAME STATE CLEANUP ---
+    // Pulisce TUTTE le entita' di gioco allocate dinamicamente o contenute
+    // nei vector: boss, miniBoss, enemies, projectiles, particles, ecc.
+    // Da chiamare ogni volta che si lascia una partita/demo per tornare al
+    // menu' principale. Previene memory leak (boss/miniBoss non deallocati)
+    // e stati sporchi che potevano causare crash al riavvio della demo.
+    void cleanupGameEntities();
+
     // --- INTRO CUTSCENE ---
     // Avvia l'intro cutscene a fumetti: imposta la prima immagine (frame 0)
     // e il timer a 8000 ms. Chiamato da startGameAfterSelectPlayer() dopo
