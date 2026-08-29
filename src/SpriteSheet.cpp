@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <cstdlib>
+#include <cstring>
 
 // ===========================================================================
 // SpriteSheet.cpp - Implementazione.
@@ -12,6 +13,28 @@
 // Se il parsing fallisce, si usano i default.
 // ===========================================================================
 
+// Helper multipiattaforma per leggere una variabile d'ambiente.
+// Usa std::getenv su Linux/macOS e _dupenv_s su MSVC (per evitare il
+// warning C4996 "getenv unsafe" su Windows).
+static std::string getEnvVar(const char* name) {
+    if (name == nullptr || name[0] == '\0') return "";
+#if defined(_MSC_VER)
+    // MSVC: usa _dupenv_s (sicura, non deprecata)
+    char* value = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&value, &len, name) == 0 && value != nullptr) {
+        std::string result(value);
+        free(value);
+        return result;
+    }
+    return "";
+#else
+    // Linux/macOS: usa std::getenv (thread-safe con un mutex interno in C11+)
+    const char* value = std::getenv(name);
+    return (value != nullptr) ? std::string(value) : std::string();
+#endif
+}
+
 // Helper: attiva log diagnostico se la variabile d'ambiente
 // ARCADE_DEBUG_SPRITES=1 e' impostata. Utile per diagnosticare problemi
 // di caricamento sprite.
@@ -19,8 +42,8 @@ static bool debugSpritesEnabled() {
     static bool checked = false;
     static bool enabled = false;
     if (!checked) {
-        const char* v = std::getenv("ARCADE_DEBUG_SPRITES");
-        enabled = (v != nullptr && v[0] == '1');
+        std::string v = getEnvVar("ARCADE_DEBUG_SPRITES");
+        enabled = (v == "1");
         checked = true;
     }
     return enabled;

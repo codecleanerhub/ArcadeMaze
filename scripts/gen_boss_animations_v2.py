@@ -651,14 +651,101 @@ def normalize_frame_sizes(frames):
     return new_frames
 
 
+def align_frames_to_base(frames):
+    """
+    Allinea i frame 1, 2, 3 al frame 0 usando il CENTROIDE orizzontale
+    dei pixel opachi. Riduce l'effetto "zoppia" dovuto al fatto che l'AI
+    genera frame con il corpo leggermente spostato orizzontalmente.
+
+    Strategia:
+    1. Calcola il centroide X (media delle coordinate X dei pixel opachi,
+       pesata per alpha) per ogni frame.
+    2. Per i frame 1, 2, 3: calcola la differenza di centroide rispetto
+       al frame 0 e li trasla orizzontalmente per allinearlo.
+    3. La traslazione e' limitata a +/- 8 px per non introdurre salti
+       eccessivi (limite conservativo).
+
+    NOTA: allinea solo orizzontalmente. L'allineamento verticale e'
+    gia' gestito da process_frame (piedi a y=56).
+    """
+    if len(frames) < 2:
+        return frames
+
+    # Calcola centroide X per ogni frame
+    centroids = []
+    for f in frames:
+        if f is None:
+            centroids.append(None)
+            continue
+        alpha = f[..., 3]
+        if alpha.sum() == 0:
+            centroids.append(None)
+            continue
+        # Coordinate X di tutti i pixel
+        h, w = alpha.shape
+        xs = np.arange(w)
+        # Somma pesata di X per alpha (colonna per colonna, piu' veloce)
+        col_sums = alpha.sum(axis=0).astype(float)  # peso per colonna
+        total_weight = col_sums.sum()
+        if total_weight == 0:
+            centroids.append(None)
+            continue
+        centroid_x = (xs * col_sums).sum() / total_weight
+        centroids.append(centroid_x)
+
+    # Frame 0 e' il riferimento
+    if centroids[0] is None:
+        return frames
+    base_cx = centroids[0]
+
+    new_frames = []
+    max_shift = 8  # limit shift to avoid excessive jumps
+    for i, f in enumerate(frames):
+        if f is None or centroids[i] is None:
+            new_frames.append(f)
+            continue
+        if i == 0:
+            new_frames.append(f)
+            continue
+        # Calcola shift richiesto (positivo = sposta a destra)
+        shift = base_cx - centroids[i]
+        # Clampa il shift
+        if shift > max_shift:
+            shift = max_shift
+        elif shift < -max_shift:
+            shift = -max_shift
+        # Round a intero
+        shift_int = int(round(shift))
+        if shift_int == 0:
+            new_frames.append(f)
+            continue
+        # Applica shift: copia il frame su un canvas nuovo, shiftato
+        new_f = np.zeros_like(f)
+        h, w = f.shape[:2]
+        if shift_int > 0:
+            # Sposta a destra: src[0:w-shift] -> dst[shift:w]
+            new_f[:, shift_int:w] = f[:, 0:w - shift_int]
+        else:
+            # Sposta a sinistra: shift_int e' negativo
+            abs_shift = -shift_int
+            new_f[:, 0:w - abs_shift] = f[:, abs_shift:w]
+        new_frames.append(new_f)
+    return new_frames
+
+
 def compose_spritesheet(frames, out_path):
     """Composizione orizzontale: 4 frame 64x64 -> 256x64.
 
-    Prima di comporre, normalizza le dimensioni dei frame per evitare
-    l'effetto zoom/salto (vedi normalize_frame_sizes).
+    Pipeline di post-processing applicata in ordine:
+    1. normalize_frame_sizes: ridimensiona frame anomali per evitare
+       effetto zoom/salto.
+    2. align_frames_to_base: allinea orizzontalmente i centroidi dei
+       frame 1/2/3 al frame 0, riducendo l'effetto "zoppia".
     """
-    # Normalizza dimensioni frame
+    # 1. Normalizza dimensioni frame
     frames = normalize_frame_sizes(frames)
+    # 2. Allinea centroidi orizzontali (riduce zoppia)
+    frames = align_frames_to_base(frames)
 
     sheet = np.zeros((SPRITE_SIZE, SPRITE_SIZE * N_FRAMES, 4), dtype=np.uint8)
     for i, frame in enumerate(frames):
