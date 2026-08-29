@@ -128,6 +128,13 @@ public:
     bool isElectrified() const { return electrifiedTimer > 0; }
     void startElectrified(int frames = 30);  // folgora il nemico per `frames` frame
 
+    // --- FLEE MODE (calice dell'immortalita') ---
+    // Attiva/disattiva la modalita' "fuga". Quando attiva, il nemico si
+    // allontana dal player invece di inseguirlo. Game chiama questo
+    // metodo con true quando il player e' invincibile (calice attivo).
+    void setFleeMode(bool flee) { fleeMode = flee; }
+    bool isFleeing() const { return fleeMode; }
+
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei nemici dalla cartella data. Da chiamare
     // una volta in Game::init(). I file mancanti vengono saltati
@@ -163,8 +170,19 @@ private:
     uint32_t stuckTimer;
     sf::Vector2f lastPos;
 
+    // --- FLEE MODE (calice dell'immortalita') ---
+    // Quando fleeMode e' true, il nemico si allontana dal player invece di
+    // inseguirlo. Attivato da Game quando il player e' invincibile (calice):
+    // i nemici hanno "paura" di essere danneggiati dal fuoco del calice e
+    // cercano di mantenere la distanza.
+    bool fleeMode;
+
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
+    // fleeGreedy: euristica di FUGA. Sceglie la cella adiacente che
+    // MASSIMIZZA la distanza dal target (il player). Usata quando
+    // fleeMode e' true.
+    void fleeGreedy(Maze& maze, const Vec2& target);
     // Sceglie una direzione aperta casuale tra le 4 cardinali (usata come
     // ultima risorsa quando BFS e greedy sono entrambi bloccati). Restituisce
     // true se ha trovato una direzione aperta, false se e' circondato da muri.

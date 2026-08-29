@@ -1506,8 +1506,14 @@ void Game::update() {
 
         // Aggiornamento nemici (passa pos giocatore per AI + sparo)
         sf::Vector2f pPos = player.getPixelPos();
+        // FLEE MODE: se il player e' invincibile (calice attivo), i nemici
+        // fuggono via dal player per evitare di essere bruciati.
+        bool playerInvincible = player.isInvulnerable();
         for (auto& enemy : enemies) {
-            if (!enemy.isDeathAnimDone()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
+            if (!enemy.isDeathAnimDone()) {
+                enemy.setFleeMode(playerInvincible);
+                enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
+            }
         }
 
         // --- Aggiornamento mini-boss (se presente) ---

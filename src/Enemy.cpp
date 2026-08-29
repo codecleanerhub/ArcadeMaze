@@ -172,7 +172,7 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), animTime(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos() {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), animTime(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos(), fleeMode(false) {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
@@ -270,6 +270,41 @@ void Enemy::moveGreedy(Maze& maze, const Vec2& target) {
     // bestDx/bestDy sono ancora 0 (nessuna direzione "migliorava"), scegli
     // una direzione aperta casuale per smuoversi.
     if (anyOpen && bestDx == 0 && bestDy == 0) {
+        pickRandomOpenDir(maze, col, row);
+        return;
+    }
+    dx = bestDx; dy = bestDy;
+}
+
+// fleeGreedy: euristica di FUGA. Sceglie la cella adiacente che MASSIMIZZA
+// la distanza dal target (il player), con penalita' per tornare indietro
+// (verso il player). Usata quando fleeMode e' true (player invincibile per
+// il calice). Il nemico cerca di mantenere la massima distanza possibile
+// dal player per evitare di essere bruciato.
+void Enemy::fleeGreedy(Maze& maze, const Vec2& target) {
+    int col = (int)(pos.x / TILE_SIZE);
+    int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);
+    int bestDx = 0, bestDy = 0;
+    float maxDist = -1.0f;  // vogliamo MAXIMIZZARE la distanza
+    int dc[] = {0, 1, 0, -1}, dr[] = {-1, 0, 1, 0};
+    bool anyOpen = false;
+    for (int i = 0; i < 4; ++i) {
+        int nc = col + dc[i], nr = row + dr[i];
+        if (!maze.isWall(nc, nr)) {
+            anyOpen = true;
+            float dist = (float)((nc - target.x) * (nc - target.x) + (nr - target.y) * (nr - target.y));
+            // Penalizza tornare verso il player (direzione opposta al movimento)
+            if (dc[i] == -dx && dr[i] == -dy) dist -= 10;
+            if (dist > maxDist) { maxDist = dist; bestDx = dc[i]; bestDy = dr[i]; }
+        }
+    }
+    // Se nessuna direzione e' aperta, resta fermo
+    if (!anyOpen) {
+        dx = 0; dy = 0;
+        return;
+    }
+    // Se bestDx/bestDy sono ancora 0 (tutte le direzioni penalizzate), scegli random
+    if (bestDx == 0 && bestDy == 0) {
         pickRandomOpenDir(maze, col, row);
         return;
     }
@@ -396,26 +431,40 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
         if (mustRecompute) {
             pathUpdateTimer = 0;
             bool pathFound = false;
-            // Sempre BFS (tutti i nemici). Usa usesBFS() per coerenza
-            // con eventuali futuri ribilanciamenti.
-            if (usesBFS(type)) {
-                Vec2 nextStep;
-                if (bfsPath(maze, {col, row}, playerGridPos, nextStep)) {
-                    dx = nextStep.x - col;
-                    dy = nextStep.y - row;
-                    pathFound = true;
-                    // Se abbiamo trovato un path valido, resettiamo lo
-                    // stuckTimer (stiamo per muoverci).
-                    stuckTimer = 0;
-                }
-            }
-            // Fallback 1: se BFS fallisce (player irraggiungibile - raro)
-            // o se usesBFS fosse false (non succede ora), usa greedy.
-            if (!pathFound) {
-                moveGreedy(maze, playerGridPos);
+
+            // --- FLEE MODE: il player e' invincibile (calice), il nemico fugge ---
+            // In modalita' fuga, usiamo fleeGreedy invece di BFS. Questo perche':
+            // 1. fleeGreedy e' piu' veloce di BFS (no queue alloc)
+            // 2. La fuga non richiede il cammino minimo, basta allontanarsi
+            // 3. Evita che il nemico si blocchi in un vicolo cercando di fuggire
+            if (fleeMode) {
+                fleeGreedy(maze, playerGridPos);
                 if (dx != 0 || dy != 0) {
                     pathFound = true;
                     stuckTimer = 0;
+                }
+            } else {
+                // Sempre BFS (tutti i nemici). Usa usesBFS() per coerenza
+                // con eventuali futuri ribilanciamenti.
+                if (usesBFS(type)) {
+                    Vec2 nextStep;
+                    if (bfsPath(maze, {col, row}, playerGridPos, nextStep)) {
+                        dx = nextStep.x - col;
+                        dy = nextStep.y - row;
+                        pathFound = true;
+                        // Se abbiamo trovato un path valido, resettiamo lo
+                        // stuckTimer (stiamo per muoverci).
+                        stuckTimer = 0;
+                    }
+                }
+                // Fallback 1: se BFS fallisce (player irraggiungibile - raro)
+                // o se usesBFS fosse false (non succede ora), usa greedy.
+                if (!pathFound) {
+                    moveGreedy(maze, playerGridPos);
+                    if (dx != 0 || dy != 0) {
+                        pathFound = true;
+                        stuckTimer = 0;
+                    }
                 }
             }
             // Fallback 2: se BFS e greedy sono entrambi bloccati
@@ -440,7 +489,7 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
     }
     pos.x += dx * speed; pos.y += dy * speed;
 
-    if (canShoot(type)) {
+    if (canShoot(type) && !fleeMode) {  // non spara quando sta fuggendo (calice)
         if (shootCooldown > 0) shootCooldown -= 16;
         else {
             shootCooldown = 1000 + rand() % 1500;
