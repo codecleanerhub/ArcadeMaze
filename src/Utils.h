@@ -113,6 +113,9 @@ inline Particle makeParticle(sf::Vector2f pos, sf::Vector2f vel,
 
 // Carica la configurazione dei comandi da un file INI semplice.
 Config loadConfig(const std::string& filename);
+// Salva la configurazione su file INI. Chiamato dopo STATE_CONFIG_JOY
+// e STATE_CONFIG_JOY_2 per persistere i tasti joystick.
+void saveConfig(const std::string& filename, const Config& config);
 
 // --- Funzioni di disegno testo (font bitmap 3x5) --------------------------
 // Il font e' definito in Utils.cpp come array di 37 glifi (A-Z, 0-9, spazio).

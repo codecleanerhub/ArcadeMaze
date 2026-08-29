@@ -1133,6 +1133,10 @@ void Game::update() {
                     config.joy_shoot = (int)b;
                     audio.playSound(SOUND_MENU_CONFIRM);
                     waitForRelease = true;
+                    // Salva la configurazione P1 su file config.ini
+                    // cosi' le partite successive possono saltare
+                    // STATE_CONFIG_JOY se i tasti sono gia' configurati.
+                    saveConfig("config.ini", config);
                     // FIX FLUSSO PARTITA: dopo configurazione P1, se 1P avvia
                     // l'intro cutscene; se 2P, passa a STATE_CONFIG_JOY_2.
                     if (numPlayers == 2) {
@@ -1242,6 +1246,10 @@ void Game::update() {
                         audio.playSound(SOUND_MENU_CONFIRM);
                         waitForRelease2 = true;
                         lastDetectedJoyId = -1;  // reset per prossima configurazione
+                        // Salva la configurazione P2 su file config.ini
+                        // cosi' le partite successive possono saltare
+                        // STATE_CONFIG_JOY_2 se i tasti sono gia' configurati.
+                        saveConfig("config.ini", config);
                         // FIX FLUSSO PARTITA: dopo configurazione P2, avvia
                         // l'intro cutscene (i personaggi sono gia' stati scelti
                         // in STATE_SELECT_PLAYER prima di CONFIG_JOY).
