@@ -393,21 +393,26 @@ void Player::render(sf::RenderTarget& target) {
         std::string animName = "idle";
         int frameDuration = 200;
         int frame = 0;
-        // FIX FLIP per sprite AI front-view:
-        // I nuovi spritesheet 4-frame generati con AI hanno tutti i personaggi
-        // in posa front-view ("standing facing forward"). Per uno sprite
-        // front-view, il flip orizzontale NON cambia la direzione di sguardo
-        // (un personaggio front-view resta front-view anche flippato).
-        // Tuttavia, alcuni sprite hanno armi/accessori asimmetrici che il flip
-        // specchia. Per coerenza visiva, applichiamo il flip in modo che:
-        //   - lastDx > 0 (va a destra)  -> NO flip (orientation naturale)
-        //   - lastDx < 0 (va a sinistra) -> flip (specchia, accessori a sinistra)
-        //   - lastDx == 0 (fermo)        -> NO flip
-        // Questo corrisponde a trattare tutti i personaggi come "default RIGHT".
-        // I vecchi personaggi con orientamento di default LEFT (HEROINE, ORC,
-        // ELF, KNIGHT, GOLEM) ora usano la stessa logica, eliminando il bug
-        // per cui il knight "si girava verso sinistra quando andava a destra".
-        bool flipped = (lastDx < 0);
+        // FLIP per sprite SIDE-VIEW (ora i player sono side-view right-facing):
+        // Lo sprite di default guarda a destra (RIGHT-FACING SIDE PROFILE).
+        //   - lastDx > 0 (va a destra)  -> NO flip (orientation naturale, guarda a destra)
+        //   - lastDx < 0 (va a sinistra) -> flip (specchia, guarda a sinistra)
+        //   - lastDx == 0 (fermo o movimento verticale) -> mantieni l'ultimo orientamento
+        //     (se prima andava a sinistra, resta flippato; se a destra, no flip)
+        // Questo ora FUNZIONA perche' gli sprite sono side-view: il flip orizzontale
+        // fa girare visibilmente il personaggio a destra/sinistra.
+        static int lastFlipped = 0;  // 0=no flip, 1=flip - persiste tra frame
+        bool flipped;
+        if (lastDx > 0) {
+            flipped = false;
+            lastFlipped = 0;
+        } else if (lastDx < 0) {
+            flipped = true;
+            lastFlipped = 1;
+        } else {
+            // lastDx == 0: mantieni orientamento precedente
+            flipped = (lastFlipped == 1);
+        }
         if (shootAnimTimer > 0 && sprite.getFrameCount("attack") > 0) {
             animName = "attack";
             frameDuration = 50;  // 6 frame in 300 ms
@@ -518,9 +523,16 @@ void Player::render(sf::RenderTarget& target) {
     // dedicati per ognuno (i 2 originali hanno sprite, gli altri 6 usano
     // questo fallback che li disegna in stile coerente).
     {
-        // FIX: stessa logica di flip per-character dello sprite PNG (vedi sopra).
-        bool defaultRight = spriteDefaultFacesRight(characterType);
-        bool flipped = defaultRight ? (lastDx < 0) : (lastDx > 0);
+        // FIX: stessa logica di flip dello sprite PNG. Ora tutti i player
+        // hanno sprite side-view right-facing, quindi:
+        //   - lastDx > 0 -> no flip (guarda a destra)
+        //   - lastDx < 0 -> flip (guarda a sinistra)
+        //   - lastDx == 0 -> mantieni ultimo orientamento
+        static int lastFlippedFallback = 0;
+        bool flipped;
+        if (lastDx > 0) { flipped = false; lastFlippedFallback = 0; }
+        else if (lastDx < 0) { flipped = true; lastFlippedFallback = 1; }
+        else { flipped = (lastFlippedFallback == 1); }
         bool walking = (dx != 0 || dy != 0);
         float bobY = 0.f;
         if (walking) {

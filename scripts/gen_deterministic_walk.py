@@ -51,18 +51,19 @@ BODY_Y_THRESHOLD = 40  # in pixel nel canvas 64x64
 
 # === DEFINIZIONE ENTITA === (riprende gli stessi prompt del precedente script,
 # ma ora servono SOLO per generare il frame base neutro)
-# Cioe' che importa e' che il frame 0 sia il personaggio in posa neutra,
-# perche' gli altri 3 frame saranno generati deterministicamente da quello.
+# IMPORTANTE: i player sono SIDE-VIEW (right-facing profile) cosicche' il flip
+# orizzontale (quando vanno a sinistra) sia visibile. I nemici possono restare
+# front-view perche' non hanno direzione di sguardo rilevante.
 PLAYERS = [
-    ("player1", "Pixel art sprite of a male archaeologist adventurer, short brown hair, khaki shirt with rolled-up sleeves, brown leather vest, brown trousers, leather boots, khaki fedora hat, no weapons hands empty at sides, standing facing forward with both feet on ground, realistic adventurer style NOT fantasy, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("player2", "Pixel art sprite of a female blonde archaeologist adventurer, long blonde hair, khaki shirt with rolled-up sleeves, brown leather vest, brown trousers, leather boots, no weapons hands empty at sides, standing facing forward with both feet on ground, realistic adventurer style NOT fantasy, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("char_mage", "Pixel art sprite of a wizard mage character, long blue robe with stars, pointed hat, white beard, hands empty at sides, standing facing forward with both feet on ground, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("char_orc", "Pixel art sprite of a green orc warrior, muscular green skin, tusks, loincloth, hands empty at sides, standing facing forward with both feet on ground, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("char_elf", "Pixel art sprite of an elf ranger, pointed ears, green hooded cloak, leather armor, hands empty at sides, standing facing forward with both feet on ground, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("char_knight", "Pixel art sprite of a holy knight paladin, full plate armor, helmet with plume, hands empty at sides, standing facing forward with both feet on ground, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("player1", "Pixel art sprite of a male archaeologist adventurer, short brown hair, khaki shirt with rolled-up sleeves, brown leather vest, brown trousers, leather boots, khaki fedora hat, no weapons hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, realistic adventurer style NOT fantasy, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("player2", "Pixel art sprite of a female blonde archaeologist adventurer, long blonde hair flowing behind, khaki shirt with rolled-up sleeves, brown leather vest, brown trousers, leather boots, no weapons hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, realistic adventurer style NOT fantasy, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("char_mage", "Pixel art sprite of a wizard mage character, long blue robe with stars, pointed hat, white beard, hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("char_orc", "Pixel art sprite of a green orc warrior, muscular green skin, tusks, loincloth, hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("char_elf", "Pixel art sprite of an elf ranger, pointed ears, green hooded cloak, leather armor, hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("char_knight", "Pixel art sprite of a holy knight paladin, full plate armor, helmet with plume, hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
     ("char_golem", "Pixel art sprite of a stone golem character, bulky body made of grey stone blocks, glowing green eyes, no legs (column-like base), arms at sides, standing facing forward, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("char_dragon", "Pixel art sprite of a draconian humanoid character, dragon-like head with horns and snout, red scaled body, tail, wearing leather armor, hands empty at sides, standing facing forward with both feet on ground, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
-    ("char_vampire", "Pixel art sprite of a vampire lord character, pale skin, black hair slicked back, red and black cape, formal suit, fangs visible, hands empty at sides, standing facing forward with both feet on ground, gothic fantasy D&D style, 16-color palette, front view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("char_dragon", "Pixel art sprite of a draconian humanoid character, dragon-like head with horns and snout, red scaled body, tail, wearing leather armor, hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
+    ("char_vampire", "Pixel art sprite of a vampire lord character, pale skin, black hair slicked back, red and black cape, formal suit, fangs visible, hands empty at sides, standing in RIGHT-FACING SIDE PROFILE view (character looks to the right), full body visible from the side, both feet on ground, gothic fantasy D&D style, 16-color palette, side profile view, full body filling the canvas, OPAQUE body with NO transparency and NO gaps, solid flat pure black RGB(0,0,0) background, crisp pixel art outlines, high contrast gothic lighting, NO text NO UI NO watermark"),
 ]
 
 # Gli stessi enemy e miniboss prompt del gen_walk_animations.py (li importo)
@@ -214,24 +215,30 @@ def process_base_to_64x64(raw_path):
 
 def make_walk_frame_1(base):
     """
-    Frame 1: gamba sinistra alzata.
+    Frame 1: gamba sinistra alzata (passo sinistro avanti).
     - Corpo abbassato di 1px (bob verso il basso)
-    - Porzione gambe (y >= BODY_Y_THRESHOLD) shiftata a destra di 1px
-      per simulare passo sinistro avanti
+    - Porzione gambe (y >= BODY_Y_THRESHOLD) shiftata a destra di 2px
+      per simulare passo sinistro avanti (piu' visibile di 1px)
+    - Leggero tilt del corpo superiore di 1px a sinistra (dondolio)
     """
     frame = base.copy()
     h, w = frame.shape[:2]
     # Bob verticale: tutto il corpo abbassato di 1px
-    # (sposta tutto verso il basso, la riga 0 diventa trasparente)
     new_frame = np.zeros_like(frame)
     new_frame[1:h, :] = frame[0:h-1, :]
-    # Shift orizzontale della porzione gambe (y >= BODY_Y_THRESHOLD)
+    # Shift orizzontale della porzione gambe (y >= BODY_Y_THRESHOLD) di 2px a destra
     legs_start = min(BODY_Y_THRESHOLD, h - 1)
     legs = new_frame[legs_start:h, :, :].copy()
-    # Shift a destra di 1px
     shifted_legs = np.zeros_like(legs)
-    shifted_legs[:, 1:w] = legs[:, 0:w-1]
+    shifted_legs[:, 2:w] = legs[:, 0:w-2]
     new_frame[legs_start:h, :, :] = shifted_legs
+    # Leggero tilt del corpo superiore (y < BODY_Y_THRESHOLD) di 1px a sinistra
+    # per simulare il dondolio opposto al passo
+    body_end = min(BODY_Y_THRESHOLD, h)
+    body = new_frame[0:body_end, :, :].copy()
+    tilted_body = np.zeros_like(body)
+    tilted_body[:, 0:w-1] = body[:, 1:w]
+    new_frame[0:body_end, :, :] = tilted_body
     return new_frame
 
 
@@ -241,7 +248,6 @@ def make_walk_frame_2(base):
     """
     frame = base.copy()
     h, w = frame.shape[:2]
-    # Bob verticale: tutto il corpo sollevato di 1px
     new_frame = np.zeros_like(frame)
     new_frame[0:h-1, :] = frame[1:h, :]
     return new_frame
@@ -249,9 +255,10 @@ def make_walk_frame_2(base):
 
 def make_walk_frame_3(base):
     """
-    Frame 3: gamba destra alzata.
+    Frame 3: gamba destra alzata (passo destro avanti).
     - Corpo abbassato di 1px
-    - Porzione gambe shiftata a sinistra di 1px (passo destro avanti)
+    - Porzione gambe shiftata a sinistra di 2px (passo destro)
+    - Leggero tilt del corpo superiore di 1px a destra (dondolio opposto)
     """
     frame = base.copy()
     h, w = frame.shape[:2]
@@ -259,10 +266,15 @@ def make_walk_frame_3(base):
     new_frame[1:h, :] = frame[0:h-1, :]
     legs_start = min(BODY_Y_THRESHOLD, h - 1)
     legs = new_frame[legs_start:h, :, :].copy()
-    # Shift a sinistra di 1px
     shifted_legs = np.zeros_like(legs)
-    shifted_legs[:, 0:w-1] = legs[:, 1:w]
+    shifted_legs[:, 0:w-2] = legs[:, 2:w]
     new_frame[legs_start:h, :, :] = shifted_legs
+    # Leggero tilt del corpo superiore (y < BODY_Y_THRESHOLD) di 1px a destra
+    body_end = min(BODY_Y_THRESHOLD, h)
+    body = new_frame[0:body_end, :, :].copy()
+    tilted_body = np.zeros_like(body)
+    tilted_body[:, 1:w] = body[:, 0:w-1]
+    new_frame[0:body_end, :, :] = tilted_body
     return new_frame
 
 
