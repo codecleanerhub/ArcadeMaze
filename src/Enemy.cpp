@@ -172,7 +172,7 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos() {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), animTime(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos() {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
@@ -362,6 +362,7 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
     float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
     float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
     pathUpdateTimer += 16;
+    animTime += 16;  // tempo continuo per animazioni (MAI azzerato per path BFS)
 
     // --- ANTI-STUCK TRACKING ---
     // Confronta posizione attuale con quella del frame precedente. Se il
@@ -558,13 +559,17 @@ void Enemy::render(sf::RenderTarget& target) const {
             }
             int frameCount = it->second.getFrameCount(animName);
             if (frameCount > 0) {
-                int frame = (pathUpdateTimer / (uint32_t)frameDuration) % frameCount;
+                // FIX: usa animTime (continuo, mai azzerato per path BFS)
+                // invece di pathUpdateTimer (che si azzera ogni ~200ms e
+                // causava stuttering + impossibilita' di raggiungere il
+                // frame 3 dell'animazione walk a 4 frame).
+                int frame = (animTime / (uint32_t)frameDuration) % frameCount;
                 bool flipped = (dx < 0);
                 float bobY = 0.f;
                 if (animName == "walk" && (dx != 0 || dy != 0)) {
-                    bobY = sinf(pathUpdateTimer * 0.012f) * 2.f;
+                    bobY = sinf(animTime * 0.012f) * 2.f;
                 } else if (animName == "idle") {
-                    bobY = sinf(pathUpdateTimer * 0.004f) * 1.f;
+                    bobY = sinf(animTime * 0.004f) * 1.f;
                 }
                 it->second.render(target, animName, frame, px, py + 8.f + bobY, 1.0f, flipped);
                 spriteDrawn = true;

@@ -144,6 +144,7 @@ private:
     int health, maxHealth;
     EnemyType type;
     uint32_t pathUpdateTimer;
+    uint32_t animTime;  // tempo accumulato per animazioni idle/walk/attack (MAI azzerato, tranne resetPosition)
     uint32_t shootCooldown;
     uint32_t attackingTimer;  // >0 = animazione attacco in corso (ms simulati)
     uint32_t dyingTimer;      // >0 = animazione morte in corso (ms simulati)
