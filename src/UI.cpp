@@ -19,8 +19,20 @@
 //   * Due semicerchi (sinistro e destro) per i lobi
 //   * Un triangolo convesso per la punta in basso
 //   * Un piccolo riflesso bianco in alto a sinistra per dare "lucentezza"
-// Usato per le vite del giocatore. `size` e' il raggio dei semicerchi.
+// Usato come FALLBACK quando lo sprite PNG del cuore non e' disponibile.
 // ---------------------------------------------------------------------------
+
+// Costruttore: inizializza heartLoaded a false.
+UI::UI() : heartLoaded(false) {}
+
+bool UI::loadHeartSprite(const std::string& path) {
+    heartLoaded = heartTexture.loadFromFile(path);
+    if (heartLoaded) {
+        heartSprite.setTexture(heartTexture);
+    }
+    return heartLoaded;
+}
+
 void drawDetailedHeart(sf::RenderTarget& target, float x, float y, float size, sf::Color fill, sf::Color outline) {
     // Lobo sinistro
     sf::CircleShape l1(size/2); l1.setFillColor(fill); l1.setOutlineThickness(1.5f); l1.setOutlineColor(outline);
@@ -46,6 +58,27 @@ void drawDetailedHeart(sf::RenderTarget& target, float x, float y, float size, s
     target.draw(hl);
 }
 
+// drawHeart: disegna un cuore alle coordinate (x, y) con dimensione `size`.
+// Se lo sprite PNG e' caricato, lo usa (qualita' molto superiore, generata AI).
+// Altrimenti fa fallback a drawDetailedHeart (procedurale).
+// Lo sprite cuore e' 32x32 px; lo scaliamo in base a `size` (che rappresenta
+// il raggio desiderato, come nel vecchio codice procedurale).
+void UI::drawHeart(sf::RenderTarget& target, float x, float y, float size) {
+    if (heartLoaded) {
+        // Lo sprite e' 32x32. Vogliamo che occupi ~size*2 px di larghezza.
+        // Scale = (size*2) / 32 = size / 16.
+        float scale = size / 16.0f;
+        // L'ancora dello sprite cuore e' al centro (16,16) del PNG 32x32.
+        // Quindi lo posizioniamo centrato su (x, y).
+        heartSprite.setScale(scale, scale);
+        heartSprite.setPosition(x - 16.0f * scale, y - 16.0f * scale);
+        target.draw(heartSprite);
+    } else {
+        // Fallback procedurale
+        drawDetailedHeart(target, x, y, size, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // UI::render: disegna tutta la barra HUD.
 // Le barre di energia e munizioni usano un rettangolo di sfondo grigio e
@@ -69,7 +102,7 @@ void UI::render(sf::RenderTarget& target, Player& player, int remainingTreasures
     // LIVES: un cuore per ogni vita
     drawTextOutlined(target, "LIVES", 150, 10, 2, sf::Color::White);
     for(int i = 0; i < player.getLives(); ++i) {
-        drawDetailedHeart(target, (float)(160 + i * 24), 35.f, 8.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+        drawHeart(target, (float)(160 + i * 24), 35.f, 8.f);
     }
 
     // ENERGY: barra proporzionale (magenta su grigio)
@@ -115,7 +148,7 @@ void UI::render(sf::RenderTarget& target, Player& player1, Player& player2, int 
     // P1 LIVES
     drawTextOutlined(target, "LIFE", 80, 10, 2, sf::Color::White);
     for(int i = 0; i < player1.getLives(); ++i) {
-        drawDetailedHeart(target, (float)(90 + i * 16), 35.f, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+        drawHeart(target, (float)(90 + i * 16), 35.f, 6.f);
     }
     // P1 ENERGY
     drawTextOutlined(target, "EN", 180, 10, 2, sf::Color::White);
@@ -141,7 +174,7 @@ void UI::render(sf::RenderTarget& target, Player& player1, Player& player2, int 
     // P2 LIVES
     drawTextOutlined(target, "LIFE", 640, 10, 2, sf::Color::White);
     for(int i = 0; i < player2.getLives(); ++i) {
-        drawDetailedHeart(target, (float)(650 + i * 16), 35.f, 6.f, sf::Color(220, 20, 20), sf::Color(100, 0, 0));
+        drawHeart(target, (float)(650 + i * 16), 35.f, 6.f);
     }
     // P2 ENERGY
     drawTextOutlined(target, "EN", 740, 10, 2, sf::Color::White);

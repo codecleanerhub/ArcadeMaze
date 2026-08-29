@@ -96,6 +96,9 @@ bool Game::init() {
     // I file mancanti vengono saltati: il render fara' fallback alle primitive.
     Enemy::loadAllSprites("assets/sprites");
     Boss::loadAllSprites("assets/sprites");
+    // Carica lo sprite AI del cuore per la UI vite.
+    // Se il file manca, UI fa fallback al disegno procedurale.
+    ui.loadHeartSprite("assets/sprites/ui_heart.png");
     // Carica gli sprite dei giocatori in base al personaggio selezionato.
     // I personaggi di default sono CHAR_HERO_M (P1) e CHAR_HERO_F (P2),
     // ma l'utente puo' cambiarli dal menu "SELECT PLAYER".

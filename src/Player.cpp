@@ -444,19 +444,30 @@ void Player::render(sf::RenderTarget& target) {
             // Disegna lo sprite idle con scale modificato e sollevato (+ tint)
             sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped, tint);
         }
-        // --- Camminata: usa SEMPRE lo sprite idle con bob effect ---
-        // NON usiamo walkSprites[0..3] perche' i frame walk dei nuovi personaggi
-        // sono immagini AI indipendenti (non coordinate) - l'effetto sarebbe
-        // una "gif animata con immagini slegate". Invece usiamo lo sprite idle
-        // (1 sola immagine coerente) con un effetto bob verticale per simulare
-        // la camminata. Questo da un risultato fluido e coordinato per tutti
-        // i personaggi (originali e nuovi).
+        // --- Camminata: usa ANIMAZIONE WALK a 4 frame (generata con AI) ---
+        // Prima usavamo sprite idle con bob effect perche' i vecchi frame walk
+        // erano AI generate separate (effetto cane-gatto-topo). Ora gli
+        // spritesheet hanno 4 frame walk coerenti (1 generate + 3 image-edit
+        // dallo stesso frame base), quindi possiamo usarli per una vera
+        // animazione di camminata. Aggiungiamo comunque un leggero bob effect
+        // verticale per dare l'impressione del passo.
         else if (isWalking) {
-            // Bob effect piu' pronunciato quando cammina (effetto passo)
-            float walkBob = sinf(animTime * 0.012f) * 3.f;
-            // Leggera inclinazione orizzontale per simulare il dondolio
-            float scaleX = 1.0f + sinf(animTime * 0.024f) * 0.05f;
-            sprite.render(target, "idle", 0, px, pos.y + 8.f + walkBob, scaleX, flipped, tint);
+            // Verifica che lo sprite abbia effettivamente un'animazione walk
+            // multi-frame (altrimenti fallback al bob effect sul frame idle)
+            int walkFrames = sprite.getFrameCount("walk");
+            if (walkFrames > 1) {
+                // Calcola il frame corrente basato su animTime
+                int frameDuration = 130;  // 130ms per frame, ~0.5s per loop completo
+                int frame = (animTime / (uint32_t)frameDuration) % walkFrames;
+                // Leggero bob verticale per dare peso al passo
+                float walkBob = sinf(animTime * 0.012f) * 2.f;
+                sprite.render(target, "walk", frame, px, pos.y + 8.f + walkBob, 1.0f, flipped, tint);
+            } else {
+                // Fallback: bob effect sul frame idle (vecchio comportamento)
+                float walkBob = sinf(animTime * 0.012f) * 3.f;
+                float scaleX = 1.0f + sinf(animTime * 0.024f) * 0.05f;
+                sprite.render(target, "idle", 0, px, pos.y + 8.f + walkBob, scaleX, flipped, tint);
+            }
         }
         // Altrimenti usa sprite principale (idle o attack)
         else {
