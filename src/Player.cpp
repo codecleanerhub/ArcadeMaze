@@ -104,12 +104,16 @@ void Player::reset() {
     projectiles.clear();
     pickedWeaponThisFrame = false;
     permanentSpeedBoost = false;  // morte completa: perde il boost
+    invincibleTimer = 0;          // resetta anche l'invincibilita' del calice
 }
 
-// Reset solo posizione/stato movimento (mantiene punteggio/vite E
-// permanentSpeedBoost). Usato all'inizio di ogni livello e dopo aver perso
-// 1 vita. Il boost da scarpe alate sopravvive a questo reset (l'utente lo
-// raccoglie nel labirinto e lo mantiene nel passaggio labirinto->boss).
+// Reset solo posizione/stato movimento.
+// IMPORTANTE: dopo ogni morte (perdita di 1 vita), il player torna qui.
+// - permanentSpeedBoost viene AZZERATO (richiesta utente: nessun aumento
+//   speed dopo morte). Le scarpe alate raccolte nel labirinto danno boost
+//   temporaneo, ma si perde alla morte.
+// - speedBoostTimer (boost temporaneo post-salto) azzerato.
+// - invincibleTimer azzerato per sicurezza (anche se di solito e' gia' 0).
 void Player::resetPosition() {
     // Posizione iniziale: centro della cella (1,1) del labirinto.
     pos.x = 1 * TILE_SIZE + TILE_SIZE / 2.0f;
@@ -119,9 +123,8 @@ void Player::resetPosition() {
     shootAnimTimer = 0;
     animTime = 0;
     speedBoostTimer = 0;
-    // NOTA: permanentSpeedBoost NON viene azzerato qui (solo in reset()).
-    // Questo permette al boost di sopravvivere al cambio livello e al
-    // respawn dopo aver perso 1 vita.
+    permanentSpeedBoost = false;  // FIX: nessun aumento speed dopo morte
+    invincibleTimer = 0;
     jumpOffset = 0.0f;
 }
 
@@ -216,6 +219,8 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
     animTime += 16;
     // Decrementa speed boost timer
     if (speedBoostTimer > 16) speedBoostTimer -= 16; else speedBoostTimer = 0;
+    // Decrementa invincibleTimer (calice dell'immortalita')
+    tickInvincibleTimer();
 
     // Speed effettivo: base 2, con boost (permanente o temporaneo) diventa 3
     int effectiveSpeed = (permanentSpeedBoost || speedBoostTimer > 0) ? (speed + 1) : speed;
@@ -330,11 +335,12 @@ void Player::shoot() {
 // takeDamage: applica 1 punto di danno energia. Il danno e' ignorato se:
 //   * il giocatore sta saltando (jumpTimer>0): il salto e' un "dodge"
 //   * e' ancora invulnerabile (damageTimer>0): ha appena preso un colpo
+//   * e' invincibile (invincibleTimer>0): calice dell'immortalita' attivo
 // Quando l'energia arriva a 0 si perde una vita: l'energia viene ripristinata
 // e il giocatore torna alla posizione di partenza del livello.
 // ---------------------------------------------------------------------------
 void Player::takeDamage() {
-    if (!isJumping() && damageTimer == 0) {
+    if (!isJumping() && !isInvulnerable()) {
         energy--;
         damageTimer = 1000;  // ~1 secondo di invulnerabilita'
         if (energy <= 0) {

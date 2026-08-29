@@ -1515,8 +1515,11 @@ void Game::update() {
                 float dy = pPos.y - miniBoss->getPixelPos().y;
                 float dist = sqrtf(dx*dx + dy*dy);
                 if (dist < miniBoss->getAttackRange() + 10.f) {
-                    // Danno al player (solo se non invincibile)
-                    if (playerInvincibleTimer <= 0) {
+                    // Danno al player (solo se non invincibile).
+                    // FIX: ora isInvulnerable() considera ANCHE il
+                    // invincibleTimer del calice, quindi il player e' immune
+                    // per tutta la durata dell'effetto.
+                    if (!player.isInvulnerable()) {
                         // takeDamage() toglie 1 HP per chiamata. Il mini-boss
                         // fa 12-25 danno, quindi chiamiamo takeDamage() per
                         // ogni punto (ma takeDamage rispetta invulnerabilita'
@@ -1642,6 +1645,12 @@ void Game::update() {
         // --- Collisioni corpo a corpo ---
         // Soglia 800 (sqrt ~28 px): piu' generosa dei proiettili perche' il
         // contatto fisico e' piu' "tollerante" dal punto di vista gameplay.
+        //
+        // FIX: se il player sta saltando (isJumping), invece di prendere danno,
+        // gli viene dato un BOOST DI VELOCITA' TEMPORANEO di 2 secondi
+        // (speedBoostTimer = 2000ms). Questo simula l'effetto "salto sopra il
+        // nemico": il player acquista velocita' durante il salto, cosi' all'
+        // atterraggio si trova poco piu' avanti del nemico saltato.
         if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
@@ -1652,6 +1661,27 @@ void Game::update() {
                     player.takeDamage();
                     if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
                     break;
+                }
+            }
+        } else if (player.isJumping()) {
+            // --- Salto sopra un nemico: attiva boost velocita' (2 secondi) ---
+            // Se il player in volo passa sopra un nemico (entro soglia 800),
+            // attiva speedBoostTimer = 2000ms. L'effetto e' cumulabile:
+            // se salta sopra piu' nemici, il timer si refresha a 2000ms.
+            for (auto& enemy : enemies) {
+                if (enemy.isDead()) continue;
+                float dx = pPos.x - enemy.getPixelPos().x;
+                float dy = pPos.y - enemy.getPixelPos().y;
+                if (dx*dx + dy*dy < 800) {
+                    // Boost di velocita' per 2 secondi (2000 ms simulati)
+                    player.setJumpSpeedBoost(2000);
+                    // Particelle dorate per dare feedback visivo
+                    for (int i = 0; i < 5; i++) {
+                        particles.push_back({pPos,
+                            {(float)(rand()%6-3), (float)(rand()%4+2)},
+                            sf::Color(255, 220, 80), 25, 25});
+                    }
+                    break;  // un solo boost per frame anche se sopra piu' nemici
                 }
             }
         }
@@ -1697,6 +1727,8 @@ void Game::update() {
             }
 
             // --- Collisioni corpo a corpo player2 vs nemici ---
+            // FIX: se player2 sta saltando, invece di prendere danno, attiva
+            // boost velocita' di 2 secondi (come per player1, vedi sopra).
             if (!player2.isInvulnerable() && !player2.isJumping()) {
                 for (auto& enemy : enemies) {
                     if (enemy.isDead()) continue;
@@ -1707,6 +1739,23 @@ void Game::update() {
                         int livesBefore = player2.getLives();
                         player2.takeDamage();
                         if (player2.getLives() < livesBefore || player2.getEnergy() < player2.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
+                        break;
+                    }
+                }
+            } else if (player2.isJumping()) {
+                // Salto sopra un nemico: boost velocita' per 2 secondi
+                sf::Vector2f pPos2 = player2.getPixelPos();
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    float dx = pPos2.x - enemy.getPixelPos().x;
+                    float dy = pPos2.y - enemy.getPixelPos().y;
+                    if (dx*dx + dy*dy < 800) {
+                        player2.setJumpSpeedBoost(2000);
+                        for (int i = 0; i < 5; i++) {
+                            particles.push_back({pPos2,
+                                {(float)(rand()%6-3), (float)(rand()%4+2)},
+                                sf::Color(255, 220, 80), 25, 25});
+                        }
                         break;
                     }
                 }
@@ -2044,12 +2093,21 @@ void Game::update() {
             if (p1Hit || p2Hit) {
                 chalice.active = false;
                 chaliceUsed = true;
-                // Durata invincibilita': 10000 ms = 10 secondi (valore originale).
-                // FIX: aumentata del 50% -> 15000 ms = 15 secondi (richiesta utente).
-                // Questo da' piu' tempo al player per bruciare nemici dopo aver
-                // bevuto il calice.
-                if (p1Hit) playerInvincibleTimer = 15000;
-                if (p2Hit) player2InvincibleTimer = 15000;
+                // Durata invincibilita': 15000 ms = 15 secondi.
+                // FIX: ora il timer e' salvato DIRETTAMENTE nel Player
+                // (invincibleTimer), cosi' isInvulnerable() ritorna true per
+                // tutta la durata e il player NON subisce alcun danno da
+                // nemici, proiettili, mini-boss, boss, ne' friendly fire.
+                // Manteniamo anche playerInvincibleTimer di Game per il
+                // rendering dell'aura di fuoco (drawFireAura).
+                if (p1Hit) {
+                    playerInvincibleTimer = 15000;
+                    player.setInvincibleTimer(15000);
+                }
+                if (p2Hit) {
+                    player2InvincibleTimer = 15000;
+                    player2.setInvincibleTimer(15000);
+                }
                 audio.playSound(SOUND_POTION_DRINK);
                 // Avvia il jingle epico DEDICATO del calice (fanfara eroica
                 // dorata, ~6s). Suona su un canale SEPARATO (epicSound), NON
