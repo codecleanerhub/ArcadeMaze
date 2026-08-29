@@ -393,16 +393,21 @@ void Player::render(sf::RenderTarget& target) {
         std::string animName = "idle";
         int frameDuration = 200;
         int frame = 0;
-        // FIX: logica di flip per-character. Gli sprite PNG dei personaggi
-        // hanno orientamenti INCONSISTENTI tra loro (alcuni guardano a destra
-        // di default, altri a sinistra). spriteDefaultFacesRight() restituisce
-        // la direzione di default per il characterType corrente:
-        //   * default RIGHT: flipped = (lastDx < 0) -> specchia quando muove LEFT
-        //   * default LEFT:  flipped = (lastDx > 0) -> specchia quando muove RIGHT
-        // In questo modo il personaggio si gira SEMPRE nella direzione di
-        // movimento, indipendentemente dall'orientamento di default dello sprite.
-        bool defaultRight = spriteDefaultFacesRight(characterType);
-        bool flipped = defaultRight ? (lastDx < 0) : (lastDx > 0);
+        // FIX FLIP per sprite AI front-view:
+        // I nuovi spritesheet 4-frame generati con AI hanno tutti i personaggi
+        // in posa front-view ("standing facing forward"). Per uno sprite
+        // front-view, il flip orizzontale NON cambia la direzione di sguardo
+        // (un personaggio front-view resta front-view anche flippato).
+        // Tuttavia, alcuni sprite hanno armi/accessori asimmetrici che il flip
+        // specchia. Per coerenza visiva, applichiamo il flip in modo che:
+        //   - lastDx > 0 (va a destra)  -> NO flip (orientation naturale)
+        //   - lastDx < 0 (va a sinistra) -> flip (specchia, accessori a sinistra)
+        //   - lastDx == 0 (fermo)        -> NO flip
+        // Questo corrisponde a trattare tutti i personaggi come "default RIGHT".
+        // I vecchi personaggi con orientamento di default LEFT (HEROINE, ORC,
+        // ELF, KNIGHT, GOLEM) ora usano la stessa logica, eliminando il bug
+        // per cui il knight "si girava verso sinistra quando andava a destra".
+        bool flipped = (lastDx < 0);
         if (shootAnimTimer > 0 && sprite.getFrameCount("attack") > 0) {
             animName = "attack";
             frameDuration = 50;  // 6 frame in 300 ms

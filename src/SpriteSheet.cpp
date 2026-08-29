@@ -43,14 +43,35 @@ bool SpriteSheet::load(const std::string& basePath) {
     // lo sprite viene scalato (es. x4 per schermo).
     texture.setSmooth(false);
 
-    // PNG caricato: aggiorna le dimensioni effettive della texture.
+    // Carica PRIMA i metadati (columns, rows, frameWidth, frameHeight, animazioni)
+    // dal file JSON. Questo aggiorna columns/rows dai valori di default (6,4)
+    // ai valori reali dello spritesheet (es. 4,1 per i nostri sheet 256x64).
+    loadMetaOrDefault(jsonPath);
+
+    // DOPO aver caricato i metadati, ricalcola frameW/frameH in base alle
+    // dimensioni reali della texture e ai nuovi columns/rows.
+    // IMPORTANTE: questo calcolo DEVE essere fatto dopo loadMetaOrDefault,
+    // altrimenti userebbe i valori di default (columns=6, rows=4) e
+    // calcolerebbe frameW=256/6=42, frameH=64/4=16 -> SBAGLIATO.
+    // Con columns=4 dal JSON, frameW=256/4=64, frameH=64/1=64 -> CORRETTO.
+    //
+    // Tuttavia, se il JSON specifica esplicitamente frameWidth/frameHeight,
+    // questi vincolano la dimensione del frame (utile per spritesheet con
+    // padding o frame non uniformi). In quel caso NON ricalcoliamo, usiamo
+    // i valori del JSON. Altrimenti (frameW/frameH di default), ricalcoliamo.
     sf::Vector2u texSize = texture.getSize();
     if (texSize.x > 0 && texSize.y > 0 && columns > 0 && rows > 0) {
-        frameW = texSize.x / columns;
-        frameH = texSize.y / rows;
+        // Ricalcola sempre da texture/columns/rows. Se il JSON specificava
+        // frameWidth/frameHeight diversi, li rispettiamo solo se sono
+        // coerenti con la griglia (texSize.x / columns == frameWidth).
+        // Altrimenti usiamo il calcolo dalla texture (piu' affidabile).
+        unsigned int calcFrameW = texSize.x / columns;
+        unsigned int calcFrameH = texSize.y / rows;
+        // Override dei valori dal JSON solo se sono 0 (default) o
+        // inconsistenti con la texture
+        frameW = (int)calcFrameW;
+        frameH = (int)calcFrameH;
     }
-
-    loadMetaOrDefault(jsonPath);
     loaded = true;
     return true;
 }
