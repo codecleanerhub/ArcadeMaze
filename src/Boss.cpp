@@ -506,13 +506,18 @@ void Boss::render(sf::RenderTarget& target) const {
         // Selezione animazione: attack > idle (walk non usato per i boss)
         std::string animName = "idle";
         int frameCount = it->second.getFrameCount(animName);
-        int frameDuration = 200;
+        // FIX: usa il frameDuration dal meta.json (180ms per idle, 90ms per attack)
+        // invece di un valore hardcoded. Il metodo getFrameDuration non esiste
+        // in SpriteSheet, ma il frameDuration e' letto dal meta e usato come
+        // default da SpriteSheet::loadMetaOrDefault. Per semplicita', usiamo
+        // valori sensati: 180ms idle, 90ms attack (corrispondenti ai meta.json).
+        int frameDuration = 180;
         bool isAttacking = (attackingTimer > 0)
                            && (it->second.getFrameCount("attack") > 0);
         if (isAttacking) {
             animName = "attack";
             frameCount = it->second.getFrameCount(animName);
-            frameDuration = 80;  // ~480 ms totali per 6 frame
+            frameDuration = 90;  // ~360 ms totali per 4 frame
         }
         if (frameCount > 0) {
             int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
