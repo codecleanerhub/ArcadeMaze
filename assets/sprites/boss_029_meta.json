@@ -12,12 +12,12 @@
     "idle": {
       "row": 0,
       "frames": 4,
-      "frameDuration": 180
+      "frameDuration": 200
     },
     "walk": {
       "row": 0,
       "frames": 4,
-      "frameDuration": 120
+      "frameDuration": 130
     },
     "attack": {
       "row": 0,
