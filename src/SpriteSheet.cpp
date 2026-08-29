@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <cstdlib>
 
 // ===========================================================================
 // SpriteSheet.cpp - Implementazione.
@@ -10,6 +11,22 @@
 // struttura nota e semplice. Evitiamo dipendenze esterne (nlohmann/json).
 // Se il parsing fallisce, si usano i default.
 // ===========================================================================
+
+// Helper: attiva log diagnostico se la variabile d'ambiente
+// ARCADE_DEBUG_SPRITES=1 e' impostata. Utile per diagnosticare problemi
+// di caricamento sprite.
+static bool debugSpritesEnabled() {
+    static bool checked = false;
+    static bool enabled = false;
+    if (!checked) {
+        const char* v = std::getenv("ARCADE_DEBUG_SPRITES");
+        enabled = (v != nullptr && v[0] == '1');
+        checked = true;
+    }
+    return enabled;
+}
+
+#define SPRITE_LOG(msg) do { if (debugSpritesEnabled()) std::cerr << "[SPRITE] " << msg << std::endl; } while(0)
 
 SpriteSheet::SpriteSheet() : frameW(64), frameH(64), columns(6), rows(4), loaded(false) {
     // Animazioni di default (corrispondono a quelle degli script Python).
@@ -26,6 +43,7 @@ SpriteSheet::SpriteSheet() : frameW(64), frameH(64), columns(6), rows(4), loaded
 // Se nessuno dei due funziona, resta unloaded.
 // ---------------------------------------------------------------------------
 bool SpriteSheet::load(const std::string& basePath) {
+    SPRITE_LOG("load(\"" << basePath << "\")");
     // Pattern 1: <basePath>.png + <basePath>.json
     std::string pngPath = basePath + ".png";
     std::string jsonPath = basePath + ".json";
@@ -35,10 +53,12 @@ bool SpriteSheet::load(const std::string& basePath) {
         pngPath = basePath + "_sheet.png";
         jsonPath = basePath + "_meta.json";
         if (!texture.loadFromFile(pngPath)) {
+            SPRITE_LOG("  FAIL: nessun PNG trovato ne' come " << basePath << ".png ne' come " << basePath << "_sheet.png");
             loaded = false;
             return false;
         }
     }
+    SPRITE_LOG("  PNG caricato: " << pngPath);
     // Disattiva smoothing per pixel art: mantiene i pixel netti anche quando
     // lo sprite viene scalato (es. x4 per schermo).
     texture.setSmooth(false);
@@ -47,6 +67,7 @@ bool SpriteSheet::load(const std::string& basePath) {
     // dal file JSON. Questo aggiorna columns/rows dai valori di default (6,4)
     // ai valori reali dello spritesheet (es. 4,1 per i nostri sheet 256x64).
     loadMetaOrDefault(jsonPath);
+    SPRITE_LOG("  Meta caricato da " << jsonPath << ": columns=" << columns << ", rows=" << rows);
 
     // DOPO aver caricato i metadati, ricalcola frameW/frameH in base alle
     // dimensioni reali della texture e ai nuovi columns/rows.
@@ -54,11 +75,6 @@ bool SpriteSheet::load(const std::string& basePath) {
     // altrimenti userebbe i valori di default (columns=6, rows=4) e
     // calcolerebbe frameW=256/6=42, frameH=64/4=16 -> SBAGLIATO.
     // Con columns=4 dal JSON, frameW=256/4=64, frameH=64/1=64 -> CORRETTO.
-    //
-    // Tuttavia, se il JSON specifica esplicitamente frameWidth/frameHeight,
-    // questi vincolano la dimensione del frame (utile per spritesheet con
-    // padding o frame non uniformi). In quel caso NON ricalcoliamo, usiamo
-    // i valori del JSON. Altrimenti (frameW/frameH di default), ricalcoliamo.
     sf::Vector2u texSize = texture.getSize();
     if (texSize.x > 0 && texSize.y > 0 && columns > 0 && rows > 0) {
         // Ricalcola sempre da texture/columns/rows. Se il JSON specificava
@@ -71,6 +87,11 @@ bool SpriteSheet::load(const std::string& basePath) {
         // inconsistenti con la texture
         frameW = (int)calcFrameW;
         frameH = (int)calcFrameH;
+    }
+    SPRITE_LOG("  Texture size: " << texSize.x << "x" << texSize.y << ", frameW=" << frameW << ", frameH=" << frameH);
+    // Log animazioni caricate
+    for (const auto& kv : animations) {
+        SPRITE_LOG("  Anim '" << kv.first << "': row=" << kv.second.row << ", frames=" << kv.second.frames << ", dur=" << kv.second.frameDuration);
     }
     loaded = true;
     return true;

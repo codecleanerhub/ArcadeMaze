@@ -14,12 +14,14 @@
 #   ./build_and_run.sh build   # solo build, senza run
 #   ./build_and_run.sh clean   # pulisci build e ricompila
 #   ./build_and_run.sh run     # solo run (build se manca l'eseguibile)
+#   ./build_and_run.sh debug   # build + run con ARCADE_DEBUG_SPRITES=1
+#                              # (log diagnostico caricamento sprite)
 # ===========================================================================
 
 set -e  # esci al primo errore
 
 # --- Parametri ---
-ACTION="${1:-all}"  # all|build|run|clean
+ACTION="${1:-all}"  # all|build|run|clean|debug
 
 # --- Rilevamento OS ---
 OS="unknown"
@@ -35,6 +37,13 @@ echo " ArcadeMazeFantasy - Build & Run"
 echo " OS rilevato: $OS"
 echo " Action: $ACTION"
 echo "=============================================="
+
+# --- Verifica che gli asset esistano (warning se mancano) ---
+if [ ! -d "assets/sprites" ]; then
+    echo "[WARN] Cartella 'assets/sprites' non trovata!"
+    echo "[WARN] Il gioco andra' in fallback procedurale (no sprite AI)."
+    echo "[WARN] Assicurati di eseguire questo script dalla root del repo."
+fi
 
 # --- Determina il nome dell'eseguibile (con .exe su Windows) ---
 if [ "$OS" = "windows" ]; then
@@ -102,6 +111,8 @@ do_build() {
 }
 
 # --- Funzione: run ---
+# Esegue il gioco DALLA ROOT DEL REPO (non da build/), cosi' i path relativi
+# "assets/sprites/..." vengono risolti correttamente.
 do_run() {
     # Trova l'eseguibile (può essere in build/, build/Release/, build/Debug/)
     EXE_PATH=""
@@ -130,9 +141,16 @@ do_run() {
         exit 1
     fi
 
-    echo "[run] avvio: $EXE_PATH"
+    # IMPORTANTE: esegui dalla root del repo, NON da build/.
+    # Il codice carica gli asset con path relativi ("assets/sprites/..."),
+    # che vengono risolti a partire dalla CWD. Se si esegue da build/,
+    # i path non verrebbero trovati e il gioco farebbe fallback procedurale.
+    # Usiamo un path assoluto per l'eseguibile ma manteniamo la CWD = root repo.
+    REPO_ROOT="$(pwd)"
+    EXE_ABSOLUTE="$REPO_ROOT/$EXE_PATH"
+    echo "[run] avvio: $EXE_ABSOLUTE (CWD=$REPO_ROOT)"
     # Su Windows con Git Bash, ./xxx.exe funziona nativamente
-    "$EXE_PATH"
+    "$EXE_ABSOLUTE"
 }
 
 # --- Switch principale ---
@@ -154,13 +172,21 @@ case "$ACTION" in
         do_clean
         do_build
         ;;
+    debug)
+        # Build + run con log diagnostico sprite attivo
+        do_build
+        echo "[debug] attivando ARCADE_DEBUG_SPRITES=1"
+        export ARCADE_DEBUG_SPRITES=1
+        do_run
+        ;;
     *)
-        echo "Uso: $0 [all|build|run|clean|clean-build]"
+        echo "Uso: $0 [all|build|run|clean|clean-build|debug]"
         echo "  all          (default) build + run"
         echo "  build        solo compilazione"
         echo "  run          solo esecuzione (build se manca)"
         echo "  clean        pulisci cartella build"
         echo "  clean-build  pulisci + ricompila"
+        echo "  debug        build + run con ARCADE_DEBUG_SPRITES=1"
         exit 1
         ;;
 esac
