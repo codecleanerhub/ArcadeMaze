@@ -241,6 +241,14 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         if (pos.y > WINDOW_HEIGHT - 16) pos.y = WINDOW_HEIGHT - 16;
     } else {
         // --- Modalita' labirinto: snap-to-grid ---
+        // FIX: se nessuna direzione e' premuta, FERMA il player IMMEDIATAMENTE,
+        // non aspettare di arrivare al centro della cella. Questo previene
+        // l'effetto 'diversi passi dopo aver mollato la direzione'.
+        // Il player si ferma sul posto appena rilasci il joystick/frecce.
+        if (nextDx == 0 && nextDy == 0) {
+            dx = 0; dy = 0;
+        }
+
         int col = (int)(pos.x / TILE_SIZE);
         int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);
         float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
@@ -252,12 +260,6 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
             if (nextDx != 0 || nextDy != 0) {
                 tryMove(nextDx, nextDy, maze);
                 nextDx = 0; nextDy = 0;
-            } else {
-                // FIX: nessuna direzione premuta -> FERMA il player al centro.
-                // Il player si muove solo finche' il joystick/frecce sono
-                // mantenuti premuti. Quando si rilasciano, il player si
-                // ferma al centro della cella corrente.
-                dx = 0; dy = 0;
             }
             // FIX: se davanti c'e' muro, ferma il movimento (dx/dy a 0).
             if (dx != 0 || dy != 0) {
