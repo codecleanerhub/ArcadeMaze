@@ -40,7 +40,7 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), pausedFromState(STATE_PLAYING), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
@@ -665,6 +665,10 @@ void Game::handleEvents() {
                     // Lo skip e' gestito da updateIntro() via isKeyPressed,
                     // che salta tutto e avvia il livello 1.
                 }
+                else if (state == STATE_PAUSE) {
+                    // ESC durante la pausa: ripristina lo stato precedente
+                    state = pausedFromState;
+                }
                 else {
                     // Torna al menu': ferma la musica di gioco e (se l'opzione
                     // musica e' attiva) riprende la traccia DEDICATA del menu'
@@ -682,6 +686,22 @@ void Game::handleEvents() {
                     if (musicEnabled) audio.playMenuMusic();
                     else audio.stopMusic();
                     cleanupGameEntities();
+                }
+            }
+
+            // --- TASTO P: pausa ---
+            // Funziona durante STATE_PLAYING e STATE_BOSS. Quando si preme P:
+            // - salva lo stato corrente in pausedFromState
+            // - passa a STATE_PAUSE (il gioco si ferma, mostra "PAUSE")
+            // Premendo di nuovo P (o ESC), ripristina lo stato precedente.
+            if (key == sf::Keyboard::P) {
+                if (state == STATE_PLAYING || state == STATE_BOSS) {
+                    pausedFromState = state;
+                    state = STATE_PAUSE;
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                } else if (state == STATE_PAUSE) {
+                    state = pausedFromState;
+                    audio.playSound(SOUND_MENU_CONFIRM);
                 }
             }
 
@@ -863,6 +883,16 @@ void Game::update() {
     if (state == STATE_DEMO) {
         updateDemoMode();
         if (state != STATE_DEMO) return;  // demo interrotta, esci
+    }
+
+    // --- STATO PAUSE: il gioco e' congelato ---
+    // Quando si e' in pausa, l'update salta TUTTO. Il render mostra
+    // l'ultimo frame di gioco congelato + overlay "PAUSE" intermittente.
+    // La pausa si attiva/disattiva con il tasto P (vedi handleEvents).
+    // Anche ESC ripristina lo stato precedente (vedi handleEvents).
+    if (state == STATE_PAUSE) {
+        // Non aggiornare niente: il gioco resta congelato
+        return;
     }
 
     // --- STATO INTRO: cutscene a fumetti ---
@@ -8150,6 +8180,25 @@ void Game::render() {
     // Disegna la scritta "DEMO MODE" in alto a sinistra se siamo in demo.
     if (state == STATE_DEMO) {
         drawDemoOverlay(window);
+    }
+
+    // --- Overlay PAUSE ---
+    // Quando si e' in pausa, disegna la scritta "PAUSE" al centro dello
+    // schermo in ROSSO e INTERMITTENTE. L'intermittenza e' data da sinf
+    // che oscilla tra -1 e 1, mappata a alpha 100-255.
+    // Il frame di gioco resta visibile sotto (e' stato renderizzato prima
+    // di entrare in STATE_PAUSE, e l'update salta tutto).
+    if (state == STATE_PAUSE) {
+        static float pauseTime = 0.f;
+        pauseTime += 0.05f;
+        float pulse = (sinf(pauseTime * 5.f) + 1.f) * 0.5f;  // 0..1
+        int alpha = (int)(100 + pulse * 155);  // 100..255
+        sf::Color pauseColor(255, 40, 40, (sf::Uint8)alpha);
+        // "PAUSE" al centro, scala 8 (grande)
+        drawTextCenteredOutlined(window, "PAUSE", WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 20, 8, pauseColor);
+        // Sotto-titolo: "PRESS P TO RESUME"
+        sf::Color subColor(255, 200, 200, (sf::Uint8)alpha);
+        drawTextCentered(window, "PRESS P TO RESUME", WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 60, 3, subColor);
     }
 
     window.display();

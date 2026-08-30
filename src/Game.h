@@ -35,6 +35,7 @@ enum GameState {
     STATE_INTRO,          // intro cutscene a fumetti (4 immagini, 8s ciascuna)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
     STATE_BOSS,           // scontro con il boss
+    STATE_PAUSE,          // pausa (tasto P): mostra "PAUSE" intermittente
     STATE_CONTINUES,      // schermata continues (conto alla rovescia 10-0)
     STATE_LOSE,           // schermata game over
     STATE_WIN_STORY,      // vittoria modalita' story (con fuochi d'artificio)
@@ -246,6 +247,7 @@ private:
 
     Config config;
     GameState state;
+    GameState pausedFromState;  // stato precedente alla pausa (per ripristino)
     GameMode gameMode;
     bool isRunning;
 
