@@ -2659,7 +2659,7 @@ void Game::update() {
     }
     // --- Logica STATE_BOSS: stanza del boss ---
     // STATE_DEMO con demoIsBoss=true usa la stessa logica di STATE_BOSS.
-    else if (renderState == STATE_BOSS || (renderState == STATE_DEMO && demoIsBoss)) {
+    else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
         // freeMovement=true: il giocatore si muove liberamente (non snap-to-grid)
         player.update(maze, true, particles);
         if (numPlayers == 2) player2.update(maze, true, particles);
@@ -3166,7 +3166,7 @@ void Game::update() {
                 startLevel(currentLevel);
             }
         }
-    } else if (renderState == STATE_WIN_STORY) {
+    } else if (state == STATE_WIN_STORY) {
         // --- Schermata vittoria: fuochi d'artificio ---
         // Ogni ~10 frame (1/6 di secondo) genera un fuoco d'artificio nuovo
         if (rand() % 10 == 0) spawnFirework();

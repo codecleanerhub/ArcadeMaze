@@ -131,6 +131,12 @@ public:
     // True se il mini-boss sta morendo (animazione morte in corso).
     bool isDying() const { return dyingTimer > 0; }
 
+    // --- FLEE MODE (calice dell'immortalita') ---
+    // Quando fleeMode e' true, il mini-boss si allontana dal player invece
+    // di inseguirlo. Attivato da Game quando il player e' invincibile.
+    void setFleeMode(bool flee) { fleeMode = flee; }
+    bool isFleeing() const { return fleeMode; }
+
 private:
     sf::Vector2f pos;
     int dx, dy;
@@ -157,17 +163,11 @@ private:
     sf::Vector2f targetPos;      // centro della cella verso cui muovere
     bool hasTarget;              // true se targetPos e' valido
 
-    // --- FLEE MODE (calice dell'immortalita') ---
-    // Quando fleeMode e' true, il mini-boss si allontana dal player invece
-    // di inseguirlo. Attivato da Game quando il player e' invincibile.
-    void setFleeMode(bool flee) { fleeMode = flee; }
-    bool isFleeing() const { return fleeMode; }
+    bool fleeMode;  // true = il mini-boss fugge dal player (calice attivo)
 
     // SpriteSheet del mini-boss (caricato da assets/sprites/miniboss_XX)
     SpriteSheet sprite;
     bool spriteLoaded;
-
-    bool fleeMode;  // true = il mini-boss fugge dal player (calice attivo)
 
     // BFS pathfinding (come Enemy::bfsPath)
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
