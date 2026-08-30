@@ -1549,6 +1549,7 @@ void Game::update() {
         // --- Aggiornamento mini-boss (se presente) ---
         // Il mini-boss insegue il player con BFS e attacca meele.
         if (miniBoss && !miniBoss->isDead()) {
+            miniBoss->setFleeMode(playerInvincible);
             miniBoss->update(maze, player.getGridPos(), pPos, particles);
             // --- Collisione mini-boss vs player (danno meele quando attacca) ---
             // takeDamage() del player toglie 1 HP fisso (con invulnerabilita'
@@ -2658,7 +2659,7 @@ void Game::update() {
     }
     // --- Logica STATE_BOSS: stanza del boss ---
     // STATE_DEMO con demoIsBoss=true usa la stessa logica di STATE_BOSS.
-    else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
+    else if (renderState == STATE_BOSS || (renderState == STATE_DEMO && demoIsBoss)) {
         // freeMovement=true: il giocatore si muove liberamente (non snap-to-grid)
         player.update(maze, true, particles);
         if (numPlayers == 2) player2.update(maze, true, particles);
@@ -3165,7 +3166,7 @@ void Game::update() {
                 startLevel(currentLevel);
             }
         }
-    } else if (state == STATE_WIN_STORY) {
+    } else if (renderState == STATE_WIN_STORY) {
         // --- Schermata vittoria: fuochi d'artificio ---
         // Ogni ~10 frame (1/6 di secondo) genera un fuoco d'artificio nuovo
         if (rand() % 10 == 0) spawnFirework();
@@ -4919,26 +4920,32 @@ void Game::drawCharacterPreview(sf::RenderTarget& target, CharacterType ct,
 void Game::render() {
     window.clear(sf::Color(10, 10, 10));
 
-    if (state == STATE_MENU) {
+    // --- PAUSA: renderizza la scena di gioco (labirinto o boss) come se
+    // fosse lo stato pausedFromState, poi aggiunge l'overlay "PAUSE".
+    // Questo "frizza" la schermata attuale: il player vede il labirinto
+    // congelato (nemici, proiettili, particelle fermi) + la scritta PAUSE.
+    GameState renderState = (state == STATE_PAUSE) ? pausedFromState : state;
+
+    if (renderState == STATE_MENU) {
         drawMenu();
     }
-    else if (state == STATE_SELECT_PLAYER) {
+    else if (renderState == STATE_SELECT_PLAYER) {
         drawSelectPlayer();
     }
-    else if (state == STATE_CONFIG_JOY) {
+    else if (renderState == STATE_CONFIG_JOY) {
         drawConfigJoy();
     }
-    else if (state == STATE_CONFIG_JOY_2) {
+    else if (renderState == STATE_CONFIG_JOY_2) {
         drawConfigJoy2();
     }
-    else if (state == STATE_INTRO) {
+    else if (renderState == STATE_INTRO) {
         drawIntro();
     }
-    else if (state == STATE_CONTINUES) {
+    else if (renderState == STATE_CONTINUES) {
         drawContinues();
     }
-    else if (state == STATE_PLAYING || state == STATE_WIN_INFINITE
-             || (state == STATE_DEMO && !demoIsBoss)) {
+    else if (renderState == STATE_PLAYING || renderState == STATE_WIN_INFINITE
+             || (renderState == STATE_DEMO && !demoIsBoss)) {
         // Rendering comune per gameplay/schermate finali
         maze.render(window);
         if (numPlayers == 2)
@@ -5528,7 +5535,7 @@ void Game::render() {
         // STATE_LOSE ora ha un branch di rendering dedicato (vedi sotto),
         // quindi questo blocco non viene piu' raggiunto per STATE_LOSE.
     }
-    else if (state == STATE_LOSE) {
+    else if (renderState == STATE_LOSE) {
         // --- Schermata GAME OVER ---
         // Usa l'immagine di sfondo dedicata (bg_gameover.jpg) se caricata,
         // altrimenti fallback a nero. I messaggi "GAME OVER" e "PRESS ENTER"
@@ -5554,7 +5561,7 @@ void Game::render() {
         drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 5, sf::Color::Red);
         drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
     }
-    else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
+    else if (renderState == STATE_BOSS || (renderState == STATE_DEMO && demoIsBoss)) {
         // --- Stanza del boss: caverna scavata nella roccia ---
         // Sostituisce il vecchio sfondo nero piatto. Lo stile e' coerente
         // con quello del labirinto (Maze::render): pavimento terra battuta
@@ -8114,7 +8121,7 @@ void Game::render() {
             drawTextCenteredOutlined(window, "BOSS: " + bossName, WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
         }
     }
-    else if (state == STATE_WIN_STORY) {
+    else if (renderState == STATE_WIN_STORY) {
         // --- Sfondo ---
         // Se l'immagine di sfondo (bg_win.jpg) e' caricata, la disegna
         // scalata a coprire tutta la finestra. Altrimenti fallback blu notte.

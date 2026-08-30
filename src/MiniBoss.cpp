@@ -26,7 +26,7 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
       burningTimer(0), burnAnimTime(0), burnedFlag(false),
       animTime(0.f), size(0),
       targetPos(), hasTarget(false),
-      sprite(), spriteLoaded(false) {
+      sprite(), spriteLoaded(false), fleeMode(false) {
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.f;
     pos.y = startRow * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
     maxHealth = getBaseHealth(t) + (level - 1) * 3;  // scala col livello
@@ -278,6 +278,38 @@ void MiniBoss::moveGreedy(Maze& maze, const Vec2& target) {
     else if (bestDy < 0) dy = -1;
 }
 
+// fleeGreedy: euristica di FUGA per il mini-boss.
+// Sceglie la cella adiacente che MASSIMIZZA la distanza Manhattan dal
+// target (player). Usata quando fleeMode e' true (player invincibile).
+void MiniBoss::fleeGreedy(Maze& maze, const Vec2& target) {
+    int dirs[4][2] = {{0,1},{0,-1},{1,0},{-1,0}};
+    int curDist = abs(target.x - (int)(pos.x / TILE_SIZE)) +
+                  abs(target.y - (int)((pos.y - UI_HEIGHT) / TILE_SIZE));
+    int bestDist = curDist;
+    int bestDx = 0, bestDy = 0;
+    for (int d = 0; d < 4; d++) {
+        int nc = (int)(pos.x / TILE_SIZE) + dirs[d][0];
+        int nr = (int)((pos.y - UI_HEIGHT) / TILE_SIZE) + dirs[d][1];
+        if (nc < 0 || nc >= MAZE_COLS || nr < 0 || nr >= MAZE_ROWS) continue;
+        if (maze.isWall(nc, nr)) continue;
+        int dist = abs(target.x - nc) + abs(target.y - nr);
+        if (dist > bestDist) {
+            bestDist = dist;
+            bestDx = dirs[d][0];
+            bestDy = dirs[d][1];
+        }
+    }
+    if (bestDx != 0 || bestDy != 0) {
+        targetPos.x = ((int)(pos.x / TILE_SIZE) + bestDx) * TILE_SIZE + TILE_SIZE / 2.f;
+        targetPos.y = ((int)((pos.y - UI_HEIGHT) / TILE_SIZE) + bestDy) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+        hasTarget = true;
+        if (bestDx > 0) dx = 1;
+        else if (bestDx < 0) dx = -1;
+        if (bestDy > 0) dy = 1;
+        else if (bestDy < 0) dy = -1;
+    }
+}
+
 // --- Update ---
 // FIX: il movimento ora viene applicato OGNI frame verso targetPos, non solo
 // quando il BFS gira (ogni ~300ms). In precedenza il movimento era inside il
@@ -333,7 +365,10 @@ void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
         pathUpdateTimer = 300;  // prossimo pathfinding tra 300ms
         Vec2 myGrid{ (int)(pos.x / TILE_SIZE), (int)((pos.y - UI_HEIGHT) / TILE_SIZE) };
         Vec2 nextStep;
-        if (bfsPath(maze, myGrid, playerGridPos, nextStep)) {
+        // FLEE MODE: se il player e' invincibile (calice), il mini-boss fugge
+        if (fleeMode) {
+            fleeGreedy(maze, playerGridPos);
+        } else if (bfsPath(maze, myGrid, playerGridPos, nextStep)) {
             // Salva il target (centro della prossima cella) ma NON muoverti qui:
             // il movimento e' applicato fuori dal blocco, ogni frame.
             targetPos.x = nextStep.x * TILE_SIZE + TILE_SIZE / 2.f;

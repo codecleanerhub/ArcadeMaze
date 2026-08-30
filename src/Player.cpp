@@ -229,6 +229,9 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         // --- Modalita' stanza del boss: movimento libero ---
         if (nextDx != 0 || nextDy != 0) {
             dx = nextDx; dy = nextDy; lastDx = dx; lastDy = dy; nextDx = 0; nextDy = 0;
+        } else {
+            // FIX: nessuna direzione premuta -> FERMA il player.
+            dx = 0; dy = 0;
         }
         pos.x += dx * effectiveSpeed; pos.y += dy * effectiveSpeed;
         // Limiti di finestra (margine di 16 px per non uscire con meta' sprite)
@@ -249,11 +252,14 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
             if (nextDx != 0 || nextDy != 0) {
                 tryMove(nextDx, nextDy, maze);
                 nextDx = 0; nextDy = 0;
+            } else {
+                // FIX: nessuna direzione premuta -> FERMA il player al centro.
+                // Il player si muove solo finche' il joystick/frecce sono
+                // mantenuti premuti. Quando si rilasciano, il player si
+                // ferma al centro della cella corrente.
+                dx = 0; dy = 0;
             }
             // FIX: se davanti c'e' muro, ferma il movimento (dx/dy a 0).
-            // Non usare else-if perche' tryMove potrebbe aver impostato dx/dy
-            // a 0 se la direzione era bloccata, e questo check e' ridondante
-            // ma sicuro: controlla se la direzione corrente porta a un muro.
             if (dx != 0 || dy != 0) {
                 if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
             }

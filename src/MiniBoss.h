@@ -157,13 +157,24 @@ private:
     sf::Vector2f targetPos;      // centro della cella verso cui muovere
     bool hasTarget;              // true se targetPos e' valido
 
+    // --- FLEE MODE (calice dell'immortalita') ---
+    // Quando fleeMode e' true, il mini-boss si allontana dal player invece
+    // di inseguirlo. Attivato da Game quando il player e' invincibile.
+    void setFleeMode(bool flee) { fleeMode = flee; }
+    bool isFleeing() const { return fleeMode; }
+
     // SpriteSheet del mini-boss (caricato da assets/sprites/miniboss_XX)
     SpriteSheet sprite;
     bool spriteLoaded;
 
+    bool fleeMode;  // true = il mini-boss fugge dal player (calice attivo)
+
     // BFS pathfinding (come Enemy::bfsPath)
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
+    // fleeGreedy: euristica di FUGA per il mini-boss. Sceglie la cella
+    // adiacente che MASSIMIZZA la distanza dal target (player).
+    void fleeGreedy(Maze& maze, const Vec2& target);
 
     // Render a primitive SFML (fallback se sprite non disponibile)
     void renderPrimitives(sf::RenderTarget& target) const;
