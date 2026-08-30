@@ -241,10 +241,7 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         if (pos.y > WINDOW_HEIGHT - 16) pos.y = WINDOW_HEIGHT - 16;
     } else {
         // --- Modalita' labirinto: snap-to-grid ---
-        // FIX: se nessuna direzione e' premuta, FERMA il player IMMEDIATAMENTE,
-        // non aspettare di arrivare al centro della cella. Questo previene
-        // l'effetto 'diversi passi dopo aver mollato la direzione'.
-        // Il player si ferma sul posto appena rilasci il joystick/frecce.
+        // FIX: se nessuna direzione e' premuta, FERMA il player IMMEDIATAMENTE.
         if (nextDx == 0 && nextDy == 0) {
             dx = 0; dy = 0;
         }
@@ -255,12 +252,17 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
 
         // FIX: se il player e' FERMO (dx==0, dy==0) e c'e' una nuova direzione
-        // premuta (nextDx/nextDy != 0), applicala IMMEDIATAMENTE con tryMove.
-        // Questo risolve il bug per cui il player non ripartiva dopo essersi
-        // fermato a meta' cella: il nuovo input veniva ignorato perche'
-        // il cambio direzione avveniva solo al centro della cella, ma il
-        // player era fermo e non raggiungeva mai il centro.
+        // premuta (nextDx/nextDy != 0), applicala IMMEDIATAMENTE.
+        // PRIMA pero' allinea il player al centro della cella corrente:
+        // questo e' CRITICO perche' tryMove controlla i muri usando
+        // col = (int)(pos.x / TILE_SIZE). Se il player e' al bordo tra due
+        // celle, col potrebbe essere la cella sbagliata e il check dei muri
+        // fallirebbe, permettendo al player di attraversare i muri.
         if (dx == 0 && dy == 0 && (nextDx != 0 || nextDy != 0)) {
+            // Allinea al centro della cella corrente
+            pos.x = centerX;
+            pos.y = centerY;
+            // Ora prova a muoversi nella direzione richiesta
             tryMove(nextDx, nextDy, maze);
             nextDx = 0; nextDy = 0;
         }

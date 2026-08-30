@@ -1359,10 +1359,11 @@ void Game::update() {
     }
     if (state == STATE_PLAYING || state == STATE_BOSS) {
         // Tastiera: direzioni (mutuamente esclusive con else-if)
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down))  { player.setDirection(0, 1);  }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
+        bool anyInput = false;
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); anyInput = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down))  { player.setDirection(0, 1); anyInput = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); anyInput = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0); anyInput = true; }
 
         // Joystick P1: usa sf::Joystick (SFML). SFML su Windows gestisce
         // correttamente tutti i tipi di controller (XInput, DirectInput,
@@ -1389,6 +1390,14 @@ void Game::update() {
                     if (y > 30) { player.setDirection(0, 1); }
                     else if (y < -30) { player.setDirection(0, -1); }
                 }
+                anyInput = true;
+            }
+            // FIX: se NESSUN input e' rilevato (joystick nella deadzone +
+            // nessun tasto premuto), imposta direzione (0,0) per segnalare
+            // al player di fermarsi. Senza questo, nextDx/nextDy mantengono
+            // l'ultimo valore impostato e il player continua a muoversi.
+            if (!anyInput) {
+                player.setDirection(0, 0);
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
             // Non sparare se il pulsante non e' stato configurato (-1)
@@ -1428,10 +1437,11 @@ void Game::update() {
     // (default WASD + Q salto + E sparo). I due input coesistono.
     if ((state == STATE_PLAYING || state == STATE_BOSS) && numPlayers == 2) {
         // Tastiera secondaria (default WASD + Q/E)
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_up))    { player2.setDirection(0, -1); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_down))  { player2.setDirection(0, 1);  }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
+        bool anyInput2 = false;
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_up))    { player2.setDirection(0, -1); anyInput2 = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_down))  { player2.setDirection(0, 1); anyInput2 = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); anyInput2 = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0); anyInput2 = true; }
 
         // Joystick P2: usa sf::Joystick (SFML) con il joyId rilevato durante
         // la configurazione (config.joy2_id).
@@ -1482,6 +1492,11 @@ void Game::update() {
                     if (y > 25) { player2.setDirection(0, 1); }
                     else if (y < -25) { player2.setDirection(0, -1); }
                 }
+                anyInput2 = true;
+            }
+            // FIX: se nessun input, ferma player2
+            if (!anyInput2) {
+                player2.setDirection(0, 0);
             }
             // Sparo joystick
             if (config.joy2_shoot >= 0) {
