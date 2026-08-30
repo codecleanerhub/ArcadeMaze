@@ -480,7 +480,7 @@ void Player::render(sf::RenderTarget& target) {
             // per simulare lo stretching del salto
             float scaleX = 0.9f + sinf(jumpProgress * (float)M_PI) * 0.1f;  // 0.9 -> 1.0 -> 0.9
             // Disegna lo sprite idle con scale modificato e sollevato (+ tint)
-            sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped, tint);
+            sprite.render(target, "idle", 0, px, pos.y + 24.f - jumpOffset, scaleX, flipped, tint);
         }
         // --- Camminata: usa ANIMAZIONE WALK a 4 frame (generata con AI) ---
         // Prima usavamo sprite idle con bob effect perche' i vecchi frame walk
@@ -499,17 +499,17 @@ void Player::render(sf::RenderTarget& target) {
                 int frame = (animTime / (uint32_t)frameDuration) % walkFrames;
                 // Leggero bob verticale per dare peso al passo
                 float walkBob = sinf(animTime * 0.012f) * 2.f;
-                sprite.render(target, "walk", frame, px, pos.y + 8.f + walkBob, 1.0f, flipped, tint);
+                sprite.render(target, "walk", frame, px, pos.y + 24.f + walkBob, 1.0f, flipped, tint);
             } else {
                 // Fallback: bob effect sul frame idle (vecchio comportamento)
                 float walkBob = sinf(animTime * 0.012f) * 3.f;
                 float scaleX = 1.0f + sinf(animTime * 0.024f) * 0.05f;
-                sprite.render(target, "idle", 0, px, pos.y + 8.f + walkBob, scaleX, flipped, tint);
+                sprite.render(target, "idle", 0, px, pos.y + 24.f + walkBob, scaleX, flipped, tint);
             }
         }
         // Altrimenti usa sprite principale (idle o attack)
         else {
-            sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
+            sprite.render(target, animName, frame, px, pos.y + 24.f + bobY, 1.0f, flipped, tint);
         }
 
         // Speed boost: effetto discreto (piccoli pixel gialli ai piedi, non cerchio)
@@ -568,7 +568,7 @@ void Player::render(sf::RenderTarget& target) {
         } else {
             bobY = sinf(animTime * 0.004f) * 1.f;
         }
-        renderCharacterFallback(target, px, pos.y + 8.f - jumpOffset + bobY,
+        renderCharacterFallback(target, px, pos.y + 24.f - jumpOffset + bobY,
                                   flipped, walking, bobY);
 
         // Speed boost (stesso del ramo sprite)
