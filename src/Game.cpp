@@ -1718,7 +1718,7 @@ void Game::update() {
                 float dy = pPos.y - enemy.getPixelPos().y;
                 if (dx*dx + dy*dy < 800) {
                     // Boost di velocita' per 2 secondi (2000 ms simulati)
-                    player.setJumpSpeedBoost(2000);
+                    player.setJumpSpeedBoost(1000);
                     // Particelle dorate per dare feedback visivo
                     for (int i = 0; i < 5; i++) {
                         particles.push_back({pPos,
@@ -1794,7 +1794,7 @@ void Game::update() {
                     float dx = pPos2.x - enemy.getPixelPos().x;
                     float dy = pPos2.y - enemy.getPixelPos().y;
                     if (dx*dx + dy*dy < 800) {
-                        player2.setJumpSpeedBoost(2000);
+                        player2.setJumpSpeedBoost(1000);
                         for (int i = 0; i < 5; i++) {
                             particles.push_back({pPos2,
                                 {(float)(rand()%6-3), (float)(rand()%4+2)},

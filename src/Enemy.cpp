@@ -172,7 +172,7 @@ void Enemy::unloadAllSprites() {
 // raggiungono presto; speed bassa + HP alti -> resistono molto ma puoi
 // tenerli a distanza.
 // ---------------------------------------------------------------------------
-Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), animTime(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos(), fleeMode(false) {
+Enemy::Enemy(EnemyType t, int startCol, int startRow) : pathUpdateTimer(0), animTime(0), shootCooldown(0), attackingTimer(0), dyingTimer(0), burningTimer(0), burnAnimTime(0), burnedFlag(false), electrifiedTimer(0), electrifiedAnimTime(0), stuckTimer(0), lastPos(), fleeMode(false), prevFleeMode(false) {
     type = t;
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.0f;
     pos.y = startRow * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
@@ -424,9 +424,15 @@ void Enemy::update(Maze& maze, const Vec2& playerGridPos, const sf::Vector2f& pl
         //      per evitare il "freeze" in cella.
         //  (c) stuckTimer > STUCK_THRESHOLD_MS: posizione immobile da
         //      troppo. Forza ricalcolo + fallback direzione casuale.
+        //  (d) fleeMode e' appena cambiato: forza ricalcolo immediato
+        //      per passare da inseguimento a fuga (o viceversa) senza
+        //      aspettare il timer PATH_RECALC_INTERVAL_MS.
+        bool fleeChanged = (fleeMode != prevFleeMode);
         bool mustRecompute = (pathUpdateTimer >= PATH_RECALC_INTERVAL_MS)
                           || (dx == 0 && dy == 0)
-                          || (stuckTimer > STUCK_THRESHOLD_MS);
+                          || (stuckTimer > STUCK_THRESHOLD_MS)
+                          || fleeChanged;
+        prevFleeMode = fleeMode;
 
         if (mustRecompute) {
             pathUpdateTimer = 0;

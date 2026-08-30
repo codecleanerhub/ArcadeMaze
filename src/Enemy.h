@@ -176,6 +176,7 @@ private:
     // i nemici hanno "paura" di essere danneggiati dal fuoco del calice e
     // cercano di mantenere la distanza.
     bool fleeMode;
+    bool prevFleeMode;  // per rilevare cambio di fleeMode e forzare ricalcolo
 
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
