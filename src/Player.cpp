@@ -253,6 +253,18 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);
         float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
         float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
+
+        // FIX: se il player e' FERMO (dx==0, dy==0) e c'e' una nuova direzione
+        // premuta (nextDx/nextDy != 0), applicala IMMEDIATAMENTE con tryMove.
+        // Questo risolve il bug per cui il player non ripartiva dopo essersi
+        // fermato a meta' cella: il nuovo input veniva ignorato perche'
+        // il cambio direzione avveniva solo al centro della cella, ma il
+        // player era fermo e non raggiungeva mai il centro.
+        if (dx == 0 && dy == 0 && (nextDx != 0 || nextDy != 0)) {
+            tryMove(nextDx, nextDy, maze);
+            nextDx = 0; nextDy = 0;
+        }
+
         // Quando si e' abbastanza vicini al centro si può cambiare direzione.
         if (fabs(pos.x - centerX) < effectiveSpeed && fabs(pos.y - centerY) < effectiveSpeed) {
             pos.x = centerX; pos.y = centerY;

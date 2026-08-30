@@ -4263,17 +4263,17 @@ void Game::drawMenu() {
         window.draw(dot);
     }
 
-    // --- Crediti: "By" (oro) + "Luca A. Greco" (avorio) in stile fantasy ---
-    // Sostituisce il vecchio "Lord Luca A. Greco".
-    // Le due parti sono centrate come un'unica stringa.
+    // --- Crediti: "By" (oro) + "Marled Software" (avorio) nel footer ---
+    // Sostituisce il vecchio "Luca A. Greco".
+    // Posizionati in basso (footer) della schermata menu.
     std::string byStr   = "By ";
-    std::string nameStr = "Luca A. Greco";
-    float byW = (float)byStr.length()   * 4 * 5;
-    float nameW = (float)nameStr.length() * 4 * 5;
+    std::string nameStr = "Marled Software";
+    float byW = (float)byStr.length()   * 4 * 3;
+    float nameW = (float)nameStr.length() * 4 * 3;
     float totalW = byW + nameW;
     float startX = (float)(WINDOW_WIDTH/2) - totalW/2.f;
-    drawTextOutlined(window, byStr,   (int)startX,             260, 5, sf::Color(255, 215, 100));
-    drawTextOutlined(window, nameStr, (int)(startX + byW),       260, 5, sf::Color(245, 235, 200));
+    drawTextOutlined(window, byStr,   (int)startX,             WINDOW_HEIGHT - 40, 3, sf::Color(255, 215, 100));
+    drawTextOutlined(window, nameStr, (int)(startX + byW),       WINDOW_HEIGHT - 40, 3, sf::Color(245, 235, 200));
 
     // --- Riquadro pergamena con bordo marrone antico + angoli decorati ---
     sf::RectangleShape border(sf::Vector2f((float)(WINDOW_WIDTH - 240), 500.f));
