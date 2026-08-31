@@ -47,11 +47,21 @@ enum GameMode { MODE_STORY, MODE_INFINITE };
 
 // Numero di livelli della modalita' STORY. Quando currentLevel supera
 // questo valore (dopo aver sconfitto il boss dell'ultimo livello), si
-// passa a STATE_WIN_STORY. Ci sono 17 tipi di boss distinti: ogni livello
-// story ha un boss diverso (nessuna ripetizione). STORY_LEVELS_COUNT = 17
-// coincide con BOSS_TYPE_COUNT, cosi' ogni tipo appare una sola volta.
-// In modalita' infinite si continua oltre i 17 e i tipi ciclano.
-constexpr int STORY_LEVELS_COUNT = 17;
+// passa a STATE_WIN_STORY.
+//
+// Struttura: 3 livelli labirinto + 1 livello boss = 4 livelli per ogni boss.
+// Ci sono 17 tipi di boss, quindi STORY_LEVELS_COUNT = 17 * 4 = 68.
+// Il boss appare ai livelli 4, 8, 12, 16, ..., 68.
+// I livelli 1-3 sono labirinto (con mini-boss al livello 2),
+// il livello 4 e' il boss, poi ricomincia con 5-7 labirinto, 8 boss, ecc.
+constexpr int MAZE_LEVELS_PER_BOSS = 3;  // 3 labirinti prima di ogni boss
+constexpr int TOTAL_LEVELS_PER_BOSS = MAZE_LEVELS_PER_BOSS + 1;  // 3 lab + 1 boss = 4
+constexpr int STORY_LEVELS_COUNT = BOSS_TYPE_COUNT * TOTAL_LEVELS_PER_BOSS;  // 17 * 4 = 68
+
+// Restituisce true se il livello dato e' un livello boss (multiplo di 4)
+inline bool isBossLevel(int level) { return (level % TOTAL_LEVELS_PER_BOSS) == 0; }
+// Restituisce l'indice del boss (0..16) per il livello dato
+inline int getBossIndex(int level) { return (level / TOTAL_LEVELS_PER_BOSS) % BOSS_TYPE_COUNT; }
 
 // Arma casuale da posizionare nella stanza del boss: il giocatore puo'
 // raccoglierla per rimpiazzare la sua (le munizioni del boss sono 5).

@@ -203,8 +203,11 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTime
     speed = 1 + lvl / 8;
     if (speed > 2) speed = 2;
     health = 50 + lvl * 20; maxHealth = health;
-    // Tipo ciclico sui 17 tipi disponibili
-    type = static_cast<BossType>((lvl - 1) % BOSS_TYPE_COUNT);
+    // Tipo ciclico sui 17 tipi disponibili.
+    // NUOVA LOGICA: con 3 labirinti + 1 boss per ogni tipo, il boss appare
+    // ai livelli 4, 8, 12, ... Usiamo getBossIndex per mappare il livello
+    // all'indice del boss corretto (0..16).
+    type = static_cast<BossType>(getBossIndex(lvl));
 }
 
 // ---------------------------------------------------------------------------

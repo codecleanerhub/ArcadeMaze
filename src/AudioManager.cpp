@@ -273,13 +273,31 @@ void AudioManager::playSound(SoundType type) {
     }
     // --- Nuovi SFX retro ---
     else if (type == SOUND_JUMP) {
-        // 0.15s: sweep triangolare ascendente (salto)
-        for(int i = 0; i < (int)(SR * 0.15); i++) {
+        // 0.25s: "BOING" di effetto molla (spring bounce)
+        // Frequenza che parte alta, scende rapidamente, poi rimbalza su:
+        // imita il suono di una molla che viene compressa e rilasciata.
+        for(int i = 0; i < (int)(SR * 0.25); i++) {
             double t = (double)i / SR;
-            double freq = 200 + t * 1200;  // 200 -> 1400 Hz
-            double env = exp(-t * 8.0);
-            double s = triangleWave(t * freq);
-            samples.push_back((sf::Int16)(2500 * s * env));
+            // Frequenza: parte a 600Hz, scende a 200Hz (compressione),
+            // poi risale a 500Hz (rimbalzo) e scende di nuovo (fine)
+            double phase = t / 0.25;  // 0..1
+            double freq;
+            if (phase < 0.3) {
+                // Compressione: 600 -> 200 Hz
+                freq = 600 - (phase / 0.3) * 400;
+            } else if (phase < 0.5) {
+                // Rimbalzo su: 200 -> 500 Hz
+                freq = 200 + ((phase - 0.3) / 0.2) * 300;
+            } else {
+                // Decadimento: 500 -> 250 Hz
+                freq = 500 - ((phase - 0.5) / 0.5) * 250;
+            }
+            // Envelope: attack rapido, decay morbido
+            double env = exp(-t * 6.0) * (1.0 - exp(-t * 30.0));
+            // Onda a dente di sega per un suono piu' "metallico/molla"
+            double s = 0.6 * sawtoothWave(t * freq) +
+                       0.4 * triangleWave(t * freq * 1.5);
+            samples.push_back((sf::Int16)(3000 * s * env));
         }
     }
     else if (type == SOUND_DOOR_OPEN) {

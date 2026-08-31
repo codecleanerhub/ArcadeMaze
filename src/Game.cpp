@@ -1911,16 +1911,22 @@ void Game::update() {
                     exitDoor.active = false;
                     // --- FIX DEMO MODE: se siamo in demo e il player demo
                     // entra nella porta di uscita, NON avviare il boss fight.
-                    // Altrimenti state passerebbe da STATE_DEMO a STATE_BOSS
-                    // ma demoIsBoss resterebbe false: updateDemoMode() non
-                    // verrebbe piu' chiamato (state != STATE_DEMO), la demo
-                    // si "romperebbe" e il timer resterebbe bloccato.
-                    // Invece, fermiamo subito la demo e torniamo al menu'.
                     if (state == STATE_DEMO) {
                         stopDemoMode();
-                        return;  // evita di proseguire con startBossFight
+                        return;
                     }
-                    startBossFight();
+                    // --- NUOVA LOGICA: 3 labirinti + 1 boss ---
+                    // Se il livello corrente e' un multiplo di 4 (4, 8, 12, ...)
+                    // allora il player ha completato il 3° labirinto e va al boss.
+                    // Altrimenti, va al prossimo livello labirinto.
+                    if (isBossLevel(currentLevel)) {
+                        startBossFight();
+                    } else {
+                        // Prossimo livello labirinto: non e' un livello boss,
+                        // avanza currentLevel e ricomincia il labirinto
+                        currentLevel++;
+                        startLevel(currentLevel);
+                    }
                 }
             }
         }
@@ -2036,9 +2042,23 @@ void Game::update() {
                         }
 
                         if (mbC >= 0) {
-                            // Tipo basato sul livello (17 tipi che ciclano)
-                            MiniBossType mbType = (MiniBossType)(
-                                (currentLevel - 1) % MINIBOSS_TYPE_COUNT);
+                            // Tipo basato sul livello: ogni livello labirinto
+                            // ha un mini-boss UNICO. Con la struttura 3 lab + 1 boss,
+                            // i livelli labirinto sono 1,2,3,5,6,7,9,10,11,...
+                            // Mappiamo questi all'indice del mini-boss (0..16):
+                            // livelli 1,2,3 -> mini-boss 0,1,2
+                            // livelli 5,6,7 -> mini-boss 3,4,5
+                            // livelli 9,10,11 -> mini-boss 6,7,8
+                            // ecc.
+                            // Formula: sottrai 1, dividi per 4, ottieni il gruppo;
+                            // poi moltiplica per 3 e aggiungi l'offset dentro il gruppo.
+                            int levelIdx = currentLevel - 1;  // 0-based
+                            int group = levelIdx / TOTAL_LEVELS_PER_BOSS;  // 0,1,2,...
+                            int posInGroup = levelIdx % TOTAL_LEVELS_PER_BOSS;  // 0,1,2 (labirinti), 3 (boss, non dovrebbe succedere)
+                            // Se posInGroup == 3 (livello boss), usa l'ultimo mini-boss del gruppo
+                            if (posInGroup >= MAZE_LEVELS_PER_BOSS) posInGroup = MAZE_LEVELS_PER_BOSS - 1;
+                            int mbIdx = (group * MAZE_LEVELS_PER_BOSS + posInGroup) % MINIBOSS_TYPE_COUNT;
+                            MiniBossType mbType = (MiniBossType)(mbIdx);
                             miniBoss = new MiniBoss(mbType, currentLevel, mbC, mbR);
                             miniBossSpawned = true;
                             // Effetto particellare di "esplosione" all'uscita
