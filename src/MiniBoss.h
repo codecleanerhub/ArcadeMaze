@@ -36,34 +36,76 @@
 #include <string>
 #include <map>
 
-// Tipo di mini-boss. 17 tipi (1 per labirinto). L'ordine corrisponde al
-// livello (1->GOBLIN_CHIEFTAIN, 2->CAVE_TROLL, ...). In modalita' story
-// ogni tipo appare una sola volta. In modalita' infinite i tipi ciclano.
+// Tipo di mini-boss. 51 tipi (1 per ogni livello labirinto della story mode).
+// In modalita' story ogni tipo appare una sola volta. In modalita' infinite
+// i tipi ciclano dopo il 51.
 //
 // ISPIRAZIONI:
 //   - LOTR: Orchi di Moria, Uruk-hai, Troll, Nazgul, Spettri del Crepuscolo
 //   - D&D: Ogre, Gnoll, Bugbear, Minotauro, Lich minore, Occhio Beholder
+//   - Narnia: Lupo Fenris, Strega Bianca, Minotauro di Narnia, Nano guerriero
+//   - The Witcher: Leshen, Bruxa, Katakan, Fiend, Werewolf, Golem di Witcher
+//   - Doom: Imp, Pinky Demon, Revenant, Cacodemon, Hell Knight, Mancubus
 enum MiniBossType {
-    MB_GOBLIN_CHIEFTAIN,     // Livello 1: Capo Goblin (ascia)
-    MB_CAVE_TROLL,           // Livello 2: Troll delle caverne (mazza)
-    MB_ORC_BERSERKER,        // Livello 3: Orco berserker (scure)
-    MB_WARG_RIDER,           // Livello 4: Cavaliere di Warg (lancia)
-    MB_URUK_HAI,            // Livello 5: Uruk-hai (spada)
-    MB_NAZGUL,              // Livello 6: Nazgul (pugnale avvelenato)
-    MB_OGRE_BRUTE,          // Livello 7: Ogre (mazzafrusto)
-    MB_GNOLL_PACKLORD,      // Livello 8: Signore dei Gnoll (ascia)
-    MB_BUGBEAR_CHIEF,       // Livello 9: Capo Bugbear (catena)
-    MB_MINOTAUR,            // Livello 10: Minotauro (ascia bipenne)
-    MB_WIGHT_LORD,          // Livello 11: Signore dei Wight (spada spettrale)
-    MB_CAVE_GIANT,          // Livello 12: Gigante delle caverne (mazza)
-    MB_DEATH_KNIGHT,        // Livello 13: Cavaliere della morte (spada)
-    MB_ILLITHID,            // Livello 14: Mind Flayer (tentacoli)
-    MB_ETTIN,               // Livello 15: Ettin (due teste, due mazze)
-    MB_FOMORIAN,            // Livello 16: Gigante deforme (mazza)
-    MB_BALROG_CULTIST       // Livello 17: Cultista del Balrog (frusta di fuoco)
+    // --- LOTR + D&D (17 originali, livelli 1-17 labirinto) ---
+    MB_GOBLIN_CHIEFTAIN,     // Capo Goblin (ascia)
+    MB_CAVE_TROLL,           // Troll delle caverne (mazza)
+    MB_ORC_BERSERKER,        // Orco berserker (scure)
+    MB_WARG_RIDER,           // Cavaliere di Warg (lancia)
+    MB_URUK_HAI,            // Uruk-hai (spada)
+    MB_NAZGUL,              // Nazgul (pugnale avvelenato)
+    MB_OGRE_BRUTE,          // Ogre (mazzafrusto)
+    MB_GNOLL_PACKLORD,      // Signore dei Gnoll (ascia)
+    MB_BUGBEAR_CHIEF,       // Capo Bugbear (catena)
+    MB_MINOTAUR,            // Minotauro (ascia bipenne)
+    MB_WIGHT_LORD,          // Signore dei Wight (spada spettrale)
+    MB_CAVE_GIANT,          // Gigante delle caverne (mazza)
+    MB_DEATH_KNIGHT,        // Cavaliere della morte (spada)
+    MB_ILLITHID,            // Mind Flayer (tentacoli)
+    MB_ETTIN,               // Ettin (due teste, due mazze)
+    MB_FOMORIAN,            // Gigante deforme (mazza)
+    MB_BALROG_CULTIST,      // Cultista del Balrog (frusta di fuoco)
+    // --- Narnia (7, livelli 18-24 labirinto) ---
+    MB_FENRIS_WOLF,         // Lupo Fenris di Narnia (zanne)
+    MB_WHITE_WITCH_GUARD,   // Guardia della Strega Bianca (spada di ghiaccio)
+    MB_NARNIA_MINOTAUR,     // Minotauro di Narnia (ascia)
+    MB_DWARF_BERSERKER,     // Nano guerriero di Narnia (ascia)
+    MB_WITCH_KNIGHT,       // Cavaliere della Strega Bianca (lancia di ghiaccio)
+    MB_TALKING_BEAST,       // Bestia parlante corrotta (artigli)
+    MB_ICE_GIANT_NARNIA,    // Gigante di ghiaccio (mazza)
+    // --- The Witcher (10, livelli 25-34 labirinto) ---
+    MB_LESHEN,             // Leshen (artigli + radici)
+    MB_BRUXA,              // Bruxa (artigli vampireschi)
+    MB_KATAKAN,            // Katakan (artigli)
+    MB_FIEND,              // Fiend (corna)
+    MB_WITCHER_GOLEM,      // Golem di Witcher (pugni)
+    MB_NOONWRAITH,         // Noonwraith (lama spettrale)
+    MB_FOGLET,             // Foglet (artigli)
+    MB_GRAVE_HAG,           // Strega delle tombe (artigli)
+    MB_MANTICORE_WITCHER,  // Manticore (coda aculeata)
+    MB_CYCLOPS_WITCHER,    // Ciclope di Witcher (mazza)
+    // --- Doom (10, livelli 35-44 labirinto) ---
+    MB_DOOM_IMP,           // Imp di Doom (palle di fuoco)
+    MB_PINKY_DEMON,        // Pinky Demon (zanne)
+    MB_REVENANT,           // Revenant (missili)
+    MB_CACODEMON,          // Cacodemon (plasma)
+    MB_HELL_KNIGHT,       // Hell Knight (pugni)
+    MB_MANCUBUS,           // Mancubus (fiamme)
+    MB_ARCHVILE,          // Archvile (fuoco)
+    MB_BARON_OF_HELL,     // Baron of Hell (artigli)
+    MB_PAIN_ELEMENTAL,    // Pain Elemental (lost souls)
+    MB_DOOM_CYBERDEMON,   // Cyberdemone minore (razzo)
+    // --- Ibridi/Fantasy extra (7, livelli 45-51 labirinto) ---
+    MB_SHADOW_ASSASSIN,    // Assassino ombra (pugnali)
+    MB_CRYSTAL_GOLEM,     // Golem di cristallo (pugni cristallini)
+    MB_VOID_WALKER,       // Camminatore del vuoto (artigli dimensionali)
+    MB_BLOOD_ELEMENTAL,   // Elementale di sangue (lame di sangue)
+    MB_STORM_TITAN,      // Titano della tempesta (fulmine)
+    MB_PLAGUE_LORD,      // Signore della peste (bastone infetto)
+    MB_VOID_SERPENT       // Serpente del vuoto (morsi velenosi)
 };
 
-constexpr int MINIBOSS_TYPE_COUNT = 17;
+constexpr int MINIBOSS_TYPE_COUNT = 51;
 
 // Tipo di arma del mini-boss (determina animazione attacco e danno).
 enum MiniBossWeapon {
