@@ -708,8 +708,8 @@ void Game::handleEvents() {
             // Navigazione menu'
             if (state == STATE_MENU) {
                 // Su/Giu: cambio voce selezionata (6 voci totali, wrap con +6 %6)
-                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
-                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+                if (key == sf::Keyboard::Up) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+                else if (key == sf::Keyboard::Down) { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
                 // Sinistra/Destra: modifica dell'opzione selezionata
                 else if (key == sf::Keyboard::Left) {
                     if (menuItemIndex == 0) numPlayers = (numPlayers == 1) ? 2 : 1;
@@ -760,6 +760,10 @@ void Game::handleEvents() {
                         wheelIndex = (int)player1Character;
                         wheelTargetIndex = wheelIndex;
                         wheelRotation = 0.f;
+                    }
+                    else if (menuItemIndex == 6) {
+                        // CREDITS: avvia schermata credits
+                        startCredits();
                     }
                 }
             } else if (state == STATE_SELECT_PLAYER) {
@@ -827,20 +831,21 @@ void Game::handleEvents() {
                     state = STATE_LOSE;
                 }
             } else if (state == STATE_WIN_STORY || state == STATE_WIN_INFINITE || state == STATE_LOSE) {
-                // Schermate finali: Enter torna al menu'
+                // Schermate finali: Enter va ai credits (se WIN_STORY) o al menu'
                 if (key == sf::Keyboard::Return) {
-                    state = STATE_MENU;
-                    currentLevel = 1;
-                    continuesLeft = 3;  // reset crediti per nuova partita
-                    // Ferma eventuali musiche/jingle e riprende la traccia
-                    // DEDICATA del menu' se l'opzione musica e' attiva.
-                    audio.stopEpicMusic();
-                    if (musicEnabled) audio.playMenuMusic();
-                    else audio.stopMusic();
-                    // --- FIX: pulisce tutte le entita' di gioco (boss,
-                    // miniBoss, enemies, projectiles, ecc.) per evitare
-                    // memory leak e stati sporchi al riavvio della demo.
-                    cleanupGameEntities();
+                    if (state == STATE_WIN_STORY) {
+                        // Dopo la vittoria: mostra i credits
+                        startCredits();
+                    } else {
+                        // Game over o win infinite: torna al menu
+                        state = STATE_MENU;
+                        currentLevel = 1;
+                        continuesLeft = 3;
+                        audio.stopEpicMusic();
+                        if (musicEnabled) audio.playMenuMusic();
+                        else audio.stopMusic();
+                        cleanupGameEntities();
+                    }
                 }
             }
         }
@@ -895,6 +900,12 @@ void Game::update() {
         return;
     }
 
+    // --- STATO CREDITS: scrolling credits ---
+    if (state == STATE_CREDITS) {
+        updateCredits();
+        return;
+    }
+
     // --- STATO INTRO: cutscene a fumetti ---
     // Mostra 4 immagini in sequenza (8s ciascuna). Il player puo' saltare
     // alla prossima con Enter/attacco o saltare tutto con ESC.
@@ -946,8 +957,8 @@ void Game::update() {
         bool menuActivity = false;  // true se l'utente ha mosso qualcosa
         if (fabs(y) > 50 && !joyMoved) {
             joyMoved = true;
-            if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 6) % 6; audio.playSound(SOUND_MENU_SELECT); }
-            else { menuItemIndex = (menuItemIndex + 1) % 6; audio.playSound(SOUND_MENU_SELECT); }
+            if (y < 0) { menuItemIndex = (menuItemIndex - 1 + 7) % 7; audio.playSound(SOUND_MENU_SELECT); }
+            else { menuItemIndex = (menuItemIndex + 1) % 7; audio.playSound(SOUND_MENU_SELECT); }
             menuActivity = true;
         } else if (fabs(y) < 20) joyMoved = false;  // isteresi per il ritorno
 
@@ -4364,9 +4375,10 @@ void Game::drawMenu() {
         "TEST MODE: DISABLED",
 #endif
         "CONFIGURE JOYSTICK",
-        "START GAME"
+        "START GAME",
+        "CREDITS"
     };
-    const int MENU_ITEM_COUNT = 6;
+    const int MENU_ITEM_COUNT = 7;
 
     // Disegna le voci; quella selezionata e' in giallo con "> ... <"
     // e una piccola fiammella pulsante alla sua sinistra.
@@ -4985,6 +4997,9 @@ void Game::render() {
     }
     else if (renderState == STATE_INTRO) {
         drawIntro();
+    }
+    else if (renderState == STATE_CREDITS) {
+        drawCredits();
     }
     else if (renderState == STATE_CONTINUES) {
         drawContinues();
@@ -9011,4 +9026,200 @@ void Game::drawDemoOverlay(sf::RenderTarget& target) {
     // Sotto-titolo: "PRESS ANY KEY TO EXIT" (piu' piccolo, sotto al titolo)
     sf::Color subColor(255, 200, 200, (sf::Uint8)alpha);
     drawTextCentered(target, "PRESS ANY KEY TO EXIT", WINDOW_WIDTH/2, WINDOW_HEIGHT - 24, 2, subColor);
+}
+
+// ===========================================================================
+// CREDITS
+// ===========================================================================
+
+void Game::startCredits() {
+    state = STATE_CREDITS;
+    creditsScrollY = 0.f;
+    creditsFinished = false;
+    creditsEndTimer = 0.f;
+
+    creditsData.clear();
+    // --- ARCADE MAZE FANTASY - CREDITS ---
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"ARCADE MAZE FANTASY", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"", ""});
+
+    // --- GAME DESIGN ---
+    creditsData.push_back({"GAME DESIGN", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Lead Game Designer", "Luca A. Greco"});
+    creditsData.push_back({"Senior Level Designer", "Luca A. Greco"});
+    creditsData.push_back({"Gameplay Engineer", "Luca A. Greco"});
+    creditsData.push_back({"Balance & Tuning", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- PROGRAMMING ---
+    creditsData.push_back({"PROGRAMMING", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Lead Programmer", "Luca A. Greco"});
+    creditsData.push_back({"Engine Architecture", "Luca A. Greco"});
+    creditsData.push_back({"AI & Pathfinding", "Luca A. Greco"});
+    creditsData.push_back({"Physics & Collision", "Luca A. Greco"});
+    creditsData.push_back({"Audio Engine", "Luca A. Greco"});
+    creditsData.push_back({"Procedural Generation", "Luca A. Greco"});
+    creditsData.push_back({"Bug Fixing Specialist", "Luca A. Greco"});
+    creditsData.push_back({"Coffee to Code Compiler", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- ART & GRAPHICS ---
+    creditsData.push_back({"ART & GRAPHICS", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Lead Artist", "Luca A. Greco"});
+    creditsData.push_back({"Character Design", "Luca A. Greco"});
+    creditsData.push_back({"Monster Design", "Luca A. Greco"});
+    creditsData.push_back({"Boss Design", "Luca A. Greco"});
+    creditsData.push_back({"Environment Art", "Luca A. Greco"});
+    creditsData.push_back({"Pixel Art Director", "Luca A. Greco"});
+    creditsData.push_back({"Sprite Animation", "Luca A. Greco"});
+    creditsData.push_back({"UI/UX Design", "Luca A. Greco"});
+    creditsData.push_back({"Special Effects", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- AUDIO ---
+    creditsData.push_back({"AUDIO", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Music Composer", "Luca A. Greco"});
+    creditsData.push_back({"Sound Designer", "Luca A. Greco"});
+    creditsData.push_back({"Voice Acting", "Luca A. Greco"});
+    creditsData.push_back({"Foley Artist", "Luca A. Greco"});
+    creditsData.push_back({"Boom Operator", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- STORY & WRITING ---
+    creditsData.push_back({"STORY & WRITING", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Story Writer", "Luca A. Greco"});
+    creditsData.push_back({"Dialogue", "Luca A. Greco"});
+    creditsData.push_back({"Lore Master", "Luca A. Greco"});
+    creditsData.push_back({"Cutscene Director", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- QA & TESTING ---
+    creditsData.push_back({"QUALITY ASSURANCE", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Lead QA Tester", "Luca A. Greco"});
+    creditsData.push_back({"Senior Tester", "Luca A. Greco"});
+    creditsData.push_back({"Bug Hunter General", "Luca A. Greco"});
+    creditsData.push_back({"Crash Reproducer", "Luca A. Greco"});
+    creditsData.push_back({"Edge Case Finder", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- PRODUCTION ---
+    creditsData.push_back({"PRODUCTION", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Executive Producer", "Luca A. Greco"});
+    creditsData.push_back({"Project Manager", "Luca A. Greco"});
+    creditsData.push_back({"Scrum Master", "Luca A. Greco"});
+    creditsData.push_back({"Schedule Optimizer", "Luca A. Greco"});
+    creditsData.push_back({"Morale Officer", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- SPECIAL THANKS ---
+    creditsData.push_back({"SPECIAL THANKS", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"To the universe for existing", "Luca A. Greco"});
+    creditsData.push_back({"For the coffee that kept us going", "Luca A. Greco"});
+    creditsData.push_back({"For the bugs that taught us patience", "Luca A. Greco"});
+    creditsData.push_back({"To all the players", "Luca A. Greco"});
+    creditsData.push_back({"For believing in the dream", "Luca A. Greco"});
+    creditsData.push_back({"For never giving up", "Luca A. Greco"});
+    creditsData.push_back({"", ""});
+
+    // --- TOOLS ---
+    creditsData.push_back({"TOOLS & TECHNOLOGIES", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"SFML", "Simple and Fast Multimedia Library"});
+    creditsData.push_back({"CMake", "Build System"});
+    creditsData.push_back({"Z-AI SDK", "AI Image Generation"});
+    creditsData.push_back({"Git", "Version Control"});
+    creditsData.push_back({"Pillow", "Python Image Processing"});
+    creditsData.push_back({"", ""});
+
+    // --- PUBLISHER ---
+    creditsData.push_back({"PUBLISHED BY", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"Marled Software", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"", ""});
+    creditsData.push_back({"", ""});
+
+    audio.stopMusic();
+    if (musicEnabled) audio.playMenuMusic();
+}
+
+void Game::updateCredits() {
+    if (!creditsFinished) {
+        // Scroll speed: 30px/sec
+        creditsScrollY += 0.5f;  // ~30px/sec at 60fps
+        // Calcola quando tutte le scritte sono scrollate fuori
+        // Ogni entry occupa ~40px, totale = creditsData.size() * 40
+        float totalHeight = (float)creditsData.size() * 40.f;
+        if (creditsScrollY > totalHeight + 200.f) {
+            creditsFinished = true;
+            creditsEndTimer = 0.f;
+        }
+    } else {
+        creditsEndTimer += 16.f;
+        // Dopo 5 secondi di "Thank you!", torna al menu
+        if (creditsEndTimer > 5000.f) {
+            state = STATE_MENU;
+            menuItemIndex = 0;
+        }
+    }
+
+    // ESC o Return: torna al menu
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Return)) {
+        state = STATE_MENU;
+        menuItemIndex = 0;
+    }
+}
+
+void Game::drawCredits() {
+    // Sfondo nero
+    window.clear(sf::Color(5, 5, 10));
+
+    if (!creditsFinished) {
+        // Disegna le scritte con scrolling dal basso verso l'alto
+        float startY = (float)WINDOW_HEIGHT - creditsScrollY;
+        float y = startY;
+
+        for (const auto& entry : creditsData) {
+            if (y > -60.f && y < (float)WINDOW_HEIGHT + 60.f) {
+                if (entry.role.empty() && entry.name.empty()) {
+                    // Riga vuota: salta
+                } else if (entry.name.empty()) {
+                    // Header di sezione (es. "PROGRAMMING")
+                    drawTextCenteredOutlined(window, entry.role,
+                        WINDOW_WIDTH / 2, (int)y, 3, sf::Color(255, 215, 100));
+                } else {
+                    // Ruolo + nome
+                    drawTextCentered(window, entry.role,
+                        WINDOW_WIDTH / 2, (int)y, 2, sf::Color(180, 180, 180));
+                    drawTextCenteredOutlined(window, entry.name,
+                        WINDOW_WIDTH / 2, (int)y + 18, 2, sf::Color(245, 235, 200));
+                }
+            }
+            y += 40.f;
+        }
+    } else {
+        // Mostra "Thank you!" al centro
+        float pulse = (sinf(creditsEndTimer * 0.003f) + 1.f) * 0.5f;
+        int alpha = (int)(100 + pulse * 155);
+        sf::Color thankColor(255, 215, 100, (sf::Uint8)alpha);
+        drawTextCenteredOutlined(window, "THANK YOU FOR PLAYING!",
+            WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 20, 5, thankColor);
+        drawTextCentered(window, "Marled Software",
+            WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 60, 3, sf::Color(200, 200, 200));
+        drawTextCentered(window, "PRESS ENTER TO RETURN",
+            WINDOW_WIDTH / 2, WINDOW_HEIGHT - 40, 2, sf::Color(150, 150, 150));
+    }
 }
