@@ -1045,6 +1045,10 @@ void Game::update() {
                 wheelTargetIndex = wheelIndex;
                 wheelRotation = 0.f;
             }
+            else if (menuItemIndex == 6) {
+                // CREDITS: avvia schermata credits
+                startCredits();
+            }
         } else if (!pressed) menuJoyBtn = false;
 
         // --- Timer inattivita' -> Demo mode ---
@@ -9175,9 +9179,10 @@ void Game::updateCredits() {
         }
     }
 
-    // ESC o Return: torna al menu
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape) ||
-        sf::Keyboard::isKeyPressed(sf::Keyboard::Return)) {
+    // ESC: torna al menu (non usiamo Return perche' e' il tasto che
+    // ha attivato i credits dal menu, e isKeyPressed lo rileverebbe
+    // ancora premuto nel frame successivo, chiudendo subito i credits)
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape)) {
         state = STATE_MENU;
         menuItemIndex = 0;
     }
@@ -9219,7 +9224,7 @@ void Game::drawCredits() {
             WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 20, 5, thankColor);
         drawTextCentered(window, "Marled Software",
             WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 60, 3, sf::Color(200, 200, 200));
-        drawTextCentered(window, "PRESS ENTER TO RETURN",
+        drawTextCentered(window, "PRESS ESC TO RETURN",
             WINDOW_WIDTH / 2, WINDOW_HEIGHT - 40, 2, sf::Color(150, 150, 150));
     }
 }
