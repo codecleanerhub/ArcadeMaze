@@ -174,7 +174,7 @@ func _build_ui() -> void:
         _bg.name = "Background"
         _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
         _bg.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-        _bg.stretch_mode = TextureRect.STRETCH_SCALE_ASPECT_COVER
+        _bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
         var tex := load("res://assets/backgrounds/bg_menu.jpg")
         if tex is Texture:
                 _bg.texture = tex
