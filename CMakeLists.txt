@@ -54,6 +54,7 @@ add_executable(${PROJECT_NAME}
     src/Boss.cpp
     src/MiniBoss.cpp
     src/SpriteSheet.cpp
+    src/DeformableSprite.cpp
     src/XInputJoystick.cpp
 )
 

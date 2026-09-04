@@ -23,6 +23,7 @@
 #include <SFML/Graphics.hpp>
 #include "Utils.h"
 #include "SpriteSheet.h"
+#include "DeformableSprite.h"
 #include <cstdint>
 #include <map>
 #include <string>
@@ -123,6 +124,11 @@ private:
     // diretto col bestiary fantasy horror (10 originali mappati sui
     // corrispondenti boss_0xx del file + 7 nuovi).
     static std::string getSpriteId(BossType t);
+
+    // DeformableSprite per animazione mesh deformation nativa
+    // (usa 1 sola immagine + deformazione vertici in tempo reale)
+    DeformableSprite deformSprite;
+    bool deformLoaded;
 };
 
 #endif

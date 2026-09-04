@@ -173,7 +173,7 @@ void Boss::unloadAllSprites() {
 //   * type: ciclo sui 17 tipi (1->GOLEM, ..., 17->TWILIGHT_KNIGHT)
 //   * attackingTimer: inizializzato a 0 (nessun attacco in corso)
 // ---------------------------------------------------------------------------
-Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTimer(0) {
+Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTimer(0), deformLoaded(false) {
     level = lvl; screenWidth = w; screenHeight = h;
     // Size del boss: cresce col livello ma con un CAP massimo per evitare
     // che ai livelli alti (infinite mode) il boss diventi cosi' grande
@@ -500,88 +500,53 @@ void Boss::render(sf::RenderTarget& target) const {
     // sopra il player.
 
     // Tentativo di rendering con sprite.
-    // Lo sprite del boss e' 64x64 (per frame) ma il boss ha `size` variabile
-    // (160+). Applichiamo uno scaling = size/64 per far coincidere l'hitbox
-    // con lo sprite visibile.
-    // Animazioni: usa "attack" se attackingTimer>0, altrimenti "idle".
+    // ANIMAZIONE: usa DeformableSprite (mesh deformation nativo SFML) che
+    // prende 1 sola immagine e la anima deformando i vertici in tempo reale.
+    // Questo elimina il problema degli sprite AI multi-frame troppo diversi.
     auto it = sprites.find(type);
     if (it != sprites.end() && it->second.isLoaded()) {
-        // Selezione animazione: attack > idle (walk non usato per i boss)
-        std::string animName = "idle";
-        int frameCount = it->second.getFrameCount(animName);
-        // FIX: usa il frameDuration dal meta.json (180ms per idle, 90ms per attack)
-        // invece di un valore hardcoded. Il metodo getFrameDuration non esiste
-        // in SpriteSheet, ma il frameDuration e' letto dal meta e usato come
-        // default da SpriteSheet::loadMetaOrDefault. Per semplicita', usiamo
-        // valori sensati: 180ms idle, 90ms attack (corrispondenti ai meta.json).
-        int frameDuration = 180;
-        bool isAttacking = (attackingTimer > 0)
-                           && (it->second.getFrameCount("attack") > 0);
-        if (isAttacking) {
-            animName = "attack";
-            frameCount = it->second.getFrameCount(animName);
-            frameDuration = 90;  // ~360 ms totali per 4 frame
-        }
-        if (frameCount > 0) {
-            // ANIMAZIONE BOSS: usa SEMPRE il frame 0 (1 solo sprite) e applica
-            // deformazioni geometriche in tempo reale per creare l'animazione.
-            // Questo evita il problema degli sprite AI multi-frame che sono
-            // troppo diversi tra loro (effetto "gif disconnessa").
-            //
-            // L'animazione consiste di:
-            // 1. "Respirazione": scale Y oscilla leggermente (1.0 +- 0.03)
-            // 2. "Dondolio": rotazione leggera (+- 2 gradi)
-            // 3. "Attack pulse": quando attackingTimer > 0, scale X pulsa
-            //    leggermente per simulare il "prepararsi a sparare"
-            int frame = 0;  // sempre frame 0
-            float scale = (float)size / 64.0f;
-            float drawX = px;
-            float drawY = py - size * 0.25f;
-
-            // --- Deformazioni in tempo reale ---
-            // Respirazione: sinf lento per scale Y
-            float breathY = 1.0f + sinf(animTime * 2.0f) * 0.03f;
-            // Dondolio: rotazione lenta
-            float tilt = sinf(animTime * 1.5f) * 2.0f;  // +- 2 gradi
-            // Attack pulse: quando attacca, scale X pulsa
-            float pulseX = 1.0f;
-            if (attackingTimer > 0) {
-                pulseX = 1.0f + sinf(animTime * 15.0f) * 0.05f;
+        // Carica DeformableSprite la prima volta (lazy load)
+        if (!deformLoaded) {
+            std::string spriteId = getSpriteId(type);
+            std::string pngPath = "assets/sprites/" + spriteId + "_sheet.png";
+            // DeformableSprite usa solo il frame 0 (primo 64x64 della sheet 256x64)
+            // Per ora carichiamo la sheet intera e usiamo solo i primi 64px
+            deformLoaded = deformSprite.load(pngPath);
+            if (deformLoaded) {
+                deformSprite.setGridSize(8, 8);
             }
-
-            // Applica le deformazioni usando un sf::Sprite manuale
-            // (non possiamo usare SpriteSheet::render perche' non supporta
-            // scale X/Y separati e rotazione simultaneamente)
-            // Ma possiamo usare SpriteSheet::render con scale = scale * pulseX
-            // e compensare. Per semplicita', usiamo scale medio.
-            float scaleX = scale * pulseX;
-            float scaleY = scale * breathY;
-            // Usiamo la media per il render (SpriteSheet non supporta scale
-            // X != Y). La differenza e' cosi' piccola che non si nota.
-            float avgScale = (scaleX + scaleY) * 0.5f;
-            it->second.render(target, "idle", frame, drawX, drawY, avgScale, false);
-            // Barra HP sopra la testa, ben distante dallo sprite.
-            // Lo sprite 64x64 con anchor (32,56) scalato di size/64 ha il top a:
-            //   drawY - 56*scale = py - size*0.25 - 56*(size/64) = py - size*1.125
-            // Quindi la barra deve essere a py - size*1.125 - 15 (15px sopra il top)
-            float spriteTop = py - size * 1.125f;
-            float barY = spriteTop - 18.f;
-            // Sfondo barra (scuro con bordo)
-            sf::RectangleShape hbBg(sf::Vector2f(size, 12.0f));
-            hbBg.setFillColor(sf::Color(30, 0, 0));
-            hbBg.setOutlineThickness(2.f);
-            hbBg.setOutlineColor(sf::Color(100, 0, 0));
-            hbBg.setPosition(px - size/2, barY); target.draw(hbBg);
-            // Barra HP (colore dinamico in base alla % vita)
-            float hpPct = (float)health / maxHealth;
-            sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
-                                (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
-                                sf::Color(220, 40, 40);
-            sf::RectangleShape hbFg(sf::Vector2f(size * hpPct, 12.0f));
-            hbFg.setFillColor(hpColor);
-            hbFg.setPosition(px - size/2, barY); target.draw(hbFg);
-            return;
         }
+
+        float scale = (float)size / 64.0f;
+        float drawX = px;
+        float drawY = py - size * 0.25f;
+
+        if (deformLoaded) {
+            // Usa DeformableSprite con mesh deformation
+            DeformableSprite::AnimMode mode = DeformableSprite::IDLE;
+            if (attackingTimer > 0) mode = DeformableSprite::ATTACK;
+            deformSprite.update(animTime, mode, scale, false);
+            deformSprite.render(target, drawX - 32.f * scale, drawY - 32.f * scale);
+        } else {
+            // Fallback: usa SpriteSheet con frame 0
+            it->second.render(target, "idle", 0, drawX, drawY, scale, false);
+        }
+        // Barra HP sopra la testa, ben distante dallo sprite.
+        float spriteTop = py - size * 1.125f;
+        float barY = spriteTop - 18.f;
+        sf::RectangleShape hbBg(sf::Vector2f(size, 12.0f));
+        hbBg.setFillColor(sf::Color(30, 0, 0));
+        hbBg.setOutlineThickness(2.f);
+        hbBg.setOutlineColor(sf::Color(100, 0, 0));
+        hbBg.setPosition(px - size/2, barY); target.draw(hbBg);
+        float hpPct = (float)health / maxHealth;
+        sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
+                            (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
+                            sf::Color(220, 40, 40);
+        sf::RectangleShape hbFg(sf::Vector2f(size * hpPct, 12.0f));
+        hbFg.setFillColor(hpColor);
+        hbFg.setPosition(px - size/2, barY); target.draw(hbFg);
+        return;
     }
 
     // Fallback: rendering a primitive (codice originale)
