@@ -141,6 +141,11 @@ func _load_sprite() -> void:
                 return
         sprite_sheet = SpriteManager.get_sheet(sprite_id)
         sprite_loaded = sprite_sheet != null and sprite_sheet.is_loaded()
+        # Apply CharacterArt enhancement shader (strong variant for minibosses)
+        # MiniBoss renders via draw_texture_rect on self (CanvasItem), so we
+        # apply the material to the node itself rather than a child Sprite2D.
+        if CharacterArt:
+                CharacterArt.apply_enhancement_to_canvas_item(self, true)
 
 
 # ============================================================

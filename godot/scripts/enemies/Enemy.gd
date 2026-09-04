@@ -218,6 +218,10 @@ func _load_sprite() -> void:
                 _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
                 _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
 
+        # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
+        if CharacterArt and sprite:
+                CharacterArt.apply_enhancement(sprite, false)
+
 
 # ===========================================================================
 # update_enemy(maze, player_grid_pos, player_pixel_pos, enemy_projectiles)

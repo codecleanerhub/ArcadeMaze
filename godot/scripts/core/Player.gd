@@ -278,6 +278,9 @@ func load_character_sprite() -> void:
                         # Initial frame (idle = frame 0)
                         _apply_character_frame(0)
                         sprite_loaded = true
+                        # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
+                        if CharacterArt and sprite:
+                                CharacterArt.apply_enhancement(sprite, false)
                 else:
                         sprite_loaded = false
         else:
