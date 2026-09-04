@@ -361,30 +361,45 @@ func _draw_scepter() -> void:
 
 
 func _draw_speed_boots() -> void:
-        # Winged boot icon.
+        # Usa sprite AI bonus_speedboots se caricato da SpriteManager,
+        # altrimenti fallback procedurale.
         var y_off := -bob_offset
-        # Boot
+        if SpriteManager:
+                var sheet = SpriteManager.get_sheet("bonus_speedboots")
+                if sheet != null and sheet.is_loaded():
+                        var at: AtlasTexture = sheet.get_frame_texture("idle", 0)
+                        if at != null:
+                                var tw: float = at.get_width()
+                                var th: float = at.get_height()
+                                draw_texture_rect(at, Rect2(-tw / 2.0, -th / 2.0 + y_off, tw, th), false)
+                                return
+        # Fallback: Winged boot icon
         draw_rect(Rect2(-6.0, 0.0 + y_off, 10.0, 6.0), Color(0.4, 0.3, 0.2))
         draw_rect(Rect2(-6.0, -6.0 + y_off, 6.0, 8.0), Color(0.4, 0.3, 0.2))
-        # Wings (white triangles)
         draw_colored_polygon(PackedVector2Array([
                 Vector2(2.0, -4.0 + y_off),
                 Vector2(10.0, -8.0 + y_off),
                 Vector2(2.0, 0.0 + y_off)
         ]), Color(1.0, 1.0, 1.0, 0.9))
-        # Aura
-        var aura_r := 16.0 + pulse * 2.0
-        draw_arc(Vector2.ZERO, aura_r, 0, TAU, 16, Color(1.0, 1.0, 1.0, 0.3), 1.0)
 
 
 func _draw_treasure() -> void:
-        # 5 different treasures, each 10000 points.
+        # Usa texture procedurali ad alta risoluzione da EnvironmentArt
+        # (miglioramento grafico Godot-native vs PNG AI 64x64 del C++)
         var y_off := -bob_offset
         # Soft glow
-        draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.85, 0.3, 0.15))
+        draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.85, 0.3, 0.2))
+        if EnvironmentArt:
+                var tex: Texture2D = EnvironmentArt.get_treasure_texture(treasure_type)
+                if tex:
+                        # Disegna la texture 128x128 scalata a 32x32 centrata
+                        var size: float = 32.0
+                        var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
+                        draw_texture_rect(tex, draw_rect, false)
+                        return
+        # Fallback: rendering semplice se EnvironmentArt non disponibile
         match treasure_type:
                 TreasureType.TRES_CROWN:
-                        # Crown: 3 spikes + band
                         draw_rect(Rect2(-8.0, 0.0 + y_off, 16.0, 4.0), Color(1.0, 0.85, 0.2))
                         for i in range(3):
                                 var x := -6.0 + float(i) * 6.0
@@ -394,30 +409,21 @@ func _draw_treasure() -> void:
                                         Vector2(x + 2.0, -6.0 + y_off)
                                 ]), Color(1.0, 0.85, 0.2))
                 TreasureType.TRES_GOLD:
-                        # Gold coins (stack of 3)
                         for i in range(3):
                                 draw_circle(Vector2(0, float(i) * 2.0 + y_off - 4.0), 5.0,
                                                         Color(1.0, 0.85, 0.2))
                 TreasureType.TRES_CHEST:
-                        # Small chest
                         draw_rect(Rect2(-8.0, -4.0 + y_off, 16.0, 10.0), Color(0.6, 0.4, 0.2))
                         draw_rect(Rect2(-8.0, -6.0 + y_off, 16.0, 4.0), Color(0.45, 0.3, 0.15))
                         draw_rect(Rect2(-1.0, 0.0 + y_off, 2.0, 4.0), Color(1.0, 0.85, 0.2))
                 TreasureType.TRES_GEM:
-                        # Diamond
                         draw_colored_polygon(PackedVector2Array([
                                 Vector2(0, -8.0 + y_off),
                                 Vector2(7.0, 0.0 + y_off),
                                 Vector2(0, 8.0 + y_off),
                                 Vector2(-7.0, 0.0 + y_off)
                         ]), Color(0.3, 0.8, 1.0))
-                        draw_colored_polygon(PackedVector2Array([
-                                Vector2(0, -8.0 + y_off),
-                                Vector2(7.0, 0.0 + y_off),
-                                Vector2(0, 0.0 + y_off)
-                        ]), Color(0.6, 1.0, 1.0))
                 TreasureType.TRES_CUP:
-                        # Goblet
                         draw_rect(Rect2(-6.0, -6.0 + y_off, 12.0, 4.0), Color(1.0, 0.85, 0.2))
                         draw_rect(Rect2(-4.0, -2.0 + y_off, 8.0, 4.0), Color(1.0, 0.85, 0.2))
                         draw_rect(Rect2(-1.5, 2.0 + y_off, 3.0, 6.0), Color(1.0, 0.85, 0.2))

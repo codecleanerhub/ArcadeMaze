@@ -373,11 +373,72 @@ func _update_hud() -> void:
 # Drawing
 # ============================================================================
 func _draw() -> void:
+        # Disegna decorazioni ambiente boss room: bare, colonne, ruderi, teschi
+        # (vantaggio Godot: texture procedurali ad alta risoluzione da EnvironmentArt)
+        _render_boss_room_decorations()
         # Draw boss room weapons on the floor
         for w_entry in boss_room_weapons:
                 var pos: Vector2 = w_entry["pos"]
-                # Simple weapon icon (colored circle + letter)
-                var w: Resource = w_entry["weapon"]
-                var col: Color = w.get_color() if w.has_method("get_color") else Color.WHITE
+                # Usa texture procedurale dettagliata per l'arma pickup
+                if EnvironmentArt and w_entry.has("weapon"):
+                        var w_type: int = int(w_entry["weapon"].type)
+                        var w_tex: Texture2D = EnvironmentArt.get_weapon_pickup_texture(w_type)
+                        if w_tex:
+                                # Aura glow dietro
+                                draw_circle(pos, 22.0, Color(1.0, 0.85, 0.2, 0.15))
+                                draw_texture_rect(w_tex,
+                                        Rect2(pos.x - 24, pos.y - 24, 48, 48), false)
+                                continue
+                # Fallback: Simple weapon icon (colored circle)
+                var col: Color = Color.WHITE
+                if w_entry.has("weapon") and w_entry["weapon"].has_method("get_color"):
+                        col = w_entry["weapon"].get_color()
                 draw_circle(pos, 16.0, Color(0.2, 0.2, 0.2, 0.8))
                 draw_circle(pos, 12.0, col)
+
+
+# Disegna decorazioni ambiente: bare, colonne, ruderi, teschi sul pavimento.
+# Posizionate in modo deterministico (non casuale ogni frame).
+var _decorations_spawned: bool = false
+var _boss_room_decorations: Array = []  # [{type, pos}]
+
+func _render_boss_room_decorations() -> void:
+        if not EnvironmentArt:
+                return
+        # Genera le decorazioni una sola volta
+        if not _decorations_spawned:
+                _spawn_boss_room_decorations()
+                _decorations_spawned = true
+        # Disegna le decorazioni (determinate, non casuali)
+        for dec in _boss_room_decorations:
+                var tex: Texture2D = null
+                match dec.type:
+                        "coffin": tex = EnvironmentArt.get_coffin_texture()
+                        "column": tex = EnvironmentArt.get_column_texture()
+                        "rubble": tex = EnvironmentArt.get_rubble_texture()
+                        "skull": tex = EnvironmentArt.get_skull_texture()
+                if tex:
+                        var s: float = 64.0  # dimensione decorazione
+                        draw_texture_rect(tex,
+                                Rect2(dec.pos.x - s / 2, dec.pos.y - s / 2, s, s), false)
+
+
+func _spawn_boss_room_decorations() -> void:
+        _boss_room_decorations.clear()
+        # Posiziona decorazioni in punti fissi (non sopra l'arena centrale)
+        # Bare negli angoli
+        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(80, 150)})
+        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(944, 150)})
+        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(80, 850)})
+        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(944, 850)})
+        # Colonne ai lati (4 per lato)
+        for i in range(4):
+                var y: float = 200.0 + float(i) * 180.0
+                _boss_room_decorations.append({"type": "column", "pos": Vector2(50, y)})
+                _boss_room_decorations.append({"type": "column", "pos": Vector2(974, y)})
+        # Ruderi sparsi
+        for pos in [Vector2(250, 300), Vector2(780, 280), Vector2(300, 800), Vector2(750, 820)]:
+                _boss_room_decorations.append({"type": "rubble", "pos": pos})
+        # Teschi sul pavimento (piccoli, decorativi)
+        for pos in [Vector2(200, 500), Vector2(824, 500), Vector2(400, 250), Vector2(624, 750)]:
+                _boss_room_decorations.append({"type": "skull", "pos": pos})

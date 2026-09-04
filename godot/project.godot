@@ -18,6 +18,7 @@ SpriteManager="*res://scripts/core/SpriteManager.gd"
 ConfigManager="*res://scripts/core/ConfigManager.gd"
 AudioManager="*res://scripts/audio/AudioManager.gd"
 EffectsManager="*res://scripts/core/EffectsManager.gd"
+EnvironmentArt="*res://scripts/core/EnvironmentArt.gd"
 
 [display]
 window/size/viewport_width=1024
