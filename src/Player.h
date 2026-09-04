@@ -119,6 +119,7 @@ public:
     int getNextLifeThreshold() const { return nextLifeThreshold; }
 
     Weapon getCurrentWeapon() const { return currentWeapon; }
+    void setAmmo(int ammo) { currentWeapon.ammo = ammo; }  // per test mode
     // Riferimento ai proiettili sparati dal giocatore (usato da Game per
     // gestire le collisioni con nemici e boss).
     std::vector<Projectile>& getProjectiles() { return projectiles; }

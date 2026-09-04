@@ -2688,7 +2688,7 @@ void Game::update() {
             bool spaceNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
             if (spaceNow && !testSkipKeyPressed) {
                 // Dà munizioni al player per sicurezza
-                player.getCurrentWeapon().ammo = 15;
+                player.setAmmo(15);
                 if (isBossLevel(currentLevel)) {
                     // Livello boss: vai al boss fight
                     startBossFight();
