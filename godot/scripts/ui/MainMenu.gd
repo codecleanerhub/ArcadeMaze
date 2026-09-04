@@ -61,6 +61,7 @@ var _num_players: int = 1
 var _game_mode: int = GameMode.STORY
 var _music_enabled: bool = false
 var _test_mode_enabled: bool = false
+var _fullscreen_enabled: bool = true  # BootManager sets fullscreen at startup
 # Character selection (8 characters, matches Player.h:CharacterType).
 var _p1_character: int = 0
 var _p2_character: int = 1
@@ -148,7 +149,9 @@ func _draw() -> void:
                 ])
                 draw_colored_polygon(dpts, orn_gold)
         # Flame icon next to the selected item (animated)
-        _draw_flame(150.0, 410.0 + _menu_item_index * 60.0)
+        # Panel starts at y=300 (offset_top) + ~30px padding = ~330 for first item.
+        # Each item is ~24px font + 22px separation = ~46px per row.
+        _draw_flame(150.0, 350.0 + _menu_item_index * 46.0)
 
 
 # Draws a small animated flame (aura + outer red + inner yellow) at (fx, fy).
@@ -222,6 +225,8 @@ func _build_ui() -> void:
         # Anchored to fill the middle/lower portion of the screen.
         # anchor_left=0, anchor_right=1, offset_left=120, offset_right=-120
         # => panel spans from x=120 to x=(width-120), centered horizontally.
+        # offset_top=300 leaves room for the title; offset_bottom=-100 leaves
+        # room for the footer + hint text.
         _panel = Panel.new()
         _panel.name = "MenuPanel"
         _panel.anchor_left = 0.0
@@ -229,9 +234,9 @@ func _build_ui() -> void:
         _panel.anchor_right = 1.0
         _panel.anchor_bottom = 1.0
         _panel.offset_left = 120.0
-        _panel.offset_top = 360.0
+        _panel.offset_top = 300.0
         _panel.offset_right = -120.0
-        _panel.offset_bottom = -80.0
+        _panel.offset_bottom = -100.0
         _panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _panel.grow_vertical = Control.GROW_DIRECTION_BOTH
         var stylebox := StyleBoxFlat.new()
@@ -258,7 +263,7 @@ func _build_ui() -> void:
         items_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
         items_container.grow_vertical = Control.GROW_DIRECTION_BOTH
         items_container.alignment = BoxContainer.ALIGNMENT_BEGIN
-        items_container.add_theme_constant_override("separation", 28)
+        items_container.add_theme_constant_override("separation", 22)
         _panel.add_child(items_container)
 
         var item_texts: Array = [
@@ -266,6 +271,7 @@ func _build_ui() -> void:
                 "GAME MODE:",
                 "MUSIC:",
                 "TEST MODE:",
+                "FULLSCREEN:",
                 "CONFIGURE JOYSTICK",
                 "START GAME",
                 "CREDITS",
@@ -414,9 +420,10 @@ func _update_items_text() -> void:
         _item_labels[1].text = "GAME MODE: %s" % ("STORY" if _game_mode == GameMode.STORY else "INFINITE")
         _item_labels[2].text = "MUSIC: %s" % ("ON" if _music_enabled else "OFF")
         _item_labels[3].text = "TEST MODE: %s" % ("ON" if _test_mode_enabled else "OFF")
-        _item_labels[4].text = "CONFIGURE JOYSTICK"
-        _item_labels[5].text = "START GAME"
-        _item_labels[6].text = "CREDITS"
+        _item_labels[4].text = "FULLSCREEN: %s" % ("ON" if _fullscreen_enabled else "OFF")
+        _item_labels[5].text = "CONFIGURE JOYSTICK"
+        _item_labels[6].text = "START GAME"
+        _item_labels[7].text = "CREDITS"
 
 
 # Updates the visual highlight of the character wheel.
@@ -483,7 +490,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # Move the selection cursor up/down by `delta` (-1 or +1), wrapping around.
 func _move_selection(delta: int) -> void:
-        _menu_item_index = posmod(_menu_item_index + delta, 7)
+        _menu_item_index = posmod(_menu_item_index + delta, 8)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
 
@@ -504,7 +511,10 @@ func _change_option(delta: int) -> void:
                                         AudioManager.play_menu_music()
                 3:  # Test mode on/off
                         _test_mode_enabled = not _test_mode_enabled
-                4, 5, 6:
+                4:  # Fullscreen on/off (toggles immediately)
+                        _fullscreen_enabled = not _fullscreen_enabled
+                        _apply_fullscreen()
+                5, 6, 7:
                         # These items are not toggleable, just activate them.
                         pass
                 _:
@@ -521,23 +531,35 @@ func _change_option(delta: int) -> void:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
 
 
+# Apply the current fullscreen state via BootManager (or DisplayServer
+# directly if BootManager is not available - e.g. in the editor).
+func _apply_fullscreen() -> void:
+        var mode: int
+        if _fullscreen_enabled:
+                # MODE_WINDOWED_FULLSCREEN = 4 (borderless fullscreen, keeps desktop res)
+                mode = DisplayServer.WINDOW_MODE_WINDOWED_FULLSCREEN
+        else:
+                mode = DisplayServer.WINDOW_MODE_WINDOWED
+        DisplayServer.window_set_mode(mode)
+
+
 # Activate the currently-selected menu item (Enter/Space/A button).
 func _activate_current() -> void:
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         match _menu_item_index:
-                4:
+                5:
                         # CONFIGURE JOYSTICK - P1 first, then P2 (if 2 players)
                         configure_joystick_requested.emit(1)
-                5:
+                6:
                         # START GAME - in 2P mode the second player's joystick config
                         # is requested automatically (handled by parent via signal).
                         start_requested.emit(_num_players, _game_mode, _music_enabled,
                                          _p1_character, _p2_character)
-                6:
+                7:
                         credits_requested.emit()
                 _:
-                        # Toggleable items (0..3) confirm their current value.
+                        # Toggleable items (0..4) confirm their current value.
                         _change_option(1 if _menu_item_index == 0 else 0)
 
 
@@ -552,12 +574,12 @@ func on_joystick_config_done(player: int) -> void:
                 # Need to configure P2 as well.
                 configure_joystick_requested.emit(2)
         else:
-                # Done configuring. Re-arm the cursor on START GAME.
-                _menu_item_index = 5
+                # Done configuring. Re-arm the cursor on START GAME (item 6).
+                _menu_item_index = 6
                 _update_items_text()
 
 
 # Pre-select an item (used by external scenes to set focus).
 func select_item(idx: int) -> void:
-        _menu_item_index = clampi(idx, 0, 6)
+        _menu_item_index = clampi(idx, 0, 7)
         _update_items_text()

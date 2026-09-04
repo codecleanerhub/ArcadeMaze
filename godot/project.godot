@@ -12,6 +12,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://assets/sprites/player1_sheet.png"
 
 [autoload]
+BootManager="*res://scripts/core/BootManager.gd"
 GameManager="*res://scripts/core/GameManager.gd"
 SpriteManager="*res://scripts/core/SpriteManager.gd"
 ConfigManager="*res://scripts/core/ConfigManager.gd"
@@ -23,7 +24,7 @@ window/size/viewport_height=1024
 window/size/mode=3
 window/size/resizable=true
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
+window/stretch/aspect="expand"
 
 [input]
 move_up={
