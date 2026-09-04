@@ -96,6 +96,46 @@ func _ready() -> void:
         _build_ui()
         _update_items_text()
         _update_character_wheel()
+        # Sync music state from GameManager and start menu music if enabled.
+        if GameManager:
+                _music_enabled = GameManager.music_enabled
+                _test_mode_enabled = GameManager.test_mode_enabled
+        if AudioManager and _music_enabled:
+                AudioManager.set_music_enabled(true)
+                AudioManager.play_menu_music()
+        # Self-wire signals to scene-transition handlers.
+        start_requested.connect(_on_start_requested)
+        credits_requested.connect(_on_credits_requested)
+        configure_joystick_requested.connect(_on_configure_joystick_requested)
+
+
+# ============================================================================
+# Signal handlers (wire menu actions to GameManager scene transitions)
+# ============================================================================
+func _on_start_requested(num_players: int, game_mode: int, music: bool,
+                p1_char: int, p2_char: int) -> void:
+        if GameManager:
+                GameManager.num_players = num_players
+                GameManager.game_mode = game_mode
+                GameManager.music_enabled = music
+                GameManager.player1_character = p1_char
+                GameManager.player2_character = p2_char
+                GameManager.current_level = 1
+                GameManager.config_joy_step = 0
+                # Go to intro cutscene (which then transitions to MainGame).
+                GameManager.go_to_intro()
+
+
+func _on_credits_requested() -> void:
+        if GameManager:
+                GameManager.go_to_credits()
+
+
+func _on_configure_joystick_requested(player: int) -> void:
+        if GameManager:
+                GameManager.config_joy_player = player
+                GameManager.config_joy_step = 0
+                GameManager.go_to_config_joy()
 
 
 func _process(delta: float) -> void:
@@ -465,8 +505,8 @@ func _unhandled_input(event: InputEvent) -> void:
                         KEY_ENTER, KEY_SPACE:
                                 _activate_current()
                         KEY_ESCAPE:
-                                # Let the parent handle quit; ignore here.
-                                pass
+                                # Quit the game from the main menu.
+                                get_tree().quit()
 
         # Joystick / controller hat motion (d-pad)
         elif event is InputEventJoypadMotion:
