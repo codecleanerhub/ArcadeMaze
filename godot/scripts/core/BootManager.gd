@@ -29,16 +29,18 @@
 extends Node
 
 # --- Display mode enum (mirrors DisplayServer.WindowMode) ---
-# MODE_WINDOWED = 0
-# MODE_MINIMIZED = 1
-# MODE_MAXIMIZED = 2
-# MODE_FULLSCREEN = 3   (exclusive fullscreen - changes screen resolution)
-# MODE_WINDOWED_FULLSCREEN = 4  (borderless fullscreen - keeps desktop res)
-
-# Prefer borderless fullscreen on desktop (no resolution switch flicker,
-# faster Alt+Tab, works with multi-monitor setups). On HTML5, we leave
-# the window as-is and let the browser handle sizing.
-const DESKTOP_FULLSCREEN_MODE: int = 4  # MODE_WINDOWED_FULLSCREEN
+# In Godot 4.7 the WindowMode enum values are:
+#   WINDOW_MODE_WINDOWED    = 0  (regular window)
+#   WINDOW_MODE_MINIMIZED   = 1
+#   WINDOW_MODE_MAXIMIZED   = 2
+#   WINDOW_MODE_FULLSCREEN  = 3  (exclusive fullscreen, changes screen res)
+#
+# Note: Godot 4.3+ added WINDOW_MODE_WINDOWED_FULLSCREEN (borderless), but
+# the constant is missing in some 4.7 builds, so we use the numeric value 3
+# (exclusive fullscreen) which is the most compatible across all Godot 4.x.
+# Exclusive fullscreen works fine on desktop and is the same mode that
+# project.godot's window/size/mode=3 uses.
+const DESKTOP_FULLSCREEN_MODE: int = 3  # WINDOW_MODE_FULLSCREEN
 
 # Design resolution (must match project.godot viewport_width/height).
 const DESIGN_WIDTH: int = 1024
@@ -123,15 +125,13 @@ func _setup_web() -> void:
 ## handler (user gesture) or the browser will reject it.
 func toggle_fullscreen() -> void:
         var current_mode: int = DisplayServer.window_get_mode()
-        if current_mode == DisplayServer.WINDOW_MODE_FULLSCREEN or \
-           current_mode == DisplayServer.WINDOW_MODE_WINDOWED_FULLSCREEN:
+        if current_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
                 DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
         else:
-                DisplayServer.window_set_mode(DESKTOP_FULLSCREEN_MODE)
+                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 ## Public API: returns true if the game is currently fullscreen.
 func is_fullscreen() -> bool:
         var mode: int = DisplayServer.window_get_mode()
-        return mode == DisplayServer.WINDOW_MODE_FULLSCREEN or \
-               mode == DisplayServer.WINDOW_MODE_WINDOWED_FULLSCREEN
+        return mode == DisplayServer.WINDOW_MODE_FULLSCREEN

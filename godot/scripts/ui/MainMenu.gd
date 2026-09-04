@@ -531,13 +531,14 @@ func _change_option(delta: int) -> void:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
 
 
-# Apply the current fullscreen state via BootManager (or DisplayServer
-# directly if BootManager is not available - e.g. in the editor).
+# Apply the current fullscreen state via DisplayServer.
+# Uses WINDOW_MODE_FULLSCREEN (exclusive fullscreen, mode 3) which is the
+# most compatible mode across all Godot 4.x builds (WINDOW_MODE_WINDOWED_FULLSCREEN
+# is missing in some 4.7 builds).
 func _apply_fullscreen() -> void:
         var mode: int
         if _fullscreen_enabled:
-                # MODE_WINDOWED_FULLSCREEN = 4 (borderless fullscreen, keeps desktop res)
-                mode = DisplayServer.WINDOW_MODE_WINDOWED_FULLSCREEN
+                mode = DisplayServer.WINDOW_MODE_FULLSCREEN
         else:
                 mode = DisplayServer.WINDOW_MODE_WINDOWED
         DisplayServer.window_set_mode(mode)
