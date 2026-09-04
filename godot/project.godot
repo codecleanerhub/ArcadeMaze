@@ -4,10 +4,11 @@
 config_version=5
 
 [application]
+
 config/name="Arcade Maze Fantasy"
 config/description="A fantasy horror maze arcade game with 68 levels, 17 bosses, 51 mini-bosses, and 28 enemy types."
 run/main_scene="res://scenes/MainMenu.tscn"
-config/features=Porter
+config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://assets/sprites/player1_sheet.png"
 
 [autoload]

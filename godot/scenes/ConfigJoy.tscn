@@ -1,31 +1,24 @@
-[gd_scene load_steps=3 format=3 uid="uid://bconfigjoy01"]
+[gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/ConfigJoy.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/backgrounds/bg_menu.jpg" id="2"]
+[ext_resource type="Script" path="res://scripts/ui/ConfigJoy.gd" id="1_cfg"]
 
 [node name="ConfigJoy" type="Control"]
-layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("1")
+script = ExtResource("1_cfg")
 
-[node name="Background" type="TextureRect" parent="."]
-modulate = Color(0.3, 0.3, 0.3, 1)
-layout_mode = 1
+[node name="Background" type="ColorRect" parent="."]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-texture = ExtResource("2")
-expand_mode = 1
-stretch_mode = 6
+color = Color(0.05, 0.05, 0.08, 1)
 
 [node name="Title" type="Label" parent="."]
-layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
@@ -38,7 +31,6 @@ text = "CONFIGURE JOYSTICK"
 horizontal_alignment = 1
 
 [node name="StepLabel" type="Label" parent="."]
-layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
@@ -51,7 +43,6 @@ text = "PRESS JUMP BUTTON"
 horizontal_alignment = 1
 
 [node name="PlayerLabel" type="Label" parent="."]
-layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5

@@ -1,20 +1,19 @@
-[gd_scene load_steps=2 format=3 uid="uid://bcredits01"]
+[gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/ui/CreditsScreen.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/CreditsScreen.gd" id="1_credits"]
 
 [node name="CreditsScreen" type="Control"]
-layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("1")
+script = ExtResource("1_credits")
 
-[node name="ScrollContainer" type="VBoxContainer" parent="."]
-layout_mode = 1
+[node name="Background" type="ColorRect" parent="."]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+color = Color(0.02, 0.02, 0.04, 1)
