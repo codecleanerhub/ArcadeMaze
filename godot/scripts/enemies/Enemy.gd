@@ -156,6 +156,11 @@ var prev_flee_mode: bool = false
 # Sprite reference (assigned in scene or via load_sprite).
 @onready var sprite: Sprite2D = $Sprite2D if has_node("Sprite2D") else null
 
+# Sprite sheet loaded from SpriteManager (AI-generated sprite).
+var _sprite_sheet: Object = null  # SpriteManager.Sheet
+var _sprite_loaded: bool = false
+var _sprite_id: String = ""
+
 
 # ===========================================================================
 # Lifecycle
@@ -195,6 +200,23 @@ func init(t: int, start_col: int, start_row: int) -> void:
         stuck_timer = 0
         flee_mode = false
         prev_flee_mode = false
+
+        # Load the AI-generated sprite sheet for this enemy type.
+        _load_sprite()
+
+
+# Load the sprite sheet via SpriteManager. The sprite is then rendered in
+# _draw() using the correct animation frame. If no sprite is mapped for
+# this enemy type, _sprite_loaded stays false and _draw() falls back to
+# procedural rendering (circle + eyes).
+func _load_sprite() -> void:
+        _sprite_id = get_sprite_id(type)
+        if _sprite_id.is_empty():
+                _sprite_loaded = false
+                return
+        if SpriteManager:
+                _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
+                _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
 
 
 # ===========================================================================
@@ -325,6 +347,9 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                         "active": true,
                                         "type": 0,  # WeaponType.PISTOL appearance
                                 })
+
+        # Trigger redraw so the sprite animation updates each frame.
+        queue_redraw()
 
 
 # ===========================================================================
@@ -554,10 +579,10 @@ func get_type() -> int:
 
 
 # ===========================================================================
-# Rendering: _draw() renders the enemy as a procedural shape.
-# This is a fallback when no sprite is loaded (mirrors C++ Enemy::draw()
-# primitive rendering). When a sprite is available it is drawn by the
-# Sprite2D child node.
+# Rendering: _draw() renders the enemy.
+# When a sprite is loaded (AI-generated PNG), we render the correct animation
+# frame via draw_texture_rect. Otherwise we fall back to procedural shapes
+# (circle + eyes) so the game is still playable if assets are missing.
 # ===========================================================================
 func _draw() -> void:
         # If dying, draw death animation (expanding circle)
@@ -568,6 +593,32 @@ func _draw() -> void:
                         Color(1.0, 0.3, 0.1, 1.0 - progress))
                 return
 
+        # --- PRIMARY: render AI-generated sprite if loaded ---
+        if _sprite_loaded and _sprite_sheet != null:
+                _draw_sprite_frame()
+                # Overlay effects on top of the sprite
+                if is_burning():
+                        draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.5))
+                        draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.7))
+                if is_electrified():
+                        for i in range(4):
+                                var angle: float = i * PI / 2.0 + anim_time * 0.1
+                                var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
+                                var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
+                                draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+                # Health bar above enemy (only if damaged)
+                if health < max_health and not is_dead():
+                        var bar_w: float = 24.0
+                        var bar_h: float = 3.0
+                        var bar_y: float = -28.0
+                        draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
+                                Color(0.2, 0.0, 0.0, 0.8), true)
+                        var hp_ratio: float = float(health) / float(max_health)
+                        draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
+                                Color(1.0, 0.3, 0.1, 1.0), true)
+                return
+
+        # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
         # If burning, draw flame overlay
         if is_burning():
                 draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.6))
@@ -599,19 +650,67 @@ func _draw() -> void:
 
         # Health bar above enemy
         if health < max_health and not is_dead():
-                var bar_w: float = 24.0
-                var bar_h: float = 3.0
-                var bar_y: float = -22.0
-                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
+                var bar_w2: float = 24.0
+                var bar_h2: float = 3.0
+                var bar_y2: float = -22.0
+                draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
                         Color(0.2, 0.0, 0.0, 0.8), true)
-                var hp_ratio: float = float(health) / float(max_health)
-                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
+                var hp_ratio2: float = float(health) / float(max_health)
+                draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2),
                         Color(1.0, 0.3, 0.1, 1.0), true)
 
         # Flee mode indicator (fear exclamation mark)
         if flee_mode:
                 draw_string(get_theme_default_font(), Vector2(-3, -24),
                         "!", HORIZONTAL_ALIGNMENT_CENTER, 16, Color(1, 1, 0, 0.9))
+
+
+# Draw the current animation frame from the AI-generated sprite sheet.
+# Mirrors C++ Enemy::draw() which uses SpriteSheet::getFrameTexture.
+func _draw_sprite_frame() -> void:
+        if not _sprite_loaded or _sprite_sheet == null:
+                return
+        # Determine animation name and frame index.
+        # Priority: walk (if moving) > idle (default).
+        var anim_name: String = "idle"
+        var frame: int = 0
+        var is_moving: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
+        if is_moving:
+                anim_name = "walk"
+        # Get frame count for the chosen animation; fall back to idle.
+        var fc: int = _sprite_sheet.get_frame_count(anim_name)
+        if fc == 0:
+                anim_name = "idle"
+                fc = _sprite_sheet.get_frame_count("idle")
+        if fc > 0:
+                var frame_duration: int = 200  # ms per frame (matches metadata)
+                frame = (int(anim_time) / frame_duration) % fc
+        # Get the AtlasTexture for this frame.
+        var at: AtlasTexture = _sprite_sheet.get_frame_texture(anim_name, frame)
+        if at == null:
+                return
+        # Draw centered, with slight vertical bob when walking.
+        var tw: float = at.get_width()
+        var th: float = at.get_height()
+        var bob_y: float = 0.0
+        if is_moving:
+                bob_y = sin(float(anim_time) * 0.01) * 2.0
+        var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
+        # Flip horizontally if facing left (dx < 0).
+        var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
+        if dx < 0:
+                # Flip by drawing with reversed source rect.
+                var flipped_at := AtlasTexture.new()
+                flipped_at.atlas = at.atlas
+                flipped_at.region = Rect2(
+                        at.region.position.x + at.region.size.x,
+                        at.region.position.y,
+                        -at.region.size.x,
+                        at.region.size.y
+                )
+                draw_texture_rect(flipped_at, dest_rect, false)
+        else:
+                draw_texture_rect(at, dest_rect, false)
 
 
 # ===========================================================================

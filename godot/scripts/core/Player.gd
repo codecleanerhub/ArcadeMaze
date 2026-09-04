@@ -241,17 +241,48 @@ func set_character(ct: int, p_num: int) -> void:
 
 
 # Load the sprite for the current character_type from
-# assets/sprites/<base>_sheet.png. Missing files fall back to nothing
-# (the Game node can decide to draw a procedural fallback).
+# assets/sprites/<base>_sheet.png. The sheet is 256x64 (4 frames of 64x64).
+# We create an AtlasTexture so only the current animation frame is shown,
+# and update it each frame in _update_sprite() based on anim_time.
 func load_character_sprite() -> void:
         var base: String = CHARACTER_SPRITE_BASE.get(character_type, CHARACTER_SPRITE_BASE[CharacterType.HERO_M])
         var path := base + "_sheet.png"
         if ResourceLoader.exists(path) and sprite:
                 var tex := load(path)
                 if tex is Texture2D:
-                        sprite.texture = tex
+                        # Store the full sheet; _update_sprite() will set the
+                        # AtlasTexture for the current frame each frame.
+                        _character_sheet_texture = tex
+                        _character_sheet_path = base
                         sprite.modulate = tint
-                        sprite.flip_h = false  # flip is applied per-frame in _update_sprite
+                        sprite.flip_h = false
+                        # Initial frame (idle = frame 0)
+                        _apply_character_frame(0)
+                        sprite_loaded = true
+                else:
+                        sprite_loaded = false
+        else:
+                sprite_loaded = false
+
+
+# Apply a specific frame index from the character sheet to the Sprite2D.
+# The sheet is 256x64 = 4 frames of 64x64.
+func _apply_character_frame(frame_idx: int) -> void:
+        if _character_sheet_texture == null or sprite == null:
+                return
+        var fw: int = 64
+        var fh: int = 64
+        var cols: int = 4
+        var idx: int = clampi(frame_idx, 0, cols - 1)
+        var at := AtlasTexture.new()
+        at.atlas = _character_sheet_texture
+        at.region = Rect2(idx * fw, 0, fw, fh)
+        sprite.texture = at
+
+
+var _character_sheet_texture: Texture2D = null
+var _character_sheet_path: String = ""
+var sprite_loaded: bool = false
 
 
 # ===========================================================================
@@ -652,6 +683,21 @@ func _update_sprite() -> void:
                 sprite.flip_h = _last_flipped
         else:
                 sprite.flip_h = not _last_flipped
+
+        # --- Animation frame selection ---
+        # 4-frame sheet: frame 0 = idle, 1-3 = walk cycle.
+        # When jumping, use frame 3 (or a dedicated jump sheet if available).
+        var frame_idx: int = 0
+        if is_jumping():
+                frame_idx = 3
+        elif dx != 0 or dy != 0:
+                # Walking: cycle frames 0-3 at ~8 FPS
+                var walk_frame: int = int(anim_time / 120.0) % 4
+                frame_idx = walk_frame
+        else:
+                # Idle: frame 0 with slight breathing (optional: 2-frame cycle)
+                frame_idx = 0
+        _apply_character_frame(frame_idx)
 
         # Apply jump arc as a vertical offset (sprite only, not the Node2D).
         # In C++ the sprite is drawn at pos.y + 24 - jumpOffset; here we shift

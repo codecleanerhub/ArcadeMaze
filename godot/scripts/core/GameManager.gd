@@ -176,7 +176,7 @@ func advance_level() -> void:
         if game_mode == C.GameMode.STORY and current_level >= C.STORY_LEVELS_COUNT:
                 current_state = C.GameState.WIN_STORY
                 run_ended.emit()
-                go_to_credits()
+                go_to_win()
                 return
         if game_mode == C.GameMode.STORY and is_boss_level():
                 # Defeated a boss - reward the player with an extra life (in C++
@@ -203,14 +203,11 @@ func player_died(in_boss: bool = false) -> void:
         died_in_boss = in_boss
         if continues_left > 0:
                 current_state = C.GameState.CONTINUES
-                # TODO: transition to ContinuesScreen when implemented.
-                # For now, go back to menu.
-                go_to_menu()
+                go_to_continues()
         else:
                 current_state = C.GameState.LOSE
                 run_ended.emit()
-                # TODO: transition to LoseScreen when implemented.
-                go_to_menu()
+                go_to_lose()
 
 
 ## Called by the continues screen when the player picks YES: consume a
@@ -228,8 +225,7 @@ func use_continue() -> void:
 func give_up() -> void:
         current_state = C.GameState.LOSE
         run_ended.emit()
-        # TODO: transition to LoseScreen when implemented.
-        go_to_menu()
+        go_to_lose()
 
 
 ## Reset all transient state so a new run can start from a clean slate.
@@ -333,6 +329,18 @@ func go_to_boss() -> void:
 func go_to_credits() -> void:
         current_state = C.GameState.CREDITS
         change_scene("res://scenes/CreditsScreen.tscn")
+
+func go_to_continues() -> void:
+        current_state = C.GameState.CONTINUES
+        change_scene("res://scenes/ContinuesScreen.tscn")
+
+func go_to_win() -> void:
+        current_state = C.GameState.WIN_STORY
+        change_scene("res://scenes/WinScreen.tscn")
+
+func go_to_lose() -> void:
+        current_state = C.GameState.LOSE
+        change_scene("res://scenes/LoseScreen.tscn")
 
 func start_level_at(level: int) -> void:
         current_level = level

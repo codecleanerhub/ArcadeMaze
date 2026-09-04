@@ -18,6 +18,7 @@ extends Node2D
 
 const C = preload("res://scripts/core/GameConstants.gd")
 const WeaponClass = preload("res://scripts/items/Weapon.gd")
+const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 
 # --- Node references (assigned in _ready) ---
 @onready var maze: Node2D = $Maze
@@ -233,20 +234,23 @@ func _update_playing(delta_ms: float) -> void:
         # (8) Death check
         _check_death()
 
-        # (9) Exit door logic (treasures collected)
+        # (9) Collectibles update + collision with player
+        _update_collectibles(delta_ms)
+
+        # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
 
-        # (10) Magic portal (50% enemies killed)
+        # (11) Magic portal (50% enemies killed)
         spawner.trigger_portal_if_needed(maze, p_pos, player_invuln)
         spawner.update_portal(maze, int(delta_ms))
 
-        # (11) Remove dead enemies
+        # (12) Remove dead enemies
         spawner.remove_dead()
 
-        # (12) Update particles
+        # (13) Update particles
         _update_particles(delta_ms)
 
-        # (13) Screen flash decay
+        # (14) Screen flash decay
         if screen_flash_timer_ms > 0:
                 screen_flash_timer_ms = max(0, screen_flash_timer_ms - int(delta_ms))
 
@@ -354,6 +358,69 @@ func _check_death() -> void:
 
 
 # ============================================================================
+# Collectibles update + collision with player
+# ============================================================================
+func _update_collectibles(delta_ms: float) -> void:
+        var p1_pos: Vector2 = player.get_pixel_pos()
+        var p2_pos: Vector2 = Vector2.ZERO
+        if GameManager and GameManager.num_players == 2 and player2.visible:
+                p2_pos = player2.get_pixel_pos()
+        for child in collectibles_node.get_children():
+                if not child is Node2D:
+                        continue
+                # Update item animation/behavior
+                child.update_step(delta_ms, p1_pos, 1)
+                if not child.active:
+                        continue
+                var item_pos: Vector2 = child.pos
+                # Check P1 collision
+                if p1_pos.distance_squared_to(item_pos) < 400.0:
+                        _on_collectible_picked_up(child, player, 1)
+                        continue
+                # Check P2 collision
+                if GameManager and GameManager.num_players == 2 and player2.visible:
+                        if p2_pos.distance_squared_to(item_pos) < 400.0:
+                                _on_collectible_picked_up(child, player2, 2)
+
+
+func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int) -> void:
+        var kind_int: int = item.kind
+        match kind_int:
+                CollectiblesClass.Kind.MINE:
+                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 50, 30000)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.TRAP)
+                CollectiblesClass.Kind.CHALICE:
+                        p.set_invincible_timer(15000)
+                        p.add_score(15000)
+                        item.active = false
+                        item.queue_free()
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                        if AudioManager and AudioManager.music_enabled:
+                                AudioManager.play_epic_music(8)
+                CollectiblesClass.Kind.SCEPTER:
+                        item.trigger_scepter()
+                        item.active = false
+                        item.queue_free()
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                CollectiblesClass.Kind.SPEED_BOOTS:
+                        if item.owner_id == 0 or item.owner_id == player_id:
+                                p.activate_speed_boost()
+                                item.active = false
+                                item.queue_free()
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+                CollectiblesClass.Kind.TREASURE:
+                        p.add_score(CollectiblesClass.TREASURE_POINTS)
+                        item.active = false
+                        item.queue_free()
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+
+
+# ============================================================================
 # Exit door + level transitions
 # ============================================================================
 func _update_exit_door(delta_ms: float) -> void:
@@ -454,9 +521,89 @@ func start_level(lvl: int) -> void:
         player_invincible_timer_ms = 0
         player2_invincible_timer_ms = 0
         particles.clear()
+        # Spawn collectibles (mine, chalice, scepter, speed boots)
+        _spawn_collectibles()
         # Play level music
         if AudioManager and GameManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, false)
+
+
+# Spawn the level collectibles: mine, chalice, scepter, speed boots.
+# Mirrors Game::startLevel() lines 280-360.
+func _spawn_collectibles() -> void:
+        # Clear previous collectibles
+        for child in collectibles_node.get_children():
+                child.queue_free()
+        chalice_item = null
+        scepter_item = null
+        mine_item = null
+        speed_boots_item = null
+        speed_boots2_item = null
+
+        # Find empty cells far from player start (Manhattan distance >= 5)
+        var empty_cells: Array = []
+        for r in range(1, C.MAZE_ROWS - 1):
+                for c in range(1, C.MAZE_COLS - 1):
+                        if not maze.is_wall(c, r) and not (c < 5 and r < 5):
+                                empty_cells.append(Vector2i(c, r))
+        if empty_cells.is_empty():
+                return
+
+        # Shuffle and pick cells for each collectible
+        empty_cells.shuffle()
+
+        # Mine (item index 0)
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var mine_pos := _cell_to_pixel(cell)
+                mine_item = _create_collectible(CollectiblesClass.Kind.MINE, mine_pos)
+                collectibles_node.add_child(mine_item)
+
+        # Chalice (invincibility)
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var chalice_pos := _cell_to_pixel(cell)
+                chalice_item = _create_collectible(CollectiblesClass.Kind.CHALICE, chalice_pos)
+                collectibles_node.add_child(chalice_item)
+
+        # Scepter (lightning)
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var scepter_pos := _cell_to_pixel(cell)
+                scepter_item = _create_collectible(CollectiblesClass.Kind.SCEPTER, scepter_pos)
+                collectibles_node.add_child(scepter_item)
+
+        # Speed boots (P1)
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var boots_pos := _cell_to_pixel(cell)
+                speed_boots_item = _create_collectible(CollectiblesClass.Kind.SPEED_BOOTS, boots_pos)
+                speed_boots_item.owner_id = 1
+                collectibles_node.add_child(speed_boots_item)
+
+        # Speed boots (P2, if 2 players)
+        if GameManager and GameManager.num_players == 2 and empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var boots_pos := _cell_to_pixel(cell)
+                speed_boots2_item = _create_collectible(CollectiblesClass.Kind.SPEED_BOOTS, boots_pos)
+                speed_boots2_item.owner_id = 2
+                collectibles_node.add_child(speed_boots2_item)
+
+
+func _cell_to_pixel(cell: Vector2i) -> Vector2:
+        return Vector2(
+                cell.x * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                cell.y * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT
+        )
+
+
+# Create a Collectibles node instance with the given kind.
+func _create_collectible(kind_int: int, pos: Vector2) -> Node2D:
+        var item: Collectibles = CollectiblesClass.new()
+        item.kind = kind_int
+        item.pos = pos
+        item.position = pos
+        return item
 
 
 # ============================================================================

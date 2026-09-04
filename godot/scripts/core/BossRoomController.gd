@@ -263,9 +263,8 @@ func _check_boss_death() -> void:
                         GameManager.current_level = current_level + 1
                         if GameManager.game_mode == C.GameMode.STORY and \
                            current_level + 1 > C.STORY_LEVELS_COUNT:
-                                # Win!
-                                if GameManager:
-                                        GameManager.go_to_credits()
+                                # Win! -> go to WinScreen
+                                GameManager.go_to_win()
                         else:
                                 # Back to maze
                                 GameManager.go_to_maze()
