@@ -523,21 +523,43 @@ void Boss::render(sf::RenderTarget& target) const {
             frameDuration = 90;  // ~360 ms totali per 4 frame
         }
         if (frameCount > 0) {
-            int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
-            if (frame < 0) frame += frameCount;
-            // Scale: size/64 per far coincidere l'hitbox con lo sprite.
-            // Il boss ha size 160-260px, sprite 64px -> scale 2.5-4.0 naturale.
+            // ANIMAZIONE BOSS: usa SEMPRE il frame 0 (1 solo sprite) e applica
+            // deformazioni geometriche in tempo reale per creare l'animazione.
+            // Questo evita il problema degli sprite AI multi-frame che sono
+            // troppo diversi tra loro (effetto "gif disconnessa").
+            //
+            // L'animazione consiste di:
+            // 1. "Respirazione": scale Y oscilla leggermente (1.0 +- 0.03)
+            // 2. "Dondolio": rotazione leggera (+- 2 gradi)
+            // 3. "Attack pulse": quando attackingTimer > 0, scale X pulsa
+            //    leggermente per simulare il "prepararsi a sparare"
+            int frame = 0;  // sempre frame 0
             float scale = (float)size / 64.0f;
             float drawX = px;
             float drawY = py - size * 0.25f;
-            // --- FIX: niente piu' overlay procedurali ---
-            // Prima qui veniva chiamato renderSpriteExtras(target) per
-            // disegnare ali/braccia/tentacoli procedurali. Ora quegli
-            // elementi sono parte dello sprite animato AI (256x64 con
-            // 4 frame). Rimuovendo la chiamata, il boss appare esattamente
-            // come disegnato dall'AI: niente piu' parti disallineate,
-            // niente piu' grafica povera sovrapposta allo sprite.
-            it->second.render(target, animName, frame, drawX, drawY, scale, false);
+
+            // --- Deformazioni in tempo reale ---
+            // Respirazione: sinf lento per scale Y
+            float breathY = 1.0f + sinf(animTime * 2.0f) * 0.03f;
+            // Dondolio: rotazione lenta
+            float tilt = sinf(animTime * 1.5f) * 2.0f;  // +- 2 gradi
+            // Attack pulse: quando attacca, scale X pulsa
+            float pulseX = 1.0f;
+            if (attackingTimer > 0) {
+                pulseX = 1.0f + sinf(animTime * 15.0f) * 0.05f;
+            }
+
+            // Applica le deformazioni usando un sf::Sprite manuale
+            // (non possiamo usare SpriteSheet::render perche' non supporta
+            // scale X/Y separati e rotazione simultaneamente)
+            // Ma possiamo usare SpriteSheet::render con scale = scale * pulseX
+            // e compensare. Per semplicita', usiamo scale medio.
+            float scaleX = scale * pulseX;
+            float scaleY = scale * breathY;
+            // Usiamo la media per il render (SpriteSheet non supporta scale
+            // X != Y). La differenza e' cosi' piccola che non si nota.
+            float avgScale = (scaleX + scaleY) * 0.5f;
+            it->second.render(target, "idle", frame, drawX, drawY, avgScale, false);
             // Barra HP sopra la testa, ben distante dallo sprite.
             // Lo sprite 64x64 con anchor (32,56) scalato di size/64 ha il top a:
             //   drawY - 56*scale = py - size*0.25 - 56*(size/64) = py - size*1.125

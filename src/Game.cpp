@@ -767,11 +767,11 @@ void Game::handleEvents() {
                 // Left/Right (o joystick): ruota la ruota dei personaggi
                 // Enter: conferma il personaggio corrente
                 if (key == sf::Keyboard::Left) {
-                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
+                    wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
                     audio.playSound(SOUND_MENU_SELECT);
                 }
                 else if (key == sf::Keyboard::Right) {
-                    wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
+                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
                     audio.playSound(SOUND_MENU_SELECT);
                 }
                 else if (key == sf::Keyboard::Return) {
@@ -1073,9 +1073,9 @@ void Game::update() {
             if (fabs(x) > 50 && !joyMovedWheel) {
                 joyMovedWheel = true;
                 if (x < 0) {
-                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
-                } else {
                     wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
+                } else {
+                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
                 }
                 audio.playSound(SOUND_MENU_SELECT);
             } else if (fabs(x) < 20) joyMovedWheel = false;

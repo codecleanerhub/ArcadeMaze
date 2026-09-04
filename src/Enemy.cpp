@@ -614,11 +614,14 @@ void Enemy::render(sf::RenderTarget& target) const {
             }
             int frameCount = it->second.getFrameCount(animName);
             if (frameCount > 0) {
-                // FIX: usa animTime (continuo, mai azzerato per path BFS)
-                // invece di pathUpdateTimer (che si azzera ogni ~200ms e
-                // causava stuttering + impossibilita' di raggiungere il
-                // frame 3 dell'animazione walk a 4 frame).
-                int frame = (animTime / (uint32_t)frameDuration) % frameCount;
+                // FIX: quando il nemico e' FERMO (idle), usa SEMPRE il frame 0
+                // per evitare la riga di separazione busto/bacino.
+                int frame;
+                if (animName == "idle") {
+                    frame = 0;
+                } else {
+                    frame = (animTime / (uint32_t)frameDuration) % frameCount;
+                }
                 bool flipped = (dx < 0);
                 float bobY = 0.f;
                 if (animName == "walk" && (dx != 0 || dy != 0)) {

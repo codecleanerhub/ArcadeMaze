@@ -456,8 +456,12 @@ void Player::render(sf::RenderTarget& target) {
         } else if (sprite.getFrameCount("idle") > 0) {
             animName = "idle";
             frameDuration = 200;
-            int frameCount = sprite.getFrameCount("idle");
-            frame = (animTime / (uint32_t)frameDuration) % frameCount;
+            // FIX: quando il player e' FERMO (idle), usa SEMPRE il frame 0.
+            // I frame 1-3 hanno le gambe shiftate (trasformazione deterministica)
+            // che creano una riga di separazione visibile tra busto e bacino
+            // quando il player sta fermo. Con solo il frame 0, il player
+            // appare come un'unica immagine coerente.
+            frame = 0;
         }
         // Disegna lo sprite con bob effect
         float bobY = 0.f;

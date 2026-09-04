@@ -972,8 +972,8 @@ void MiniBoss::render(sf::RenderTarget& target) const {
         } else if (sprite.getFrameCount("idle") > 0) {
             animName = "idle";
             frameDuration = 200;
-            int frameCount = sprite.getFrameCount("idle");
-            frame = ((int)(animTime * 1000.f) / frameDuration) % frameCount;
+            // FIX: idle usa sempre frame 0 (no separazione busto/bacino)
+            frame = 0;
         }
 
         sprite.render(target, animName, frame, pos.x, pos.y + 8.f + bobY,
