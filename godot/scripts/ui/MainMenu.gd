@@ -170,11 +170,16 @@ func _draw_flame(fx: float, fy: float) -> void:
 # ============================================================================
 func _build_ui() -> void:
         # --- Background texture ---
+        # Full-screen background. STRETCH_KEEP_ASPECT_COVERED ensures the entire
+        # viewport is filled (no black bars) even when the screen aspect ratio
+        # differs from the texture's 1:1 ratio. With aspect="keep" in
+        # project.godot, the viewport is already 1024x1024, so the texture
+        # fills the entire design area perfectly.
         _bg = TextureRect.new()
         _bg.name = "Background"
         _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-        _bg.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-        _bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+        _bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        _bg.stretch_mode = TextureRect.STRETCH_SCALE
         var tex := load("res://assets/backgrounds/bg_menu.jpg")
         if tex is Texture:
                 _bg.texture = tex
@@ -187,30 +192,48 @@ func _build_ui() -> void:
         add_child(dark)
 
         # --- Title ---
+        # Centered horizontally at the top. We set anchors explicitly
+        # (anchor_left=anchor_right=0.5, anchor_top=anchor_bottom=0) and use
+        # symmetric offsets (-280/+280) so the label is exactly 560px wide and
+        # always centered, regardless of how Godot interprets PRESET_FULL_RECT.
         _title_label = Label.new()
         _title_label.name = "Title"
         _title_label.text = "ARCADE MAZE"
-        _title_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _title_label.anchor_left = 0.5
+        _title_label.anchor_top = 0.0
+        _title_label.anchor_right = 0.5
+        _title_label.anchor_bottom = 0.0
+        _title_label.offset_left = -300.0
+        _title_label.offset_top = 60.0
+        _title_label.offset_right = 300.0
+        _title_label.offset_bottom = 130.0
+        _title_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        _title_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+        _title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _title_label.add_theme_font_size_override("font_size", 48)
         _title_label.add_theme_color_override("font_color", color_title_gold)
         _title_label.add_theme_color_override("font_shadow_color", color_title_shadow)
         _title_label.add_theme_constant_override("shadow_offset_x", -3)
         _title_label.add_theme_constant_override("shadow_offset_y", -3)
         _title_label.add_theme_constant_override("shadow_outline_size", 3)
-        _title_label.offset_top = 60.0
-        _title_label.offset_bottom = 130.0
         add_child(_title_label)
 
         # --- Parchment panel ---
+        # Anchored to fill the middle/lower portion of the screen.
+        # anchor_left=0, anchor_right=1, offset_left=120, offset_right=-120
+        # => panel spans from x=120 to x=(width-120), centered horizontally.
         _panel = Panel.new()
         _panel.name = "MenuPanel"
-        _panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _panel.anchor_left = 0.0
+        _panel.anchor_top = 0.0
+        _panel.anchor_right = 1.0
+        _panel.anchor_bottom = 1.0
         _panel.offset_left = 120.0
         _panel.offset_top = 360.0
         _panel.offset_right = -120.0
-        _panel.offset_bottom = -60.0
+        _panel.offset_bottom = -80.0
+        _panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _panel.grow_vertical = Control.GROW_DIRECTION_BOTH
         var stylebox := StyleBoxFlat.new()
         stylebox.bg_color = color_parchment_bg
         stylebox.border_color = color_parchment_border
@@ -221,14 +244,20 @@ func _build_ui() -> void:
         add_child(_panel)
 
         # --- 7 menu items inside the panel ---
+        # VBoxContainer filling the panel with 40px padding on each side.
         var items_container := VBoxContainer.new()
         items_container.name = "Items"
-        items_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-        items_container.alignment = BoxContainer.ALIGNMENT_BEGIN
+        items_container.anchor_left = 0.0
+        items_container.anchor_top = 0.0
+        items_container.anchor_right = 1.0
+        items_container.anchor_bottom = 1.0
         items_container.offset_left = 40.0
         items_container.offset_top = 30.0
         items_container.offset_right = -40.0
         items_container.offset_bottom = -30.0
+        items_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        items_container.grow_vertical = Control.GROW_DIRECTION_BOTH
+        items_container.alignment = BoxContainer.ALIGNMENT_BEGIN
         items_container.add_theme_constant_override("separation", 28)
         _panel.add_child(items_container)
 
@@ -254,51 +283,82 @@ func _build_ui() -> void:
                 items_container.add_child(lbl)
 
         # --- Character wheel (8 side-view previews) ---
-        # Hidden by default, shown during character selection
+        # Hidden by default, shown during character selection.
+        # Anchored to center-bottom with symmetric offsets so it stays centered.
         _char_preview_container = HBoxContainer.new()
         _char_preview_container.name = "CharacterWheel"
-        _char_preview_container.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+        _char_preview_container.anchor_left = 0.5
+        _char_preview_container.anchor_top = 1.0
+        _char_preview_container.anchor_right = 0.5
+        _char_preview_container.anchor_bottom = 1.0
         _char_preview_container.offset_left = -360.0
         _char_preview_container.offset_top = -160.0
         _char_preview_container.offset_right = 360.0
         _char_preview_container.offset_bottom = -20.0
+        _char_preview_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _char_preview_container.grow_vertical = Control.GROW_DIRECTION_BOTH
         _char_preview_container.alignment = BoxContainer.ALIGNMENT_CENTER
         _char_preview_container.add_theme_constant_override("separation", 12)
         _char_preview_container.visible = false
         add_child(_char_preview_container)
 
         # --- Footer ---
+        # Two centered labels at the bottom of the screen.
+        # "By" label (small gold text)
         _footer_by = Label.new()
         _footer_by.text = "By"
-        _footer_by.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _footer_by.anchor_left = 0.5
+        _footer_by.anchor_top = 1.0
+        _footer_by.anchor_right = 0.5
+        _footer_by.anchor_bottom = 1.0
+        _footer_by.offset_left = -200.0
+        _footer_by.offset_top = -50.0
+        _footer_by.offset_right = 200.0
+        _footer_by.offset_bottom = -30.0
+        _footer_by.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _footer_by.grow_vertical = Control.GROW_DIRECTION_BOTH
         _footer_by.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        _footer_by.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+        _footer_by.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _footer_by.add_theme_font_size_override("font_size", 18)
         _footer_by.add_theme_color_override("font_color", color_footer_by)
-        _footer_by.offset_top = -50.0
-        _footer_by.offset_bottom = -20.0
         add_child(_footer_by)
 
+        # "Marled Software" label (ivory text)
         _footer_name = Label.new()
         _footer_name.text = "Marled Software"
-        _footer_name.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _footer_name.anchor_left = 0.5
+        _footer_name.anchor_top = 1.0
+        _footer_name.anchor_right = 0.5
+        _footer_name.anchor_bottom = 1.0
+        _footer_name.offset_left = -200.0
+        _footer_name.offset_top = -30.0
+        _footer_name.offset_right = 200.0
+        _footer_name.offset_bottom = -10.0
+        _footer_name.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _footer_name.grow_vertical = Control.GROW_DIRECTION_BOTH
         _footer_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        _footer_name.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+        _footer_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _footer_name.add_theme_font_size_override("font_size", 18)
         _footer_name.add_theme_color_override("font_color", color_footer_name)
-        _footer_name.position = Vector2(size.x / 2 - 80, size.y - 40)
-        _footer_name.size = Vector2(200, 30)
         add_child(_footer_name)
 
-        # --- Hint text (bottom of items) ---
+        # --- Hint text (centered at the bottom, above the footer) ---
         _hint_label = Label.new()
         _hint_label.text = "UP/DOWN TO SELECT - LEFT/RIGHT TO CHANGE"
-        _hint_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+        _hint_label.anchor_left = 0.5
+        _hint_label.anchor_top = 1.0
+        _hint_label.anchor_right = 0.5
+        _hint_label.anchor_bottom = 1.0
+        _hint_label.offset_left = -300.0
+        _hint_label.offset_top = -75.0
+        _hint_label.offset_right = 300.0
+        _hint_label.offset_bottom = -55.0
+        _hint_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _hint_label.grow_vertical = Control.GROW_DIRECTION_BOTH
         _hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _hint_label.add_theme_font_size_override("font_size", 16)
         _hint_label.add_theme_color_override("font_color", color_hint)
-        _hint_label.position = Vector2(0, size.y - 80)
-        _hint_label.size = Vector2(size.x, 20)
         add_child(_hint_label)
 
 
