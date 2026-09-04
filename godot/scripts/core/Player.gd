@@ -159,6 +159,25 @@ var _last_flipped: bool = false
 func _ready() -> void:
         # Starting stats: position (1,1) cell, 3 lives, full energy, pistol.
         reset()
+        # Aggiungi PointLight2D (aura del player) - vantaggio Godot, non in C++
+        if EffectsManager:
+                var aura := EffectsManager.create_light(
+                        Vector2.ZERO,
+                        Color(1.0, 0.9, 0.6, 1.0),
+                        0.8,  # energy
+                        80.0  # radius
+                )
+                aura.name = "AuraLight"
+                add_child(aura)
+        # Camera2D per screen shake (se non presente nel scene tree)
+        var cam := Camera2D.new()
+        cam.name = "PlayerCamera"
+        cam.enabled = true
+        cam.position_smoothing_enabled = true
+        cam.position_smoothing_speed = 8.0
+        add_child(cam)
+        if EffectsManager:
+                EffectsManager.set_camera(cam)
 
 
 # ===========================================================================
@@ -500,6 +519,12 @@ func take_damage() -> void:
                 return
         energy -= 1
         damage_timer = 1000  # ~1 s of invulnerability after hit
+        # Effetti Godot-native: screen shake + particelle danno
+        if EffectsManager:
+                EffectsManager.screen_shake(6.0, 0.25)
+                var p := EffectsManager.spawn_sparks(get_pixel_pos(), 10)
+                if get_parent():
+                        get_parent().add_child(p)
         if energy <= 0:
                 lives -= 1
                 energy = max_energy

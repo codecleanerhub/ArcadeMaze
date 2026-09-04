@@ -366,6 +366,13 @@ func take_damage(dmg: int) -> void:
         if health <= 0:
                 health = 0
                 dying_timer = 600
+                # Spawn particle explosion (Godot-native effect, non in C++)
+                if EffectsManager:
+                        var p := EffectsManager.spawn_explosion(position,
+                                Color(0.8, 0.2, 0.1), 25, 0.6)
+                        if get_parent():
+                                get_parent().add_child(p)
+                        EffectsManager.screen_shake(4.0, 0.2)
 
 
 func is_dead() -> bool:
@@ -397,6 +404,9 @@ func start_burning(frames: int = 50) -> void:
         burning_timer = frames
         burn_anim_time = 0
         burned_flag = true
+        # Applica shader fuoco (Godot-native, non in C++)
+        if EffectsManager and sprite:
+                EffectsManager.set_burn_effect(sprite, true)
 
 
 func is_burning() -> bool:
@@ -422,6 +432,9 @@ func clear_burned_flag() -> void:
 func start_electrified(frames: int = 30) -> void:
         electrified_timer = frames
         electrified_anim_time = 0
+        # Applica shader lightning (Godot-native, non in C++)
+        if EffectsManager and sprite:
+                EffectsManager.set_electrified_effect(sprite, true)
 
 
 func is_electrified() -> bool:

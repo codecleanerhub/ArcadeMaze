@@ -257,6 +257,14 @@ func _check_boss_death() -> void:
         if boss and boss.is_dead():
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+                # Effetti Godot-native: screen shake forte + esplosione multipla
+                if EffectsManager:
+                        EffectsManager.screen_shake(15.0, 0.8)
+                        for i in 3:
+                                var p := EffectsManager.spawn_explosion(
+                                        boss.pos + Vector2(randf() * 60 - 30, randf() * 60 - 30),
+                                        Color(1.0, 0.5, 0.1), 40, 1.2)
+                                boss_projectiles_node.add_child(p)
                 player.add_life()
                 if GameManager:
                         GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))

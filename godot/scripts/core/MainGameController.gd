@@ -97,8 +97,10 @@ func _ready() -> void:
         # Start level music if enabled
         if AudioManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, false)
-        # Wire pause overlay if present in scene
-        # (PauseOverlay is instantiated on demand)
+        # Aggiungi post-processing vignette (vantaggio Godot)
+        if EffectsManager:
+                var vignette := EffectsManager.create_vignette_rect()
+                add_child(vignette)
 
 
 func _physics_process(_delta: float) -> void:
@@ -399,12 +401,22 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 AudioManager.play_sound(AudioManager.SoundType.TREASURE)
                         if AudioManager and AudioManager.music_enabled:
                                 AudioManager.play_epic_music(8)
+                        # Particelle pickup oro (Godot-native)
+                        if EffectsManager:
+                                var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(1.0, 0.84, 0.0))
+                                collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.SCEPTER:
                         item.trigger_scepter()
                         item.active = false
                         item.queue_free()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                        # Particelle lightning (Godot-native)
+                        if EffectsManager:
+                                var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(0.5, 0.8, 1.0))
+                                collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.SPEED_BOOTS:
                         if item.owner_id == 0 or item.owner_id == player_id:
                                 p.activate_speed_boost()
@@ -412,12 +424,22 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 item.queue_free()
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+                                # Particelle boots (Godot-native)
+                                if EffectsManager:
+                                        var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                                Color(0.3, 1.0, 0.3))
+                                        collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.TREASURE:
                         p.add_score(CollectiblesClass.TREASURE_POINTS)
                         item.active = false
                         item.queue_free()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                        # Particelle treasure (Godot-native)
+                        if EffectsManager:
+                                var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(1.0, 0.84, 0.0))
+                                collectibles_node.add_child(burst)
 
 
 # ============================================================================
