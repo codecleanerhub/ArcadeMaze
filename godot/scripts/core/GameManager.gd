@@ -324,7 +324,7 @@ func go_to_credits() -> void:
         current_state = C.GameState.CREDITS
         change_scene("res://scenes/CreditsScreen.tscn")
 
-func start_level(level: int) -> void:
+func start_level_at(level: int) -> void:
         current_level = level
         if is_boss_level(level):
                 go_to_boss()
@@ -337,4 +337,4 @@ func next_level() -> void:
                 # Vittoria: mostra credits
                 go_to_credits()
         else:
-                start_level(current_level)
+                start_level_at(current_level)

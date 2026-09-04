@@ -15,7 +15,7 @@
 ##   var sheet := SpriteManager.get_sheet("boss_021")
 ##   var tex   := sheet.get_frame_texture("idle", 0)
 extends Node
-class_name SpriteManager
+
 
 ## Emitted once after load_all() finishes (success or partial failure).
 signal loaded()
@@ -129,7 +129,7 @@ func _load_sheet(base_path: String, id: String) -> void:
 	sheet.rows = 1
 
 	# Try metadata JSON for exact dimensions/animations.
-	var meta := _load_json(meta_path)
+	var meta: Variant = _load_json(meta_path)
 	if meta != null and not meta.is_empty():
 		sheet.frame_w = int(meta.get("frameWidth", 64))
 		sheet.frame_h = int(meta.get("frameHeight", 64))
