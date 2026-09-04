@@ -258,9 +258,12 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
     // ~1000 ms); alcuni boss sparano piu' raramente (KRKEN, RAT_KING) altri
     // piu' spesso (DEMON, DRAGON). Tutti i proiettili portano il proprio
     // BossProjKind cosi' il rendering e l'update sono coerenti col tipo.
-    uint32_t baseCooldown = 2500 - level * 100;
+    // FIX: usa int (non uint32_t) perche' con level alto (es. 28),
+    // 2500 - 28*100 = -300, che in uint32_t diventerebbe 4294966996
+    // (overflow unsigned) e il check < 1000 non funzionerebbe.
+    int baseCooldown = 2500 - level * 100;
     if (baseCooldown < 1000) baseCooldown = 1000;
-    if (shootTimer > baseCooldown) {
+    if (shootTimer > (uint32_t)baseCooldown) {
         shootTimer = 0;
         // Triggera animazione di attacco per ~500 ms dopo lo sparo
         attackingTimer = 500;
