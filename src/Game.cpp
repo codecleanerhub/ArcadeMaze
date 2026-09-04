@@ -2675,17 +2675,28 @@ void Game::update() {
         }
 
 #ifdef TEST_MODE_FEATURE
-        // --- TEST MODE: salta direttamente al boss premendo barra spaziatrice ---
-        // Se testModeEnabled e' true e il player preme Space, salta tutta la
-        // fase di esplorazione del labirinto e va dritto al boss del livello
-        // corrente. Debounce: salta solo alla pressione (non ogni frame).
+        // --- TEST MODE: salta al livello successivo premendo barra spaziatrice ---
+        // Se testModeEnabled e' true e il player preme Space, salta il livello
+        // labirinto corrente e va al PROSSIMO LIVELLO (non direttamente al boss).
+        // Rispetta la struttura 3 labirinti + 1 boss:
+        //   - Livello 1 -> salta al 2 (labirinto)
+        //   - Livello 2 -> salta al 3 (labirinto)
+        //   - Livello 3 -> salta al 4 (boss)
+        //   - Livello 4 (boss) -> gestito dal test mode del boss (riga 3173)
+        // Debounce: salta solo alla pressione (non ogni frame).
         if (testModeEnabled) {
             bool spaceNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
             if (spaceNow && !testSkipKeyPressed) {
-                // Salta al boss: same behaviour as raccogliere tutti i tesori.
-                // Inoltre dà un po' di munizioni al player per essere sicuro
-                // che possa combattere (5 colpi come le armi del boss room).
-                startBossFight();
+                // Dà munizioni al player per sicurezza
+                player.getCurrentWeapon().ammo = 15;
+                if (isBossLevel(currentLevel)) {
+                    // Livello boss: vai al boss fight
+                    startBossFight();
+                } else {
+                    // Livello labirinto: salta al prossimo livello
+                    currentLevel++;
+                    startLevel(currentLevel);
+                }
             }
             testSkipKeyPressed = spaceNow;
         }
