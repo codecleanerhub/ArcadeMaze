@@ -657,3 +657,57 @@ func _update_sprite() -> void:
         # In C++ the sprite is drawn at pos.y + 24 - jumpOffset; here we shift
         # the sprite by -jumpOffset relative to its anchor.
         sprite.offset = Vector2(0, -jump_offset)
+
+
+# ===========================================================================
+# _draw(): render projectiles fired by this player.
+# Projectiles are stored in the `projectiles` Array[Dictionary].
+# Each projectile dict has: pos, dir, power, active, type.
+# ===========================================================================
+func _draw() -> void:
+        # Draw projectiles (relative to player node origin = player position)
+        for proj in projectiles:
+                if not proj.get("active", false):
+                        continue
+                var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                # Convert world position to local (relative to player node)
+                var local_pos: Vector2 = p_pos - position
+                var w_type: int = proj.get("type", WeaponType.PISTOL)
+                var col: Color = _projectile_color(w_type)
+                # Draw projectile as a small glowing circle
+                draw_circle(local_pos, 5.0, col)
+                draw_circle(local_pos, 3.0, Color(col.r, col.g, col.b, 1.0))
+
+        # Draw muzzle flash if shoot animation is playing
+        if shoot_anim_timer > 0:
+                var flash_dir: Vector2 = Vector2(last_dx, last_dy)
+                if flash_dir == Vector2.ZERO:
+                        flash_dir = Vector2(1, 0)
+                var flash_pos: Vector2 = flash_dir * 24.0
+                draw_circle(flash_pos, 8.0, Color(1.0, 0.9, 0.3, 0.8))
+                draw_circle(flash_pos, 5.0, Color(1.0, 1.0, 0.5, 1.0))
+
+        # Draw invincibility aura (chalice effect)
+        if invincible_timer > 0:
+                var alpha: float = 0.3 + 0.2 * sin(float(invincible_timer) * 0.01)
+                draw_circle(Vector2.ZERO, 28.0, Color(1.0, 0.84, 0.0, alpha * 0.3))
+                draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.84, 0.0, alpha * 0.5))
+
+        # Draw jump shadow
+        if is_jumping():
+                var shadow_y: float = 20.0 - jump_offset * 0.3
+                draw_circle(Vector2(0, shadow_y), 16.0, Color(0, 0, 0, 0.3))
+
+
+func _projectile_color(w_type: int) -> Color:
+        match w_type:
+                WeaponType.PISTOL:
+                        return Color(1.0, 1.0, 0.6)  # yellow
+                WeaponType.SHOTGUN:
+                        return Color(1.0, 0.5, 0.2)  # orange
+                WeaponType.ROCKET:
+                        return Color(1.0, 0.3, 0.1)  # red
+                WeaponType.LASER:
+                        return Color(0.3, 1.0, 0.3)  # green
+                _:
+                        return Color(1.0, 1.0, 1.0)

@@ -70,15 +70,15 @@ var _heart_loaded: bool = false
 # --- HUD state (set externally before _draw) ------------------------------
 # 1P snapshot
 var _p1: Dictionary = {
-	"score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
-	"weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
-	"weapon_ammo": 15, "weapon_max": 15,
+        "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
+        "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
+        "weapon_ammo": 15, "weapon_max": 15,
 }
 # 2P snapshot (only used when _num_players == 2)
 var _p2: Dictionary = {
-	"score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
-	"weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
-	"weapon_ammo": 15, "weapon_max": 15,
+        "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
+        "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
+        "weapon_ammo": 15, "weapon_max": 15,
 }
 var _num_players: int = 1
 var _remaining_treasures: int = 0
@@ -152,6 +152,24 @@ func set_remaining_treasures(n: int) -> void:
         queue_redraw()
 
 
+# Set the boss HP bar (shown during boss fights).
+var _boss_hp: int = 0
+var _boss_max_hp: int = 0
+var _boss_type: int = 0
+var _show_boss_bar: bool = false
+
+func set_boss_hp(hp: int, max_hp: int, boss_type: int) -> void:
+        _boss_hp = hp
+        _boss_max_hp = max_hp
+        _boss_type = boss_type
+        _show_boss_bar = true
+        queue_redraw()
+
+func hide_boss_bar() -> void:
+        _show_boss_bar = false
+        queue_redraw()
+
+
 # ============================================================================
 # Drawing
 # ============================================================================
@@ -162,6 +180,26 @@ func _draw() -> void:
                 _draw_1p()
         else:
                 _draw_2p()
+        # Boss HP bar (shown during boss fights)
+        if _show_boss_bar and _boss_max_hp > 0:
+                _draw_boss_bar()
+
+
+func _draw_boss_bar() -> void:
+        var bar_x: float = 300.0
+        var bar_y: float = 10.0
+        var bar_w: float = 424.0
+        var bar_h: float = 16.0
+        # Background
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.8), true)
+        # HP fill
+        var hp_ratio: float = float(_boss_hp) / float(_boss_max_hp)
+        var hp_color: Color = Color(0.8, 0.2, 0.1) if hp_ratio < 0.3 else Color(0.9, 0.5, 0.1)
+        draw_rect(Rect2(bar_x + 2, bar_y + 2, (bar_w - 4) * hp_ratio, bar_h - 4), hp_color, true)
+        # Border
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 2)
+        # Label
+        _draw_label_colored("BOSS", bar_x + 4, bar_y - 14, Color(0.9, 0.7, 0.3))
 
 
 # --- 1-player layout (mirror UI::render single-player) ---------------------

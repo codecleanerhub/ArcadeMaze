@@ -153,9 +153,9 @@ func is_story_complete() -> bool:
 ## and switches the state to PLAYING.
 func start_level(lvl: int) -> void:
         current_level = lvl
-        # The Maze node (sibling in the tree) listens on level_changed and
-        # regenerates itself. The player/enemies scenes do the same.
         current_state = C.GameState.PLAYING
+        # Transition to the main game scene (maze level).
+        go_to_maze()
 
 
 ## Begin the boss fight for the current level. Mirrors Game::startBossFight().
@@ -166,6 +166,8 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         if not keep_boss_state:
                 boss_fight_started.emit(boss_idx)
         current_state = C.GameState.BOSS
+        # Transition to the boss room scene.
+        go_to_boss()
 
 
 ## Advance to the next level after the current one is cleared. If we are in
@@ -174,6 +176,7 @@ func advance_level() -> void:
         if game_mode == C.GameMode.STORY and current_level >= C.STORY_LEVELS_COUNT:
                 current_state = C.GameState.WIN_STORY
                 run_ended.emit()
+                go_to_credits()
                 return
         if game_mode == C.GameMode.STORY and is_boss_level():
                 # Defeated a boss - reward the player with an extra life (in C++
@@ -200,9 +203,14 @@ func player_died(in_boss: bool = false) -> void:
         died_in_boss = in_boss
         if continues_left > 0:
                 current_state = C.GameState.CONTINUES
+                # TODO: transition to ContinuesScreen when implemented.
+                # For now, go back to menu.
+                go_to_menu()
         else:
                 current_state = C.GameState.LOSE
                 run_ended.emit()
+                # TODO: transition to LoseScreen when implemented.
+                go_to_menu()
 
 
 ## Called by the continues screen when the player picks YES: consume a
@@ -220,6 +228,8 @@ func use_continue() -> void:
 func give_up() -> void:
         current_state = C.GameState.LOSE
         run_ended.emit()
+        # TODO: transition to LoseScreen when implemented.
+        go_to_menu()
 
 
 ## Reset all transient state so a new run can start from a clean slate.

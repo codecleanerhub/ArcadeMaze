@@ -22,87 +22,92 @@ signal loaded()
 
 ## A loaded spritesheet entry.
 class Sheet:
-	var texture: Texture2D = null
-	var frame_w: int = 64
-	var frame_h: int = 64
-	var columns: int = 4
-	var rows: int = 1
-	var animations: Dictionary = {}   # anim_name -> { "row": int, "frames": int, "frameDuration": int }
+        var texture: Texture2D = null
+        var frame_w: int = 64
+        var frame_h: int = 64
+        var columns: int = 4
+        var rows: int = 1
+        var animations: Dictionary = {}   # anim_name -> { "row": int, "frames": int, "frameDuration": int }
 
-	func is_loaded() -> bool:
-		return texture != null
+        func is_loaded() -> bool:
+                return texture != null
 
-	## Get frame index as a sub-rect of the underlying texture.
-	func get_frame_rect(anim_name: String, frame_idx: int) -> Rect2:
-		var info: Dictionary = animations.get(anim_name, {})
-		var row: int = int(info.get("row", 0))
-		var nframes: int = int(info.get("frames", 1))
-		if nframes <= 0:
-			nframes = 1
-		frame_idx = clampi(frame_idx, 0, nframes - 1)
-		var x: int = frame_idx * frame_w
-		var y: int = row * frame_h
-		return Rect2(x, y, frame_w, frame_h)
+        ## Get frame index as a sub-rect of the underlying texture.
+        func get_frame_rect(anim_name: String, frame_idx: int) -> Rect2:
+                var info: Dictionary = animations.get(anim_name, {})
+                var row: int = int(info.get("row", 0))
+                var nframes: int = int(info.get("frames", 1))
+                if nframes <= 0:
+                        nframes = 1
+                frame_idx = clampi(frame_idx, 0, nframes - 1)
+                var x: int = frame_idx * frame_w
+                var y: int = row * frame_h
+                return Rect2(x, y, frame_w, frame_h)
 
-	## Get a sub-rect texture for a single frame (cached lazily per call).
-	func get_frame_texture(anim_name: String, frame_idx: int) -> AtlasTexture:
-		if texture == null:
-			return null
-		var rect := get_frame_rect(anim_name, frame_idx)
-		var at := AtlasTexture.new()
-		at.atlas = texture
-		at.region = rect
-		return at
+        ## Get a sub-rect texture for a single frame (cached lazily per call).
+        func get_frame_texture(anim_name: String, frame_idx: int) -> AtlasTexture:
+                if texture == null:
+                        return null
+                var rect := get_frame_rect(anim_name, frame_idx)
+                var at := AtlasTexture.new()
+                at.atlas = texture
+                at.region = rect
+                return at
 
-	func get_frame_count(anim_name: String) -> int:
-		var info: Dictionary = animations.get(anim_name, {})
-		return int(info.get("frames", 0))
+        func get_frame_count(anim_name: String) -> int:
+                var info: Dictionary = animations.get(anim_name, {})
+                return int(info.get("frames", 0))
 
 
 ## ---- Public API ----
 
+## Autoload lifecycle: load all sprites on startup.
+func _ready() -> void:
+        load_all()
+
+
 ## Load all `<id>_sheet.png` sprites found under the sprites folder.
 ## Missing files / JSON metadata are skipped silently (same behaviour as C++).
 func load_all(base_path: String = "res://assets/sprites/") -> void:
-	_sheets.clear()
-	var dir := DirAccess.open(base_path)
-	if dir == null:
-		push_warning("SpriteManager: cannot open %s" % base_path)
-		loaded.emit()
-		return
+        _sheets.clear()
+        var dir := DirAccess.open(base_path)
+        if dir == null:
+                push_warning("SpriteManager: cannot open %s" % base_path)
+                loaded.emit()
+                return
 
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while file_name != "":
-		if not dir.current_is_dir() and file_name.ends_with("_sheet.png"):
-			var id := file_name.substr(0, file_name.length() - "_sheet.png".length())
-			_load_sheet(base_path, id)
-		file_name = dir.get_next()
-	dir.list_dir_end()
-	loaded.emit()
+        dir.list_dir_begin()
+        var file_name := dir.get_next()
+        while file_name != "":
+                if not dir.current_is_dir() and file_name.ends_with("_sheet.png"):
+                        var id := file_name.substr(0, file_name.length() - "_sheet.png".length())
+                        _load_sheet(base_path, id)
+                file_name = dir.get_next()
+        dir.list_dir_end()
+        loaded.emit()
 
 
 ## Retrieve a cached Sheet by id (e.g. "boss_021" or "miniboss_05").
 func get_sheet(id: String) -> Sheet:
-	if _sheets.has(id):
-		return _sheets[id]
-	return null
+        if _sheets.has(id):
+                return _sheets[id]
+        return null
 
 
 ## Convenience: get a frame texture directly.
 func get_frame(id: String, anim: String, idx: int) -> AtlasTexture:
-	var s: Sheet = get_sheet(id)
-	if s == null:
-		return null
-	return s.get_frame_texture(anim, idx)
+        var s: Sheet = get_sheet(id)
+        if s == null:
+                return null
+        return s.get_frame_texture(anim, idx)
 
 
 ## Convenience: get frame count for an animation.
 func get_frame_count(id: String, anim: String) -> int:
-	var s: Sheet = get_sheet(id)
-	if s == null:
-		return 0
-	return s.get_frame_count(anim)
+        var s: Sheet = get_sheet(id)
+        if s == null:
+                return 0
+        return s.get_frame_count(anim)
 
 
 ## ---- Internals ----
@@ -111,69 +116,69 @@ var _sheets: Dictionary = {}   # id -> Sheet
 
 
 func _load_sheet(base_path: String, id: String) -> void:
-	var png_path := base_path + id + "_sheet.png"
-	var meta_path := base_path + id + "_meta.json"
+        var png_path := base_path + id + "_sheet.png"
+        var meta_path := base_path + id + "_meta.json"
 
-	var tex := load(png_path) as Texture2D
-	if tex == null:
-		return
+        var tex := load(png_path) as Texture2D
+        if tex == null:
+                return
 
-	var sheet := Sheet.new()
-	sheet.texture = tex
+        var sheet := Sheet.new()
+        sheet.texture = tex
 
-	# Default size (matches README: 6 cols x 4 rows, 64x64 frames for full sheets,
-	# but boss spritesheets are 4x1 64x64). Detect from texture size if no meta.
-	sheet.frame_w = 64
-	sheet.frame_h = 64
-	sheet.columns = 4
-	sheet.rows = 1
+        # Default size (matches README: 6 cols x 4 rows, 64x64 frames for full sheets,
+        # but boss spritesheets are 4x1 64x64). Detect from texture size if no meta.
+        sheet.frame_w = 64
+        sheet.frame_h = 64
+        sheet.columns = 4
+        sheet.rows = 1
 
-	# Try metadata JSON for exact dimensions/animations.
-	var meta: Variant = _load_json(meta_path)
-	if meta != null and not meta.is_empty():
-		sheet.frame_w = int(meta.get("frameWidth", 64))
-		sheet.frame_h = int(meta.get("frameHeight", 64))
-		sheet.columns = int(meta.get("columns", 4))
-		sheet.rows = int(meta.get("rows", 1))
-		var anims: Dictionary = meta.get("animations", {})
-		for anim_name in anims:
-			var info = anims[anim_name]
-			if info is Dictionary:
-				sheet.animations[anim_name] = {
-					"row": int(info.get("row", 0)),
-					"frames": int(info.get("frames", 1)),
-					"frameDuration": int(info.get("frameDuration", 200)),
-				}
-	else:
-		# No meta - infer from texture size assuming 64x64 frames.
-		var tw: int = tex.get_width()
-		var th: int = tex.get_height()
-		if tw > 0 and th > 0:
-			sheet.columns = int(tw) / sheet.frame_w
-			sheet.rows = int(th) / sheet.frame_h
-			if sheet.columns < 1:
-				sheet.columns = 1
-			if sheet.rows < 1:
-				sheet.rows = 1
-		# Default animations: single row, columns = idle frame count.
-		sheet.animations["idle"] = {"row": 0, "frames": sheet.columns, "frameDuration": 200}
-		sheet.animations["walk"] = {"row": 0, "frames": sheet.columns, "frameDuration": 120}
-		sheet.animations["attack"] = {"row": 0, "frames": sheet.columns, "frameDuration": 90}
-		sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        # Try metadata JSON for exact dimensions/animations.
+        var meta: Variant = _load_json(meta_path)
+        if meta != null and not meta.is_empty():
+                sheet.frame_w = int(meta.get("frameWidth", 64))
+                sheet.frame_h = int(meta.get("frameHeight", 64))
+                sheet.columns = int(meta.get("columns", 4))
+                sheet.rows = int(meta.get("rows", 1))
+                var anims: Dictionary = meta.get("animations", {})
+                for anim_name in anims:
+                        var info = anims[anim_name]
+                        if info is Dictionary:
+                                sheet.animations[anim_name] = {
+                                        "row": int(info.get("row", 0)),
+                                        "frames": int(info.get("frames", 1)),
+                                        "frameDuration": int(info.get("frameDuration", 200)),
+                                }
+        else:
+                # No meta - infer from texture size assuming 64x64 frames.
+                var tw: int = tex.get_width()
+                var th: int = tex.get_height()
+                if tw > 0 and th > 0:
+                        sheet.columns = int(tw) / sheet.frame_w
+                        sheet.rows = int(th) / sheet.frame_h
+                        if sheet.columns < 1:
+                                sheet.columns = 1
+                        if sheet.rows < 1:
+                                sheet.rows = 1
+                # Default animations: single row, columns = idle frame count.
+                sheet.animations["idle"] = {"row": 0, "frames": sheet.columns, "frameDuration": 200}
+                sheet.animations["walk"] = {"row": 0, "frames": sheet.columns, "frameDuration": 120}
+                sheet.animations["attack"] = {"row": 0, "frames": sheet.columns, "frameDuration": 90}
+                sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
 
-	_sheets[id] = sheet
+        _sheets[id] = sheet
 
 
 func _load_json(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		return null
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return null
-	var txt := f.get_as_text()
-	f.close()
-	var json := JSON.new()
-	var err := json.parse(txt)
-	if err != OK:
-		return null
-	return json.data
+        if not FileAccess.file_exists(path):
+                return null
+        var f := FileAccess.open(path, FileAccess.READ)
+        if f == null:
+                return null
+        var txt := f.get_as_text()
+        f.close()
+        var json := JSON.new()
+        var err := json.parse(txt)
+        if err != OK:
+                return null
+        return json.data

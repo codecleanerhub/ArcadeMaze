@@ -7,10 +7,10 @@ signal player_selected(character_index: int, player_num: int)
 
 const CHARACTERS: Array[String] = [
         "player1", "player2", "char_mage", "char_orc",
-        "char_elf", "char_knight", "char_golem", "char_vampire", "char_dragon"
+        "char_elf", "char_knight", "char_golem", "char_dragon", "char_vampire"
 ]
 const CHARACTER_NAMES: Array[String] = [
-        "HERO", "HEROINE", "MAGE", "ORC", "ELF", "KNIGHT", "GOLEM", "VAMPIRE", "DRAGON"
+        "HERO", "HEROINE", "MAGE", "ORC", "ELF", "KNIGHT", "GOLEM", "DRAGON", "VAMPIRE"
 ]
 
 var current_index: int = 0

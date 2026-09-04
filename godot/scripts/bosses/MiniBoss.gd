@@ -517,7 +517,9 @@ func _draw_with_sprite() -> void:
                 anim_name = "idle"
                 frame = 0
 
-        var at: AtlasTexture = sprite_sheet.get_frame_texture if sprite_sheet else null(anim_name, frame)
+        var at: AtlasTexture = null
+        if sprite_sheet != null:
+                at = sprite_sheet.get_frame_texture(anim_name, frame)
         if at != null:
                 # Centered draw with vertical bob. Flip horizontally via src_rect.
                 var tw := at.get_width()
