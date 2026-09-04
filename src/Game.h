@@ -54,14 +54,10 @@ enum GameMode { MODE_STORY, MODE_INFINITE };
 // Il boss appare ai livelli 4, 8, 12, 16, ..., 68.
 // I livelli 1-3 sono labirinto (con mini-boss al livello 2),
 // il livello 4 e' il boss, poi ricomincia con 5-7 labirinto, 8 boss, ecc.
-constexpr int MAZE_LEVELS_PER_BOSS = 3;  // 3 labirinti prima di ogni boss
-constexpr int TOTAL_LEVELS_PER_BOSS = MAZE_LEVELS_PER_BOSS + 1;  // 3 lab + 1 boss = 4
+//
+// Le funzioni isBossLevel() e getBossIndex() sono definite in Boss.h
+// (incluso da Game.h) per evitare circular include.
 constexpr int STORY_LEVELS_COUNT = BOSS_TYPE_COUNT * TOTAL_LEVELS_PER_BOSS;  // 17 * 4 = 68
-
-// Restituisce true se il livello dato e' un livello boss (multiplo di 4)
-inline bool isBossLevel(int level) { return (level % TOTAL_LEVELS_PER_BOSS) == 0; }
-// Restituisce l'indice del boss (0..16) per il livello dato
-inline int getBossIndex(int level) { return (level / TOTAL_LEVELS_PER_BOSS) % BOSS_TYPE_COUNT; }
 
 // Arma casuale da posizionare nella stanza del boss: il giocatore puo'
 // raccoglierla per rimpiazzare la sua (le munizioni del boss sono 5).

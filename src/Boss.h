@@ -48,6 +48,17 @@ enum BossType {
 // Numero totale di tipi di boss (usato da Game per il ciclo sui livelli).
 constexpr int BOSS_TYPE_COUNT = 17;
 
+// --- Struttura livelli: 3 labirinti + 1 boss ---
+// Queste funzioni sono definite qui (in Boss.h) perche' usate sia da
+// Boss.cpp che da Game.cpp. Evitano circular include tra Game.h e Boss.h.
+constexpr int MAZE_LEVELS_PER_BOSS = 3;
+constexpr int TOTAL_LEVELS_PER_BOSS = MAZE_LEVELS_PER_BOSS + 1;  // 4
+
+// Restituisce true se il livello dato e' un livello boss (multiplo di 4)
+inline bool isBossLevel(int level) { return (level % TOTAL_LEVELS_PER_BOSS) == 0; }
+// Restituisce l'indice del boss (0..16) per il livello dato
+inline int getBossIndex(int level) { return (level / TOTAL_LEVELS_PER_BOSS) % BOSS_TYPE_COUNT; }
+
 struct Projectile;  // forward declaration (definito in Weapon.h)
 
 class Boss {
