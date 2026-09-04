@@ -9,13 +9,16 @@
 // condividono la stessa classe `Enemy`: il comportamento speciale e'
 // determinato da `type` in `update()`.
 //
-// AI di movimento:
-//   * NEMICI "PENSANTI" (ROBOT, SLIME, DEMON, ORC, BONE_GOLEM, DAMNED_KNIGHT,
-//     GARGOYLE): usano BFS per trovare il cammino minimo verso il giocatore.
-//     Il path viene ricalcolato ogni ~250 ms per ridurre il carico CPU.
-//   * ALTRI NEMICI: usano moveGreedy (scelgono la cella adiacente che
-//     minimizza la distanza in linea d'aria, con penalita' per tornare
-//     indietro).
+// AI di movimento (AGGRESSIVA - tutti inseguono il player):
+//   * TUTTI i nemici usano BFS per trovare il cammino minimo verso il
+//     giocatore. Il path viene ricalcolato ogni ~200 ms, ma anche
+//     immediatamente quando il nemico e' fermo (dx==0 && dy==0) o quando
+//     si rileva uno stato di "stallo" (posizione immobile oltre una soglia).
+//   * Se BFS fallisce (player irraggiungibile - caso raro dato che il
+//     labirinto e' totalmente connesso), si fa fallback a moveGreedy.
+//   * Se anche moveGreedy e' bloccato (nessuna direzione migliore), si
+//     sceglie una direzione aperta casuale per evitare che il nemico
+//     rimanga "bloccato" lontano dal player.
 //
 // Sparo: alcuni tipi (SKELETON, CULTIST, DEMON, WRAITH, ROBOT, WITCH,
 // MAD_WIZARD) possono sparare al giocatore se nel raggio di 500 px,
@@ -125,6 +128,13 @@ public:
     bool isElectrified() const { return electrifiedTimer > 0; }
     void startElectrified(int frames = 30);  // folgora il nemico per `frames` frame
 
+    // --- FLEE MODE (calice dell'immortalita') ---
+    // Attiva/disattiva la modalita' "fuga". Quando attiva, il nemico si
+    // allontana dal player invece di inseguirlo. Game chiama questo
+    // metodo con true quando il player e' invincibile (calice attivo).
+    void setFleeMode(bool flee) { fleeMode = flee; }
+    bool isFleeing() const { return fleeMode; }
+
     // --- SpriteSheet management ---
     // Carica tutti gli sprite dei nemici dalla cartella data. Da chiamare
     // una volta in Game::init(). I file mancanti vengono saltati
@@ -141,6 +151,7 @@ private:
     int health, maxHealth;
     EnemyType type;
     uint32_t pathUpdateTimer;
+    uint32_t animTime;  // tempo accumulato per animazioni idle/walk/attack (MAI azzerato, tranne resetPosition)
     uint32_t shootCooldown;
     uint32_t attackingTimer;  // >0 = animazione attacco in corso (ms simulati)
     uint32_t dyingTimer;      // >0 = animazione morte in corso (ms simulati)
@@ -150,8 +161,33 @@ private:
     uint32_t electrifiedTimer;  // >0 = nemico folgorato (fulmine dello scettro). Effetto visivo di scarica elettrica.
     uint32_t electrifiedAnimTime; // tempo accumulato per animazione scarica elettrica
 
+    // --- ANTI-STUCK TRACKING (nuovo) ---
+    // stuckTimer: tempo (ms simulati) in cui la posizione e' rimasta
+    //   ~immobile. Se supera STUCK_THRESHOLD_MS, si forza il ricalcolo del
+    //   path al prossimo frame e si sceglie direzione casuale come ultima
+    //   risorsa. Previene nemici "bloccati" lontano dal player.
+    // lastPos: posizione al frame precedente, per rilevare il non-movimento.
+    uint32_t stuckTimer;
+    sf::Vector2f lastPos;
+
+    // --- FLEE MODE (calice dell'immortalita') ---
+    // Quando fleeMode e' true, il nemico si allontana dal player invece di
+    // inseguirlo. Attivato da Game quando il player e' invincibile (calice):
+    // i nemici hanno "paura" di essere danneggiati dal fuoco del calice e
+    // cercano di mantenere la distanza.
+    bool fleeMode;
+    bool prevFleeMode;  // per rilevare cambio di fleeMode e forzare ricalcolo
+
     bool bfsPath(Maze& maze, Vec2 start, Vec2 target, Vec2& nextStep);
     void moveGreedy(Maze& maze, const Vec2& target);
+    // fleeGreedy: euristica di FUGA. Sceglie la cella adiacente che
+    // MASSIMIZZA la distanza dal target (il player). Usata quando
+    // fleeMode e' true.
+    void fleeGreedy(Maze& maze, const Vec2& target);
+    // Sceglie una direzione aperta casuale tra le 4 cardinali (usata come
+    // ultima risorsa quando BFS e greedy sono entrambi bloccati). Restituisce
+    // true se ha trovato una direzione aperta, false se e' circondato da muri.
+    bool pickRandomOpenDir(Maze& maze, int col, int row);
 
     // --- Render fallback a primitive SFML ---
     // Disegna il nemico con rettangoli/cerchi (vecchio comportamento).

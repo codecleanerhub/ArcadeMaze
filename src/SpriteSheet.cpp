@@ -2,6 +2,8 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <cstdlib>
+#include <cstring>
 
 // ===========================================================================
 // SpriteSheet.cpp - Implementazione.
@@ -10,6 +12,44 @@
 // struttura nota e semplice. Evitiamo dipendenze esterne (nlohmann/json).
 // Se il parsing fallisce, si usano i default.
 // ===========================================================================
+
+// Helper multipiattaforma per leggere una variabile d'ambiente.
+// Usa std::getenv su Linux/macOS e _dupenv_s su MSVC (per evitare il
+// warning C4996 "getenv unsafe" su Windows).
+static std::string getEnvVar(const char* name) {
+    if (name == nullptr || name[0] == '\0') return "";
+#if defined(_MSC_VER)
+    // MSVC: usa _dupenv_s (sicura, non deprecata)
+    char* value = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&value, &len, name) == 0 && value != nullptr) {
+        std::string result(value);
+        free(value);
+        return result;
+    }
+    return "";
+#else
+    // Linux/macOS: usa std::getenv (thread-safe con un mutex interno in C11+)
+    const char* value = std::getenv(name);
+    return (value != nullptr) ? std::string(value) : std::string();
+#endif
+}
+
+// Helper: attiva log diagnostico se la variabile d'ambiente
+// ARCADE_DEBUG_SPRITES=1 e' impostata. Utile per diagnosticare problemi
+// di caricamento sprite.
+static bool debugSpritesEnabled() {
+    static bool checked = false;
+    static bool enabled = false;
+    if (!checked) {
+        std::string v = getEnvVar("ARCADE_DEBUG_SPRITES");
+        enabled = (v == "1");
+        checked = true;
+    }
+    return enabled;
+}
+
+#define SPRITE_LOG(msg) do { if (debugSpritesEnabled()) std::cerr << "[SPRITE] " << msg << std::endl; } while(0)
 
 SpriteSheet::SpriteSheet() : frameW(64), frameH(64), columns(6), rows(4), loaded(false) {
     // Animazioni di default (corrispondono a quelle degli script Python).
@@ -26,6 +66,7 @@ SpriteSheet::SpriteSheet() : frameW(64), frameH(64), columns(6), rows(4), loaded
 // Se nessuno dei due funziona, resta unloaded.
 // ---------------------------------------------------------------------------
 bool SpriteSheet::load(const std::string& basePath) {
+    SPRITE_LOG("load(\"" << basePath << "\")");
     // Pattern 1: <basePath>.png + <basePath>.json
     std::string pngPath = basePath + ".png";
     std::string jsonPath = basePath + ".json";
@@ -35,22 +76,46 @@ bool SpriteSheet::load(const std::string& basePath) {
         pngPath = basePath + "_sheet.png";
         jsonPath = basePath + "_meta.json";
         if (!texture.loadFromFile(pngPath)) {
+            SPRITE_LOG("  FAIL: nessun PNG trovato ne' come " << basePath << ".png ne' come " << basePath << "_sheet.png");
             loaded = false;
             return false;
         }
     }
+    SPRITE_LOG("  PNG caricato: " << pngPath);
     // Disattiva smoothing per pixel art: mantiene i pixel netti anche quando
     // lo sprite viene scalato (es. x4 per schermo).
     texture.setSmooth(false);
 
-    // PNG caricato: aggiorna le dimensioni effettive della texture.
+    // Carica PRIMA i metadati (columns, rows, frameWidth, frameHeight, animazioni)
+    // dal file JSON. Questo aggiorna columns/rows dai valori di default (6,4)
+    // ai valori reali dello spritesheet (es. 4,1 per i nostri sheet 256x64).
+    loadMetaOrDefault(jsonPath);
+    SPRITE_LOG("  Meta caricato da " << jsonPath << ": columns=" << columns << ", rows=" << rows);
+
+    // DOPO aver caricato i metadati, ricalcola frameW/frameH in base alle
+    // dimensioni reali della texture e ai nuovi columns/rows.
+    // IMPORTANTE: questo calcolo DEVE essere fatto dopo loadMetaOrDefault,
+    // altrimenti userebbe i valori di default (columns=6, rows=4) e
+    // calcolerebbe frameW=256/6=42, frameH=64/4=16 -> SBAGLIATO.
+    // Con columns=4 dal JSON, frameW=256/4=64, frameH=64/1=64 -> CORRETTO.
     sf::Vector2u texSize = texture.getSize();
     if (texSize.x > 0 && texSize.y > 0 && columns > 0 && rows > 0) {
-        frameW = texSize.x / columns;
-        frameH = texSize.y / rows;
+        // Ricalcola sempre da texture/columns/rows. Se il JSON specificava
+        // frameWidth/frameHeight diversi, li rispettiamo solo se sono
+        // coerenti con la griglia (texSize.x / columns == frameWidth).
+        // Altrimenti usiamo il calcolo dalla texture (piu' affidabile).
+        unsigned int calcFrameW = texSize.x / columns;
+        unsigned int calcFrameH = texSize.y / rows;
+        // Override dei valori dal JSON solo se sono 0 (default) o
+        // inconsistenti con la texture
+        frameW = (int)calcFrameW;
+        frameH = (int)calcFrameH;
     }
-
-    loadMetaOrDefault(jsonPath);
+    SPRITE_LOG("  Texture size: " << texSize.x << "x" << texSize.y << ", frameW=" << frameW << ", frameH=" << frameH);
+    // Log animazioni caricate
+    for (const auto& kv : animations) {
+        SPRITE_LOG("  Anim '" << kv.first << "': row=" << kv.second.row << ", frames=" << kv.second.frames << ", dur=" << kv.second.frameDuration);
+    }
     loaded = true;
     return true;
 }

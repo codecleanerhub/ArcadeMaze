@@ -26,7 +26,7 @@ MiniBoss::MiniBoss(MiniBossType t, int level, int startCol, int startRow)
       burningTimer(0), burnAnimTime(0), burnedFlag(false),
       animTime(0.f), size(0),
       targetPos(), hasTarget(false),
-      sprite(), spriteLoaded(false) {
+      sprite(), spriteLoaded(false), fleeMode(false) {
     pos.x = startCol * TILE_SIZE + TILE_SIZE / 2.f;
     pos.y = startRow * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
     maxHealth = getBaseHealth(t) + (level - 1) * 3;  // scala col livello
@@ -60,6 +60,44 @@ std::string MiniBoss::getSpriteId(MiniBossType t) {
         "miniboss_15",  // MB_ETTIN
         "miniboss_16",  // MB_FOMORIAN
         "miniboss_17",  // MB_BALROG_CULTIST
+        // --- Narnia (7) ---
+        "miniboss_18",  // MB_FENRIS_WOLF
+        "miniboss_19",  // MB_WHITE_WITCH_GUARD
+        "miniboss_20",  // MB_NARNIA_MINOTAUR
+        "miniboss_21",  // MB_DWARF_BERSERKER
+        "miniboss_22",  // MB_WITCH_KNIGHT
+        "miniboss_23",  // MB_TALKING_BEAST
+        "miniboss_24",  // MB_ICE_GIANT_NARNIA
+        // --- The Witcher (10) ---
+        "miniboss_25",  // MB_LESHEN
+        "miniboss_26",  // MB_BRUXA
+        "miniboss_27",  // MB_KATAKAN
+        "miniboss_28",  // MB_FIEND
+        "miniboss_29",  // MB_WITCHER_GOLEM
+        "miniboss_30",  // MB_NOONWRAITH
+        "miniboss_31",  // MB_FOGLET
+        "miniboss_32",  // MB_GRAVE_HAG
+        "miniboss_33",  // MB_MANTICORE_WITCHER
+        "miniboss_34",  // MB_CYCLOPS_WITCHER
+        // --- Doom (10) ---
+        "miniboss_35",  // MB_DOOM_IMP
+        "miniboss_36",  // MB_PINKY_DEMON
+        "miniboss_37",  // MB_REVENANT
+        "miniboss_38",  // MB_CACODEMON
+        "miniboss_39",  // MB_HELL_KNIGHT
+        "miniboss_40",  // MB_MANCUBUS
+        "miniboss_41",  // MB_ARCHVILE
+        "miniboss_42",  // MB_BARON_OF_HELL
+        "miniboss_43",  // MB_PAIN_ELEMENTAL
+        "miniboss_44",  // MB_DOOM_CYBERDEMON
+        // --- Ibridi/Fantasy extra (7) ---
+        "miniboss_45",  // MB_SHADOW_ASSASSIN
+        "miniboss_46",  // MB_CRYSTAL_GOLEM
+        "miniboss_47",  // MB_VOID_WALKER
+        "miniboss_48",  // MB_BLOOD_ELEMENTAL
+        "miniboss_49",  // MB_STORM_TITAN
+        "miniboss_50",  // MB_PLAGUE_LORD
+        "miniboss_51",  // MB_VOID_SERPENT
     };
     int idx = (int)t;
     if (idx < 0 || idx >= MINIBOSS_TYPE_COUNT) return "miniboss_01";
@@ -92,6 +130,44 @@ MiniBossWeapon MiniBoss::getWeaponForType(MiniBossType t) {
         case MB_ETTIN:            return MBW_MACE;
         case MB_FOMORIAN:         return MBW_CLUB;
         case MB_BALROG_CULTIST:   return MBW_WHIP;
+        // --- Narnia ---
+        case MB_FENRIS_WOLF: return MBW_CLUB;
+        case MB_WHITE_WITCH_GUARD: return MBW_SWORD;
+        case MB_NARNIA_MINOTAUR: return MBW_AXE;
+        case MB_DWARF_BERSERKER: return MBW_AXE;
+        case MB_WITCH_KNIGHT: return MBW_SWORD;
+        case MB_TALKING_BEAST: return MBW_CLUB;
+        case MB_ICE_GIANT_NARNIA: return MBW_MACE;
+        // --- The Witcher ---
+        case MB_LESHEN: return MBW_TENTACLES;
+        case MB_BRUXA: return MBW_DAGGER;
+        case MB_KATAKAN: return MBW_DAGGER;
+        case MB_FIEND: return MBW_MACE;
+        case MB_WITCHER_GOLEM: return MBW_MACE;
+        case MB_NOONWRAITH: return MBW_SWORD;
+        case MB_FOGLET: return MBW_DAGGER;
+        case MB_GRAVE_HAG: return MBW_DAGGER;
+        case MB_MANTICORE_WITCHER: return MBW_SWORD;
+        case MB_CYCLOPS_WITCHER: return MBW_CLUB;
+        // --- Doom ---
+        case MB_DOOM_IMP: return MBW_DAGGER;
+        case MB_PINKY_DEMON: return MBW_CHAIN;
+        case MB_REVENANT: return MBW_AXE;
+        case MB_CACODEMON: return MBW_CHAIN;
+        case MB_HELL_KNIGHT: return MBW_MACE;
+        case MB_MANCUBUS: return MBW_MACE;
+        case MB_ARCHVILE: return MBW_WHIP;
+        case MB_BARON_OF_HELL: return MBW_AXE;
+        case MB_PAIN_ELEMENTAL: return MBW_TENTACLES;
+        case MB_DOOM_CYBERDEMON: return MBW_CHAIN;
+        // --- Ibridi ---
+        case MB_SHADOW_ASSASSIN: return MBW_DAGGER;
+        case MB_CRYSTAL_GOLEM: return MBW_MACE;
+        case MB_VOID_WALKER: return MBW_DAGGER;
+        case MB_BLOOD_ELEMENTAL: return MBW_WHIP;
+        case MB_STORM_TITAN: return MBW_MACE;
+        case MB_PLAGUE_LORD: return MBW_CHAIN;
+        case MB_VOID_SERPENT: return MBW_TENTACLES;
     }
     return MBW_AXE;
 }
@@ -116,6 +192,44 @@ int MiniBoss::getBaseHealth(MiniBossType t) {
         case MB_ETTIN:            return 34;
         case MB_FOMORIAN:         return 33;
         case MB_BALROG_CULTIST:   return 28;
+        // --- Narnia ---
+        case MB_FENRIS_WOLF: return 28;
+        case MB_WHITE_WITCH_GUARD: return 26;
+        case MB_NARNIA_MINOTAUR: return 30;
+        case MB_DWARF_BERSERKER: return 24;
+        case MB_WITCH_KNIGHT: return 28;
+        case MB_TALKING_BEAST: return 26;
+        case MB_ICE_GIANT_NARNIA: return 35;
+        // --- The Witcher ---
+        case MB_LESHEN: return 30;
+        case MB_BRUXA: return 24;
+        case MB_KATAKAN: return 28;
+        case MB_FIEND: return 35;
+        case MB_WITCHER_GOLEM: return 34;
+        case MB_NOONWRAITH: return 26;
+        case MB_FOGLET: return 24;
+        case MB_GRAVE_HAG: return 22;
+        case MB_MANTICORE_WITCHER: return 32;
+        case MB_CYCLOPS_WITCHER: return 36;
+        // --- Doom ---
+        case MB_DOOM_IMP: return 22;
+        case MB_PINKY_DEMON: return 30;
+        case MB_REVENANT: return 26;
+        case MB_CACODEMON: return 28;
+        case MB_HELL_KNIGHT: return 34;
+        case MB_MANCUBUS: return 36;
+        case MB_ARCHVILE: return 30;
+        case MB_BARON_OF_HELL: return 32;
+        case MB_PAIN_ELEMENTAL: return 26;
+        case MB_DOOM_CYBERDEMON: return 38;
+        // --- Ibridi ---
+        case MB_SHADOW_ASSASSIN: return 24;
+        case MB_CRYSTAL_GOLEM: return 34;
+        case MB_VOID_WALKER: return 28;
+        case MB_BLOOD_ELEMENTAL: return 30;
+        case MB_STORM_TITAN: return 36;
+        case MB_PLAGUE_LORD: return 32;
+        case MB_VOID_SERPENT: return 30;
     }
     return 22;
 }
@@ -144,6 +258,44 @@ int MiniBoss::getBaseSpeed(MiniBossType t) {
         case MB_ETTIN:             return 1;  // lento ma potente (era 0)
         case MB_FOMORIAN:          return 1;  // (era 0)
         case MB_BALROG_CULTIST:    return 2;
+        // --- Narnia ---
+        case MB_FENRIS_WOLF: return 2;
+        case MB_WHITE_WITCH_GUARD: return 2;
+        case MB_NARNIA_MINOTAUR: return 2;
+        case MB_DWARF_BERSERKER: return 2;
+        case MB_WITCH_KNIGHT: return 2;
+        case MB_TALKING_BEAST: return 2;
+        case MB_ICE_GIANT_NARNIA: return 1;
+        // --- The Witcher ---
+        case MB_LESHEN: return 1;
+        case MB_BRUXA: return 2;
+        case MB_KATAKAN: return 2;
+        case MB_FIEND: return 1;
+        case MB_WITCHER_GOLEM: return 1;
+        case MB_NOONWRAITH: return 2;
+        case MB_FOGLET: return 2;
+        case MB_GRAVE_HAG: return 2;
+        case MB_MANTICORE_WITCHER: return 2;
+        case MB_CYCLOPS_WITCHER: return 1;
+        // --- Doom ---
+        case MB_DOOM_IMP: return 2;
+        case MB_PINKY_DEMON: return 2;
+        case MB_REVENANT: return 2;
+        case MB_CACODEMON: return 1;
+        case MB_HELL_KNIGHT: return 2;
+        case MB_MANCUBUS: return 1;
+        case MB_ARCHVILE: return 2;
+        case MB_BARON_OF_HELL: return 2;
+        case MB_PAIN_ELEMENTAL: return 1;
+        case MB_DOOM_CYBERDEMON: return 1;
+        // --- Ibridi ---
+        case MB_SHADOW_ASSASSIN: return 2;
+        case MB_CRYSTAL_GOLEM: return 1;
+        case MB_VOID_WALKER: return 2;
+        case MB_BLOOD_ELEMENTAL: return 2;
+        case MB_STORM_TITAN: return 1;
+        case MB_PLAGUE_LORD: return 1;
+        case MB_VOID_SERPENT: return 2;
     }
     return 2;
 }
@@ -278,6 +430,38 @@ void MiniBoss::moveGreedy(Maze& maze, const Vec2& target) {
     else if (bestDy < 0) dy = -1;
 }
 
+// fleeGreedy: euristica di FUGA per il mini-boss.
+// Sceglie la cella adiacente che MASSIMIZZA la distanza Manhattan dal
+// target (player). Usata quando fleeMode e' true (player invincibile).
+void MiniBoss::fleeGreedy(Maze& maze, const Vec2& target) {
+    int dirs[4][2] = {{0,1},{0,-1},{1,0},{-1,0}};
+    int curDist = abs(target.x - (int)(pos.x / TILE_SIZE)) +
+                  abs(target.y - (int)((pos.y - UI_HEIGHT) / TILE_SIZE));
+    int bestDist = curDist;
+    int bestDx = 0, bestDy = 0;
+    for (int d = 0; d < 4; d++) {
+        int nc = (int)(pos.x / TILE_SIZE) + dirs[d][0];
+        int nr = (int)((pos.y - UI_HEIGHT) / TILE_SIZE) + dirs[d][1];
+        if (nc < 0 || nc >= MAZE_COLS || nr < 0 || nr >= MAZE_ROWS) continue;
+        if (maze.isWall(nc, nr)) continue;
+        int dist = abs(target.x - nc) + abs(target.y - nr);
+        if (dist > bestDist) {
+            bestDist = dist;
+            bestDx = dirs[d][0];
+            bestDy = dirs[d][1];
+        }
+    }
+    if (bestDx != 0 || bestDy != 0) {
+        targetPos.x = ((int)(pos.x / TILE_SIZE) + bestDx) * TILE_SIZE + TILE_SIZE / 2.f;
+        targetPos.y = ((int)((pos.y - UI_HEIGHT) / TILE_SIZE) + bestDy) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.f;
+        hasTarget = true;
+        if (bestDx > 0) dx = 1;
+        else if (bestDx < 0) dx = -1;
+        if (bestDy > 0) dy = 1;
+        else if (bestDy < 0) dy = -1;
+    }
+}
+
 // --- Update ---
 // FIX: il movimento ora viene applicato OGNI frame verso targetPos, non solo
 // quando il BFS gira (ogni ~300ms). In precedenza il movimento era inside il
@@ -333,7 +517,10 @@ void MiniBoss::update(Maze& maze, const Vec2& playerGridPos,
         pathUpdateTimer = 300;  // prossimo pathfinding tra 300ms
         Vec2 myGrid{ (int)(pos.x / TILE_SIZE), (int)((pos.y - UI_HEIGHT) / TILE_SIZE) };
         Vec2 nextStep;
-        if (bfsPath(maze, myGrid, playerGridPos, nextStep)) {
+        // FLEE MODE: se il player e' invincibile (calice), il mini-boss fugge
+        if (fleeMode) {
+            fleeGreedy(maze, playerGridPos);
+        } else if (bfsPath(maze, myGrid, playerGridPos, nextStep)) {
             // Salva il target (centro della prossima cella) ma NON muoverti qui:
             // il movimento e' applicato fuori dal blocco, ogni frame.
             targetPos.x = nextStep.x * TILE_SIZE + TILE_SIZE / 2.f;
@@ -785,8 +972,8 @@ void MiniBoss::render(sf::RenderTarget& target) const {
         } else if (sprite.getFrameCount("idle") > 0) {
             animName = "idle";
             frameDuration = 200;
-            int frameCount = sprite.getFrameCount("idle");
-            frame = ((int)(animTime * 1000.f) / frameDuration) % frameCount;
+            // FIX: idle usa sempre frame 0 (no separazione busto/bacino)
+            frame = 0;
         }
 
         sprite.render(target, animName, frame, pos.x, pos.y + 8.f + bobY,

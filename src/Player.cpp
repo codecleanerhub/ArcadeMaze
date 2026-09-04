@@ -104,12 +104,16 @@ void Player::reset() {
     projectiles.clear();
     pickedWeaponThisFrame = false;
     permanentSpeedBoost = false;  // morte completa: perde il boost
+    invincibleTimer = 0;          // resetta anche l'invincibilita' del calice
 }
 
-// Reset solo posizione/stato movimento (mantiene punteggio/vite E
-// permanentSpeedBoost). Usato all'inizio di ogni livello e dopo aver perso
-// 1 vita. Il boost da scarpe alate sopravvive a questo reset (l'utente lo
-// raccoglie nel labirinto e lo mantiene nel passaggio labirinto->boss).
+// Reset solo posizione/stato movimento.
+// IMPORTANTE: dopo ogni morte (perdita di 1 vita), il player torna qui.
+// - permanentSpeedBoost viene AZZERATO (richiesta utente: nessun aumento
+//   speed dopo morte). Le scarpe alate raccolte nel labirinto danno boost
+//   temporaneo, ma si perde alla morte.
+// - speedBoostTimer (boost temporaneo post-salto) azzerato.
+// - invincibleTimer azzerato per sicurezza (anche se di solito e' gia' 0).
 void Player::resetPosition() {
     // Posizione iniziale: centro della cella (1,1) del labirinto.
     pos.x = 1 * TILE_SIZE + TILE_SIZE / 2.0f;
@@ -119,9 +123,8 @@ void Player::resetPosition() {
     shootAnimTimer = 0;
     animTime = 0;
     speedBoostTimer = 0;
-    // NOTA: permanentSpeedBoost NON viene azzerato qui (solo in reset()).
-    // Questo permette al boost di sopravvivere al cambio livello e al
-    // respawn dopo aver perso 1 vita.
+    permanentSpeedBoost = false;  // FIX: nessun aumento speed dopo morte
+    invincibleTimer = 0;
     jumpOffset = 0.0f;
 }
 
@@ -216,6 +219,8 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
     animTime += 16;
     // Decrementa speed boost timer
     if (speedBoostTimer > 16) speedBoostTimer -= 16; else speedBoostTimer = 0;
+    // Decrementa invincibleTimer (calice dell'immortalita')
+    tickInvincibleTimer();
 
     // Speed effettivo: base 2, con boost (permanente o temporaneo) diventa 3
     int effectiveSpeed = (permanentSpeedBoost || speedBoostTimer > 0) ? (speed + 1) : speed;
@@ -224,6 +229,9 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         // --- Modalita' stanza del boss: movimento libero ---
         if (nextDx != 0 || nextDy != 0) {
             dx = nextDx; dy = nextDy; lastDx = dx; lastDy = dy; nextDx = 0; nextDy = 0;
+        } else {
+            // FIX: nessuna direzione premuta -> FERMA il player.
+            dx = 0; dy = 0;
         }
         pos.x += dx * effectiveSpeed; pos.y += dy * effectiveSpeed;
         // Limiti di finestra (margine di 16 px per non uscire con meta' sprite)
@@ -233,10 +241,32 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
         if (pos.y > WINDOW_HEIGHT - 16) pos.y = WINDOW_HEIGHT - 16;
     } else {
         // --- Modalita' labirinto: snap-to-grid ---
+        // FIX: se nessuna direzione e' premuta, FERMA il player IMMEDIATAMENTE.
+        if (nextDx == 0 && nextDy == 0) {
+            dx = 0; dy = 0;
+        }
+
         int col = (int)(pos.x / TILE_SIZE);
         int row = (int)((pos.y - UI_HEIGHT) / TILE_SIZE);
         float centerX = col * TILE_SIZE + TILE_SIZE / 2.0f;
         float centerY = row * TILE_SIZE + TILE_SIZE / 2.0f + UI_HEIGHT;
+
+        // FIX: se il player e' FERMO (dx==0, dy==0) e c'e' una nuova direzione
+        // premuta (nextDx/nextDy != 0), applicala IMMEDIATAMENTE.
+        // PRIMA pero' allinea il player al centro della cella corrente:
+        // questo e' CRITICO perche' tryMove controlla i muri usando
+        // col = (int)(pos.x / TILE_SIZE). Se il player e' al bordo tra due
+        // celle, col potrebbe essere la cella sbagliata e il check dei muri
+        // fallirebbe, permettendo al player di attraversare i muri.
+        if (dx == 0 && dy == 0 && (nextDx != 0 || nextDy != 0)) {
+            // Allinea al centro della cella corrente
+            pos.x = centerX;
+            pos.y = centerY;
+            // Ora prova a muoversi nella direzione richiesta
+            tryMove(nextDx, nextDy, maze);
+            nextDx = 0; nextDy = 0;
+        }
+
         // Quando si e' abbastanza vicini al centro si può cambiare direzione.
         if (fabs(pos.x - centerX) < effectiveSpeed && fabs(pos.y - centerY) < effectiveSpeed) {
             pos.x = centerX; pos.y = centerY;
@@ -246,9 +276,6 @@ void Player::update(Maze& maze, bool freeMovement, std::vector<Particle>& partic
                 nextDx = 0; nextDy = 0;
             }
             // FIX: se davanti c'e' muro, ferma il movimento (dx/dy a 0).
-            // Non usare else-if perche' tryMove potrebbe aver impostato dx/dy
-            // a 0 se la direzione era bloccata, e questo check e' ridondante
-            // ma sicuro: controlla se la direzione corrente porta a un muro.
             if (dx != 0 || dy != 0) {
                 if (maze.isWall(col + dx, row + dy)) { dx = 0; dy = 0; }
             }
@@ -330,11 +357,12 @@ void Player::shoot() {
 // takeDamage: applica 1 punto di danno energia. Il danno e' ignorato se:
 //   * il giocatore sta saltando (jumpTimer>0): il salto e' un "dodge"
 //   * e' ancora invulnerabile (damageTimer>0): ha appena preso un colpo
+//   * e' invincibile (invincibleTimer>0): calice dell'immortalita' attivo
 // Quando l'energia arriva a 0 si perde una vita: l'energia viene ripristinata
 // e il giocatore torna alla posizione di partenza del livello.
 // ---------------------------------------------------------------------------
 void Player::takeDamage() {
-    if (!isJumping() && damageTimer == 0) {
+    if (!isJumping() && !isInvulnerable()) {
         energy--;
         damageTimer = 1000;  // ~1 secondo di invulnerabilita'
         if (energy <= 0) {
@@ -393,16 +421,26 @@ void Player::render(sf::RenderTarget& target) {
         std::string animName = "idle";
         int frameDuration = 200;
         int frame = 0;
-        // FIX: logica di flip per-character. Gli sprite PNG dei personaggi
-        // hanno orientamenti INCONSISTENTI tra loro (alcuni guardano a destra
-        // di default, altri a sinistra). spriteDefaultFacesRight() restituisce
-        // la direzione di default per il characterType corrente:
-        //   * default RIGHT: flipped = (lastDx < 0) -> specchia quando muove LEFT
-        //   * default LEFT:  flipped = (lastDx > 0) -> specchia quando muove RIGHT
-        // In questo modo il personaggio si gira SEMPRE nella direzione di
-        // movimento, indipendentemente dall'orientamento di default dello sprite.
-        bool defaultRight = spriteDefaultFacesRight(characterType);
-        bool flipped = defaultRight ? (lastDx < 0) : (lastDx > 0);
+        // FLIP per sprite SIDE-VIEW (ora i player sono side-view right-facing):
+        // Lo sprite di default guarda a destra (RIGHT-FACING SIDE PROFILE).
+        //   - lastDx > 0 (va a destra)  -> NO flip (orientation naturale, guarda a destra)
+        //   - lastDx < 0 (va a sinistra) -> flip (specchia, guarda a sinistra)
+        //   - lastDx == 0 (fermo o movimento verticale) -> mantieni l'ultimo orientamento
+        //     (se prima andava a sinistra, resta flippato; se a destra, no flip)
+        // Questo ora FUNZIONA perche' gli sprite sono side-view: il flip orizzontale
+        // fa girare visibilmente il personaggio a destra/sinistra.
+        static int lastFlipped = 0;  // 0=no flip, 1=flip - persiste tra frame
+        bool flipped;
+        if (lastDx > 0) {
+            flipped = false;
+            lastFlipped = 0;
+        } else if (lastDx < 0) {
+            flipped = true;
+            lastFlipped = 1;
+        } else {
+            // lastDx == 0: mantieni orientamento precedente
+            flipped = (lastFlipped == 1);
+        }
         if (shootAnimTimer > 0 && sprite.getFrameCount("attack") > 0) {
             animName = "attack";
             frameDuration = 50;  // 6 frame in 300 ms
@@ -418,8 +456,12 @@ void Player::render(sf::RenderTarget& target) {
         } else if (sprite.getFrameCount("idle") > 0) {
             animName = "idle";
             frameDuration = 200;
-            int frameCount = sprite.getFrameCount("idle");
-            frame = (animTime / (uint32_t)frameDuration) % frameCount;
+            // FIX: quando il player e' FERMO (idle), usa SEMPRE il frame 0.
+            // I frame 1-3 hanno le gambe shiftate (trasformazione deterministica)
+            // che creano una riga di separazione visibile tra busto e bacino
+            // quando il player sta fermo. Con solo il frame 0, il player
+            // appare come un'unica immagine coerente.
+            frame = 0;
         }
         // Disegna lo sprite con bob effect
         float bobY = 0.f;
@@ -442,25 +484,36 @@ void Player::render(sf::RenderTarget& target) {
             // per simulare lo stretching del salto
             float scaleX = 0.9f + sinf(jumpProgress * (float)M_PI) * 0.1f;  // 0.9 -> 1.0 -> 0.9
             // Disegna lo sprite idle con scale modificato e sollevato (+ tint)
-            sprite.render(target, "idle", 0, px, pos.y + 8.f - jumpOffset, scaleX, flipped, tint);
+            sprite.render(target, "idle", 0, px, pos.y + 24.f - jumpOffset, scaleX, flipped, tint);
         }
-        // --- Camminata: usa SEMPRE lo sprite idle con bob effect ---
-        // NON usiamo walkSprites[0..3] perche' i frame walk dei nuovi personaggi
-        // sono immagini AI indipendenti (non coordinate) - l'effetto sarebbe
-        // una "gif animata con immagini slegate". Invece usiamo lo sprite idle
-        // (1 sola immagine coerente) con un effetto bob verticale per simulare
-        // la camminata. Questo da un risultato fluido e coordinato per tutti
-        // i personaggi (originali e nuovi).
+        // --- Camminata: usa ANIMAZIONE WALK a 4 frame (generata con AI) ---
+        // Prima usavamo sprite idle con bob effect perche' i vecchi frame walk
+        // erano AI generate separate (effetto cane-gatto-topo). Ora gli
+        // spritesheet hanno 4 frame walk coerenti (1 generate + 3 image-edit
+        // dallo stesso frame base), quindi possiamo usarli per una vera
+        // animazione di camminata. Aggiungiamo comunque un leggero bob effect
+        // verticale per dare l'impressione del passo.
         else if (isWalking) {
-            // Bob effect piu' pronunciato quando cammina (effetto passo)
-            float walkBob = sinf(animTime * 0.012f) * 3.f;
-            // Leggera inclinazione orizzontale per simulare il dondolio
-            float scaleX = 1.0f + sinf(animTime * 0.024f) * 0.05f;
-            sprite.render(target, "idle", 0, px, pos.y + 8.f + walkBob, scaleX, flipped, tint);
+            // Verifica che lo sprite abbia effettivamente un'animazione walk
+            // multi-frame (altrimenti fallback al bob effect sul frame idle)
+            int walkFrames = sprite.getFrameCount("walk");
+            if (walkFrames > 1) {
+                // Calcola il frame corrente basato su animTime
+                int frameDuration = 130;  // 130ms per frame, ~0.5s per loop completo
+                int frame = (animTime / (uint32_t)frameDuration) % walkFrames;
+                // Leggero bob verticale per dare peso al passo
+                float walkBob = sinf(animTime * 0.012f) * 2.f;
+                sprite.render(target, "walk", frame, px, pos.y + 24.f + walkBob, 1.0f, flipped, tint);
+            } else {
+                // Fallback: bob effect sul frame idle (vecchio comportamento)
+                float walkBob = sinf(animTime * 0.012f) * 3.f;
+                float scaleX = 1.0f + sinf(animTime * 0.024f) * 0.05f;
+                sprite.render(target, "idle", 0, px, pos.y + 24.f + walkBob, scaleX, flipped, tint);
+            }
         }
         // Altrimenti usa sprite principale (idle o attack)
         else {
-            sprite.render(target, animName, frame, px, pos.y + 8.f + bobY, 1.0f, flipped, tint);
+            sprite.render(target, animName, frame, px, pos.y + 24.f + bobY, 1.0f, flipped, tint);
         }
 
         // Speed boost: effetto discreto (piccoli pixel gialli ai piedi, non cerchio)
@@ -502,9 +555,16 @@ void Player::render(sf::RenderTarget& target) {
     // dedicati per ognuno (i 2 originali hanno sprite, gli altri 6 usano
     // questo fallback che li disegna in stile coerente).
     {
-        // FIX: stessa logica di flip per-character dello sprite PNG (vedi sopra).
-        bool defaultRight = spriteDefaultFacesRight(characterType);
-        bool flipped = defaultRight ? (lastDx < 0) : (lastDx > 0);
+        // FIX: stessa logica di flip dello sprite PNG. Ora tutti i player
+        // hanno sprite side-view right-facing, quindi:
+        //   - lastDx > 0 -> no flip (guarda a destra)
+        //   - lastDx < 0 -> flip (guarda a sinistra)
+        //   - lastDx == 0 -> mantieni ultimo orientamento
+        static int lastFlippedFallback = 0;
+        bool flipped;
+        if (lastDx > 0) { flipped = false; lastFlippedFallback = 0; }
+        else if (lastDx < 0) { flipped = true; lastFlippedFallback = 1; }
+        else { flipped = (lastFlippedFallback == 1); }
         bool walking = (dx != 0 || dy != 0);
         float bobY = 0.f;
         if (walking) {
@@ -512,7 +572,7 @@ void Player::render(sf::RenderTarget& target) {
         } else {
             bobY = sinf(animTime * 0.004f) * 1.f;
         }
-        renderCharacterFallback(target, px, pos.y + 8.f - jumpOffset + bobY,
+        renderCharacterFallback(target, px, pos.y + 24.f - jumpOffset + bobY,
                                   flipped, walking, bobY);
 
         // Speed boost (stesso del ramo sprite)

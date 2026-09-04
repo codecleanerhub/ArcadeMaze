@@ -2,7 +2,7 @@
   "image": "player1_sheet.png",
   "frameWidth": 64,
   "frameHeight": 64,
-  "columns": 1,
+  "columns": 4,
   "rows": 1,
   "anchor": {
     "x": 32,
@@ -11,18 +11,18 @@
   "animations": {
     "idle": {
       "row": 0,
-      "frames": 1,
+      "frames": 4,
       "frameDuration": 200
     },
     "walk": {
       "row": 0,
-      "frames": 1,
-      "frameDuration": 100
+      "frames": 4,
+      "frameDuration": 130
     },
     "attack": {
       "row": 0,
-      "frames": 1,
-      "frameDuration": 100
+      "frames": 4,
+      "frameDuration": 90
     },
     "death": {
       "row": 0,

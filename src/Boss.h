@@ -23,6 +23,7 @@
 #include <SFML/Graphics.hpp>
 #include "Utils.h"
 #include "SpriteSheet.h"
+#include "DeformableSprite.h"
 #include <cstdint>
 #include <map>
 #include <string>
@@ -47,6 +48,17 @@ enum BossType {
 
 // Numero totale di tipi di boss (usato da Game per il ciclo sui livelli).
 constexpr int BOSS_TYPE_COUNT = 17;
+
+// --- Struttura livelli: 3 labirinti + 1 boss ---
+// Queste funzioni sono definite qui (in Boss.h) perche' usate sia da
+// Boss.cpp che da Game.cpp. Evitano circular include tra Game.h e Boss.h.
+constexpr int MAZE_LEVELS_PER_BOSS = 3;
+constexpr int TOTAL_LEVELS_PER_BOSS = MAZE_LEVELS_PER_BOSS + 1;  // 4
+
+// Restituisce true se il livello dato e' un livello boss (multiplo di 4)
+inline bool isBossLevel(int level) { return (level % TOTAL_LEVELS_PER_BOSS) == 0; }
+// Restituisce l'indice del boss (0..16) per il livello dato
+inline int getBossIndex(int level) { return (level / TOTAL_LEVELS_PER_BOSS) % BOSS_TYPE_COUNT; }
 
 struct Projectile;  // forward declaration (definito in Weapon.h)
 
@@ -105,12 +117,6 @@ private:
     // --- Render fallback a primitive SFML ---
     void renderPrimitives(sf::RenderTarget& target) const;
 
-    // --- Overlays procedurali animati disegnati sopra lo sprite ---
-    // Indipendenti dai frame dello sprite: arti, tentacoli, occhi, ali, ecc.
-    // che si muovono in tempo reale secondo `animTime`. Danno al boss un
-    // aspetto piu' "vivo" anche quando lo sprite ha pochi frame.
-    void renderSpriteExtras(sf::RenderTarget& target) const;
-
     // --- SpriteSheet statici condivisi fra tutte le istanze ---
     static std::map<BossType, SpriteSheet> sprites;
     static bool spritesLoaded;
@@ -118,6 +124,12 @@ private:
     // diretto col bestiary fantasy horror (10 originali mappati sui
     // corrispondenti boss_0xx del file + 7 nuovi).
     static std::string getSpriteId(BossType t);
+
+    // DeformableSprite per animazione mesh deformation nativa
+    // (usa 1 sola immagine + deformazione vertici in tempo reale)
+    // mutable perche' modificato dentro render() const
+    mutable DeformableSprite deformSprite;
+    mutable bool deformLoaded;
 };
 
 #endif

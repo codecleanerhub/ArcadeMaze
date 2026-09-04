@@ -43,9 +43,48 @@ Config loadConfig(const std::string& filename) {
             else if (key == "JOY_AXIS_Y") config.joy_axis_y = value;
             else if (key == "JOY_JUMP")   config.joy_jump = value;
             else if (key == "JOY_SHOOT")  config.joy_shoot = value;
+            // Player 2 joystick (aggiunti per persistenza configurazione)
+            else if (key == "JOY2_ID")     config.joy2_id = value;
+            else if (key == "JOY2_AXIS_X") config.joy2_axis_x = value;
+            else if (key == "JOY2_AXIS_Y") config.joy2_axis_y = value;
+            else if (key == "JOY2_JUMP")   config.joy2_jump = value;
+            else if (key == "JOY2_SHOOT")  config.joy2_shoot = value;
         }
     }
     return config;
+}
+
+// ---------------------------------------------------------------------------
+// saveConfig: scrive la configurazione corrente su file INI.
+// Chiamato dopo STATE_CONFIG_JOY e STATE_CONFIG_JOY_2 per persistere i tasti
+// joystick configurati, cosi' le partite successive possono saltare la
+// configurazione se i tasti sono gia' stati impostati in una partita
+// precedente.
+// ---------------------------------------------------------------------------
+void saveConfig(const std::string& filename, const Config& config) {
+    std::ofstream file(filename);
+    if (!file.is_open()) return;
+    file << "# ArcadeMazeFantasy - configurazione comandi\n";
+    file << "# Generato automaticamente dopo la configurazione joystick.\n";
+    file << "# Non modificare a mano: usa il menu CONFIGURE JOYSTICK del gioco.\n\n";
+    // Player 1 - tastiera
+    file << "KEY_UP="    << config.key_up    << "\n";
+    file << "KEY_DOWN="  << config.key_down  << "\n";
+    file << "KEY_LEFT="  << config.key_left  << "\n";
+    file << "KEY_RIGHT=" << config.key_right << "\n";
+    file << "KEY_JUMP="  << config.key_jump  << "\n";
+    file << "KEY_SHOOT=" << config.key_shoot << "\n";
+    // Player 1 - joystick
+    file << "JOY_AXIS_X=" << config.joy_axis_x << "\n";
+    file << "JOY_AXIS_Y=" << config.joy_axis_y << "\n";
+    file << "JOY_JUMP="   << config.joy_jump   << "\n";
+    file << "JOY_SHOOT="  << config.joy_shoot  << "\n";
+    // Player 2 - joystick
+    file << "JOY2_ID="     << config.joy2_id     << "\n";
+    file << "JOY2_AXIS_X=" << config.joy2_axis_x << "\n";
+    file << "JOY2_AXIS_Y=" << config.joy2_axis_y << "\n";
+    file << "JOY2_JUMP="   << config.joy2_jump   << "\n";
+    file << "JOY2_SHOOT="  << config.joy2_shoot  << "\n";
 }
 
 // ---------------------------------------------------------------------------

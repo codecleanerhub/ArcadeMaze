@@ -190,6 +190,13 @@ SOLUZIONI AI BUG GIA' RISOLTI (NON MODIFICARE):
 13. CONTINUES YES/NO CON JOYSTICK: toggle YES/NO anche con asse X del
     joystick (non solo pulsanti).
 
+14. INTRO CUTSCENE A FUMETTI: dopo selezione personaggio + configurazione
+    tasti, prima di avviare il livello, viene mostrata un'introduzione a
+    fumetti (4 immagini composite, 8s ciascuna, 12 vignette totali) con
+    didascalie in oro e musica epica di sottofondo. Skip: Enter/Space/
+    LAlt/pulsante attacco = prossima immagine; ESC = salta tutto e vai
+    al livello 1. Immagini in assets/cutscene/intro_1..4.png.
+
 Supporto P1+P2: due blocchi config separati (joy_* per P1, joy2_* per P2).
 joy2_id dinamico: default 1, riassegnato in STATE_CONFIG_JOY_2.
 Supporto POV/D-pad via sf::Joystick::PovX/PovY.
@@ -221,6 +228,7 @@ enum GameState {
   STATE_SELECT_PLAYER,  // selezione personaggio (ruota 8 personaggi)
   STATE_CONFIG_JOY,     // configurazione joystick P1 (2 step)
   STATE_CONFIG_JOY_2,   // configurazione joystick P2 (2 step)
+  STATE_INTRO,          // intro cutscene a fumetti (4 immagini, 8s ciascuna)
   STATE_PLAYING,        // labirinto: tesori + nemici + mini-boss + bonus
   STATE_BOSS,           // scontro boss + armi a terra
   STATE_CONTINUES,      // countdown 10-0, Yes/No, max 3 crediti
@@ -230,10 +238,22 @@ enum GameState {
   STATE_DEMO            // AI controlla P1, dopo 30s inattivita'
 };
 
+INTRO CUTSCENE (STATE_INTRO)
+-----------------------------
+Mostrata dopo SELECT_PLAYER + CONFIG_JOY, prima di avviare il livello 1.
+4 immagini composite in assets/cutscene/intro_1..4.png (1344x768), ognuna
+contiene 3 vignette della storia (12 vignette totali). Ogni immagine
+dura 3 minuti (180000 ms). Musica epica di sottofondo
+(playMenuMusic, traccia corale fantasy). Didascalie in oro in basso con
+overlay scuro per leggibilita. Skip: Enter/Space/LAlt/pulsante attacco =
+prossima immagine; ESC = salta tutta l'intro e vai al livello 1. Al
+termine dell'ultima immagine avvia startLevel(1). Indicatore progresso
+"1/4..4/4" in alto a destra, "SKIP >" lampeggiante in basso a destra.
+
 FLUSSO PARTITA
 --------------
-MENU -> SELECT_PLAYER -> (CONFIG_JOY se non configurato) -> PLAYING ->
-BOSS -> livello successivo -> ... -> WIN_STORY
+MENU -> SELECT_PLAYER -> (CONFIG_JOY se non configurato) -> STATE_INTRO
+-> PLAYING -> BOSS -> livello successivo -> ... -> WIN_STORY
 Morte -> CONTINUES (se crediti > 0) o LOSE -> Enter torna a MENU
 
 CICLO PRINCIPALE
@@ -506,15 +526,17 @@ FLUSSO PARTITA COMPLETO
 -----------------------
 STATE_MENU (6 voci: players, gamemode, music, test mode, configure joy,
 start game) -> STATE_SELECT_PLAYER (P1 poi P2 in 2P) ->
-startGameAfterSelectPlayer(): se joystick gia' configurato va direttamente
-a STATE_PLAYING, altrimenti STATE_CONFIG_JOY (P1) -> STATE_CONFIG_JOY_2
-(P2 in 2P) -> startLevel(1) -> STATE_PLAYING (labirinto: raccogli tesori,
-uccidi/schiva nemici, raccogli bonus, portale al 50% nemici, mini-boss,
-porta di uscita a 0 tesori) -> STATE_BOSS (fight con armi a terra, scarpe,
-mina, scettro) -> boss morto -> addLife(), currentLevel++ -> se STORY e
-currentLevel > 17 -> STATE_WIN_STORY (fuochi d'artificio), altrimenti
-nuovo startLevel() -> ... -> morte -> STATE_CONTINUES (10s YES/NO) ->
-restart o STATE_LOSE -> Enter torna a STATE_MENU con continuesLeft=3.
+startGameAfterSelectPlayer(): se joystick gia' configurato va a STATE_INTRO,
+altrimenti STATE_CONFIG_JOY (P1) -> STATE_CONFIG_JOY_2 (P2 in 2P) ->
+STATE_INTRO (cutscene 4 immagini x 8s con musica epica + didascalie,
+skip con tasto/ESC) -> startLevel(1) -> STATE_PLAYING (labirinto: raccogli
+tesori, uccidi/schiva nemici, raccogli bonus, portale al 50% nemici,
+mini-boss, porta di uscita a 0 tesori) -> STATE_BOSS (fight con armi a
+terra, scarpe, mina, scettro) -> boss morto -> addLife(), currentLevel++
+-> se STORY e currentLevel > 17 -> STATE_WIN_STORY (fuochi d'artificio),
+altrimenti nuovo startLevel() -> ... -> morte -> STATE_CONTINUES (10s
+YES/NO) -> restart o STATE_LOSE -> Enter torna a STATE_MENU con
+continuesLeft=3.
 
 
 ################################################################################

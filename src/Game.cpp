@@ -40,14 +40,17 @@
 // Qui inizializziamo solo i membri non di default; gli altri (vettori, maze,
 // player) sono costruiti di default.
 // ---------------------------------------------------------------------------
-Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
+Game::Game() : window(sf::VideoMode::getDesktopMode(), "Arcade Maze Fantasy", sf::Style::Fullscreen), numPlayers(1), boss(nullptr), miniBoss(nullptr), miniBossSpawned(false), state(STATE_MENU), pausedFromState(STATE_PLAYING), gameMode(MODE_STORY), isRunning(true), currentLevel(1), menuItemIndex(0), musicEnabled(false), lightningTimer(0), screenFlashTimer(0), configJoyStep(0), continuesLeft(3), continuesTimer(10), continuesTimerMs(0), continuesChoice(true), diedInBoss(false), player1Character(CHAR_HERO_M), player2Character(CHAR_HERO_F), selectPlayerStep(0), wheelIndex(0), wheelRotation(0.f), wheelTargetIndex(0)
 #ifdef TEST_MODE_FEATURE
     , testModeEnabled(false), testSkipKeyPressed(false)
 #endif
     , demoInactivityTimer(30000), demoDurationTimer(0), demoIsBoss(false),
       demoAiTimerP1(0), demoAiTimerP2(0), demoAiDirP1(0), demoAiDirP2(0),
-      demoAiShootTimerP1(0), demoAiShootTimerP2(0)
+      demoAiShootTimerP1(0), demoAiShootTimerP2(0),
+      introCurrentFrame(0), introFrameTimer(0), introSkipKeyHeld(false),
+      introFontLoaded(false)
 {
+    for (int i = 0; i < 4; i++) introLoaded[i] = false;
     exitDoor.active = false;
     exitDoor.animTimer = 0;
     exitDoor.glowPulse = 0.f;
@@ -93,6 +96,9 @@ bool Game::init() {
     // I file mancanti vengono saltati: il render fara' fallback alle primitive.
     Enemy::loadAllSprites("assets/sprites");
     Boss::loadAllSprites("assets/sprites");
+    // Carica lo sprite AI del cuore per la UI vite.
+    // Se il file manca, UI fa fallback al disegno procedurale.
+    ui.loadHeartSprite("assets/sprites/ui_heart.png");
     // Carica gli sprite dei giocatori in base al personaggio selezionato.
     // I personaggi di default sono CHAR_HERO_M (P1) e CHAR_HERO_F (P2),
     // ma l'utente puo' cambiarli dal menu "SELECT PLAYER".
@@ -111,6 +117,16 @@ bool Game::init() {
     if (bgWinLoaded) std::cout << "Sfondo vittoria caricato" << std::endl;
     if (bgGameOverLoaded) std::cout << "Sfondo game over caricato" << std::endl;
     if (bgContinuesLoaded) std::cout << "Sfondo continues caricato" << std::endl;
+    // Carica le 4 immagini dell'intro cutscene da assets/cutscene/.
+    // I file mancanti vengono saltati: l'intro mostra solo il testo se mancano.
+    for (int i = 0; i < 4; i++) {
+        std::string path = "assets/cutscene/intro_" + std::to_string(i + 1) + ".png";
+        introLoaded[i] = introTextures[i].loadFromFile(path);
+        if (introLoaded[i]) std::cout << "Immagine intro " << (i+1) << " caricata" << std::endl;
+    }
+    // Carica il font TTF per il testo dell'intro (piu' leggibile del font bitmap)
+    introFontLoaded = introFont.loadFromFile("assets/fonts/intro_font.ttf");
+    if (introFontLoaded) std::cout << "Font intro caricato" << std::endl;
     // Inizializza XInput (Windows) o SFML (Linux/macOS) joystick
     Joy::init();
     return true;
@@ -644,15 +660,48 @@ void Game::handleEvents() {
             if (key == sf::Keyboard::Escape) {
                 if (state == STATE_CONFIG_JOY || state == STATE_CONFIG_JOY_2) state = STATE_MENU;
                 else if (state == STATE_MENU) isRunning = false;
+                else if (state == STATE_INTRO) {
+                    // ESC durante l'intro: non fare nulla qui.
+                    // Lo skip e' gestito da updateIntro() via isKeyPressed,
+                    // che salta tutto e avvia il livello 1.
+                }
+                else if (state == STATE_PAUSE) {
+                    // ESC durante la pausa: ripristina lo stato precedente
+                    state = pausedFromState;
+                }
                 else {
                     // Torna al menu': ferma la musica di gioco e (se l'opzione
                     // musica e' attiva) riprende la traccia DEDICATA del menu'
                     // (corale fantasy, diversa dalle musiche di gioco).
+                    // --- FIX CRITICO: pulisce tutte le entita' di gioco
+                    // (boss, miniBoss, enemies, projectiles, mine, ecc.)
+                    // per evitare memory leak e stati sporchi che causavano
+                    // crash al riavvio della demo. Prima, se l'utente premeva
+                    // ESC da STATE_CONTINUES/STATE_LOSE, il boss restava
+                    // allocato e al riavvio della demo poteva causare
+                    // comportamenti imprevedibili.
                     state = STATE_MENU;
                     currentLevel = 1;
                     audio.stopEpicMusic();  // ferma eventuali jingle epici
                     if (musicEnabled) audio.playMenuMusic();
                     else audio.stopMusic();
+                    cleanupGameEntities();
+                }
+            }
+
+            // --- TASTO P: pausa ---
+            // Funziona durante STATE_PLAYING e STATE_BOSS. Quando si preme P:
+            // - salva lo stato corrente in pausedFromState
+            // - passa a STATE_PAUSE (il gioco si ferma, mostra "PAUSE")
+            // Premendo di nuovo P (o ESC), ripristina lo stato precedente.
+            if (key == sf::Keyboard::P) {
+                if (state == STATE_PLAYING || state == STATE_BOSS) {
+                    pausedFromState = state;
+                    state = STATE_PAUSE;
+                    audio.playSound(SOUND_MENU_CONFIRM);
+                } else if (state == STATE_PAUSE) {
+                    state = pausedFromState;
+                    audio.playSound(SOUND_MENU_CONFIRM);
                 }
             }
 
@@ -718,11 +767,11 @@ void Game::handleEvents() {
                 // Left/Right (o joystick): ruota la ruota dei personaggi
                 // Enter: conferma il personaggio corrente
                 if (key == sf::Keyboard::Left) {
-                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
+                    wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
                     audio.playSound(SOUND_MENU_SELECT);
                 }
                 else if (key == sf::Keyboard::Right) {
-                    wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
+                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
                     audio.playSound(SOUND_MENU_SELECT);
                 }
                 else if (key == sf::Keyboard::Return) {
@@ -788,6 +837,10 @@ void Game::handleEvents() {
                     audio.stopEpicMusic();
                     if (musicEnabled) audio.playMenuMusic();
                     else audio.stopMusic();
+                    // --- FIX: pulisce tutte le entita' di gioco (boss,
+                    // miniBoss, enemies, projectiles, ecc.) per evitare
+                    // memory leak e stati sporchi al riavvio della demo.
+                    cleanupGameEntities();
                 }
             }
         }
@@ -830,6 +883,24 @@ void Game::update() {
     if (state == STATE_DEMO) {
         updateDemoMode();
         if (state != STATE_DEMO) return;  // demo interrotta, esci
+    }
+
+    // --- STATO PAUSE: il gioco e' congelato ---
+    // Quando si e' in pausa, l'update salta TUTTO. Il render mostra
+    // l'ultimo frame di gioco congelato + overlay "PAUSE" intermittente.
+    // La pausa si attiva/disattiva con il tasto P (vedi handleEvents).
+    // Anche ESC ripristina lo stato precedente (vedi handleEvents).
+    if (state == STATE_PAUSE) {
+        // Non aggiornare niente: il gioco resta congelato
+        return;
+    }
+
+    // --- STATO INTRO: cutscene a fumetti ---
+    // Mostra 4 immagini in sequenza (8s ciascuna). Il player puo' saltare
+    // alla prossima con Enter/attacco o saltare tutto con ESC.
+    if (state == STATE_INTRO) {
+        updateIntro();
+        return;  // l'intro gestisce tutto da sola, salta il resto di update()
     }
 
     // --- Stato MENU: navigazione joystick + fulmini casuali ---
@@ -1002,9 +1073,9 @@ void Game::update() {
             if (fabs(x) > 50 && !joyMovedWheel) {
                 joyMovedWheel = true;
                 if (x < 0) {
-                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
-                } else {
                     wheelTargetIndex = (wheelTargetIndex + 1) % CHARACTER_TYPE_COUNT;
+                } else {
+                    wheelTargetIndex = (wheelTargetIndex - 1 + CHARACTER_TYPE_COUNT) % CHARACTER_TYPE_COUNT;
                 }
                 audio.playSound(SOUND_MENU_SELECT);
             } else if (fabs(x) < 20) joyMovedWheel = false;
@@ -1092,19 +1163,19 @@ void Game::update() {
                     config.joy_shoot = (int)b;
                     audio.playSound(SOUND_MENU_CONFIRM);
                     waitForRelease = true;
+                    // Salva la configurazione P1 su file config.ini
+                    // cosi' le partite successive possono saltare
+                    // STATE_CONFIG_JOY se i tasti sono gia' configurati.
+                    saveConfig("config.ini", config);
                     // FIX FLUSSO PARTITA: dopo configurazione P1, se 1P avvia
-                    // il livello; se 2P, passa a STATE_CONFIG_JOY_2.
+                    // l'intro cutscene; se 2P, passa a STATE_CONFIG_JOY_2.
                     if (numPlayers == 2) {
                         state = STATE_CONFIG_JOY_2;
                         configJoyStep = 0;
                     } else {
-                        // 1P: avvia il livello (i personaggi sono gia' stati
-                        // scelti in STATE_SELECT_PLAYER prima di CONFIG_JOY)
-                        window.setFramerateLimit(60);
-                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                        window.setView(view);
-                        currentLevel = 1;
-                        startLevel(1);
+                        // 1P: avvia l'intro cutscene (i personaggi sono gia'
+                        // stati scelti in STATE_SELECT_PLAYER prima di CONFIG_JOY)
+                        startIntro();
                     }
                 }
                 break;
@@ -1205,14 +1276,14 @@ void Game::update() {
                         audio.playSound(SOUND_MENU_CONFIRM);
                         waitForRelease2 = true;
                         lastDetectedJoyId = -1;  // reset per prossima configurazione
+                        // Salva la configurazione P2 su file config.ini
+                        // cosi' le partite successive possono saltare
+                        // STATE_CONFIG_JOY_2 se i tasti sono gia' configurati.
+                        saveConfig("config.ini", config);
                         // FIX FLUSSO PARTITA: dopo configurazione P2, avvia
-                        // il livello (i personaggi sono gia' stati scelti in
-                        // STATE_SELECT_PLAYER prima di CONFIG_JOY).
-                        window.setFramerateLimit(60);
-                        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-                        window.setView(view);
-                        currentLevel = 1;
-                        startLevel(1);
+                        // l'intro cutscene (i personaggi sono gia' stati scelti
+                        // in STATE_SELECT_PLAYER prima di CONFIG_JOY).
+                        startIntro();
                     }
                     break;
                 }
@@ -1288,10 +1359,11 @@ void Game::update() {
     }
     if (state == STATE_PLAYING || state == STATE_BOSS) {
         // Tastiera: direzioni (mutuamente esclusive con else-if)
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down))  { player.setDirection(0, 1);  }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0);  }
+        bool anyInput = false;
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_up))    { player.setDirection(0, -1); anyInput = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_down))  { player.setDirection(0, 1); anyInput = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_left))  { player.setDirection(-1, 0); anyInput = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key_right)) { player.setDirection(1, 0); anyInput = true; }
 
         // Joystick P1: usa sf::Joystick (SFML). SFML su Windows gestisce
         // correttamente tutti i tipi di controller (XInput, DirectInput,
@@ -1318,6 +1390,14 @@ void Game::update() {
                     if (y > 30) { player.setDirection(0, 1); }
                     else if (y < -30) { player.setDirection(0, -1); }
                 }
+                anyInput = true;
+            }
+            // FIX: se NESSUN input e' rilevato (joystick nella deadzone +
+            // nessun tasto premuto), imposta direzione (0,0) per segnalare
+            // al player di fermarsi. Senza questo, nextDx/nextDy mantengono
+            // l'ultimo valore impostato e il player continua a muoversi.
+            if (!anyInput) {
+                player.setDirection(0, 0);
             }
             // Sparo joystick: cooldown 150 ms (~9 frame)
             // Non sparare se il pulsante non e' stato configurato (-1)
@@ -1357,10 +1437,11 @@ void Game::update() {
     // (default WASD + Q salto + E sparo). I due input coesistono.
     if ((state == STATE_PLAYING || state == STATE_BOSS) && numPlayers == 2) {
         // Tastiera secondaria (default WASD + Q/E)
-        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_up))    { player2.setDirection(0, -1); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_down))  { player2.setDirection(0, 1);  }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); }
-        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0);  }
+        bool anyInput2 = false;
+        if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_up))    { player2.setDirection(0, -1); anyInput2 = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_down))  { player2.setDirection(0, 1); anyInput2 = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_left))  { player2.setDirection(-1, 0); anyInput2 = true; }
+        else if (sf::Keyboard::isKeyPressed((sf::Keyboard::Key)config.key2_right)) { player2.setDirection(1, 0); anyInput2 = true; }
 
         // Joystick P2: usa sf::Joystick (SFML) con il joyId rilevato durante
         // la configurazione (config.joy2_id).
@@ -1411,6 +1492,11 @@ void Game::update() {
                     if (y > 25) { player2.setDirection(0, 1); }
                     else if (y < -25) { player2.setDirection(0, -1); }
                 }
+                anyInput2 = true;
+            }
+            // FIX: se nessun input, ferma player2
+            if (!anyInput2) {
+                player2.setDirection(0, 0);
             }
             // Sparo joystick
             if (config.joy2_shoot >= 0) {
@@ -1465,13 +1551,20 @@ void Game::update() {
 
         // Aggiornamento nemici (passa pos giocatore per AI + sparo)
         sf::Vector2f pPos = player.getPixelPos();
+        // FLEE MODE: se il player e' invincibile (calice attivo), i nemici
+        // fuggono via dal player per evitare di essere bruciati.
+        bool playerInvincible = player.isInvulnerable();
         for (auto& enemy : enemies) {
-            if (!enemy.isDeathAnimDone()) enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
+            if (!enemy.isDeathAnimDone()) {
+                enemy.setFleeMode(playerInvincible);
+                enemy.update(maze, player.getGridPos(), pPos, enemyProjectiles);
+            }
         }
 
         // --- Aggiornamento mini-boss (se presente) ---
         // Il mini-boss insegue il player con BFS e attacca meele.
         if (miniBoss && !miniBoss->isDead()) {
+            miniBoss->setFleeMode(playerInvincible);
             miniBoss->update(maze, player.getGridPos(), pPos, particles);
             // --- Collisione mini-boss vs player (danno meele quando attacca) ---
             // takeDamage() del player toglie 1 HP fisso (con invulnerabilita'
@@ -1482,8 +1575,11 @@ void Game::update() {
                 float dy = pPos.y - miniBoss->getPixelPos().y;
                 float dist = sqrtf(dx*dx + dy*dy);
                 if (dist < miniBoss->getAttackRange() + 10.f) {
-                    // Danno al player (solo se non invincibile)
-                    if (playerInvincibleTimer <= 0) {
+                    // Danno al player (solo se non invincibile).
+                    // FIX: ora isInvulnerable() considera ANCHE il
+                    // invincibleTimer del calice, quindi il player e' immune
+                    // per tutta la durata dell'effetto.
+                    if (!player.isInvulnerable()) {
                         // takeDamage() toglie 1 HP per chiamata. Il mini-boss
                         // fa 12-25 danno, quindi chiamiamo takeDamage() per
                         // ogni punto (ma takeDamage rispetta invulnerabilita'
@@ -1609,6 +1705,12 @@ void Game::update() {
         // --- Collisioni corpo a corpo ---
         // Soglia 800 (sqrt ~28 px): piu' generosa dei proiettili perche' il
         // contatto fisico e' piu' "tollerante" dal punto di vista gameplay.
+        //
+        // FIX: se il player sta saltando (isJumping), invece di prendere danno,
+        // gli viene dato un BOOST DI VELOCITA' TEMPORANEO di 2 secondi
+        // (speedBoostTimer = 2000ms). Questo simula l'effetto "salto sopra il
+        // nemico": il player acquista velocita' durante il salto, cosi' all'
+        // atterraggio si trova poco piu' avanti del nemico saltato.
         if (!player.isInvulnerable() && !player.isJumping()) {
             for (auto& enemy : enemies) {
                 if (enemy.isDead()) continue;
@@ -1619,6 +1721,27 @@ void Game::update() {
                     player.takeDamage();
                     if (player.getLives() < livesBefore || player.getEnergy() < player.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
                     break;
+                }
+            }
+        } else if (player.isJumping()) {
+            // --- Salto sopra un nemico: attiva boost velocita' (2 secondi) ---
+            // Se il player in volo passa sopra un nemico (entro soglia 800),
+            // attiva speedBoostTimer = 2000ms. L'effetto e' cumulabile:
+            // se salta sopra piu' nemici, il timer si refresha a 2000ms.
+            for (auto& enemy : enemies) {
+                if (enemy.isDead()) continue;
+                float dx = pPos.x - enemy.getPixelPos().x;
+                float dy = pPos.y - enemy.getPixelPos().y;
+                if (dx*dx + dy*dy < 800) {
+                    // Boost di velocita' per 2 secondi (2000 ms simulati)
+                    player.setJumpSpeedBoost(1000);
+                    // Particelle dorate per dare feedback visivo
+                    for (int i = 0; i < 5; i++) {
+                        particles.push_back({pPos,
+                            {(float)(rand()%6-3), (float)(rand()%4+2)},
+                            sf::Color(255, 220, 80), 25, 25});
+                    }
+                    break;  // un solo boost per frame anche se sopra piu' nemici
                 }
             }
         }
@@ -1664,6 +1787,8 @@ void Game::update() {
             }
 
             // --- Collisioni corpo a corpo player2 vs nemici ---
+            // FIX: se player2 sta saltando, invece di prendere danno, attiva
+            // boost velocita' di 2 secondi (come per player1, vedi sopra).
             if (!player2.isInvulnerable() && !player2.isJumping()) {
                 for (auto& enemy : enemies) {
                     if (enemy.isDead()) continue;
@@ -1674,6 +1799,23 @@ void Game::update() {
                         int livesBefore = player2.getLives();
                         player2.takeDamage();
                         if (player2.getLives() < livesBefore || player2.getEnergy() < player2.getMaxEnergy()) audio.playSound(SOUND_LOSE_LIFE);
+                        break;
+                    }
+                }
+            } else if (player2.isJumping()) {
+                // Salto sopra un nemico: boost velocita' per 2 secondi
+                sf::Vector2f pPos2 = player2.getPixelPos();
+                for (auto& enemy : enemies) {
+                    if (enemy.isDead()) continue;
+                    float dx = pPos2.x - enemy.getPixelPos().x;
+                    float dy = pPos2.y - enemy.getPixelPos().y;
+                    if (dx*dx + dy*dy < 800) {
+                        player2.setJumpSpeedBoost(1000);
+                        for (int i = 0; i < 5; i++) {
+                            particles.push_back({pPos2,
+                                {(float)(rand()%6-3), (float)(rand()%4+2)},
+                                sf::Color(255, 220, 80), 25, 25});
+                        }
                         break;
                     }
                 }
@@ -1767,7 +1909,24 @@ void Game::update() {
                 }
                 if (p1Hit || p2Hit) {
                     exitDoor.active = false;
-                    startBossFight();
+                    // --- FIX DEMO MODE: se siamo in demo e il player demo
+                    // entra nella porta di uscita, NON avviare il boss fight.
+                    if (state == STATE_DEMO) {
+                        stopDemoMode();
+                        return;
+                    }
+                    // --- NUOVA LOGICA: 3 labirinti + 1 boss ---
+                    // Se il livello corrente e' un multiplo di 4 (4, 8, 12, ...)
+                    // allora il player ha completato il 3° labirinto e va al boss.
+                    // Altrimenti, va al prossimo livello labirinto.
+                    if (isBossLevel(currentLevel)) {
+                        startBossFight();
+                    } else {
+                        // Prossimo livello labirinto: non e' un livello boss,
+                        // avanza currentLevel e ricomincia il labirinto
+                        currentLevel++;
+                        startLevel(currentLevel);
+                    }
                 }
             }
         }
@@ -1883,9 +2042,22 @@ void Game::update() {
                         }
 
                         if (mbC >= 0) {
-                            // Tipo basato sul livello (17 tipi che ciclano)
-                            MiniBossType mbType = (MiniBossType)(
-                                (currentLevel - 1) % MINIBOSS_TYPE_COUNT);
+                            // Tipo basato sul livello: ogni livello labirinto
+                            // ha un mini-boss UNICO. 51 tipi per 51 livelli
+                            // labirinto. In modalita' infinite i tipi ciclano.
+                            // Mappiamo il livello labirinto (1,2,3,5,6,7,9,...)
+                            // all'indice del mini-boss (0..50):
+                            // livelli 1,2,3 -> mini-boss 0,1,2
+                            // livelli 5,6,7 -> mini-boss 3,4,5
+                            // livelli 9,10,11 -> mini-boss 6,7,8
+                            // ecc.
+                            int levelIdx = currentLevel - 1;  // 0-based
+                            int group = levelIdx / TOTAL_LEVELS_PER_BOSS;  // 0,1,2,...
+                            int posInGroup = levelIdx % TOTAL_LEVELS_PER_BOSS;  // 0,1,2 (labirinti), 3 (boss)
+                            // Se posInGroup == 3 (livello boss), usa l'ultimo mini-boss del gruppo
+                            if (posInGroup >= MAZE_LEVELS_PER_BOSS) posInGroup = MAZE_LEVELS_PER_BOSS - 1;
+                            int mbIdx = (group * MAZE_LEVELS_PER_BOSS + posInGroup) % MINIBOSS_TYPE_COUNT;
+                            MiniBossType mbType = (MiniBossType)(mbIdx);
                             miniBoss = new MiniBoss(mbType, currentLevel, mbC, mbR);
                             miniBossSpawned = true;
                             // Effetto particellare di "esplosione" all'uscita
@@ -2000,12 +2172,21 @@ void Game::update() {
             if (p1Hit || p2Hit) {
                 chalice.active = false;
                 chaliceUsed = true;
-                // Durata invincibilita': 10000 ms = 10 secondi (valore originale).
-                // FIX: aumentata del 50% -> 15000 ms = 15 secondi (richiesta utente).
-                // Questo da' piu' tempo al player per bruciare nemici dopo aver
-                // bevuto il calice.
-                if (p1Hit) playerInvincibleTimer = 15000;
-                if (p2Hit) player2InvincibleTimer = 15000;
+                // Durata invincibilita': 15000 ms = 15 secondi.
+                // FIX: ora il timer e' salvato DIRETTAMENTE nel Player
+                // (invincibleTimer), cosi' isInvulnerable() ritorna true per
+                // tutta la durata e il player NON subisce alcun danno da
+                // nemici, proiettili, mini-boss, boss, ne' friendly fire.
+                // Manteniamo anche playerInvincibleTimer di Game per il
+                // rendering dell'aura di fuoco (drawFireAura).
+                if (p1Hit) {
+                    playerInvincibleTimer = 15000;
+                    player.setInvincibleTimer(15000);
+                }
+                if (p2Hit) {
+                    player2InvincibleTimer = 15000;
+                    player2.setInvincibleTimer(15000);
+                }
                 audio.playSound(SOUND_POTION_DRINK);
                 // Avvia il jingle epico DEDICATO del calice (fanfara eroica
                 // dorata, ~6s). Suona su un canale SEPARATO (epicSound), NON
@@ -2494,17 +2675,28 @@ void Game::update() {
         }
 
 #ifdef TEST_MODE_FEATURE
-        // --- TEST MODE: salta direttamente al boss premendo barra spaziatrice ---
-        // Se testModeEnabled e' true e il player preme Space, salta tutta la
-        // fase di esplorazione del labirinto e va dritto al boss del livello
-        // corrente. Debounce: salta solo alla pressione (non ogni frame).
+        // --- TEST MODE: salta al livello successivo premendo barra spaziatrice ---
+        // Se testModeEnabled e' true e il player preme Space, salta il livello
+        // labirinto corrente e va al PROSSIMO LIVELLO (non direttamente al boss).
+        // Rispetta la struttura 3 labirinti + 1 boss:
+        //   - Livello 1 -> salta al 2 (labirinto)
+        //   - Livello 2 -> salta al 3 (labirinto)
+        //   - Livello 3 -> salta al 4 (boss)
+        //   - Livello 4 (boss) -> gestito dal test mode del boss (riga 3173)
+        // Debounce: salta solo alla pressione (non ogni frame).
         if (testModeEnabled) {
             bool spaceNow = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
             if (spaceNow && !testSkipKeyPressed) {
-                // Salta al boss: same behaviour as raccogliere tutti i tesori.
-                // Inoltre dà un po' di munizioni al player per essere sicuro
-                // che possa combattere (5 colpi come le armi del boss room).
-                startBossFight();
+                // Dà munizioni al player per sicurezza
+                player.setAmmo(15);
+                if (isBossLevel(currentLevel)) {
+                    // Livello boss: vai al boss fight
+                    startBossFight();
+                } else {
+                    // Livello labirinto: salta al prossimo livello
+                    currentLevel++;
+                    startLevel(currentLevel);
+                }
             }
             testSkipKeyPressed = spaceNow;
         }
@@ -2998,6 +3190,17 @@ void Game::update() {
             audio.playSound(SOUND_BOSS_DEATH);
             player.addLife(); // Guadagni una vita dopo aver sconfitto il boss
             currentLevel++;
+
+            // --- FIX DEMO MODE: se la demo ha ucciso il boss, NON avanzare
+            // al livello successivo. Altrimenti startLevel() cambierebbe
+            // state a STATE_PLAYING, demoIsBoss resterebbe true, e
+            // updateDemoMode() non verrebbe piu' chiamato (la demo resterebbe
+            // "bloccata" in STATE_PLAYING con AI demo spenta). Invece,
+            // fermiamo subito la demo e torniamo al menu'.
+            if (state == STATE_DEMO) {
+                stopDemoMode();
+                return;
+            }
 
             // Modalita' story: vittoria dopo STORY_LEVELS_COUNT livelli
             // (boss dell'ultimo livello morto -> currentLevel superiore al max)
@@ -4105,17 +4308,17 @@ void Game::drawMenu() {
         window.draw(dot);
     }
 
-    // --- Crediti: "By" (oro) + "Luca A. Greco" (avorio) in stile fantasy ---
-    // Sostituisce il vecchio "Lord Luca A. Greco".
-    // Le due parti sono centrate come un'unica stringa.
+    // --- Crediti: "By" (oro) + "Marled Software" (avorio) nel footer ---
+    // Sostituisce il vecchio "Luca A. Greco".
+    // Posizionati in basso (footer) della schermata menu.
     std::string byStr   = "By ";
-    std::string nameStr = "Luca A. Greco";
-    float byW = (float)byStr.length()   * 4 * 5;
-    float nameW = (float)nameStr.length() * 4 * 5;
+    std::string nameStr = "Marled Software";
+    float byW = (float)byStr.length()   * 4 * 3;
+    float nameW = (float)nameStr.length() * 4 * 3;
     float totalW = byW + nameW;
     float startX = (float)(WINDOW_WIDTH/2) - totalW/2.f;
-    drawTextOutlined(window, byStr,   (int)startX,             260, 5, sf::Color(255, 215, 100));
-    drawTextOutlined(window, nameStr, (int)(startX + byW),       260, 5, sf::Color(245, 235, 200));
+    drawTextOutlined(window, byStr,   (int)startX,             WINDOW_HEIGHT - 40, 3, sf::Color(255, 215, 100));
+    drawTextOutlined(window, nameStr, (int)(startX + byW),       WINDOW_HEIGHT - 40, 3, sf::Color(245, 235, 200));
 
     // --- Riquadro pergamena con bordo marrone antico + angoli decorati ---
     sf::RectangleShape border(sf::Vector2f((float)(WINDOW_WIDTH - 240), 500.f));
@@ -4762,23 +4965,32 @@ void Game::drawCharacterPreview(sf::RenderTarget& target, CharacterType ct,
 void Game::render() {
     window.clear(sf::Color(10, 10, 10));
 
-    if (state == STATE_MENU) {
+    // --- PAUSA: renderizza la scena di gioco (labirinto o boss) come se
+    // fosse lo stato pausedFromState, poi aggiunge l'overlay "PAUSE".
+    // Questo "frizza" la schermata attuale: il player vede il labirinto
+    // congelato (nemici, proiettili, particelle fermi) + la scritta PAUSE.
+    GameState renderState = (state == STATE_PAUSE) ? pausedFromState : state;
+
+    if (renderState == STATE_MENU) {
         drawMenu();
     }
-    else if (state == STATE_SELECT_PLAYER) {
+    else if (renderState == STATE_SELECT_PLAYER) {
         drawSelectPlayer();
     }
-    else if (state == STATE_CONFIG_JOY) {
+    else if (renderState == STATE_CONFIG_JOY) {
         drawConfigJoy();
     }
-    else if (state == STATE_CONFIG_JOY_2) {
+    else if (renderState == STATE_CONFIG_JOY_2) {
         drawConfigJoy2();
     }
-    else if (state == STATE_CONTINUES) {
+    else if (renderState == STATE_INTRO) {
+        drawIntro();
+    }
+    else if (renderState == STATE_CONTINUES) {
         drawContinues();
     }
-    else if (state == STATE_PLAYING || state == STATE_WIN_INFINITE
-             || (state == STATE_DEMO && !demoIsBoss)) {
+    else if (renderState == STATE_PLAYING || renderState == STATE_WIN_INFINITE
+             || (renderState == STATE_DEMO && !demoIsBoss)) {
         // Rendering comune per gameplay/schermate finali
         maze.render(window);
         if (numPlayers == 2)
@@ -5368,7 +5580,7 @@ void Game::render() {
         // STATE_LOSE ora ha un branch di rendering dedicato (vedi sotto),
         // quindi questo blocco non viene piu' raggiunto per STATE_LOSE.
     }
-    else if (state == STATE_LOSE) {
+    else if (renderState == STATE_LOSE) {
         // --- Schermata GAME OVER ---
         // Usa l'immagine di sfondo dedicata (bg_gameover.jpg) se caricata,
         // altrimenti fallback a nero. I messaggi "GAME OVER" e "PRESS ENTER"
@@ -5394,7 +5606,7 @@ void Game::render() {
         drawTextCenteredOutlined(window, "GAME OVER", WINDOW_WIDTH/2, 350, 5, sf::Color::Red);
         drawTextCenteredOutlined(window, "PRESS ENTER", WINDOW_WIDTH/2, 450, 2, sf::Color::White);
     }
-    else if (state == STATE_BOSS || (state == STATE_DEMO && demoIsBoss)) {
+    else if (renderState == STATE_BOSS || (renderState == STATE_DEMO && demoIsBoss)) {
         // --- Stanza del boss: caverna scavata nella roccia ---
         // Sostituisce il vecchio sfondo nero piatto. Lo stile e' coerente
         // con quello del labirinto (Maze::render): pavimento terra battuta
@@ -7954,7 +8166,7 @@ void Game::render() {
             drawTextCenteredOutlined(window, "BOSS: " + bossName, WINDOW_WIDTH/2, 100, 3, sf::Color::Red);
         }
     }
-    else if (state == STATE_WIN_STORY) {
+    else if (renderState == STATE_WIN_STORY) {
         // --- Sfondo ---
         // Se l'immagine di sfondo (bg_win.jpg) e' caricata, la disegna
         // scalata a coprire tutta la finestra. Altrimenti fallback blu notte.
@@ -8022,7 +8234,297 @@ void Game::render() {
         drawDemoOverlay(window);
     }
 
+    // --- Overlay PAUSE ---
+    // Quando si e' in pausa, disegna la scritta "PAUSE" al centro dello
+    // schermo in ROSSO e INTERMITTENTE. L'intermittenza e' data da sinf
+    // che oscilla tra -1 e 1, mappata a alpha 100-255.
+    // Il frame di gioco resta visibile sotto (e' stato renderizzato prima
+    // di entrare in STATE_PAUSE, e l'update salta tutto).
+    if (state == STATE_PAUSE) {
+        static float pauseTime = 0.f;
+        pauseTime += 0.05f;
+        float pulse = (sinf(pauseTime * 5.f) + 1.f) * 0.5f;  // 0..1
+        int alpha = (int)(100 + pulse * 155);  // 100..255
+        sf::Color pauseColor(255, 40, 40, (sf::Uint8)alpha);
+        // "PAUSE" al centro, scala 8 (grande)
+        drawTextCenteredOutlined(window, "PAUSE", WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 20, 8, pauseColor);
+        // Sotto-titolo: "PRESS P TO RESUME"
+        sf::Color subColor(255, 200, 200, (sf::Uint8)alpha);
+        drawTextCentered(window, "PRESS P TO RESUME", WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 60, 3, subColor);
+    }
+
     window.display();
+}
+
+// ===========================================================================
+// INTRO CUTSCENE
+// ===========================================================================
+
+// Didascalie per ogni immagine dell'intro (4 immagini, 3 vignette l'una).
+// Mostrate in basso allo schermo, stile voce fuori campo/narratore.
+// Scritte in inglese, tono epico-tragico, per pubblico adulto
+// amante di storie alla "Signore degli Anelli".
+static const char* INTRO_CAPTIONS[] = {
+    "It all began with the search for an island that appears on no map.\n"
+    "We chose the course. It was the storm that chose us.\n"
+    "The island welcomed us with cliffs black and hard as steel,\n"
+    "and a jungle so dense that the sun could not pierce it.",
+
+    "We marched toward the mountain, drawn by a call that had no voice\n"
+    "yet that we felt in our bones. And something, among the leaves,\n"
+    "watched us. At the foot of the peak we found a pit, a stairway,\n"
+    "and runes that Mara recognized from the Book of the Dead.\n"
+    "We descended. And the mountain, behind us, sealed itself forever.\n"
+    "There was no way back.",
+
+    "Beneath the mountain awaited a labyrinth, ancient and merciless,\n"
+    "whose walls guarded treasures and ravenous creatures. The dead\n"
+    "walked its corridors, and they were not the worst of the threats.\n"
+    "We found a golden Chalice, and Mara said it could make us immortal.\n"
+    "But only for a while, and at a dear price.",
+
+    "We were not alone. Others, seeking a way out, wandered through\n"
+    "those halls of stone. A wizard knew of one, but beyond the Seventeen\n"
+    "Guardians: as many keys, as many trials. Only by defeating them all\n"
+    "would the mountain return us to the sky.\n"
+    "Courage... let us begin."
+};
+
+// ---------------------------------------------------------------------------
+// startIntro: avvia l'intro cutscene a fumetti.
+// Imposta la prima immagine (frame 0) e il timer a 60000 ms (1 minuto).
+// Imposta la view corretta e avvia la musica epica di sottofondo.
+// ---------------------------------------------------------------------------
+void Game::startIntro() {
+    window.setFramerateLimit(60);
+    sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+    window.setView(view);
+    state = STATE_INTRO;
+    introCurrentFrame = 0;
+    introFrameTimer = 180000;  // 3 minuti (180 secondi) per la prima immagine
+    // FIX CRITICO: inizializza introSkipKeyHeld = true per evitare che il
+    // tasto/pulsante ancora premuto (usato per confermare la selezione
+    // personaggio o la configurazione tasti) salti immediatamente la prima
+    // immagine. Il player deve RILASCIARE il tasto e premerlo di nuovo.
+    introSkipKeyHeld = true;
+    // Musica epica/tragica per l'intro: SEMPRE attiva, anche se l'opzione
+    // musica del gioco e' su OFF. La musica dell'intro e' slegata dalla
+    // opzione musicEnabled perche' fa parte dell'esperienza narrativa.
+    // Usa la traccia del menu' (corale fantasy). In futuro si puo' aggiungere
+    // una traccia dedicata TRACK_EPIC_INTRO.
+    audio.playMenuMusic();
+}
+
+// ---------------------------------------------------------------------------
+// updateIntro: aggiorna l'intro cutscene.
+// Decrementa il timer (16 ms per frame). Quando scade (o il player preme
+// un tasto), passa alla prossima immagine. Dopo l'ultima (frame 3), avvia
+// il livello 1.
+//
+// Skip:
+//   - Enter / Space / LAlt / tasto attacco joystick P1 o P2 = prossima img
+//   - ESC = salta tutta l'intro, vai al livello 1
+// ---------------------------------------------------------------------------
+void Game::updateIntro() {
+    // Decrementa timer
+    if (introFrameTimer > 16) introFrameTimer -= 16;
+    else introFrameTimer = 0;
+
+    // Controlla input skip (tastiera)
+    bool skipNext = false;
+    bool skipAll = false;
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Return) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Space) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt)) {
+        skipNext = true;
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape)) {
+        skipAll = true;
+    }
+    // Controlla input skip (joystick P1 o P2: pulsante jump o shoot)
+    int p1Btn = (config.joy_jump >= 0) ? config.joy_jump
+              : (config.joy_shoot >= 0) ? config.joy_shoot : 0;
+    int p2Btn = (config.joy2_jump >= 0) ? config.joy2_jump
+              : (config.joy2_shoot >= 0) ? config.joy2_shoot : 0;
+    unsigned int p2JoyId = (config.joy2_id > 0) ? (unsigned int)config.joy2_id : 1;
+    if (sf::Joystick::isConnected(0) &&
+        sf::Joystick::isButtonPressed(0, (unsigned)p1Btn)) {
+        skipNext = true;
+    }
+    if (sf::Joystick::isConnected(p2JoyId) &&
+        sf::Joystick::isButtonPressed(p2JoyId, (unsigned)p2Btn)) {
+        skipNext = true;
+    }
+
+    // ESC: salta tutto
+    if (skipAll) {
+        // Ferma la musica dell'intro e avvia il livello
+        audio.stopMusic();
+        window.setFramerateLimit(60);
+        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+        window.setView(view);
+        currentLevel = 1;
+        startLevel(1);
+        return;
+    }
+
+    // Skip alla prossima immagine (con debounce per non saltare piu' frame)
+    if (skipNext && !introSkipKeyHeld) {
+        introSkipKeyHeld = true;
+        introFrameTimer = 0;  // forza il passaggio alla prossima
+    } else if (!skipNext) {
+        introSkipKeyHeld = false;
+    }
+
+    // Se il timer e' scaduto, passa alla prossima immagine
+    if (introFrameTimer <= 0) {
+        introCurrentFrame++;
+        introFrameTimer = 180000;  // 3 minuti per la prossima
+        if (introCurrentFrame >= 4) {
+            // Fine intro: avvia il livello 1
+            audio.stopMusic();
+            window.setFramerateLimit(60);
+            sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
+            window.setView(view);
+            currentLevel = 1;
+            startLevel(1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// drawIntro: disegna l'immagine corrente dell'intro a schermo intero.
+// L'immagine viene scalata con "cover fit" (copre tutta la finestra
+// mantenendo le proporzioni, eventuale overflow ritagliato).
+// Sotto l'immagine: didascalia in oro con contorno nero.
+// In basso a destra: indicatore "PREMI UN TASTO PER SALTARE".
+// ---------------------------------------------------------------------------
+void Game::drawIntro() {
+    // Sfondo nero (in caso l'immagine non copra tutto)
+    window.clear(sf::Color(0, 0, 0));
+
+    // Disegna l'immagine corrente se caricata.
+    // FIX: usa "contain fit" (l'immagine viene scalata per stare INTERAMENTE
+    // nella finestra, con barre nere sui lati). Prima usava "cover fit" che
+    // ritagliava i lati dell'immagine 1344x768 nella finestra quadrata 1024x1024,
+    // nascondendo le vignette laterali. Ora l'immagine completa e' visibile.
+    if (introCurrentFrame >= 0 && introCurrentFrame < 4 && introLoaded[introCurrentFrame]) {
+        sf::Sprite imgSprite(introTextures[introCurrentFrame]);
+        sf::Vector2u texSize = introTextures[introCurrentFrame].getSize();
+        if (texSize.x > 0 && texSize.y > 0) {
+            // Contain fit: la dimensione piu' GRANDE determina la scala,
+            // cosi' l'immagine intera rientra nella finestra (barre nere ai lati)
+            float scaleX = (float)WINDOW_WIDTH / (float)texSize.x;
+            float scaleY = (float)WINDOW_HEIGHT / (float)texSize.y;
+            float scale = (scaleX < scaleY) ? scaleX : scaleY;
+            imgSprite.setScale(scale, scale);
+            imgSprite.setPosition(
+                (WINDOW_WIDTH - texSize.x * scale) / 2.f,
+                (WINDOW_HEIGHT - texSize.y * scale) / 2.f);
+        }
+        window.draw(imgSprite);
+    }
+
+    // --- Overlay scuro in basso per leggibilita' della didascalia ---
+    // Aumentato a 240px per ospitare le didascalie piu' lunghe (4-5 righe).
+    sf::RectangleShape overlay(sf::Vector2f(WINDOW_WIDTH, 240.f));
+    overlay.setFillColor(sf::Color(0, 0, 0, 200));
+    overlay.setPosition(0.f, WINDOW_HEIGHT - 240.f);
+    window.draw(overlay);
+
+    // --- Didascalia (testo narratore) ---
+    // Mostra il testo della vignetta corrente. Usa sf::Text con font TTF
+    // (piu' leggibile del font bitmap 3x5) se disponibile, altrimenti
+    // fallback al font bitmap.
+    if (introCurrentFrame >= 0 && introCurrentFrame < 4) {
+        const char* caption = INTRO_CAPTIONS[introCurrentFrame];
+        std::string textStr(caption);
+        if (introFontLoaded) {
+            // Font TTF: testo crisp, dimensione 22, oro con contorno nero
+            int y = WINDOW_HEIGHT - 220;
+            size_t pos = 0;
+            while (pos < textStr.size()) {
+                size_t nl = textStr.find('\n', pos);
+                std::string line = (nl == std::string::npos)
+                                 ? textStr.substr(pos)
+                                 : textStr.substr(pos, nl - pos);
+                if (!line.empty()) {
+                    sf::Text text;
+                    text.setFont(introFont);
+                    text.setString(line);
+                    text.setCharacterSize(22);
+                    text.setFillColor(sf::Color(255, 215, 0));
+                    text.setOutlineColor(sf::Color(0, 0, 0));
+                    text.setOutlineThickness(2.f);
+                    // Centra orizzontalmente
+                    sf::FloatRect bounds = text.getLocalBounds();
+                    text.setPosition(
+                        (WINDOW_WIDTH - bounds.width) / 2.f,
+                        (float)y);
+                    window.draw(text);
+                }
+                y += 32;
+                if (nl == std::string::npos) break;
+                pos = nl + 1;
+            }
+        } else {
+            // Fallback: font bitmap (meno leggibile)
+            int y = WINDOW_HEIGHT - 220;
+            size_t pos = 0;
+            while (pos < textStr.size()) {
+                size_t nl = textStr.find('\n', pos);
+                std::string line = (nl == std::string::npos)
+                                 ? textStr.substr(pos)
+                                 : textStr.substr(pos, nl - pos);
+                if (!line.empty()) {
+                    drawTextCenteredOutlined(window, line, WINDOW_WIDTH/2, y, 2,
+                                             sf::Color(255, 215, 0));
+                }
+                y += 28;
+                if (nl == std::string::npos) break;
+                pos = nl + 1;
+            }
+        }
+    }
+
+    // --- Indicatore "SKIP >" in basso a destra ---
+    // Lampeggiante per attirare l'attenzione.
+    static float blinkTime = 0.f;
+    blinkTime += 0.05f;
+    bool visible = (sinf(blinkTime * 4.f) > 0.f);
+    if (visible) {
+        if (introFontLoaded) {
+            sf::Text skipText;
+            skipText.setFont(introFont);
+            skipText.setString("SKIP >");
+            skipText.setCharacterSize(18);
+            skipText.setFillColor(sf::Color(200, 200, 200));
+            skipText.setOutlineColor(sf::Color(0, 0, 0));
+            skipText.setOutlineThickness(1.5f);
+            skipText.setPosition(WINDOW_WIDTH - 100.f, WINDOW_HEIGHT - 35.f);
+            window.draw(skipText);
+        } else {
+            drawTextOutlined(window, "SKIP >", WINDOW_WIDTH - 100, WINDOW_HEIGHT - 30, 2,
+                             sf::Color(200, 200, 200));
+        }
+    }
+
+    // --- Indicatore progresso (1/4, 2/4, ecc.) in alto a destra ---
+    std::string progress = std::to_string(introCurrentFrame + 1) + "/4";
+    if (introFontLoaded) {
+        sf::Text progText;
+        progText.setFont(introFont);
+        progText.setString(progress);
+        progText.setCharacterSize(18);
+        progText.setFillColor(sf::Color(255, 215, 0));
+        progText.setOutlineColor(sf::Color(0, 0, 0));
+        progText.setOutlineThickness(1.5f);
+        progText.setPosition(WINDOW_WIDTH - 60.f, 15.f);
+        window.draw(progText);
+    } else {
+        drawTextOutlined(window, progress, WINDOW_WIDTH - 60, 20, 2,
+                         sf::Color(255, 215, 0));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -8071,12 +8573,8 @@ void Game::startGameAfterSelectPlayer() {
                         : true;  // 1P: P2 non rilevante
 
     if (p1Configured && p2Configured) {
-        // Tasti gia' configurati: avvia il livello direttamente
-        window.setFramerateLimit(60);
-        sf::View view(sf::FloatRect(0.f, 0.f, WINDOW_WIDTH, WINDOW_HEIGHT));
-        window.setView(view);
-        currentLevel = 1;
-        startLevel(1);
+        // Tasti gia' configurati: avvia l'intro cutscene, poi il livello
+        startIntro();
     } else {
         // Vai a configurazione joystick (P1 prima, poi P2 in 2P)
         state = STATE_CONFIG_JOY;
@@ -8110,6 +8608,21 @@ void Game::startDemoMode() {
     // Applica il personaggio al player
     player.setCharacter(player1Character, 1);
 
+    // --- FIX CRITICO: reset completo del player ---
+    // startLevel(N) con N>1 chiama solo resetPosition() (NON resetta
+    // vite/energia/arma/score). Se la demo precedente è finita con
+    // player.lives=0 (player morto), la demo successiva partiva già con
+    // vite=0 e si chiudeva immediatamente alla prima collisione.
+    // Chiamiamo player.reset() qui per garantire che ogni demo parta con
+    // vite=3, energia=massima, arma=pistola, score=0, indipendentemente
+    // dallo stato lasciato dalla demo precedente.
+    player.reset();
+    if (numPlayers == 2) player2.reset();
+    // Reset anche dei crediti continua (la demo non li consuma, ma per
+    // coerenza con una nuova partita):
+    continuesLeft = 3;
+    diedInBoss = false;
+
     // Imposta il timer di durata demo a 30 secondi (30000 ms)
     demoDurationTimer = 30000;
 
@@ -8142,6 +8655,78 @@ void Game::startDemoMode() {
 }
 
 // ---------------------------------------------------------------------------
+// cleanupGameEntities: pulisce TUTTE le entita' di gioco allocate
+// dinamicamente o contenute nei vector. Da chiamare ogni volta che si
+// lascia una partita/demo per tornare al menu' principale.
+//
+// Previene:
+//   * Memory leak: boss/miniBoss allocati con `new` ma mai deallocati
+//     (es. quando l'utente preme ESC da STATE_CONTINUES o STATE_LOSE)
+//   * Stati sporchi: enemies/projectiles/magicPortal.deadEnemyIndices
+//     residui che potevano causare crash alla ripartenza della demo
+//   * Bug "seconda demo si chiude": se il boss della demo precedente
+//     restava allocato, al riavvio con demoIsBoss=false il puntatore
+//     era dangling (non deallocato, ma non gestito)
+// ---------------------------------------------------------------------------
+void Game::cleanupGameEntities() {
+    // Dealloca boss e miniBoss (allocati con new)
+    if (boss) { delete boss; boss = nullptr; }
+    if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
+    miniBossSpawned = false;
+
+    // Pulisce tutti i vector di entita'
+    enemies.clear();
+    bossProjectiles.clear();
+    enemyProjectiles.clear();
+    bossRoomWeapons.clear();
+    lightnings.clear();
+    particles.clear();
+    bloodStains.clear();
+    ashPiles.clear();
+    fireBursts.clear();
+    fireworks.clear();
+
+    // Pulisce i proiettili dei player (Player::projectiles e' un vector
+    // membro della classe Player, non visibile direttamente qui, ma viene
+    // ripulito da player.resetPosition()? NO: resetPosition NON pulisce i
+    // proiettili. Solo player.reset() lo fa. Per sicurezza, chiamiamo
+    // reset() qui per pulire anche i proiettili del player.)
+    // NOTA: non chiamiamo player.reset() qui perche' questo metodo puo'
+    // essere chiamato anche a meta' partita. I proiettili del player
+    // verranno ripuliti al prossimo startLevel/startDemoMode.
+
+    // Resetta stato di mine, chalice, scepter, speedBoots (potrebbero
+    // restare active=true da una demo precedente e causare comportamenti
+    // strani al riavvio)
+    mine.active = false;
+    mine.bouncing = false;
+    mine.bounceTimer = 0;
+    mine.inBossRoom = false;
+    chalice.active = false;
+    chaliceUsed = false;
+    scepter.active = false;
+    scepter.triggered = false;
+    scepter.lightningsLeft = 0;
+    scepter.lightningTimer = 0;
+    scepterUsed = false;
+    speedBoots.active = false;
+    speedBoots2.active = false;
+    exitDoor.active = false;
+    magicPortal.active = false;
+    magicPortal.phase = 3;
+    magicPortal.phaseTimer = 0;
+    magicPortal.enemiesToSpawn = 0;
+    magicPortal.spawnTimer = 0;
+    magicPortal.deadEnemyIndices.clear();
+    portalUsed = false;
+
+    // Resetta timer di invincibilita' e flash schermo
+    playerInvincibleTimer = 0;
+    player2InvincibleTimer = 0;
+    screenFlashTimer = 0;
+}
+
+// ---------------------------------------------------------------------------
 // stopDemoMode: ferma la demo e torna al menu principale.
 //   * Resetta il timer di inattivita' a 30 secondi (per non far ripartire
 //     subito la demo)
@@ -8155,20 +8740,9 @@ void Game::stopDemoMode() {
     // Ferma la musica di gioco e riprende quella del menu' se attiva
     audio.stopMusic();
     if (musicEnabled) audio.playMenuMusic();
-    // Pulisce eventuali entita' residue
-    if (boss) { delete boss; boss = nullptr; }
-    if (miniBoss) { delete miniBoss; miniBoss = nullptr; }
-    miniBossSpawned = false;
-    enemies.clear();
-    bossProjectiles.clear();
-    enemyProjectiles.clear();
-    bossRoomWeapons.clear();
-    lightnings.clear();
-    particles.clear();
-    bloodStains.clear();
-    ashPiles.clear();
-    fireBursts.clear();
-    fireworks.clear();
+    // Pulisce tutte le entita' residue (boss, miniBoss, enemies, projectiles,
+    // mine, scepter, chalice, ecc.) usando l'helper centralizzato.
+    cleanupGameEntities();
 }
 
 // ---------------------------------------------------------------------------

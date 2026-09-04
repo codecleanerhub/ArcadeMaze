@@ -119,6 +119,7 @@ public:
     int getNextLifeThreshold() const { return nextLifeThreshold; }
 
     Weapon getCurrentWeapon() const { return currentWeapon; }
+    void setAmmo(int ammo) { currentWeapon.ammo = ammo; }  // per test mode
     // Riferimento ai proiettili sparati dal giocatore (usato da Game per
     // gestire le collisioni con nemici e boss).
     std::vector<Projectile>& getProjectiles() { return projectiles; }
@@ -126,12 +127,33 @@ public:
     // Salto: quando e' > 0 il personaggio e' in aria (immune ai danni).
     bool isJumping() const { return jumpTimer > 0; }
     // Invulnerabilita' temporanea dopo essere stato colpito.
-    bool isInvulnerable() const { return damageTimer > 0; }
+    // Ora considera ANCHE il invincibleTimer del calice (pozione di
+    // immortalita'): se > 0, il player e' completamente immune a qualsiasi
+    // danno per tutta la durata dell'effetto del calice.
+    bool isInvulnerable() const { return damageTimer > 0 || invincibleTimer > 0; }
 
     // Spara un proiettile nella direzione corrente (consuma 1 munizione).
     void shoot();
     // Attiva il salto (ha effetto solo se non si sta gia' saltando).
     void activateJump() { if (jumpTimer == 0) { maxJumpTime = 40; jumpTimer = maxJumpTime; } }
+
+    // --- Calice dell'immortalita' ---
+    // Imposta la durata dell'invincibilita' totale (in ms simulati).
+    // Durante questo periodo il player NON subisce alcun danno da nemici,
+    // proiettili, mini-boss, boss, ne' friendly fire. I nemici che tocca
+    // vengono bruciati (vedi Game::updateInvincible).
+    void setInvincibleTimer(uint32_t ms) { invincibleTimer = ms; }
+    uint32_t getInvincibleTimer() const { return invincibleTimer; }
+    // Decrementa il timer (chiamato da Game::update ogni frame).
+    void tickInvincibleTimer() { if (invincibleTimer > 16) invincibleTimer -= 16; else invincibleTimer = 0; }
+
+    // --- Boost velocita' post-salto ---
+    // Attiva un boost temporaneo di velocita' (speedBoostTimer = ms).
+    // Usato quando il player salta sopra un nemico: gli da velocita' extra
+    // per 2 secondi cosicche' all'atterraggio sia poco piu' avanti del
+    // nemico saltato (effetto "sliding forward").
+    void setJumpSpeedBoost(uint32_t ms) { speedBoostTimer = ms; }
+    uint32_t getSpeedBoostTimer() const { return speedBoostTimer; }
 
     // Cooldown fra un colpo e il successivo (in ms simulati: decrementato
     // di 16 per frame, quindi ~9 frame a 60 FPS).
@@ -192,6 +214,7 @@ private:
     uint32_t shootAnimTimer;  // >0 = animazione attacco in corso
     uint32_t animTime;        // tempo accumulato per animazioni idle/walk
     uint32_t speedBoostTimer; // >0 = speed boost attivo (ms simulati) - per boost temporanei
+    uint32_t invincibleTimer; // >0 = invincibilita' totale (calice dell'immortalita')
     bool permanentSpeedBoost; // true = boost permanente da scarpe alate (fino a morte)
     float jumpOffset;       // altezza visiva del salto (pixel)
 

@@ -32,8 +32,10 @@ enum GameState {
     STATE_SELECT_PLAYER,  // selezione personaggio (ruota 8 personaggi)
     STATE_CONFIG_JOY,     // configurazione joystick giocatore 1 (2 step)
     STATE_CONFIG_JOY_2,   // configurazione joystick giocatore 2 (2 step)
+    STATE_INTRO,          // intro cutscene a fumetti (4 immagini, 8s ciascuna)
     STATE_PLAYING,        // modalita' labirinto (raccolta tesori + nemici)
     STATE_BOSS,           // scontro con il boss
+    STATE_PAUSE,          // pausa (tasto P): mostra "PAUSE" intermittente
     STATE_CONTINUES,      // schermata continues (conto alla rovescia 10-0)
     STATE_LOSE,           // schermata game over
     STATE_WIN_STORY,      // vittoria modalita' story (con fuochi d'artificio)
@@ -45,11 +47,17 @@ enum GameMode { MODE_STORY, MODE_INFINITE };
 
 // Numero di livelli della modalita' STORY. Quando currentLevel supera
 // questo valore (dopo aver sconfitto il boss dell'ultimo livello), si
-// passa a STATE_WIN_STORY. Ci sono 17 tipi di boss distinti: ogni livello
-// story ha un boss diverso (nessuna ripetizione). STORY_LEVELS_COUNT = 17
-// coincide con BOSS_TYPE_COUNT, cosi' ogni tipo appare una sola volta.
-// In modalita' infinite si continua oltre i 17 e i tipi ciclano.
-constexpr int STORY_LEVELS_COUNT = 17;
+// passa a STATE_WIN_STORY.
+//
+// Struttura: 3 livelli labirinto + 1 livello boss = 4 livelli per ogni boss.
+// Ci sono 17 tipi di boss, quindi STORY_LEVELS_COUNT = 17 * 4 = 68.
+// Il boss appare ai livelli 4, 8, 12, 16, ..., 68.
+// I livelli 1-3 sono labirinto (con mini-boss al livello 2),
+// il livello 4 e' il boss, poi ricomincia con 5-7 labirinto, 8 boss, ecc.
+//
+// Le funzioni isBossLevel() e getBossIndex() sono definite in Boss.h
+// (incluso da Game.h) per evitare circular include.
+constexpr int STORY_LEVELS_COUNT = BOSS_TYPE_COUNT * TOTAL_LEVELS_PER_BOSS;  // 17 * 4 = 68
 
 // Arma casuale da posizionare nella stanza del boss: il giocatore puo'
 // raccoglierla per rimpiazzare la sua (le munizioni del boss sono 5).
@@ -245,6 +253,7 @@ private:
 
     Config config;
     GameState state;
+    GameState pausedFromState;  // stato precedente alla pausa (per ripristino)
     GameMode gameMode;
     bool isRunning;
 
@@ -293,6 +302,20 @@ private:
     bool testModeEnabled;                      // true = salto livello con Space attivo
     bool testSkipKeyPressed;                   // debounce: true finche' Space resta premuto
 #endif
+
+    // --- INTRO CUTSCENE (storia a fumetti prima del gameplay) ---
+    // 4 immagini composite (3 vignette ciascuna) mostrate in sequenza
+    // dopo la selezione personaggio + configurazione tasti, prima di
+    // avviare il livello. Ogni immagine dura 3 minuti (180000 ms). Il
+    // player puo' saltare alla successiva con un tasto (Enter/attacco)
+    // o saltare tutta l'intro con ESC.
+    sf::Texture introTextures[4];              // 4 immagini assets/cutscene/intro_N.png
+    bool introLoaded[4];                       // flag di caricamento per ogni immagine
+    int introCurrentFrame;                     // immagine corrente (0..3)
+    int introFrameTimer;                       // ms residui immagine corrente (parte da 180000)
+    bool introSkipKeyHeld;                     // debounce: true finche' il tasto resta premuto
+    sf::Font introFont;                        // font TTF per testo intro (piu' leggibile del bitmap)
+    bool introFontLoaded;                      // true se il font TTF e' caricato
 
     // --- DEMO MODE (modalita' demo automatica) ---
     // Quando l'utente non interagisce col menu per 30 secondi, il gioco si
@@ -404,6 +427,27 @@ private:
     // Ferma la demo e torna al menu principale, resettando il timer di
     // inattivita' a 30 secondi.
     void stopDemoMode();
+
+    // --- GAME STATE CLEANUP ---
+    // Pulisce TUTTE le entita' di gioco allocate dinamicamente o contenute
+    // nei vector: boss, miniBoss, enemies, projectiles, particles, ecc.
+    // Da chiamare ogni volta che si lascia una partita/demo per tornare al
+    // menu' principale. Previene memory leak (boss/miniBoss non deallocati)
+    // e stati sporchi che potevano causare crash al riavvio della demo.
+    void cleanupGameEntities();
+
+    // --- INTRO CUTSCENE ---
+    // Avvia l'intro cutscene a fumetti: imposta la prima immagine (frame 0)
+    // e il timer a 8000 ms. Chiamato da startGameAfterSelectPlayer() dopo
+    // la selezione personaggio + eventuale configurazione tasti.
+    void startIntro();
+    // Aggiorna l'intro: decrementa il timer, passa alla prossima immagine
+    // quando scade o quando il player preme un tasto (skip), e al termine
+    // dell'ultima immagine avvia il livello 1 (startLevel).
+    void updateIntro();
+    // Disegna l'immagine corrente dell'intro a schermo intero + didascalia
+    // + indicatore "PREMI UN TASTO PER SALTARE".
+    void drawIntro();
 
     // --- FLUSSO PARTITA ---
     // Chiamato dopo che P1 (1P) o P2 (2P) hanno finito la selezione personaggio.

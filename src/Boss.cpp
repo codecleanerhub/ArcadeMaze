@@ -173,7 +173,7 @@ void Boss::unloadAllSprites() {
 //   * type: ciclo sui 17 tipi (1->GOLEM, ..., 17->TWILIGHT_KNIGHT)
 //   * attackingTimer: inizializzato a 0 (nessun attacco in corso)
 // ---------------------------------------------------------------------------
-Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTimer(0) {
+Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTimer(0), deformLoaded(false) {
     level = lvl; screenWidth = w; screenHeight = h;
     // Size del boss: cresce col livello ma con un CAP massimo per evitare
     // che ai livelli alti (infinite mode) il boss diventi cosi' grande
@@ -203,8 +203,11 @@ Boss::Boss(int lvl, int w, int h) : shootTimer(0), animTime(0.0f), attackingTime
     speed = 1 + lvl / 8;
     if (speed > 2) speed = 2;
     health = 50 + lvl * 20; maxHealth = health;
-    // Tipo ciclico sui 17 tipi disponibili
-    type = static_cast<BossType>((lvl - 1) % BOSS_TYPE_COUNT);
+    // Tipo ciclico sui 17 tipi disponibili.
+    // NUOVA LOGICA: con 3 labirinti + 1 boss per ogni tipo, il boss appare
+    // ai livelli 4, 8, 12, ... Usiamo getBossIndex per mappare il livello
+    // all'indice del boss corretto (0..16).
+    type = static_cast<BossType>(getBossIndex(lvl));
 }
 
 // ---------------------------------------------------------------------------
@@ -255,9 +258,12 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
     // ~1000 ms); alcuni boss sparano piu' raramente (KRKEN, RAT_KING) altri
     // piu' spesso (DEMON, DRAGON). Tutti i proiettili portano il proprio
     // BossProjKind cosi' il rendering e l'update sono coerenti col tipo.
-    uint32_t baseCooldown = 2500 - level * 100;
+    // FIX: usa int (non uint32_t) perche' con level alto (es. 28),
+    // 2500 - 28*100 = -300, che in uint32_t diventerebbe 4294966996
+    // (overflow unsigned) e il check < 1000 non funzionerebbe.
+    int baseCooldown = 2500 - level * 100;
     if (baseCooldown < 1000) baseCooldown = 1000;
-    if (shootTimer > baseCooldown) {
+    if (shootTimer > (uint32_t)baseCooldown) {
         shootTimer = 0;
         // Triggera animazione di attacco per ~500 ms dopo lo sparo
         attackingTimer = 500;
@@ -455,21 +461,33 @@ void Boss::update(float playerX, float playerY, std::vector<Projectile>& bossPro
 void Boss::takeDamage(int dmg) { health -= dmg; }
 
 // ---------------------------------------------------------------------------
-// render: disegna il boss. Per ognuno dei 10 tipi c'e' uno sprite specifico
-// con animazioni guidate da `animTime`:
-//   * BOSS_GOLEM: braccia che oscillano, occhi che pulsano
-//   * BOSS_LICH: mantello che ondeggia
-//   * BOSS_DEMON: ali che sbattono
-//   * BOSS_SPIDER: zampe che si muovono
-//   * BOSS_ABOMINATION: braccia che oscillano, occhi spenti
-//   * BOSS_KRAKEN: tentacoli ondeggianti
-//   * BOSS_DRAGON: ali e collo animati
-//   * BOSS_WRAITH_LORD: mantello con onde multiple
-//   * BOSS_VAMPIRE: mantello che ondeggia
-//   * BOSS_BEHOLDER: corpo pulsante, pupilla che si muove, 10 occhi satellite
+// render: disegna il boss.
 //
-// In comune: ombra a terra, bocca con denti (tranne BEHOLDER/LICH che hanno
-// gestioni custom), e barra HP rossa sopra la testa.
+// Versione corrente: usa esclusivamente lo sprite AI generato (4 frame di
+// animazione idle compositi in uno spritesheet 256x64). Le "parti mobili"
+// (ali, braccia, tentacoli, ecc.) sono ora parte integrante dello sprite
+// animato e vengono disegnate DALL'AI, non piu' proceduralmente via codice.
+//
+// In precedenza, il render() chiamava renderSpriteExtras() che disegnava
+// overlay procedurali animati sopra lo sprite statico. Questo creava due
+// problemi:
+//   1. Grafica povera: gli overlay erano primitive SFML (RectangleShape,
+//      ConvexShape, CircleShape) con colori piatti e niente dettaglio.
+//   2. Disallineamento: gli overlay erano calcolati in base a `cx, cy, bw`
+//      (centro corpo) che non corrispondevano esattamente alla posizione
+//      delle parti nel disegno dello sprite. Le ali/braccia/tentacoli
+//      apparivano "staccate" dal corpo.
+//
+// Ora tutti i 17 boss hanno spritesheet 4-frame generati con AI:
+//   * Frame 0: posa neutra (ali/braccia/tentacoli a riposo)
+//   * Frame 1: parti mobili a meta' estensione
+//   * Frame 2: parti mobili completamente estese (climax animazione)
+//   * Frame 3: parti mobili di nuovo a meta' estensione (loop 3->0)
+// L'AI garantisce coerenza visiva totale: il personaggio e' IDENTICO in
+// tutti i 4 frame, cambiano solo le parti mobili.
+//
+// Fallback: se lo sprite non e' caricato (PNG mancante), usa renderPrimitives()
+// che disegna ancora con primitive SFML (codice originale).
 // ---------------------------------------------------------------------------
 void Boss::render(sf::RenderTarget& target) const {
     float px = pos.x;
@@ -485,57 +503,52 @@ void Boss::render(sf::RenderTarget& target) const {
     // sopra il player.
 
     // Tentativo di rendering con sprite.
-    // Lo sprite del boss e' 64x64 ma il boss ha `size` variabile (160+).
-    // Applichiamo uno scaling = size/64 per far coincidere l'hitbox con
-    // lo sprite visibile.
-    // Animazioni: usa "attack" se attackingTimer>0, altrimenti "idle".
+    // ANIMAZIONE: usa DeformableSprite (mesh deformation nativo SFML) che
+    // prende 1 sola immagine e la anima deformando i vertici in tempo reale.
+    // Questo elimina il problema degli sprite AI multi-frame troppo diversi.
     auto it = sprites.find(type);
     if (it != sprites.end() && it->second.isLoaded()) {
-        // Selezione animazione: attack > idle (walk non usato per i boss)
-        std::string animName = "idle";
-        int frameCount = it->second.getFrameCount(animName);
-        int frameDuration = 200;
-        bool isAttacking = (attackingTimer > 0)
-                           && (it->second.getFrameCount("attack") > 0);
-        if (isAttacking) {
-            animName = "attack";
-            frameCount = it->second.getFrameCount(animName);
-            frameDuration = 80;  // ~480 ms totali per 6 frame
+        // Carica DeformableSprite la prima volta (lazy load)
+        if (!deformLoaded) {
+            std::string spriteId = getSpriteId(type);
+            std::string pngPath = "assets/sprites/" + spriteId + "_sheet.png";
+            // Carica solo il primo frame (64x64) dalla sheet 256x64
+            deformLoaded = deformSprite.load(pngPath, 0, 0, 64, 64);
+            if (deformLoaded) {
+                deformSprite.setGridSize(8, 8);
+            }
         }
-        if (frameCount > 0) {
-            int frame = ((int)(animTime * 1000.0f / frameDuration)) % frameCount;
-            if (frame < 0) frame += frameCount;
-            // Scale: size/64 per far coincidere l'hitbox con lo sprite.
-            // Il boss ha size 160-260px, sprite 64px -> scale 2.5-4.0 naturale.
-            float scale = (float)size / 64.0f;
-            float drawX = px;
-            float drawY = py - size * 0.25f;
-            // Overlays "dietro" lo sprite (es. ali, tentacoli posteriori):
-            // vengono disegnati prima dello sprite cosi' appaiono dietro il corpo.
-            renderSpriteExtras(target);
-            it->second.render(target, animName, frame, drawX, drawY, scale, false);
-            // Barra HP sopra la testa, ben distante dallo sprite.
-            // Lo sprite 64x64 con anchor (32,56) scalato di size/64 ha il top a:
-            //   drawY - 56*scale = py - size*0.25 - 56*(size/64) = py - size*1.125
-            // Quindi la barra deve essere a py - size*1.125 - 15 (15px sopra il top)
-            float spriteTop = py - size * 1.125f;
-            float barY = spriteTop - 18.f;
-            // Sfondo barra (scuro con bordo)
-            sf::RectangleShape hbBg(sf::Vector2f(size, 12.0f));
-            hbBg.setFillColor(sf::Color(30, 0, 0));
-            hbBg.setOutlineThickness(2.f);
-            hbBg.setOutlineColor(sf::Color(100, 0, 0));
-            hbBg.setPosition(px - size/2, barY); target.draw(hbBg);
-            // Barra HP (colore dinamico in base alla % vita)
-            float hpPct = (float)health / maxHealth;
-            sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
-                                (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
-                                sf::Color(220, 40, 40);
-            sf::RectangleShape hbFg(sf::Vector2f(size * hpPct, 12.0f));
-            hbFg.setFillColor(hpColor);
-            hbFg.setPosition(px - size/2, barY); target.draw(hbFg);
-            return;
+
+        float scale = (float)size / 64.0f;
+        float drawX = px;
+        float drawY = py - size * 0.25f;
+
+        if (deformLoaded) {
+            // Usa DeformableSprite con mesh deformation
+            DeformableSprite::AnimMode mode = DeformableSprite::IDLE;
+            if (attackingTimer > 0) mode = DeformableSprite::ATTACK;
+            deformSprite.update(animTime, mode, scale, false);
+            deformSprite.render(target, drawX - 32.f * scale, drawY - 32.f * scale);
+        } else {
+            // Fallback: usa SpriteSheet con frame 0
+            it->second.render(target, "idle", 0, drawX, drawY, scale, false);
         }
+        // Barra HP sopra la testa, ben distante dallo sprite.
+        float spriteTop = py - size * 1.125f;
+        float barY = spriteTop - 18.f;
+        sf::RectangleShape hbBg(sf::Vector2f(size, 12.0f));
+        hbBg.setFillColor(sf::Color(30, 0, 0));
+        hbBg.setOutlineThickness(2.f);
+        hbBg.setOutlineColor(sf::Color(100, 0, 0));
+        hbBg.setPosition(px - size/2, barY); target.draw(hbBg);
+        float hpPct = (float)health / maxHealth;
+        sf::Color hpColor = (hpPct > 0.5f) ? sf::Color(80, 220, 80) :
+                            (hpPct > 0.25f) ? sf::Color(220, 180, 40) :
+                            sf::Color(220, 40, 40);
+        sf::RectangleShape hbFg(sf::Vector2f(size * hpPct, 12.0f));
+        hbFg.setFillColor(hpColor);
+        hbFg.setPosition(px - size/2, barY); target.draw(hbFg);
+        return;
     }
 
     // Fallback: rendering a primitive (codice originale)
@@ -543,357 +556,19 @@ void Boss::render(sf::RenderTarget& target) const {
 }
 
 // ---------------------------------------------------------------------------
-// renderSpriteExtras: overlay procedurali animati disegnati sopra (o attorno
-// a) lo sprite del boss. Indipendenti dai frame dello sprite: aggiungono
-// arti, tentacoli, ali, occhi, aure pulsanti, ecc. che si muovono in tempo
-// reale secondo `animTime`, dando al boss un aspetto piu' "vivo" anche
-// quando lo sprite ha pochi frame di animazione.
+// RIMOSSO: renderSpriteExtras()
 //
-// La funzione e' disegnata PRIMA dello sprite in render(): questo fa in modo
-// che gli elementi "dietro" (ali, tentacoli posteriori, aure) appaiano dietro
-// al corpo del boss, mentre le parti che si estendono oltre il bordo dello
-// sprite (arti laterali, tentacoli, ali spalancate) restino comunque visibili.
+// In precedenza, questa funzione disegnava overlay procedurali animati sopra
+// lo sprite del boss (ali, braccia, tentacoli, occhi pulsanti, ecc. usando
+// primitive SFML RectangleShape/ConvexShape/CircleShape). I problemi:
+//   1. Grafica povera: primitive piatte senza dettaglio
+//   2. Disallineamento: le parti mobili non coincidevano con lo sprite AI
 //
-// Per ciascun tipo di boss viene disegnata una combinazione diversa di
-// elementi animati, coerente col tema del boss:
-//   * GOLEM/GHOUL_LORD  : braccia massicce che oscillano, occhi verdi pulsanti
-//   * LICH/CULT_HERALD  : sigilli rotanti, mantello che ondeggia
-//   * DEMON/MIMIC       : ali sbattono, occhi gialli pulsanti, lingua guizza
-//   * SPIDER            : 8 zampe articolate che si muovono, occhi rossi
-//   * ABOMINATION/RAT_KING: ratti satelliti che orbitano, braccia flailing
-//   * KRAKEN            : 8 tentacoli ondeggianti con ventose
-//   * DRAGON/SPECTRAL_ALPHA: ali che sbattono, coda che ondeggia, fumo
-//   * WRAITH_LORD/TWILIGHT_KNIGHT: aura oscura pulsante, particelle anime
-//   * VAMPIRE           : mantello che ondeggia, occhi rossi brillanti
-//   * BEHOLDER/SUPREME_WITCH: occhi satellite su steli che ruotano
+// Sostituita da spritesheet 4-frame generati con AI (vedi commit
+// 'feat(boss-animations)'): le parti mobili sono ora disegnate DALL'AI
+// direttamente nei frame di animazione, garantendo coerenza visiva totale.
+// Il render() usa esclusivamente lo sprite AI + barra HP.
 // ---------------------------------------------------------------------------
-void Boss::renderSpriteExtras(sf::RenderTarget& target) const {
-    float px = pos.x;
-    float py = pos.y;
-    // Centro approssimato del corpo dello sprite (vedi render):
-    // lo sprite e' disegnato a (px, py - size*0.25) con anchor piedi.
-    float cx = px;
-    float cy = py - size * 0.5f;  // centro verticale del corpo visibile
-    float bw = size * 0.7f;       // larghezza corpo (per arti laterali)
-    sf::Color outline(10, 10, 10);
-
-    switch(type) {
-        // =========== BRACCIA OSCILLANTI (golem-like) ===========
-        case BOSS_GOLEM:
-        case BOSS_GHOUL_LORD: {
-            sf::Color armCol(60, 60, 70);
-            // Braccia che oscillano in controfase
-            float armOffsetL = sinf(animTime * 3.0f) * 12.0f;
-            float armOffsetR = -armOffsetL;
-            for (int side = 0; side < 2; side++) {
-                float dirX = (side == 0) ? -1.f : 1.f;
-                float off = (side == 0) ? armOffsetL : armOffsetR;
-                sf::RectangleShape arm(sf::Vector2f(size*0.18f, size*0.55f));
-                arm.setFillColor(armCol); arm.setOutlineThickness(3.f); arm.setOutlineColor(outline);
-                arm.setOrigin(size*0.09f, size*0.05f);  // origine in alto (spalla)
-                arm.setPosition(cx + dirX * bw * 0.55f, cy - size*0.2f + off);
-                arm.rotate(dirX * (15.f + sinf(animTime*3.f + side * (float)M_PI)*10.f));
-                target.draw(arm);
-                // Pugno
-                sf::CircleShape fist(size*0.09f); fist.setFillColor(armCol); fist.setOutlineThickness(2.f); fist.setOutlineColor(outline);
-                float fistX = cx + dirX * bw * 0.55f + dirX * sinf(animTime*3.f + side * (float)M_PI) * 15.f;
-                float fistY = cy - size*0.2f + size*0.55f + off;
-                fist.setPosition(fistX - size*0.09f, fistY - size*0.09f);
-                target.draw(fist);
-            }
-            // Occhi verdi pulsanti sulla fronte
-            sf::Uint8 eyeBright = 150 + (sf::Uint8)(sinf(animTime * 8.0f) * 105);
-            sf::CircleShape eye(size*0.06f); eye.setFillColor(sf::Color(0, eyeBright, 50, 220));
-            eye.setPosition(cx - size*0.12f, cy - size*0.32f); target.draw(eye);
-            eye.setPosition(cx + size*0.06f, cy - size*0.32f); target.draw(eye);
-            break;
-        }
-        // =========== ALI sbattono + occhi gialli (demoniaco) ===========
-        case BOSS_DEMON:
-        case BOSS_COLOSSAL_MIMIC: {
-            float wingFlap = sinf(animTime * 6.0f) * 0.5f + 0.7f;
-            sf::Color wingCol(60, 10, 10, 220);
-            for (int side = 0; side < 2; side++) {
-                float dirX = (side == 0) ? -1.f : 1.f;
-                sf::ConvexShape wing; wing.setPointCount(4);
-                wing.setFillColor(wingCol); wing.setOutlineThickness(3.f); wing.setOutlineColor(outline);
-                wing.setPoint(0, sf::Vector2f(cx, cy - size*0.1f));
-                wing.setPoint(1, sf::Vector2f(cx + dirX * size*0.9f, cy - size*0.55f * wingFlap));
-                wing.setPoint(2, sf::Vector2f(cx + dirX * size*0.85f, cy + size*0.2f * wingFlap));
-                wing.setPoint(3, sf::Vector2f(cx + dirX * size*0.15f, cy + size*0.05f));
-                target.draw(wing);
-            }
-            // Occhi gialli pulsanti
-            sf::Uint8 eyeBright = 180 + (sf::Uint8)(sinf(animTime * 5.0f) * 75);
-            sf::CircleShape eye(size*0.05f); eye.setFillColor(sf::Color(eyeBright, eyeBright, 0, 240));
-            eye.setPosition(cx - size*0.12f, cy - size*0.28f); target.draw(eye);
-            eye.setPosition(cx + size*0.06f, cy - size*0.28f); target.draw(eye);
-            break;
-        }
-        // =========== ZAMPE articolate (ragno) ===========
-        case BOSS_SPIDER: {
-            sf::Color legCol(40, 0, 50);
-            for (int i = 0; i < 4; i++) {
-                for (int side = 0; side < 2; side++) {
-                    float dirX = (side == 0) ? -1.f : 1.f;
-                    // Prima sezione zampa
-                    sf::RectangleShape l1(sf::Vector2f(size*0.35f, size*0.05f));
-                    l1.setFillColor(legCol); l1.setOutlineThickness(2.f); l1.setOutlineColor(outline);
-                    l1.setOrigin(0.f, size*0.025f);
-                    l1.setPosition(cx + dirX * bw * 0.3f, cy + (i - 1.5f) * size*0.08f);
-                    float rot1 = dirX * (45.f + i * 20.f) + sinf(animTime*6.f + i + side * (float)M_PI) * 8.f;
-                    l1.rotate(rot1);
-                    target.draw(l1);
-                    // Seconda sezione zampa (ginocchio -> piede)
-                    float a1 = rot1 * (float)M_PI / 180.f;
-                    float kneeX = cx + dirX * bw * 0.3f + cosf(a1) * size*0.35f;
-                    float kneeY = cy + (i - 1.5f) * size*0.08f + sinf(a1) * size*0.35f;
-                    sf::RectangleShape l2(sf::Vector2f(size*0.3f, size*0.04f));
-                    l2.setFillColor(legCol); l2.setOutlineThickness(2.f); l2.setOutlineColor(outline);
-                    l2.setOrigin(0.f, size*0.02f);
-                    l2.setPosition(kneeX, kneeY);
-                    l2.rotate(rot1 + 90.f);
-                    target.draw(l2);
-                }
-            }
-            // Occhi rossi (8 piccoli, 2 file da 4)
-            sf::Uint8 eyeBright = 180 + (sf::Uint8)(sinf(animTime * 7.0f) * 75);
-            for (int i = 0; i < 4; i++) {
-                sf::CircleShape eye(size*0.025f); eye.setFillColor(sf::Color(eyeBright, 0, 0, 240));
-                eye.setPosition(cx - size*0.15f + i * size*0.08f, cy - size*0.35f);
-                target.draw(eye);
-                eye.setPosition(cx - size*0.13f + i * size*0.07f, cy - size*0.30f);
-                target.draw(eye);
-            }
-            break;
-        }
-        // =========== TENTACOLI ondeggianti (kraken) ===========
-        case BOSS_KRAKEN: {
-            sf::Color skin(0, 100, 100, 230);
-            for (int i = 0; i < 8; i++) {
-                float baseAngle = i * (float)M_PI / 4.f;
-                float wave = sinf(animTime * 2.5f + i * 0.7f) * 0.35f;
-                float angle = baseAngle + wave;
-                float len = size*0.55f + sinf(animTime*3.f + i) * size*0.06f;
-                // Tentacolo a forma di ConvexShape: 4 punti (lato sx base->punta, lato dx)
-                sf::ConvexShape tent; tent.setPointCount(4);
-                tent.setFillColor(skin); tent.setOutlineThickness(2.f); tent.setOutlineColor(outline);
-                float baseW = size*0.09f;
-                float tipW  = size*0.02f;
-                float perpX = -sinf(angle), perpY = cosf(angle);
-                float bx = cx + cosf(angle) * bw * 0.2f;
-                float by = cy + sinf(angle) * bw * 0.2f;
-                float tx = cx + cosf(angle) * len;
-                float ty = cy + sinf(angle) * len;
-                tent.setPoint(0, sf::Vector2f(bx + perpX*baseW, by + perpY*baseW));
-                tent.setPoint(1, sf::Vector2f(tx + perpX*tipW,  ty + perpY*tipW));
-                tent.setPoint(2, sf::Vector2f(tx - perpX*tipW,  ty - perpY*tipW));
-                tent.setPoint(3, sf::Vector2f(bx - perpX*baseW, by - perpY*baseW));
-                target.draw(tent);
-                // Ventose sulla parte visibile del tentacolo
-                for (int s = 1; s <= 3; s++) {
-                    float t = s / 4.f;
-                    float sx = bx + (tx - bx) * t;
-                    float sy = by + (ty - by) * t;
-                    sf::CircleShape sucker(size*0.018f); sucker.setFillColor(sf::Color(20, 60, 60));
-                    sucker.setPosition(sx - size*0.018f, sy - size*0.018f);
-                    target.draw(sucker);
-                }
-            }
-            // Occhio centrale grande giallo
-            sf::CircleShape eye(size*0.08f); eye.setFillColor(sf::Color(255, 220, 0, 240));
-            eye.setOutlineThickness(2.f); eye.setOutlineColor(outline);
-            eye.setPosition(cx - size*0.08f, cy - size*0.42f);
-            target.draw(eye);
-            // Pupilla che si muove
-            float pupilOff = sinf(animTime * 1.5f) * size*0.025f;
-            sf::CircleShape pupil(size*0.035f); pupil.setFillColor(sf::Color::Black);
-            pupil.setPosition(cx - size*0.035f + pupilOff, cy - size*0.42f);
-            target.draw(pupil);
-            break;
-        }
-        // =========== ALI + CODA (drago) ===========
-        case BOSS_DRAGON:
-        case BOSS_SPECTRAL_ALPHA: {
-            float wingFlap = sinf(animTime * 5.0f) * 0.4f + 0.7f;
-            sf::Color wingCol(50, 50, 50, 220);
-            for (int side = 0; side < 2; side++) {
-                float dirX = (side == 0) ? -1.f : 1.f;
-                sf::ConvexShape wing; wing.setPointCount(5);
-                wing.setFillColor(wingCol); wing.setOutlineThickness(3.f); wing.setOutlineColor(outline);
-                wing.setPoint(0, sf::Vector2f(cx, cy - size*0.1f));
-                wing.setPoint(1, sf::Vector2f(cx + dirX * size*0.8f,  cy - size*0.5f * wingFlap));
-                wing.setPoint(2, sf::Vector2f(cx + dirX * size*0.95f, cy - size*0.1f * wingFlap));
-                wing.setPoint(3, sf::Vector2f(cx + dirX * size*0.7f,  cy + size*0.05f));
-                wing.setPoint(4, sf::Vector2f(cx + dirX * size*0.2f,  cy + size*0.0f));
-                target.draw(wing);
-            }
-            // Coda che ondeggia dietro
-            sf::ConvexShape tail; tail.setPointCount(6);
-            tail.setFillColor(sf::Color(70, 70, 60, 200)); tail.setOutlineThickness(2.f); tail.setOutlineColor(outline);
-            for (int i = 0; i < 3; i++) {
-                float t = i / 2.f;
-                float wave = sinf(animTime * 3.0f + i * 1.2f) * size*0.08f;
-                tail.setPoint(i*2,   sf::Vector2f(cx - bw*0.3f - t*size*0.3f, cy + size*0.2f + wave));
-                tail.setPoint(i*2+1, sf::Vector2f(cx - bw*0.3f - t*size*0.3f, cy + size*0.2f + wave + size*0.06f));
-            }
-            target.draw(tail);
-            // Occhio rosso
-            sf::CircleShape eye(size*0.04f); eye.setFillColor(sf::Color(255, 30, 30, 240));
-            eye.setPosition(cx - size*0.05f, cy - size*0.3f);
-            target.draw(eye);
-            // Sbuffi di fumo ai lati
-            for (int i = 0; i < 4; i++) {
-                float a = animTime * 1.5f + i * 1.57f;
-                sf::CircleShape puff(size*0.06f); puff.setFillColor(sf::Color(120, 120, 140, 100));
-                puff.setPosition(cx + cosf(a)*size*0.4f - size*0.06f, cy - size*0.5f + sinf(a)*size*0.1f);
-                target.draw(puff);
-            }
-            break;
-        }
-        // =========== AURA pulsante (wraith/twilight) ===========
-        case BOSS_WRAITH_LORD:
-        case BOSS_TWILIGHT_KNIGHT: {
-            // Aura scura pulsante attorno al corpo
-            float pulse = 1.0f + sinf(animTime * 3.0f) * 0.08f;
-            sf::CircleShape aura(size*0.6f * pulse);
-            aura.setFillColor(sf::Color(20, 5, 30, 90));
-            aura.setPosition(cx - size*0.6f * pulse, cy - size*0.6f * pulse);
-            target.draw(aura);
-            // Particelle "anime" che orbitano
-            for (int i = 0; i < 6; i++) {
-                float a = animTime * 1.5f + i * (float)M_PI / 3.f;
-                float r = size*0.55f + sinf(animTime*2.f + i)*size*0.05f;
-                sf::CircleShape soul(size*0.025f); soul.setFillColor(sf::Color(120, 80, 200, 200));
-                soul.setPosition(cx + cosf(a)*r - size*0.025f, cy + sinf(a)*r*0.4f - size*0.025f);
-                target.draw(soul);
-            }
-            // Occhi ciano brillanti
-            sf::Uint8 eyeBright = 180 + (sf::Uint8)(sinf(animTime * 4.0f) * 75);
-            sf::CircleShape eye(size*0.045f); eye.setFillColor(sf::Color(80, eyeBright, eyeBright, 240));
-            eye.setPosition(cx - size*0.11f, cy - size*0.3f); target.draw(eye);
-            eye.setPosition(cx + size*0.06f, cy - size*0.3f); target.draw(eye);
-            break;
-        }
-        // =========== MANTello ondeggia + occhi rossi (vampire/lich) ===========
-        case BOSS_LICH:
-        case BOSS_CULT_HERALD:
-        case BOSS_VAMPIRE: {
-            // Mantello ondulato ai lati del corpo
-            sf::Color cloakCol(60, 0, 20, 200);
-            for (int side = 0; side < 2; side++) {
-                float dirX = (side == 0) ? -1.f : 1.f;
-                sf::ConvexShape cloak; cloak.setPointCount(5);
-                cloak.setFillColor(cloakCol); cloak.setOutlineThickness(3.f); cloak.setOutlineColor(outline);
-                float wave = sinf(animTime * 3.0f + side * (float)M_PI) * size*0.06f;
-                cloak.setPoint(0, sf::Vector2f(cx + dirX * bw*0.3f, cy - size*0.2f));
-                cloak.setPoint(1, sf::Vector2f(cx + dirX * bw*0.7f, cy + size*0.1f));
-                cloak.setPoint(2, sf::Vector2f(cx + dirX * bw*0.6f + wave, cy + size*0.4f));
-                cloak.setPoint(3, sf::Vector2f(cx + dirX * bw*0.4f + wave*0.5f, cy + size*0.45f));
-                cloak.setPoint(4, sf::Vector2f(cx + dirX * bw*0.2f, cy + size*0.2f));
-                target.draw(cloak);
-            }
-            // Sigilli rotanti sopra la testa
-            for (int i = 0; i < 3; i++) {
-                float a = animTime * 2.f + i * 2.f*(float)M_PI/3.f;
-                float r = size*0.35f;
-                sf::CircleShape sigil(size*0.04f); sigil.setFillColor(sf::Color(180, 50, 220, 200));
-                sigil.setOutlineThickness(1.f); sigil.setOutlineColor(sf::Color(220, 100, 240));
-                sigil.setPosition(cx + cosf(a)*r - size*0.04f, cy - size*0.55f + sinf(a)*r*0.3f);
-                target.draw(sigil);
-            }
-            // Occhi rossi brillanti
-            sf::Uint8 eyeBright = 200 + (sf::Uint8)(sinf(animTime * 4.0f) * 55);
-            sf::CircleShape eye(size*0.04f); eye.setFillColor(sf::Color(eyeBright, 0, 0, 240));
-            eye.setPosition(cx - size*0.10f, cy - size*0.3f); target.draw(eye);
-            eye.setPosition(cx + size*0.05f, cy - size*0.3f); target.draw(eye);
-            break;
-        }
-        // =========== OCCHI SATELLITE su steli (beholder/witch) ===========
-        case BOSS_BEHOLDER:
-        case BOSS_SUPREME_WITCH: {
-            // 8 occhi satellite su steli che ruotano attorno al corpo
-            for (int i = 0; i < 8; i++) {
-                float angle = i * (float)M_PI / 4.f + sinf(animTime * 1.5f + i*0.5f) * 0.3f;
-                float dist = size*0.55f + sinf(animTime*2.f + i)*size*0.04f;
-                float sx = cx + cosf(angle) * dist;
-                float sy = cy + sinf(angle) * dist * 0.6f;
-                // Stelo (rettangolo che parte dal corpo verso l'occhio)
-                sf::Color stalkCol(80, 50, 50);
-                float stalkLen = sqrt((sx-cx)*(sx-cx) + (sy-cy)*(sy-cy));
-                float stalkAng = atan2(sy-cy, sx-cx) * 180.f / (float)M_PI;
-                sf::RectangleShape stalk(sf::Vector2f(stalkLen, size*0.04f));
-                stalk.setFillColor(stalkCol); stalk.setOutlineThickness(1.5f); stalk.setOutlineColor(outline);
-                stalk.setOrigin(0.f, size*0.02f);
-                stalk.setPosition(cx, cy);
-                stalk.rotate(stalkAng);
-                target.draw(stalk);
-                // Occhio satellite (bianco + pupilla)
-                sf::CircleShape sEye(size*0.05f); sEye.setFillColor(sf::Color::White);
-                sEye.setOutlineThickness(1.5f); sEye.setOutlineColor(outline);
-                sEye.setPosition(sx - size*0.05f, sy - size*0.05f);
-                target.draw(sEye);
-                // Pupilla che guarda il "centro"
-                sf::CircleShape sPup(size*0.022f); sPup.setFillColor(sf::Color::Black);
-                sPup.setPosition(sx - size*0.022f, sy - size*0.022f);
-                target.draw(sPup);
-            }
-            // Grande occhio centrale
-            sf::CircleShape bigEye(size*0.1f); bigEye.setFillColor(sf::Color::White);
-            bigEye.setOutlineThickness(2.f); bigEye.setOutlineColor(outline);
-            bigEye.setPosition(cx - size*0.1f, cy - size*0.4f);
-            target.draw(bigEye);
-            // Pupilla centrale che si muove in cerchio
-            float pupilX = cx + cosf(animTime * 2.f) * size*0.03f;
-            float pupilY = cy - size*0.35f + sinf(animTime * 2.f) * size*0.03f;
-            sf::CircleShape bigPup(size*0.04f); bigPup.setFillColor(sf::Color::Black);
-            bigPup.setPosition(pupilX - size*0.04f, pupilY - size*0.04f);
-            target.draw(bigPup);
-            break;
-        }
-        // =========== ABOMINATION/RAT_KING: ratti che orbitano + braccia flailing ===========
-        case BOSS_ABOMINATION:
-        case BOSS_RAT_KING: {
-            sf::Color fur(80, 70, 60, 230);
-            // 5 piccoli ratti/corpi che orbitano attorno al corpo principale
-            for (int i = 0; i < 5; i++) {
-                float a = animTime * 1.2f + i * 2.f*(float)M_PI/5.f;
-                float r = size*0.45f;
-                float rx = cx + cosf(a) * r;
-                float ry = cy + sinf(a) * r * 0.55f;
-                sf::CircleShape body(size*0.07f); body.setFillColor(fur);
-                body.setOutlineThickness(1.5f); body.setOutlineColor(outline);
-                body.setPosition(rx - size*0.07f, ry - size*0.07f);
-                target.draw(body);
-                // Coda del ratto
-                sf::RectangleShape tail(sf::Vector2f(size*0.1f, size*0.015f));
-                tail.setFillColor(fur); tail.setOrigin(0.f, size*0.0075f);
-                tail.setPosition(rx, ry);
-                tail.rotate(atan2(cy-ry, cx-rx)*180.f/(float)M_PI + 180.f + sinf(animTime*4.f+i)*20.f);
-                target.draw(tail);
-                // Occhio rosso
-                sf::CircleShape eye(size*0.012f); eye.setFillColor(sf::Color(255, 30, 30));
-                eye.setPosition(rx - size*0.01f, ry - size*0.025f);
-                target.draw(eye);
-            }
-            // Braccia flailing laterali
-            for (int side = 0; side < 2; side++) {
-                float dirX = (side == 0) ? -1.f : 1.f;
-                float wave = sinf(animTime * 4.f + side * (float)M_PI) * 25.f;
-                sf::RectangleShape arm(sf::Vector2f(size*0.12f, size*0.5f));
-                arm.setFillColor(sf::Color(140, 160, 120, 240)); arm.setOutlineThickness(2.5f); arm.setOutlineColor(outline);
-                arm.setOrigin(size*0.06f, size*0.05f);
-                arm.setPosition(cx + dirX * bw*0.5f, cy - size*0.15f);
-                arm.rotate(dirX * (20.f + wave*0.5f));
-                target.draw(arm);
-            }
-            break;
-        }
-        // default: nessun overlay
-        default:
-            break;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // renderPrimitives: disegna il boss con rettangoli/cerchi/poligoni.
