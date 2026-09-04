@@ -509,9 +509,8 @@ void Boss::render(sf::RenderTarget& target) const {
         if (!deformLoaded) {
             std::string spriteId = getSpriteId(type);
             std::string pngPath = "assets/sprites/" + spriteId + "_sheet.png";
-            // DeformableSprite usa solo il frame 0 (primo 64x64 della sheet 256x64)
-            // Per ora carichiamo la sheet intera e usiamo solo i primi 64px
-            deformLoaded = deformSprite.load(pngPath);
+            // Carica solo il primo frame (64x64) dalla sheet 256x64
+            deformLoaded = deformSprite.load(pngPath, 0, 0, 64, 64);
             if (deformLoaded) {
                 deformSprite.setGridSize(8, 8);
             }

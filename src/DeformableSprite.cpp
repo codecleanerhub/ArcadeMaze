@@ -15,10 +15,15 @@
 
 DeformableSprite::DeformableSprite()
     : loaded(false), gridW(8), gridH(8), texW(0), texH(0),
+      subX(0), subY(0), subW(0), subH(0),
       currentScale(1.0f), currentFlipped(false) {
 }
 
 bool DeformableSprite::load(const std::string& path) {
+    return load(path, 0, 0, 0, 0);  // 0,0,0,0 = usa tutta la texture
+}
+
+bool DeformableSprite::load(const std::string& path, int frameX, int frameY, int frameW, int frameH) {
     if (!texture.loadFromFile(path)) {
         loaded = false;
         return false;
@@ -31,15 +36,22 @@ bool DeformableSprite::load(const std::string& path) {
         loaded = false;
         return false;
     }
+    // Se frameW/frameH sono 0, usa tutta la texture
+    if (frameW <= 0 || frameH <= 0) {
+        subX = 0; subY = 0;
+        subW = texW; subH = texH;
+    } else {
+        subX = frameX; subY = frameY;
+        subW = frameW; subH = frameH;
+    }
     rebuildMesh();
     loaded = true;
     return true;
 }
 
 void DeformableSprite::rebuildMesh() {
-    if (texW <= 0 || texH <= 0) return;
+    if (texW <= 0 || texH <= 0 || subW <= 0 || subH <= 0) return;
 
-    // Crea (gridW+1) x (gridH+1) vertici base
     int nVerts = (gridW + 1) * (gridH + 1);
     basePositions.resize(nVerts);
     baseTexCoords.resize(nVerts);
@@ -47,16 +59,17 @@ void DeformableSprite::rebuildMesh() {
     for (int gy = 0; gy <= gridH; gy++) {
         for (int gx = 0; gx <= gridW; gx++) {
             int idx = gy * (gridW + 1) + gx;
-            // Position base: 0..texW, 0..texH
-            float px = (float)gx / (float)gridW * (float)texW;
-            float py = (float)gy / (float)gridH * (float)texH;
+            // Position base: 0..subW, 0..subH (dimensioni del sub-rect)
+            float px = (float)gx / (float)gridW * (float)subW;
+            float py = (float)gy / (float)gridH * (float)subH;
             basePositions[idx] = sf::Vector2f(px, py);
-            // TexCoord: stessa griglia sulla texture
-            baseTexCoords[idx] = sf::Vector2f(px, py);
+            // TexCoord: mappa sulla texture reale usando subX/subY come offset
+            float tx = (float)subX + px;
+            float ty = (float)subY + py;
+            baseTexCoords[idx] = sf::Vector2f(tx, ty);
         }
     }
 
-    // Crea il VertexArray con Quads: gridW * gridH quad, ognuno con 4 vertici
     mesh.setPrimitiveType(sf::Quads);
     mesh.resize(gridW * gridH * 4);
 }

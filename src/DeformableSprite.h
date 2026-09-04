@@ -36,6 +36,9 @@ public:
 
     // Carica la texture da file. Restituisce true se successo.
     bool load(const std::string& path);
+    // Carica solo un rettangolo della texture (utile per estrarre 1 frame
+    // da uno spritesheet 256x64: usare frameW=64, frameH=64, frameX=0, frameY=0).
+    bool load(const std::string& path, int frameX, int frameY, int frameW, int frameH);
 
     // Imposta la griglia (default 8x8). Piu' alta = piu' fluida ma piu' CPU.
     void setGridSize(int w, int h) { gridW = w; gridH = h; rebuildMesh(); }
@@ -58,6 +61,8 @@ private:
 
     int gridW, gridH;       // dimensioni griglia (default 8x8)
     int texW, texH;         // dimensioni texture originale
+    int subX, subY;         // offset del rettangolo nella texture (per sub-rect)
+    int subW, subH;         // dimensioni del rettangolo (per sub-rect)
 
     // Posizioni base dei vertici (prima della deformazione)
     // Grida di (gridW+1) x (gridH+1) vertici
