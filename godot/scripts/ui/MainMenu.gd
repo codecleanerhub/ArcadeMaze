@@ -190,23 +190,27 @@ func _build_ui() -> void:
         _title_label = Label.new()
         _title_label.name = "Title"
         _title_label.text = "ARCADE MAZE"
-        _title_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+        _title_label.set_anchors_preset(Control.PRESET_FULL_RECT)
         _title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        _title_label.add_theme_font_size_override("font_size", 64)
+        _title_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+        _title_label.add_theme_font_size_override("font_size", 48)
         _title_label.add_theme_color_override("font_color", color_title_gold)
         _title_label.add_theme_color_override("font_shadow_color", color_title_shadow)
-        _title_label.add_theme_constant_override("shadow_offset_x", -4)
-        _title_label.add_theme_constant_override("shadow_offset_y", -4)
-        _title_label.add_theme_constant_override("shadow_outline_size", 4)
-        _title_label.position = Vector2(0, 90)
-        _title_label.size = Vector2(size.x, 80)
+        _title_label.add_theme_constant_override("shadow_offset_x", -3)
+        _title_label.add_theme_constant_override("shadow_offset_y", -3)
+        _title_label.add_theme_constant_override("shadow_outline_size", 3)
+        _title_label.offset_top = 60.0
+        _title_label.offset_bottom = 130.0
         add_child(_title_label)
 
         # --- Parchment panel ---
         _panel = Panel.new()
         _panel.name = "MenuPanel"
-        _panel.position = Vector2(120, 360)
-        _panel.size = Vector2(size.x - 240, 500)
+        _panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _panel.offset_left = 120.0
+        _panel.offset_top = 360.0
+        _panel.offset_right = -120.0
+        _panel.offset_bottom = -60.0
         var stylebox := StyleBoxFlat.new()
         stylebox.bg_color = color_parchment_bg
         stylebox.border_color = color_parchment_border
@@ -217,13 +221,14 @@ func _build_ui() -> void:
         add_child(_panel)
 
         # --- 7 menu items inside the panel ---
-        # Mirrors the C++ layout: items at y = 410 + i*60, centered.
         var items_container := VBoxContainer.new()
         items_container.name = "Items"
         items_container.set_anchors_preset(Control.PRESET_FULL_RECT)
         items_container.alignment = BoxContainer.ALIGNMENT_BEGIN
-        items_container.position = Vector2(40, 30)
-        items_container.size = Vector2(_panel.size.x - 80, _panel.size.y - 60)
+        items_container.offset_left = 40.0
+        items_container.offset_top = 30.0
+        items_container.offset_right = -40.0
+        items_container.offset_bottom = -30.0
         items_container.add_theme_constant_override("separation", 28)
         _panel.add_child(items_container)
 
@@ -240,7 +245,7 @@ func _build_ui() -> void:
                 var lbl := Label.new()
                 lbl.text = txt
                 lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-                lbl.add_theme_font_size_override("font_size", 28)
+                lbl.add_theme_font_size_override("font_size", 24)
                 lbl.add_theme_color_override("font_color", color_item_normal)
                 lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
                 lbl.add_theme_constant_override("shadow_offset_x", 1)
@@ -249,65 +254,37 @@ func _build_ui() -> void:
                 items_container.add_child(lbl)
 
         # --- Character wheel (8 side-view previews) ---
-        var wheel_container := VBoxContainer.new()
-        wheel_container.name = "CharacterWheel"
-        wheel_container.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-        wheel_container.position = Vector2(size.x / 2 - 360, size.y - 280)
-        wheel_container.size = Vector2(720, 160)
-        wheel_container.alignment = BoxContainer.ALIGNMENT_CENTER
-        wheel_container.add_theme_constant_override("separation", 6)
-        add_child(wheel_container)
-
-        var wheel_title := Label.new()
-        wheel_title.text = "PLAYER 1 - SELECT CHARACTER"
-        wheel_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        wheel_title.add_theme_font_size_override("font_size", 18)
-        wheel_title.add_theme_color_override("font_color", color_footer_by)
-        wheel_container.add_child(wheel_title)
-
+        # Hidden by default, shown during character selection
         _char_preview_container = HBoxContainer.new()
+        _char_preview_container.name = "CharacterWheel"
+        _char_preview_container.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+        _char_preview_container.offset_left = -360.0
+        _char_preview_container.offset_top = -160.0
+        _char_preview_container.offset_right = 360.0
+        _char_preview_container.offset_bottom = -20.0
         _char_preview_container.alignment = BoxContainer.ALIGNMENT_CENTER
         _char_preview_container.add_theme_constant_override("separation", 12)
-        wheel_container.add_child(_char_preview_container)
-
-        # 8 character preview slots
-        for i in 8:
-                var texrect := TextureRect.new()
-                texrect.custom_minimum_size = Vector2(64, 80)
-                texrect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-                texrect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-                var spr_path: String = _character_sprite_path(i)
-                if ResourceLoader.exists(spr_path):
-                        texrect.texture = load(spr_path)
-                texrect.modulate = Color(1, 1, 1, 0.55)
-                # Highlight outline (separate panel behind).
-                var hl := Panel.new()
-                hl.add_theme_stylebox_override("panel", _make_highlight_stylebox())
-                hl.visible = false
-                hl.position = Vector2(-4, -4)
-                hl.size = Vector2(72, 88)
-                texrect.add_child(hl)
-                # Highlight ref for later toggling
-                texrect.set_meta("highlight", hl)
-                _char_sprites.append(texrect)
-                _char_preview_container.add_child(texrect)
+        _char_preview_container.visible = false
+        add_child(_char_preview_container)
 
         # --- Footer ---
         _footer_by = Label.new()
         _footer_by.text = "By"
-        _footer_by.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-        _footer_by.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-        _footer_by.add_theme_font_size_override("font_size", 24)
+        _footer_by.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _footer_by.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _footer_by.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+        _footer_by.add_theme_font_size_override("font_size", 18)
         _footer_by.add_theme_color_override("font_color", color_footer_by)
-        _footer_by.position = Vector2(size.x / 2 - 120, size.y - 40)
-        _footer_by.size = Vector2(40, 30)
+        _footer_by.offset_top = -50.0
+        _footer_by.offset_bottom = -20.0
         add_child(_footer_by)
 
         _footer_name = Label.new()
         _footer_name.text = "Marled Software"
-        _footer_name.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-        _footer_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-        _footer_name.add_theme_font_size_override("font_size", 24)
+        _footer_name.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _footer_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _footer_name.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+        _footer_name.add_theme_font_size_override("font_size", 18)
         _footer_name.add_theme_color_override("font_color", color_footer_name)
         _footer_name.position = Vector2(size.x / 2 - 80, size.y - 40)
         _footer_name.size = Vector2(200, 30)
