@@ -46,7 +46,7 @@ func generate_random() -> void:
 	_apply_defaults()
 
 
-func get_name() -> String:
+func get_weapon_name() -> String:
 	match type:
 		Type.WPN_PISTOL:  return "PISTOL"
 		Type.WPN_SHOTGUN: return "SHOTGUN"

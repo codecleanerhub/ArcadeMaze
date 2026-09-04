@@ -43,10 +43,10 @@ const DEFAULT_GRID_H := 8
 		_rebuild_mesh()
 
 ## Source texture (PNG spritesheet or single frame).
-var texture: Texture2D = null:
+var _tex: Texture2D = null
 	set(v):
 		texture = v
-		if texture != null and sub_rect == Rect2(0, 0, 0, 0):
+		if _tex != null and sub_rect == Rect2(0, 0, 0, 0):
 			sub_rect = Rect2(0, 0, texture.get_width(), texture.get_height())
 		_rebuild_mesh()
 
@@ -107,7 +107,7 @@ func load_subrect(path: String, frame_x: int, frame_y: int, frame_w: int, frame_
 
 
 ## Use an already-loaded Texture2D directly.
-func set_texture(tex: Texture2D, sub: Rect2 = Rect2(0, 0, 0, 0)) -> void:
+func assign_texture(tex: Texture2D, sub: Rect2 = Rect2(0, 0, 0, 0)) -> void:
 	texture = tex
 	if sub.size.x > 0 and sub.size.y > 0:
 		sub_rect = sub
@@ -210,11 +210,11 @@ func _rebuild_mesh() -> void:
 	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 
 	# Apply texture.
-	if material is StandardMaterial2D:
-		(material as StandardMaterial2D).texture = texture
+	if material is CanvasItemMaterial:
+		(material as CanvasItemMaterial)._tex = texture
 	else:
-		var mat := StandardMaterial2D.new()
-		mat.texture = texture
+		var mat := CanvasItemMaterial.new()
+		mat._tex = texture
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		material = mat

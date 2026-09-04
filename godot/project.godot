@@ -20,6 +20,8 @@ AudioManager="*res://scripts/audio/AudioManager.gd"
 [display]
 window/size/viewport_width=1024
 window/size/viewport_height=1024
+window/size/mode=3
+window/size/resizable=true
 window/stretch/mode="viewport"
 window/stretch/aspect="expand"
 

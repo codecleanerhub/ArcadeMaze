@@ -33,7 +33,7 @@ func _process(_delta: float) -> void:
 		var any_pressed := false
 		for jid in range(8):
 			if Input.is_joy_known(jid):
-				for btn in range(min(128, Input.get_joy_button_count(jid))):
+				for btn in range(min(128, 128)):
 					if Input.is_joy_button_pressed(jid, btn):
 						any_pressed = true
 						break
@@ -47,7 +47,7 @@ func _process(_delta: float) -> void:
 	for jid in range(8):
 		if not Input.is_joy_known(jid):
 			continue
-		var max_btns: int = Input.get_joy_button_count(jid)
+		var max_btns: int = 128
 		if max_btns > 128:
 			max_btns = 128
 		for btn in range(max_btns):
