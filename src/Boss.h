@@ -127,8 +127,9 @@ private:
 
     // DeformableSprite per animazione mesh deformation nativa
     // (usa 1 sola immagine + deformazione vertici in tempo reale)
-    DeformableSprite deformSprite;
-    bool deformLoaded;
+    // mutable perche' modificato dentro render() const
+    mutable DeformableSprite deformSprite;
+    mutable bool deformLoaded;
 };
 
 #endif
