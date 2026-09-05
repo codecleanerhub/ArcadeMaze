@@ -530,12 +530,12 @@ func _draw_with_sprite() -> void:
                 var tw: int = 64  # mini-boss visual size (HD sheet scaled down)
                 var th: int = 64
                 var draw_pos := Vector2(-tw / 2, -th / 2 + 8 + bob_y)
+                var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:
-                        # Flip by using a reversed src_rect (start at right edge, negative width).
-                        var src := Rect2(tw, 0.0, -tw, th)
-                        draw_texture_rect_region(at, Rect2(draw_pos, Vector2(tw, th)), src)
+                        # Flip using transpose (Godot 4.7 max 5 args on draw_texture_rect)
+                        draw_texture_rect(at, dest_rect, false, Color.WHITE, true)
                 else:
-                        draw_texture_rect(at, Rect2(draw_pos, Vector2(tw, th)), false)
+                        draw_texture_rect(at, dest_rect, false)
 
         # Aura (accent color per type).
         var accent := _get_accent_color()

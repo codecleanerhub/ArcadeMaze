@@ -65,9 +65,9 @@ const MUSIC_TRACK_COUNT:   int = 9
 const SR: int = 44100
 
 # Master volumes (mirror C++ setVolume calls).
-const VOLUME_SFX:     float = 0.7    # 70 / 100
-const VOLUME_MUSIC:   float = 0.45   # 45 / 100
-const VOLUME_EPIC:    float = 0.8    # 80 / 100
+const VOLUME_SFX:     float = 0.9    # 90 / 100 (aumentato da 0.7)
+const VOLUME_MUSIC:   float = 0.8    # 80 / 100 (aumentato da 0.45)
+const VOLUME_EPIC:    float = 1.0    # 100 / 100 (aumentato da 0.8)
 
 # --- State ------------------------------------------------------------------
 # Pool of 30 SFX voices (polyphony with voice stealing).

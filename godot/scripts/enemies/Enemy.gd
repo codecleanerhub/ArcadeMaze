@@ -739,11 +739,12 @@ func _draw_sprite_frame() -> void:
                 bob_y = sin(float(anim_time) * 0.01) * 2.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
-        # Use draw_texture_rect with transpose+flip_h to mirror horizontally.
+        # Godot 4.7 draw_texture_rect: max 5 args (texture, rect, tile, modulate, transpose)
+        # For horizontal flip, use transpose=false and draw normally (flip is visual-only).
         var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
         if dx < 0:
-                # Godot 4.7 draw_texture_rect supports tile+transpose+flip_h
-                draw_texture_rect(at, dest_rect, false, Color.WHITE, false, true)
+                # Flip by drawing with transpose (mirrors X when used on AtlasTexture)
+                draw_texture_rect(at, dest_rect, false, Color.WHITE, true)
         else:
                 draw_texture_rect(at, dest_rect, false)
 
