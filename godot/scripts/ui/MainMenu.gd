@@ -71,6 +71,8 @@ var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
 # Animation timer (mirrors menuTime in drawMenu()).
 var _menu_time: float = 0.0
 var _joy_nav_cooldown: float = 0.0  # debounce per navigazione joystick
+var _inactivity_timer: float = 0.0  # 30s inactivity -> demo mode
+const DEMO_INACTIVITY_SECONDS: float = 30.0
 
 # Child nodes (built in _ready).
 var _bg: TextureRect
@@ -111,6 +113,15 @@ func _ready() -> void:
 
 
 # ============================================================================
+# Demo mode trigger (30s inactivity)
+# ============================================================================
+func _start_demo_mode() -> void:
+        print("[MainMenu] Inactivity timeout, starting demo mode")
+        _inactivity_timer = 0.0
+        get_tree().change_scene_to_file("res://scenes/DemoMode.tscn")
+
+
+# ============================================================================
 # Signal handlers (wire menu actions to GameManager scene transitions)
 # ============================================================================
 func _on_start_requested(num_players: int, game_mode: int, music: bool,
@@ -145,6 +156,11 @@ func _process(delta: float) -> void:
         # Decrement joystick navigation cooldown (debounce)
         if _joy_nav_cooldown > 0:
                 _joy_nav_cooldown -= delta
+        # Inactivity timer: after 30s of no input, start demo mode
+        _inactivity_timer += delta
+        if _inactivity_timer >= DEMO_INACTIVITY_SECONDS:
+                _start_demo_mode()
+                return
         # Animated flame flicker for the selected item (visual only).
         var flicker: float = sin(_menu_time * 15.0) * 1.5
         for i in _item_labels.size():
@@ -495,6 +511,8 @@ func _update_character_wheel() -> void:
 # ============================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
+        # Reset inactivity timer on ANY input
+        _inactivity_timer = 0.0
         # Keyboard navigation
         if event is InputEventKey and event.pressed and not event.echo:
                 var key: int = event.keycode
