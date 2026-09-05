@@ -16,6 +16,7 @@ extends Node2D
 
 const C = preload("res://scripts/core/GameConstants.gd")
 const WeaponClass = preload("res://scripts/items/Weapon.gd")
+const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
@@ -32,6 +33,11 @@ var test_skip_key_held: bool = false
 var boss_room_weapons: Array = []  # [{weapon, pos}]
 var boss: Node2D = null
 var died_in_boss: bool = false
+
+# --- Boss-room mine (port of C++ `mine` in STATE_BOSS branch, Game.cpp 2728-2843).
+#     Spawns once at fight start; bounces between walls and, on impact with
+#     the boss, deals 30% of boss.max_health. ---
+var mine_item: Collectibles = null
 
 const FRAME_MS: float = 1000.0 / 60.0
 
@@ -177,6 +183,9 @@ func _update_boss(delta_ms: float) -> void:
 
         # (8) Anti-softlock: respawn weapons if all empty
         _check_softlock()
+
+        # (8b) Boss-room mine: bounce physics + collision with boss
+        _update_boss_room_mine(delta_ms)
 
         # (9) Death / continue check
         _check_boss_death()
@@ -340,6 +349,12 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
                 child.queue_free()
         _spawn_boss_room_weapons()
 
+        # Spawn the boss-room mine (1 per fight). Mirrors C++ Game.cpp
+        # 2728-2843: a single bouncing mine at a random position in the
+        # boss room; when collected by either player it starts bouncing
+        # and, on impact with the boss, deals 30% of boss.max_health.
+        _spawn_boss_room_mine()
+
 
 func _spawn_boss_room_weapons() -> void:
         for i in range(3):
@@ -348,6 +363,118 @@ func _spawn_boss_room_weapons() -> void:
                 w.ammo = 5
                 var w_pos := Vector2(200.0 + i * 300.0, 200.0)
                 boss_room_weapons.append({"weapon": w, "pos": w_pos, "node": null})
+
+
+# Spawn the boss-room mine at a random position inside the room (away from
+# the boss center). Mirrors C++ Game::startBossFight() mine init.
+func _spawn_boss_room_mine() -> void:
+        if mine_item != null and is_instance_valid(mine_item):
+                mine_item.queue_free()
+        mine_item = null
+        # Random position inside the room, keeping margins from walls.
+        var margin: float = 80.0
+        var mine_pos := Vector2(
+                randf_range(margin, float(C.WINDOW_WIDTH) - margin),
+                randf_range(float(C.UI_HEIGHT) + margin, float(C.WINDOW_HEIGHT) - margin))
+        var mine := CollectiblesClass.new()
+        mine.kind = CollectiblesClass.Kind.MINE
+        mine.pos = mine_pos
+        mine.position = mine_pos
+        mine.in_boss_room = true
+        mine.active = true
+        boss_room_weapons_node.add_child(mine)
+        mine_item = mine
+
+
+# Update the boss-room mine: pick up by either player, then bounce physics
+# + collision with the boss (deals 30% of boss.max_health, destroys the
+# mine, plays explosion sound + particles).
+# Port of C++ Game.cpp lines 2728-2843.
+func _update_boss_room_mine(delta_ms: float) -> void:
+        if mine_item == null or not is_instance_valid(mine_item) or not mine_item.active:
+                return
+        # Pulse animation (mirrors C++ mine.pulse += 0.016f).
+        mine_item.pulse += float(delta_ms) * 0.001
+        if not mine_item.bouncing:
+                # Pickup check against P1 and P2 (both players can collect
+                # the boss-room mine; fixed 2P bug in C++ r2732-2744).
+                var p1_pos: Vector2 = player.get_pixel_pos()
+                var p1_hit: bool = p1_pos.distance_squared_to(mine_item.pos) < 400.0
+                var p2_hit: bool = false
+                if GameManager and GameManager.num_players == 2 and player2.visible:
+                        var p2_pos: Vector2 = player2.get_pixel_pos()
+                        p2_hit = p2_pos.distance_squared_to(mine_item.pos) < 400.0
+                if p1_hit or p2_hit:
+                        mine_item.bouncing = true
+                        mine_item.bounce_timer_ms = 30000
+                        var angle: float = randf() * TAU
+                        mine_item.velocity = Vector2(cos(angle), sin(angle)) * 6.0
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MINE_BOUNCE)
+        else:
+                # Bounce physics: rotate + move + bounce off room walls
+                # (mirrors C++ r2754-2760).
+                mine_item.rotation_deg += 0.08 * float(delta_ms) * 0.06
+                mine_item.pos += mine_item.velocity
+                mine_item.position = mine_item.pos
+                var margin: float = 30.0
+                if mine_item.pos.x < margin:
+                        mine_item.pos.x = margin
+                        mine_item.velocity.x = -mine_item.velocity.x
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MINE_BOUNCE)
+                if mine_item.pos.x > float(C.WINDOW_WIDTH) - margin:
+                        mine_item.pos.x = float(C.WINDOW_WIDTH) - margin
+                        mine_item.velocity.x = -mine_item.velocity.x
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MINE_BOUNCE)
+                if mine_item.pos.y < float(C.UI_HEIGHT) + margin:
+                        mine_item.pos.y = float(C.UI_HEIGHT) + margin
+                        mine_item.velocity.y = -mine_item.velocity.y
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MINE_BOUNCE)
+                if mine_item.pos.y > float(C.WINDOW_HEIGHT) - margin:
+                        mine_item.pos.y = float(C.WINDOW_HEIGHT) - margin
+                        mine_item.velocity.y = -mine_item.velocity.y
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MINE_BOUNCE)
+                mine_item.position = mine_item.pos
+                # Collision with the boss: 30% of boss.max_health damage.
+                # Mirrors C++ r2761-2774.
+                if boss != null and not boss.is_dead():
+                        var boss_half: float = boss.size / 2.0
+                        if mine_item.pos.distance_squared_to(boss.pos) < boss_half * boss_half:
+                                var dmg: int = int(float(boss.max_health) * 0.3)
+                                if dmg < 1:
+                                        dmg = 1
+                                boss.take_damage(dmg)
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+                                if EffectsManager:
+                                        var p := EffectsManager.spawn_explosion(mine_item.pos,
+                                                Color(1.0, 0.78, 0.2), 20, 0.5)
+                                        boss_projectiles_node.add_child(p)
+                                mine_item.active = false
+                                mine_item.bouncing = false
+                                mine_item.queue_free()
+                                mine_item = null
+                                return
+                # Timer: expires after ~30s of bouncing.
+                if mine_item != null and mine_item.bouncing:
+                        if mine_item.bounce_timer_ms > int(delta_ms):
+                                mine_item.bounce_timer_ms -= int(delta_ms)
+                        else:
+                                mine_item.bounce_timer_ms = 0
+                        if mine_item.bounce_timer_ms == 0:
+                                if EffectsManager:
+                                        var p := EffectsManager.spawn_explosion(mine_item.pos,
+                                                Color(0.7, 0.6, 0.2), 10, 0.3)
+                                        boss_projectiles_node.add_child(p)
+                                mine_item.active = false
+                                mine_item.bouncing = false
+                                mine_item.queue_free()
+                                mine_item = null
 
 
 # ============================================================================

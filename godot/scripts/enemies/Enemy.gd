@@ -602,15 +602,8 @@ func get_type() -> int:
 # (circle + eyes) so the game is still playable if assets are missing.
 # ===========================================================================
 func _draw() -> void:
-        # If dying, draw death animation (expanding circle)
-        if is_dying():
-                var progress: float = 1.0 - float(dying_timer) / 60.0
-                var radius: float = 16.0 + progress * 20.0
-                draw_circle(Vector2.ZERO, radius,
-                        Color(1.0, 0.3, 0.1, 1.0 - progress))
-                return
-
         # --- PRIMARY: render AI-generated sprite if loaded ---
+        # _draw_sprite_frame() handles death/attack/walk/idle animations
         if _sprite_loaded and _sprite_sheet != null:
                 _draw_sprite_frame()
                 # Overlay effects on top of the sprite
@@ -694,27 +687,50 @@ func _draw_sprite_frame() -> void:
         if not _sprite_loaded or _sprite_sheet == null:
                 return
         # Determine animation name and frame index.
-        # Priority: walk (if moving) > idle (default).
+        # Priority: death > attack > walk > idle (mirror C++ Enemy::draw)
         var anim_name: String = "idle"
         var frame: int = 0
+        var frame_duration: int = 200  # ms per frame
         var is_moving: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
-        if is_moving:
+        # Death animation (6 frames @ 120ms)
+        if is_dying():
+                anim_name = "death"
+                frame_duration = 120
+                var fc_death: int = _sprite_sheet.get_frame_count("death")
+                if fc_death > 0:
+                        var elapsed_death: int = 600 - dying_timer
+                        frame = clampi(elapsed_death / frame_duration, 0, fc_death - 1)
+                else:
+                        _draw_death_fallback()
+                        return
+        # Attack animation (6 frames @ 100ms)
+        elif attacking_timer > 0 and _sprite_sheet.get_frame_count("attack") > 0:
+                anim_name = "attack"
+                frame_duration = 100
+                var fc_attack: int = _sprite_sheet.get_frame_count("attack")
+                var elapsed_attack: int = 400 - attacking_timer
+                frame = clampi(elapsed_attack / frame_duration, 0, fc_attack - 1)
+        # Walk animation (6 frames @ 100ms with bob)
+        elif is_moving and _sprite_sheet.get_frame_count("walk") > 0:
                 anim_name = "walk"
-        # Get frame count for the chosen animation; fall back to idle.
-        var fc: int = _sprite_sheet.get_frame_count(anim_name)
-        if fc == 0:
+                frame_duration = 100
+                var fc_walk: int = _sprite_sheet.get_frame_count("walk")
+                frame = (int(anim_time) / frame_duration) % fc_walk
+        # Idle (4 frames @ 200ms)
+        else:
                 anim_name = "idle"
-                fc = _sprite_sheet.get_frame_count("idle")
-        if fc > 0:
-                var frame_duration: int = 200  # ms per frame (matches metadata)
-                frame = (int(anim_time) / frame_duration) % fc
+                frame_duration = 200
+                var fc_idle: int = _sprite_sheet.get_frame_count("idle")
+                if fc_idle > 0:
+                        frame = (int(anim_time) / frame_duration) % fc_idle
         # Get the AtlasTexture for this frame.
         var at: AtlasTexture = _sprite_sheet.get_frame_texture(anim_name, frame)
         if at == null:
-                return
-        # Draw centered at enemy size (32x32 base, scaled to fit tile).
-        # HD sheets are 256x256 single frame, scale down to 40x40 to match
-        # the enemy visual size (slightly smaller than tile_size=48).
+                # Fallback: try idle frame 0
+                at = _sprite_sheet.get_frame_texture("idle", 0)
+                if at == null:
+                        return
+        # Draw centered at enemy size (40x40 to fit tile 48).
         var target_size: float = 40.0
         var tw: float = target_size
         var th: float = target_size
@@ -747,3 +763,15 @@ func _draw_sprite_frame() -> void:
 # Matches the `if (t > 16) t -= 16; else t = 0;` idiom in Enemy.cpp.
 static func _tick(t: int) -> int:
         return t - 16 if t > 16 else 0
+
+
+# Death animation fallback when sprite sheet has no "death" animation.
+# Draws an expanding fading circle (mirror C++ primitive fallback).
+func _draw_death_fallback() -> void:
+        var progress: float = 1.0 - float(dying_timer) / 600.0
+        var radius: float = 16.0 + progress * 20.0
+        draw_circle(Vector2.ZERO, radius,
+                Color(1.0, 0.3, 0.1, 1.0 - progress))
+        # Inner brighter circle
+        draw_circle(Vector2.ZERO, radius * 0.6,
+                Color(1.0, 0.6, 0.2, (1.0 - progress) * 0.7))

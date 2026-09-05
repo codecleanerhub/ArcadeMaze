@@ -46,54 +46,54 @@ const _DR: Array[int] = [-1, 0, 1, 0]
 # Mirrors Enemy::bfsPath() in src/Enemy.cpp line 217-245.
 # ---------------------------------------------------------------------------
 static func find_path(maze: Object, start: Vector2i, target: Vector2i) -> Vector2i:
-	# Same cell: nothing to do (mirrors early-return in C++).
-	if start == target:
-		return Vector2i(-1, -1)
+        # Same cell: nothing to do (mirrors early-return in C++).
+        if start == target:
+                return Vector2i(-1, -1)
 
-	# 2D visited / parent maps. Using Dictionary keyed by Vector2i keeps
-	# allocation cheap and avoids building 21*19 vectors per call.
-	var visited: Dictionary = {}
-	var parent: Dictionary = {}
+        # 2D visited / parent maps. Using Dictionary keyed by Vector2i keeps
+        # allocation cheap and avoids building 21*19 vectors per call.
+        var visited: Dictionary = {}
+        var parent: Dictionary = {}
 
-	var queue: Array[Vector2i] = []
-	queue.append(start)
-	visited[start] = true
+        var queue: Array[Vector2i] = []
+        queue.append(start)
+        visited[start] = true
 
-	var found: bool = false
-	var head: int = 0
-	while head < queue.size():
-		var curr: Vector2i = queue[head]
-		head += 1
-		if curr == target:
-			found = true
-			break
-		for i in range(4):
-			var nc: int = curr.x + _DC[i]
-			var nr: int = curr.y + _DR[i]
-			# Bounds + wall check (out of grid treated as wall by is_wall).
-			if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
-				continue
-			var nb := Vector2i(nc, nr)
-			if visited.has(nb):
-				continue
-			if maze.is_wall(nc, nr):
-				continue
-			visited[nb] = true
-			parent[nb] = curr
-			queue.append(nb)
+        var found: bool = false
+        var head: int = 0
+        while head < queue.size():
+                var curr: Vector2i = queue[head]
+                head += 1
+                if curr == target:
+                        found = true
+                        break
+                for i in range(4):
+                        var nc: int = curr.x + _DC[i]
+                        var nr: int = curr.y + _DR[i]
+                        # Bounds + wall check (out of grid treated as wall by is_wall).
+                        if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
+                                continue
+                        var nb := Vector2i(nc, nr)
+                        if visited.has(nb):
+                                continue
+                        if maze.is_wall(nc, nr):
+                                continue
+                        visited[nb] = true
+                        parent[nb] = curr
+                        queue.append(nb)
 
-	if not found:
-		return Vector2i(-1, -1)
+        if not found:
+                return Vector2i(-1, -1)
 
-	# Walk parent chain from target back to the cell whose parent is `start`:
-	# that cell is the first step away from start (i.e. nextStep in C++).
-	var curr: Vector2i = target
-	while parent.has(curr) and parent[curr] != start:
-		curr = parent[curr]
+        # Walk parent chain from target back to the cell whose parent is `start`:
+        # that cell is the first step away from start (i.e. nextStep in C++).
+        var curr: Vector2i = target
+        while parent.has(curr) and parent[curr] != start:
+                curr = parent[curr]
 
-	# If target itself is adjacent to start, parent[target] == start and the
-	# loop above never executes - curr stays as target, which is correct.
-	return curr
+        # If target itself is adjacent to start, parent[target] == start and the
+        # loop above never executes - curr stays as target, which is correct.
+        return curr
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ static func find_path(maze: Object, start: Vector2i, target: Vector2i) -> Vector
 # Useful for enemies that just want to know which way to step.
 # ---------------------------------------------------------------------------
 static func find_path_dir(maze: Object, start: Vector2i, target: Vector2i) -> Vector2i:
-	var next := find_path(maze, start, target)
-	if next.x < 0:
-		return Vector2i.ZERO
-	return next - start
+        var next := find_path(maze, start, target)
+        if next.x < 0:
+                return Vector2i.ZERO
+        return next - start

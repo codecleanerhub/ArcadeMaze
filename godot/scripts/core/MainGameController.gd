@@ -83,6 +83,18 @@ var screen_flash_timer_ms: int = 0
 # Particles (simple visual feedback)
 var particles: Array = []
 
+# Decals on the floor (port of C++ Game::bloodStains / ashPiles / fireBursts).
+# - blood_stains: temporary dark-red splatter where an enemy died by projectile
+#   or scepter. life counted in frames @ 60 FPS (300 = 5s).
+# - ash_piles: long-lasting grey pile where an enemy was burned by the
+#   invincible (chalice) player. life 600 = 10s.
+# - fire_bursts: short orange/yellow expanding burst at burn/kill position.
+#   life 40 = ~0.66s. Radius grows with age.
+# Mirrors Game.h lines 117-151 and Game.cpp update logic 2146-2171 / 2314-2342.
+var blood_stains: Array = []  # [{pos, life, max_life, radius, color}]
+var ash_piles: Array = []     # [{pos, life, max_life, radius, anim_time}]
+var fire_bursts: Array = []   # [{pos, life, max_life, scale, anim_time}]
+
 # Frame delta in ms (for timer decrements matching C++ @ 60 FPS)
 const FRAME_MS: float = 1000.0 / 60.0
 
@@ -279,6 +291,11 @@ func _update_playing(delta_ms: float) -> void:
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 _update_invincible_burn(player2, delta_ms)
 
+        # (7b) 2P friendly fire: if both players are within contact range
+        # (~28 px, dist^2 < 800) and neither is invulnerable or jumping,
+        # both take 1 damage. Mirrors C++ Game.cpp 1846-1862.
+        _check_2p_friendly_fire()
+
         # (8) Death check
         _check_death()
 
@@ -341,6 +358,9 @@ func _update_playing(delta_ms: float) -> void:
         # (13) Update particles
         _update_particles(delta_ms)
 
+        # (13b) Update decals (blood stains, ash piles, fire bursts)
+        _update_decals(delta_ms)
+
         # (14) Screen flash decay
         if screen_flash_timer_ms > 0:
                 screen_flash_timer_ms = max(0, screen_flash_timer_ms - int(delta_ms))
@@ -379,6 +399,10 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                         p.add_score(5000)
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+                                        # Spawn decals at enemy death position
+                                        # (C++ Game.cpp lines 1664-1667 / 1779-1782).
+                                        _spawn_blood_stain(e_pos)
+                                        _spawn_fire_burst(e_pos, 1.0)
                                 break
 
 
@@ -418,6 +442,30 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
 
 
 func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
+        # Finalise burning enemies: when burning_timer reaches 0 but the
+        # burned_flag is still set, kill the enemy and spawn AshPile +
+        # final FireBurst. Mirrors Game.cpp lines 2314-2342 (the separate
+        # "burning -> death transition" pass that runs every frame, even
+        # after the player's invincibility expired, to ensure every ignited
+        # enemy is finalised).
+        for enemy in spawner.enemies:
+                if enemy.is_burning() or not enemy.was_burned():
+                        continue
+                if enemy.is_dead():
+                        # Already dead (e.g. another system killed it): just
+                        # clear the flag so we don't re-trigger next frame.
+                        enemy.clear_burned_flag()
+                        continue
+                # Burning finished but enemy still alive: finalise the kill.
+                enemy.clear_burned_flag()
+                var dead_pos: Vector2 = enemy.get_pixel_pos()
+                enemy.take_damage(999)
+                p.add_score(5000)
+                _spawn_ash_pile(dead_pos)
+                _spawn_fire_burst(dead_pos, 0.9)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+
         # Chalice effect: while invincible_timer > 0, enemies in contact burn
         if p.invincible_timer <= 0:
                 return
@@ -446,6 +494,39 @@ func _check_death() -> void:
                                 GameManager.player_died()
                         else:
                                 GameManager.give_up()
+
+
+# 2P friendly fire: when both players touch each other (distance^2 < 800,
+# i.e. ~28 px), and neither is invulnerable (post-hit or chalice) or
+# mid-jump, both take 1 energy damage. Mirrors C++ Game.cpp 1846-1862.
+func _check_2p_friendly_fire() -> void:
+        if GameManager == null or GameManager.num_players != 2:
+                return
+        if not player2.visible:
+                return
+        # Skip if either player is invulnerable or jumping.
+        if player.is_invulnerable() or player2.is_invulnerable():
+                return
+        if player.is_jumping() or player2.is_jumping():
+                return
+        var p1_pos: Vector2 = player.get_pixel_pos()
+        var p2_pos: Vector2 = player2.get_pixel_pos()
+        if p1_pos.distance_squared_to(p2_pos) >= 800.0:
+                return
+        # Both players take 1 damage. Player.take_damage() returns early
+        # if is_jumping() or is_invulnerable(), so the guard above is
+        # sufficient. Track lives/energy before to detect a real hit and
+        # only then play LOSE_LIFE (mirrors C++ r1855-1860).
+        var lives_before1: int = player.lives
+        var energy_before1: int = player.energy
+        var lives_before2: int = player2.lives
+        var energy_before2: int = player2.energy
+        player.take_damage()
+        player2.take_damage()
+        if player.lives < lives_before1 or player.energy < energy_before1 \
+                or player2.lives < lives_before2 or player2.energy < energy_before2:
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
 
 
 # ============================================================================
@@ -645,6 +726,10 @@ func start_level(lvl: int) -> void:
         player_invincible_timer_ms = 0
         player2_invincible_timer_ms = 0
         particles.clear()
+        # Clear decals (port of C++ Game::startLevel lines 169-171)
+        blood_stains.clear()
+        ash_piles.clear()
+        fire_bursts.clear()
         # Spawn collectibles (mine, chalice, scepter, speed boots)
         _spawn_collectibles()
         # Play level music
@@ -867,6 +952,182 @@ func _update_particles(delta_ms: float) -> void:
         particles = alive
 
 
+# ============================================================================
+# Decals: spawn helpers + update/draw for blood_stains / ash_piles / fire_bursts
+# (port of C++ Game::bloodStains / ashPiles / fireBursts).
+# ============================================================================
+
+# Spawn a dark-red blood stain at the given pixel position. Life is 300
+# frames (5s @ 60 FPS). Mirrors Game.cpp lines 1667 / 1782 / 2499 / 2637 / 2793.
+func _spawn_blood_stain(pos: Vector2) -> void:
+        blood_stains.append({
+                "pos": pos,
+                "life": 300,
+                "max_life": 300,
+                "radius": 8.0 + randf() * 6.0,  # 8-14 px
+                "color": Color(120.0 / 255.0, 0.0, 0.0, 200.0 / 255.0),
+        })
+
+
+# Spawn a long-lasting grey ash pile at the given pixel position. Life is
+# 600 frames (10s @ 60 FPS) - the task requirement (C++ uses 500/8.3s).
+# Mirrors Game.cpp lines 2334-2335.
+func _spawn_ash_pile(pos: Vector2) -> void:
+        ash_piles.append({
+                "pos": pos,
+                "life": 600,
+                "max_life": 600,
+                "radius": 10.0 + randf() * 6.0,  # 10-16 px
+                "anim_time": 0.0,
+        })
+
+
+# Spawn a fire burst (orange/yellow expanding flare) at the given pixel
+# position. Life is 40 frames (~0.66s). `scale` controls base size
+# (1.0 for kill explosions, 0.9 for burning-finalisation bursts).
+# Mirrors Game.cpp lines 2339-2340 (life=30, scale=0.9) and the
+# drawFireBursts() renderer at 3892-3990.
+func _spawn_fire_burst(pos: Vector2, scale: float = 1.0) -> void:
+        fire_bursts.append({
+                "pos": pos,
+                "life": 40,
+                "max_life": 40,
+                "scale": scale,
+                "anim_time": 0.0,
+        })
+
+
+# Decrement life for all three decal arrays and remove expired entries.
+# Also advances anim_time for ash piles and fire bursts (used by the
+# renderer for pulsing / particle drift). Mirrors Game.cpp lines 2146-2171.
+func _update_decals(_delta_ms: float) -> void:
+        var alive_bs: Array = []
+        for bs in blood_stains:
+                bs["life"] = int(bs.get("life", 0)) - 1
+                if int(bs["life"]) > 0:
+                        alive_bs.append(bs)
+        blood_stains = alive_bs
+
+        var alive_ap: Array = []
+        for ap in ash_piles:
+                ap["life"] = int(ap.get("life", 0)) - 1
+                ap["anim_time"] = float(ap.get("anim_time", 0.0)) + 0.04
+                if int(ap["life"]) > 0:
+                        alive_ap.append(ap)
+        ash_piles = alive_ap
+
+        var alive_fb: Array = []
+        for fb in fire_bursts:
+                fb["life"] = int(fb.get("life", 0)) - 1
+                fb["anim_time"] = float(fb.get("anim_time", 0.0)) + 0.1
+                if int(fb["life"]) > 0:
+                        alive_fb.append(fb)
+        fire_bursts = alive_fb
+
+
+# Render all decals to the canvas. Called from _draw().
+# - BloodStains: dark red main circle + 4 smaller splash circles around it,
+#   alpha fades with life.
+# - AshPiles: flattened grey/brown pile + lighter top + small smoke puffs
+#   rising above; alpha fades with life.
+# - FireBursts: expanding orange/yellow multi-layer glow (outer orange,
+#   mid red, inner gold, white core) + 6 sparks; radius grows with age.
+func _draw_decals() -> void:
+        # --- Blood stains ---
+        for bs in blood_stains:
+                var pos: Vector2 = bs.get("pos", Vector2.ZERO)
+                var radius: float = float(bs.get("radius", 8.0))
+                var life_ratio: float = float(bs.get("life", 0)) / float(bs.get("max_life", 300))
+                if life_ratio < 0.0:
+                        life_ratio = 0.0
+                var base_col: Color = bs.get("color", Color(0.47, 0.0, 0.0, 0.78))
+                var alpha: float = base_col.a * life_ratio
+                # Main splatter
+                draw_circle(pos, radius, Color(base_col.r, base_col.g, base_col.b, alpha))
+                # 4 smaller splashes around it (mirror C++ Game.cpp 5091-5102)
+                for i in 4:
+                        var angle: float = float(i) * (PI / 2.0) + 0.5
+                        var dist: float = radius * 1.5
+                        var sx: float = pos.x + cos(angle) * dist
+                        var sy: float = pos.y + sin(angle) * dist
+                        var sr: float = radius * 0.4
+                        draw_circle(Vector2(sx, sy), sr,
+                                Color(base_col.r, base_col.g, base_col.b, alpha * 0.7))
+
+        # --- Ash piles ---
+        for ap in ash_piles:
+                var pos: Vector2 = ap.get("pos", Vector2.ZERO)
+                var radius: float = float(ap.get("radius", 12.0))
+                var anim_time: float = float(ap.get("anim_time", 0.0))
+                var life_ratio: float = float(ap.get("life", 0)) / float(ap.get("max_life", 600))
+                if life_ratio < 0.0:
+                        life_ratio = 0.0
+                var alpha: float = 1.0 * life_ratio
+                # Shadow (squashed dark ellipse)
+                var shadow_r: float = radius * 1.4
+                draw_circle(pos, shadow_r * 0.5,
+                        Color(0.05, 0.05, 0.05, 0.4 * life_ratio))
+                # Main pile (dark grey/brown, flattened)
+                draw_circle(pos, radius * 0.6,
+                        Color(0.47, 0.39, 0.35, alpha))
+                # Mid layer (lighter)
+                draw_circle(Vector2(pos.x, pos.y - radius * 0.2), radius * 0.4,
+                        Color(0.63, 0.50, 0.44, alpha))
+                # Top highlight (lightest)
+                draw_circle(Vector2(pos.x, pos.y - radius * 0.4), radius * 0.25,
+                        Color(0.78, 0.71, 0.63, alpha))
+                # Rising smoke particles (grey puffs) - 5 small circles
+                # drifting upward and fading. Mirrors Game.cpp 4101-4115.
+                if life_ratio > 0.4:
+                        var smoke_alpha: float = (life_ratio - 0.4) / 0.6
+                        for i in 5:
+                                var sx: float = pos.x + sin(anim_time + float(i) * 2.0) * radius * 0.5
+                                var sy: float = pos.y - 8.0 - float(int(anim_time * 30.0 + float(i) * 20.0) % 40)
+                                var sr2: float = 2.0 + float(i) * 0.5
+                                draw_circle(Vector2(sx, sy), sr2,
+                                        Color(0.7, 0.67, 0.63,
+                                                0.4 * smoke_alpha * (1.0 - float(i) * 0.15)))
+
+        # --- Fire bursts ---
+        for fb in fire_bursts:
+                var pos: Vector2 = fb.get("pos", Vector2.ZERO)
+                var life_ratio: float = float(fb.get("life", 0)) / float(fb.get("max_life", 40))
+                if life_ratio < 0.0:
+                        life_ratio = 0.0
+                var scale: float = float(fb.get("scale", 1.0))
+                var anim_time: float = float(fb.get("anim_time", 0.0))
+                # Pulse (subtle breathing)
+                var pulse: float = 1.0 + sin(anim_time * 0.3) * 0.1
+                # Age factor: grows from 0 to 1 as the burst ages (life shrinks).
+                var age: float = 1.0 - life_ratio
+                # Expanding radius (grows with age, base 28 px scaled)
+                var expand: float = 1.0 + age * 1.5
+                # Outer orange glow
+                var outer_r: float = 28.0 * scale * pulse * expand
+                draw_circle(pos, outer_r,
+                        Color(1.0, 0.39, 0.0, 0.27 * life_ratio))
+                # Mid red glow
+                var mid_r: float = 20.0 * scale * pulse * expand
+                draw_circle(pos, mid_r,
+                        Color(0.78, 0.31, 0.31, 0.39 * life_ratio))
+                # Inner gold glow
+                var inner_r: float = 12.0 * scale * pulse * expand
+                draw_circle(pos, inner_r,
+                        Color(0.86, 0.63, 0.16, 0.55 * life_ratio))
+                # White-hot core
+                var core_r: float = 6.0 * scale * pulse * expand
+                draw_circle(pos, core_r,
+                        Color(0.94, 0.94, 0.94, 0.7 * life_ratio))
+                # 6 sparks flying outward (procedural, mirrors Game.cpp 3977-3988)
+                for i in 6:
+                        var angle: float = (float(i) / 6.0) * 2.0 * PI + anim_time * 0.5
+                        var sdist: float = age * 30.0 * scale
+                        var sx: float = pos.x + cos(angle) * sdist
+                        var sy: float = pos.y + sin(angle) * sdist - age * 10.0
+                        draw_circle(Vector2(sx, sy), 1.5,
+                                Color(0.94, 0.94, 0.94, 0.86 * life_ratio))
+
+
 func _update_hud() -> void:
         if not hud:
                 return
@@ -928,6 +1189,10 @@ func _draw() -> void:
                 var col: Color = p.get("color", Color.WHITE)
                 var size: float = float(p.get("size", 3))
                 draw_circle(pos, size, col)
+
+        # Decals: blood stains, ash piles, fire bursts (port of C++
+        # Game::bloodStains / ashPiles / fireBursts).
+        _draw_decals()
 
         # Screen flash
         if screen_flash_timer_ms > 0:

@@ -809,6 +809,9 @@ func _draw() -> void:
                 var shadow_y: float = 20.0 - jump_offset * 0.3
                 draw_circle(Vector2(0, shadow_y), 16.0, Color(0, 0, 0, 0.3))
 
+        # Fallback procedural character if no sprite loaded
+        _draw_character_fallback()
+
 
 func _projectile_color(w_type: int) -> Color:
         match w_type:
@@ -822,3 +825,143 @@ func _projectile_color(w_type: int) -> Color:
                         return Color(0.3, 1.0, 0.3)  # green
                 _:
                         return Color(1.0, 1.0, 1.0)
+
+
+# ===========================================================================
+# renderCharacterFallback(): procedural rendering when no sprite PNG is loaded.
+# Mirrors C++ Player::renderCharacterFallback() - draws a unique shape per
+# character type using draw_circle, draw_rect, draw_colored_polygon.
+# Each character has distinct features: HERO_M (hat), HERO_F (hair), MAGE
+# (cone+robe), ORC (tusks+green), ELF (hood+ears), KNIGHT (helm+plume),
+# GOLEM (cracks+glow), DRAGON (crest+wings+tail), VAMPIRE (cape+fangs).
+# ===========================================================================
+func _draw_character_fallback() -> void:
+        if sprite_loaded and sprite != null and sprite.texture != null:
+                return  # sprite exists, no fallback needed
+        var body_col: Color = Color(0.7, 0.6, 0.5)
+        var accent_col: Color = Color(0.9, 0.8, 0.7)
+        match character_type:
+                CharacterType.HERO_M:
+                        body_col = Color(0.5, 0.4, 0.3)
+                        accent_col = Color(0.3, 0.3, 0.4)  # blue tunic
+                CharacterType.HERO_F:
+                        body_col = Color(0.6, 0.45, 0.4)
+                        accent_col = Color(0.8, 0.2, 0.2)  # red hair
+                CharacterType.MAGE:
+                        body_col = Color(0.3, 0.2, 0.5)
+                        accent_col = Color(0.5, 0.4, 0.8)  # purple robe
+                CharacterType.ORC:
+                        body_col = Color(0.3, 0.5, 0.2)
+                        accent_col = Color(0.2, 0.3, 0.1)  # dark green
+                CharacterType.ELF:
+                        body_col = Color(0.8, 0.7, 0.5)
+                        accent_col = Color(0.5, 0.4, 0.2)  # brown hood
+                CharacterType.KNIGHT:
+                        body_col = Color(0.6, 0.6, 0.65)
+                        accent_col = Color(0.4, 0.4, 0.45)  # steel
+                CharacterType.GOLEM:
+                        body_col = Color(0.5, 0.48, 0.45)
+                        accent_col = Color(1.0, 0.6, 0.1)  # glow eyes
+                CharacterType.DRAGON:
+                        body_col = Color(0.7, 0.2, 0.1)
+                        accent_col = Color(0.9, 0.4, 0.1)  # red scales
+                CharacterType.VAMPIRE:
+                        body_col = Color(0.15, 0.1, 0.15)
+                        accent_col = Color(0.8, 0.8, 0.9)  # pale skin
+        # Body (circle)
+        draw_circle(Vector2(0, 4), 12, body_col)
+        # Head (circle)
+        draw_circle(Vector2(0, -8), 8, accent_col)
+        # Character-specific details
+        match character_type:
+                CharacterType.HERO_M:
+                        # Hat (brown triangle)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -14), Vector2(8, -14), Vector2(0, -22)
+                        ]), Color(0.4, 0.3, 0.15))
+                        # Eyes
+                        draw_circle(Vector2(-3, -8), 1.5, Color.WHITE)
+                        draw_circle(Vector2(3, -8), 1.5, Color.WHITE)
+                CharacterType.HERO_F:
+                        # Hair (red flowing)
+                        draw_rect(Rect2(-8, -14, 16, 4), Color(0.8, 0.2, 0.2))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -12), Vector2(-12, -4), Vector2(-8, 0)
+                        ]), Color(0.7, 0.15, 0.15))
+                CharacterType.MAGE:
+                        # Pointed hat
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -14), Vector2(8, -14), Vector2(2, -26)
+                        ]), Color(0.2, 0.15, 0.4))
+                        # Robe bottom (wider)
+                        draw_rect(Rect2(-14, 8, 28, 8), accent_col)
+                        # Staff
+                        draw_rect(Rect2(10, -8, 2, 20), Color(0.4, 0.3, 0.1))
+                        draw_circle(Vector2(11, -10), 3, Color(0.3, 0.8, 1.0))
+                CharacterType.ORC:
+                        # Tusks
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-4, 0), Vector2(-1, 0)
+                        ]), Color(0.9, 0.9, 0.8))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(4, 0), Vector2(1, 0)
+                        ]), Color(0.9, 0.9, 0.8))
+                        # Ears
+                        draw_circle(Vector2(-9, -8), 2, body_col)
+                        draw_circle(Vector2(9, -8), 2, body_col)
+                CharacterType.ELF:
+                        # Pointed ears
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -10), Vector2(-12, -6), Vector2(-8, -4)
+                        ]), accent_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -10), Vector2(12, -6), Vector2(8, -4)
+                        ]), accent_col)
+                        # Hood
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -14), Vector2(8, -14), Vector2(6, -8), Vector2(-6, -8)
+                        ]), Color(0.4, 0.3, 0.15))
+                CharacterType.KNIGHT:
+                        # Helm
+                        draw_rect(Rect2(-7, -16, 14, 8), accent_col)
+                        # Plume
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -16), Vector2(2, -16), Vector2(0, -22)
+                        ]), Color(0.8, 0.2, 0.2))
+                        # Visor slit
+                        draw_rect(Rect2(-4, -12, 8, 1), Color(0, 0, 0))
+                CharacterType.GOLEM:
+                        # Cracks (lines)
+                        draw_line(Vector2(-6, -4), Vector2(-2, 4), Color(0.2, 0.18, 0.15), 1)
+                        draw_line(Vector2(4, -6), Vector2(6, 2), Color(0.2, 0.18, 0.15), 1)
+                        # Glowing eyes
+                        draw_circle(Vector2(-3, -8), 2, accent_col)
+                        draw_circle(Vector2(3, -8), 2, accent_col)
+                CharacterType.DRAGON:
+                        # Wings
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -4), Vector2(-16, -10), Vector2(-14, 0), Vector2(-8, 4)
+                        ]), accent_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -4), Vector2(16, -10), Vector2(14, 0), Vector2(8, 4)
+                        ]), accent_col)
+                        # Horns
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-4, -14), Vector2(-6, -20), Vector2(-2, -16)
+                        ]), Color(0.5, 0.2, 0.05))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(4, -14), Vector2(6, -20), Vector2(2, -16)
+                        ]), Color(0.5, 0.2, 0.05))
+                CharacterType.VAMPIRE:
+                        # Cape (behind body)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-10, -6), Vector2(-14, 12), Vector2(14, 12), Vector2(10, -6)
+                        ]), Color(0.05, 0.0, 0.05))
+                        # Fangs
+                        draw_rect(Rect2(-3, -4, 1, 3), Color.WHITE)
+                        draw_rect(Rect2(2, -4, 1, 3), Color.WHITE)
+        # Flip indicator (small arrow if facing left)
+        if last_dx < 0:
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(-14, 0), Vector2(-18, -2), Vector2(-18, 2)
+                ]), accent_col)
