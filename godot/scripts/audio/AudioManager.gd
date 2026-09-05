@@ -283,9 +283,17 @@ func _samples_to_stream(samples: PackedFloat32Array) -> AudioStreamWAV:
         var bytes := PackedByteArray()
         bytes.resize(samples.size() * 2)
         var i: int = 0
+        # Find max amplitude for normalization
+        var max_amp: float = 0.001  # avoid div by zero
+        for s in samples:
+                var abs_s: float = absf(s)
+                if abs_s > max_amp:
+                        max_amp = abs_s
+        # Normalize to 0.9 (90% volume) and amplify
+        var gain: float = 0.9 / max_amp
         for s in samples:
                 # Soft clip to avoid harsh digital clipping
-                var v: float = clampf(s, -1.0, 1.0)
+                var v: float = clampf(s * gain, -1.0, 1.0)
                 var int16: int = int(round(v * 32767.0))
                 # Little-endian Int16
                 bytes.encode_s16(i, int16)

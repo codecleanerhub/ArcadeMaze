@@ -43,8 +43,8 @@ extends Node
 const DESKTOP_FULLSCREEN_MODE: int = 3  # WINDOW_MODE_FULLSCREEN
 
 # Design resolution (must match project.godot viewport_width/height).
-const DESIGN_WIDTH: int = 1920
-const DESIGN_HEIGHT: int = 1080
+const DESIGN_WIDTH: int = 1024
+const DESIGN_HEIGHT: int = 1024
 
 
 func _ready() -> void:
