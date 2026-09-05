@@ -169,12 +169,13 @@ func _ready() -> void:
                 )
                 aura.name = "AuraLight"
                 add_child(aura)
-        # Camera2D per screen shake (se non presente nel scene tree)
+        # Camera2D per screen shake - positioned at center of viewport (512, 512)
+        # and NO smoothing/follow (the game is single-screen, not scrolling).
         var cam := Camera2D.new()
         cam.name = "PlayerCamera"
         cam.enabled = true
-        cam.position_smoothing_enabled = true
-        cam.position_smoothing_speed = 8.0
+        cam.position = Vector2(512, 512)  # center of 1024x1024 viewport
+        cam.position_smoothing_enabled = false  # NO follow player
         add_child(cam)
         if EffectsManager:
                 EffectsManager.set_camera(cam)

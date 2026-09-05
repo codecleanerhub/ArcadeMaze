@@ -123,21 +123,9 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 GameManager.player2_character = p2_char
                 GameManager.current_level = 1
                 GameManager.config_joy_step = 0
-                # Flow: START GAME -> joystick config (if not done AND joystick present)
-                # -> select player -> intro -> game
-                # If no joystick connected, skip config and go to select player.
-                var joy_connected: bool = Input.get_connected_joypads().size() > 0
-                if joy_connected and ConfigManager and not ConfigManager.p1_joystick_ready():
-                        # Joystick connected but not configured yet: go to config first
-                        GameManager.config_joy_player = 1
-                        GameManager.go_to_config_joy()
-                elif joy_connected and num_players == 2 and ConfigManager and not ConfigManager.p2_joystick_ready():
-                        # P2 joystick not configured
-                        GameManager.config_joy_player = 2
-                        GameManager.go_to_config_joy()
-                else:
-                        # No joystick or already configured: go to character selection
-                        GameManager.go_to_select_player()
+                # Flow: START GAME -> select player (ruota) -> intro -> game
+                # Always go to select player first (character selection is mandatory)
+                GameManager.go_to_select_player()
 
 
 func _on_credits_requested() -> void:
