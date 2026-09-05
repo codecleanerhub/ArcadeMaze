@@ -70,6 +70,7 @@ var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
 
 # Animation timer (mirrors menuTime in drawMenu()).
 var _menu_time: float = 0.0
+var _joy_nav_cooldown: float = 0.0  # debounce per navigazione joystick
 
 # Child nodes (built in _ready).
 var _bg: TextureRect
@@ -153,6 +154,9 @@ func _on_configure_joystick_requested(player: int) -> void:
 
 func _process(delta: float) -> void:
         _menu_time += delta
+        # Decrement joystick navigation cooldown (debounce)
+        if _joy_nav_cooldown > 0:
+                _joy_nav_cooldown -= delta
         # Animated flame flicker for the selected item (visual only).
         var flicker: float = sin(_menu_time * 15.0) * 1.5
         for i in _item_labels.size():
@@ -522,18 +526,23 @@ func _unhandled_input(event: InputEvent) -> void:
                                 get_tree().quit()
 
         # Joystick / controller hat motion (d-pad)
+        # Debounce: only trigger once per tilt (not every frame)
         elif event is InputEventJoypadMotion:
                 var ax: float = event.axis_value
                 if event.axis == JOY_AXIS_LEFT_Y:
-                        if ax < -0.5:
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
                                 _move_selection(-1)
-                        elif ax > 0.5:
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
                                 _move_selection(1)
+                                _joy_nav_cooldown = 0.3
                 elif event.axis == JOY_AXIS_LEFT_X:
-                        if ax < -0.5:
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
                                 _change_option(-1)
-                        elif ax > 0.5:
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
                                 _change_option(1)
+                                _joy_nav_cooldown = 0.3
 
         # Joystick button (confirm)
         elif event is InputEventJoypadButton and event.pressed:

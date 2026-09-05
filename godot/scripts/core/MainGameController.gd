@@ -103,7 +103,7 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: 48eed09 - game controller ready")
+        print("[MainGameController] VERSION: 4dca9ee - game controller ready")
         # Configure player characters from GameManager
         if GameManager:
                 current_level = GameManager.current_level
@@ -177,7 +177,7 @@ func _handle_input() -> void:
                         player.activate_jump()
                         if not was_jumping and player.is_jumping() and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                if joy_shoot_btn >= 0 and Input.is_joy_button_just_pressed(joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
+                if joy_shoot_btn >= 0 and Input.is_joy_button_pressed(joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
                         var ammo_before: int = player.current_weapon.get("ammo", 0)
                         player.shoot()
                         var ammo_after: int = player.current_weapon.get("ammo", 0)

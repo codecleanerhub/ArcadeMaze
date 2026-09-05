@@ -24,18 +24,25 @@ var _skip_key_held: bool = false
 @onready var timer: Timer = $Timer
 
 func _ready() -> void:
-        print("[IntroCutscene] VERSION: 48eed09 - loading intro images...")
-        # Carica le 4 immagini intro
+        print("[IntroCutscene] VERSION: 4dca9ee - loading intro images...")
+        # Carica le 4 immagini intro usando Image.load() (piu' robusto di load())
         for i in range(1, 5):
                 var path := "res://assets/cutscene/intro_" + str(i) + ".png"
-                print("[IntroCutscene] Loading %s exists=%s" % [path, ResourceLoader.exists(path)])
+                # Try ResourceLoader first, then Image.load as fallback
+                var tex = null
                 if ResourceLoader.exists(path):
-                        var tex = load(path)
-                        if tex != null:
-                                _images.append(tex)
+                        tex = load(path)
+                if tex == null:
+                        # Fallback: load raw image and convert to texture
+                        var img := Image.new()
+                        var err := img.load(path)
+                        if err == OK:
+                                tex = ImageTexture.create_from_image(img)
+                                print("[IntroCutscene] Loaded via Image.load: %s" % path)
                         else:
-                                print("[IntroCutscene] WARN: load returned null for %s" % path)
-                                _images.append(null)
+                                print("[IntroCutscene] Image.load failed for %s err=%d" % [path, err])
+                if tex != null:
+                        _images.append(tex)
                 else:
                         _images.append(null)
         
