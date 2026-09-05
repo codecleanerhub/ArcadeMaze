@@ -676,10 +676,16 @@ func _draw() -> void:
                 draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2),
                         Color(1.0, 0.3, 0.1, 1.0), true)
 
-        # Flee mode indicator (fear exclamation mark)
+        # Flee mode indicator (fear exclamation mark - rendered as yellow triangle)
         if flee_mode:
-                draw_string(get_theme_default_font(), Vector2(-3, -24),
-                        "!", HORIZONTAL_ALIGNMENT_CENTER, 16, Color(1, 1, 0, 0.9))
+                # Simple yellow "!" indicator drawn as triangle + circle
+                var excl_color := Color(1.0, 1.0, 0.0, 0.9)
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(-3.0, -28.0),
+                        Vector2(3.0, -28.0),
+                        Vector2(0.0, -18.0),
+                ]), excl_color)
+                draw_circle(Vector2(0.0, -14.0), 2.0, excl_color)
 
 
 # Draw the current animation frame from the AI-generated sprite sheet.

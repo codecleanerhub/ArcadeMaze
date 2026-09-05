@@ -111,11 +111,11 @@ func _on_timeout() -> void:
 func _draw() -> void:
         # Background image (cover-fit)
         if _bg_texture:
-                var vp_size := size
-                var tex_size := _bg_texture.get_size()
-                var scale := max(vp_size.x / tex_size.x, vp_size.y / tex_size.y)
-                var draw_size := tex_size * scale
-                var draw_pos := (vp_size - draw_size) / 2.0
+                var vp_size: Vector2 = size
+                var tex_size: Vector2 = _bg_texture.get_size()
+                var scale_val: float = max(vp_size.x / tex_size.x, vp_size.y / tex_size.y)
+                var draw_size: Vector2 = tex_size * scale_val
+                var draw_pos: Vector2 = (vp_size - draw_size) / 2.0
                 draw_texture_rect(_bg_texture, Rect2(draw_pos, draw_size), false)
         else:
                 draw_rect(Rect2(0, 0, size.x, size.y), Color(0.02, 0.02, 0.04, 1.0), true)

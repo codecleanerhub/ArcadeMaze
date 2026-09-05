@@ -138,7 +138,7 @@ func _handle_input() -> void:
                 player.shoot()
                 var ammo_after: int = player.current_weapon.get("ammo", 0)
                 if ammo_after < ammo_before and AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.SHOOT)
+                        AudioManager.play_sound(AudioManager.SoundType.PISTOL)
                 player.shoot_cooldown = 150
 
         # P1 jump

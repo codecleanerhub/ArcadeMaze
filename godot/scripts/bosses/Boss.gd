@@ -436,9 +436,8 @@ func _draw_hp_bar() -> void:
         var bar_w := size
         var bar_h := 12.0
         # Background.
-        draw_rect(Rect2(-bar_w * 0.5, bar_y, bar_w, bar_h),
-                          Color(0.12, 0.0, 0.0), false, 2.0, Color(0.39, 0.0, 0.0))
         draw_rect(Rect2(-bar_w * 0.5, bar_y, bar_w, bar_h), Color(0.12, 0.0, 0.0))
+        draw_rect(Rect2(-bar_w * 0.5, bar_y, bar_w, bar_h), Color(0.39, 0.0, 0.0), false, 2.0)
         # Foreground (color-coded).
         var ratio := float(health) / float(max_health) if max_health > 0 else 0.0
         var col := Color(0.31, 0.86, 0.31) if ratio > 0.5 \

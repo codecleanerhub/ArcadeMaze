@@ -418,15 +418,15 @@ func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
 
 
 func _move_greedy(target_grid: Vector2i) -> void:
-        var dirs := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
+        var dirs: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
         var my_col := int(pos.x) / TILE_SIZE
         var my_row := int((pos.y - UI_HEIGHT)) / TILE_SIZE
         var best_dist := absi(target_grid.x - my_col) + absi(target_grid.y - my_row)
         var best_dx := 0
         var best_dy := 0
         for d in dirs:
-                var nc := my_col + d.x
-                var nr := my_row + d.y
+                var nc: int = my_col + d.x
+                var nr: int = my_row + d.y
                 if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
                         continue
                 if maze != null and maze.is_wall(nc, nr):
@@ -445,7 +445,7 @@ func _move_greedy(target_grid: Vector2i) -> void:
 
 
 func _flee_greedy(target_grid: Vector2i) -> void:
-        var dirs := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
+        var dirs: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
         var my_col := int(pos.x) / TILE_SIZE
         var my_row := int((pos.y - UI_HEIGHT)) / TILE_SIZE
         var cur_dist := absi(target_grid.x - my_col) + absi(target_grid.y - my_row)
@@ -453,8 +453,8 @@ func _flee_greedy(target_grid: Vector2i) -> void:
         var best_dx := 0
         var best_dy := 0
         for d in dirs:
-                var nc := my_col + d.x
-                var nr := my_row + d.y
+                var nc: int = my_col + d.x
+                var nr: int = my_row + d.y
                 if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
                         continue
                 if maze != null and maze.is_wall(nc, nr):
@@ -503,20 +503,20 @@ func _draw_with_sprite() -> void:
                 anim_name = "death"
                 frame_duration = 120
                 var elapsed := 600 - dying_timer_ms
-                var fc := sprite_sheet.get_frame_count("death")
+                var fc: int = sprite_sheet.get_frame_count("death")
                 frame = elapsed / frame_duration
                 frame = clampi(frame, 0, fc - 1)
         elif attacking_timer_ms > 0 and sprite_sheet.get_frame_count("attack") > 0:
                 anim_name = "attack"
                 frame_duration = 50
                 var elapsed := 400 - attacking_timer_ms
-                var fc := sprite_sheet.get_frame_count("attack")
+                var fc: int = sprite_sheet.get_frame_count("attack")
                 frame = elapsed / frame_duration
                 frame = clampi(frame, 0, fc - 1)
         elif (dx != 0 or dy != 0) and sprite_sheet.get_frame_count("walk") > 0:
                 anim_name = "walk"
                 frame_duration = 100
-                var fc := sprite_sheet.get_frame_count("walk")
+                var fc: int = sprite_sheet.get_frame_count("walk")
                 frame = (int(anim_time * 1000.0) / frame_duration) % fc
         elif sprite_sheet.get_frame_count("idle") > 0:
                 anim_name = "idle"
@@ -527,8 +527,8 @@ func _draw_with_sprite() -> void:
                 at = sprite_sheet.get_frame_texture(anim_name, frame)
         if at != null:
                 # Centered draw with vertical bob. Flip horizontally via src_rect.
-                var tw := at.get_width()
-                var th := at.get_height()
+                var tw: int = at.get_width()
+                var th: int = at.get_height()
                 var draw_pos := Vector2(-tw * 0.5, -th * 0.5 + 8.0 + bob_y)
                 if flipped:
                         # Flip by using a reversed src_rect (start at right edge, negative width).

@@ -44,11 +44,13 @@ const DEFAULT_GRID_H := 8
 
 ## Source texture (PNG spritesheet or single frame).
 var _tex: Texture2D = null
-        set(v):
-                texture = v
-                if _tex != null and sub_rect == Rect2(0, 0, 0, 0):
-                        sub_rect = Rect2(0, 0, texture.get_width(), texture.get_height())
-                _rebuild_mesh()
+
+func set_texture(v: Texture2D) -> void:
+        _tex = v
+        texture = v
+        if _tex != null and sub_rect == Rect2(0, 0, 0, 0):
+                sub_rect = Rect2(0, 0, texture.get_width(), texture.get_height())
+        _rebuild_mesh()
 
 var loaded: bool = false
 
@@ -96,6 +98,7 @@ func load_subrect(path: String, frame_x: int, frame_y: int, frame_w: int, frame_
         if tex == null:
                 loaded = false
                 return false
+        _tex = tex
         texture = tex
         if frame_w <= 0 or frame_h <= 0:
                 sub_rect = Rect2(0, 0, tex.get_width(), tex.get_height())
@@ -108,6 +111,7 @@ func load_subrect(path: String, frame_x: int, frame_y: int, frame_w: int, frame_
 
 ## Use an already-loaded Texture2D directly.
 func assign_texture(tex: Texture2D, sub: Rect2 = Rect2(0, 0, 0, 0)) -> void:
+        _tex = tex
         texture = tex
         if sub.size.x > 0 and sub.size.y > 0:
                 sub_rect = sub

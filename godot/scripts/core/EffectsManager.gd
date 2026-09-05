@@ -172,8 +172,13 @@ func spawn_explosion(pos: Vector2, color: Color = Color(1.0, 0.4, 0.1),
         mat.scale_max = 5.0
         mat.color = color
         mat.emission_sphere_radius = 4.0
-        # Fade out
-        mat.color_ramp = _make_fade_gradient()
+        # Fade out (Godot 4.7 color_ramp expects GradientTexture1D, not raw Gradient)
+        var fade_tex := GradientTexture1D.new()
+        var grad := Gradient.new()
+        grad.set_color(0, Color(1, 1, 1, 1))
+        grad.set_color(1, Color(1, 1, 1, 0))
+        fade_tex.gradient = grad
+        mat.color_ramp = fade_tex
         particles.process_material = mat
         # Texture della particella (cerchio piccolo)
         var tex := _make_radial_gradient_texture(8)
@@ -213,7 +218,12 @@ func spawn_lightning_bolt(from: Vector2, to: Vector2) -> GPUParticles2D:
         mat.scale_min = 1.0
         mat.scale_max = 3.0
         mat.color = Color(0.5, 0.8, 1.0)
-        mat.color_ramp = _make_fade_gradient()
+        var fade_tex2 := GradientTexture1D.new()
+        var grad2 := Gradient.new()
+        grad2.set_color(0, Color(1, 1, 1, 1))
+        grad2.set_color(1, Color(1, 1, 1, 0))
+        fade_tex2.gradient = grad2
+        mat.color_ramp = fade_tex2
         particles.process_material = mat
         var tex := _make_radial_gradient_texture(8)
         particles.texture = tex
@@ -221,11 +231,7 @@ func spawn_lightning_bolt(from: Vector2, to: Vector2) -> GPUParticles2D:
         return particles
 
 
-func _make_fade_gradient() -> Gradient:
-        var grad := Gradient.new()
-        grad.set_color(0, Color(1, 1, 1, 1))
-        grad.set_color(1, Color(1, 1, 1, 0))
-        return grad
+# (gradient helper removed - inlined into spawn_explosion and spawn_lightning_bolt)
 
 
 # ============================================================================
