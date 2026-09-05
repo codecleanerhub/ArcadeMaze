@@ -712,9 +712,12 @@ func _draw_sprite_frame() -> void:
         var at: AtlasTexture = _sprite_sheet.get_frame_texture(anim_name, frame)
         if at == null:
                 return
-        # Draw centered, with slight vertical bob when walking.
-        var tw: float = at.get_width()
-        var th: float = at.get_height()
+        # Draw centered at enemy size (32x32 base, scaled to fit tile).
+        # HD sheets are 256x256 single frame, scale down to 40x40 to match
+        # the enemy visual size (slightly smaller than tile_size=48).
+        var target_size: float = 40.0
+        var tw: float = target_size
+        var th: float = target_size
         var bob_y: float = 0.0
         if is_moving:
                 bob_y = sin(float(anim_time) * 0.01) * 2.0

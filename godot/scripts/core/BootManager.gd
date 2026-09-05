@@ -101,7 +101,7 @@ func _setup_desktop(os_name: String) -> void:
         #    project.godot already sets this, but we re-apply defensively in
         #    case some platform override changed it.
         get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
 
 
 ## Web (HTML5) setup: we can't force fullscreen, but we ensure the canvas
@@ -113,7 +113,7 @@ func _setup_web() -> void:
         # On Web, the window is the browser canvas. We just make sure the
         # stretch mode is correct so the game scales cleanly.
         get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
         # NOTE: To enter real fullscreen in the browser, the user must press
         # F11 (browser fullscreen) or click a button in-game. Godot's
         # DisplayServer.window_set_mode(MODE_FULLSCREEN) on Web requires a

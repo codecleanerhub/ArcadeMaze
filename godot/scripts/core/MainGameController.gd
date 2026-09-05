@@ -180,6 +180,17 @@ func _handle_input() -> void:
                         _test_mode_skip()
                 test_skip_key_held = space_now
 
+        # ESC: return to main menu (instead of forcing user to kill Godot)
+        if Input.is_key_pressed(KEY_ESCAPE):
+                _return_to_menu()
+
+
+func _return_to_menu() -> void:
+        if AudioManager:
+                AudioManager.stop_music()
+        if GameManager:
+                GameManager.go_to_menu()
+
 
 # ============================================================================
 # Main update loop (STATE_PLAYING)
@@ -206,7 +217,9 @@ func _update_playing(delta_ms: float) -> void:
         for enemy in spawner.enemies:
                 if not enemy.is_death_anim_done():
                         enemy.set_flee_mode(player_invuln)
-                        enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles_node)
+                        # Pass empty array for enemy projectiles (the controller
+                        # manages them via the EnemyProjectiles node, not via this arg).
+                        enemy.update_enemy(maze, p_grid, p_pos, [])
 
         # (3) Advance enemy projectiles
         _advance_projectiles(enemy_projectiles_node, delta_ms)

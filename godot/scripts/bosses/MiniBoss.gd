@@ -527,9 +527,9 @@ func _draw_with_sprite() -> void:
                 at = sprite_sheet.get_frame_texture(anim_name, frame)
         if at != null:
                 # Centered draw with vertical bob. Flip horizontally via src_rect.
-                var tw: int = at.get_width()
-                var th: int = at.get_height()
-                var draw_pos := Vector2(-tw * 0.5, -th * 0.5 + 8.0 + bob_y)
+                var tw: int = 64  # mini-boss visual size (HD sheet scaled down)
+                var th: int = 64
+                var draw_pos := Vector2(-tw / 2, -th / 2 + 8 + bob_y)
                 if flipped:
                         # Flip by using a reversed src_rect (start at right edge, negative width).
                         var src := Rect2(tw, 0.0, -tw, th)

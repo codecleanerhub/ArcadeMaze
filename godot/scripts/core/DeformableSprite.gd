@@ -45,7 +45,8 @@ const DEFAULT_GRID_H := 8
 ## Source texture (PNG spritesheet or single frame).
 var _tex: Texture2D = null
 
-func set_texture(v: Texture2D) -> void:
+# Custom setter (renamed to avoid conflict with MeshInstance2D's native set_texture).
+func assign_sprite_texture(v: Texture2D) -> void:
         _tex = v
         texture = v
         if _tex != null and sub_rect == Rect2(0, 0, 0, 0):
@@ -213,15 +214,16 @@ func _rebuild_mesh() -> void:
         arr[Mesh.ARRAY_INDEX] = _indices
         _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 
-        # Apply texture via material_override (StandardMaterial3D works on
-        # MeshInstance2D in Godot 4 and supports albedo_texture).
-        # The old CanvasItemMaterial._tex approach was invalid (no such property).
+        # Apply texture via the mesh surface material.
+        # In Godot 4.7, MeshInstance2D renders the ArrayMesh, and the material
+        # must be set on the mesh surface itself.
         var mat := StandardMaterial3D.new()
         mat.albedo_texture = texture
         mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
         mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
         mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-        material_override = mat
+        if _mesh.get_surface_count() > 0:
+                _mesh.surface_set_material(0, mat)
 
 
 func _apply_deformation(time: float, mode: int) -> void:

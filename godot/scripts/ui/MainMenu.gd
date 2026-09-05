@@ -59,7 +59,7 @@ signal configure_joystick_requested(player: int)
 var _menu_item_index: int = 0
 var _num_players: int = 1
 var _game_mode: int = GameMode.STORY
-var _music_enabled: bool = false
+var _music_enabled: bool = true  # default ON so music plays at startup
 var _test_mode_enabled: bool = false
 var _fullscreen_enabled: bool = true  # BootManager sets fullscreen at startup
 # Character selection (8 characters, matches Player.h:CharacterType).

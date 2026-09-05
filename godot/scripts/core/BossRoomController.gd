@@ -124,6 +124,13 @@ func _handle_input() -> void:
                                 boss.take_damage(9999)
                 test_skip_key_held = space_now
 
+        # ESC: return to main menu
+        if Input.is_key_pressed(KEY_ESCAPE):
+                if AudioManager:
+                        AudioManager.stop_music()
+                if GameManager:
+                        GameManager.go_to_menu()
+
 
 # ============================================================================
 # Boss fight update loop (STATE_BOSS)
