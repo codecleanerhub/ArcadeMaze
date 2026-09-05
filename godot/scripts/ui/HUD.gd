@@ -96,7 +96,8 @@ func _ready() -> void:
         # The HUD spans the full width and is UI_HEIGHT tall at the top.
         set_anchors_preset(Control.PRESET_TOP_WIDE)
         custom_minimum_size = Vector2(WINDOW_WIDTH, UI_HEIGHT)
-        size = Vector2(WINDOW_WIDTH, UI_HEIGHT)
+        # Use set_deferred to avoid "non-equal opposite anchors" warning.
+        set_deferred("size", Vector2(WINDOW_WIDTH, UI_HEIGHT))
         mouse_filter = Control.MOUSE_FILTER_IGNORE
         load_heart_sprite("res://assets/sprites/ui_heart.png")
 

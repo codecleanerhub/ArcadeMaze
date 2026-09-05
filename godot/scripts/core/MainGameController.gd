@@ -306,7 +306,7 @@ func _update_playing(delta_ms: float) -> void:
         _update_exit_door(delta_ms)
 
         # (11) Magic portal (50% enemies killed) - spawn mini-boss too
-        spawner.trigger_portal_if_needed(maze, p_pos, player_invuln, _spawn_mini_boss)
+        spawner.trigger_portal_if_needed(maze, p_pos, _spawn_mini_boss)
         spawner.update_portal(maze, int(delta_ms))
 
         # (11b) MiniBoss update + melee collision (mirror C++ riga 1581-1633)
