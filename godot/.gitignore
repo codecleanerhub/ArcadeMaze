@@ -1,0 +1,11 @@
+# Godot 4 editor cache and import cache
+.godot/
+*.godot.import
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

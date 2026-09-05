@@ -11,6 +11,11 @@ run/main_scene="res://scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://assets/sprites/player1_sheet.png"
 
+[editor]
+
+text_editor/theme/indent_use_spaces=true
+text_editor/theme/indent_size=8
+
 [autoload]
 BootManager="*res://scripts/core/BootManager.gd"
 GameManager="*res://scripts/core/GameManager.gd"
