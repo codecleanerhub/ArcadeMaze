@@ -56,6 +56,16 @@ var magic_portal: Dictionary = {
 }
 
 var portal_used: bool = false
+
+# MiniBoss (spawned by magic portal, 1 per level)
+var mini_boss: Node2D = null
+var mini_boss_spawned: bool = false
+
+# Lightning bolts from scepter (full-screen, hit all enemies/boss on path)
+var lightning_bolts: Array = []  # [{pos, life, max_life, zigzag_points}]
+var scepter_active: bool = false
+var scepter_strikes_left: int = 0
+var scepter_timer_ms: int = 0
 var initial_enemy_count: int = 0
 
 # Items spawned per level
@@ -214,15 +224,38 @@ func _update_playing(delta_ms: float) -> void:
         var p_pos: Vector2 = player.get_pixel_pos()
         var p_grid: Vector2i = player.get_grid_pos()
         var player_invuln: bool = player.is_invulnerable()
+        # Collect enemy projectiles in a real array (enemies that shoot add to it)
+        var enemy_projectiles: Array = []
         for enemy in spawner.enemies:
                 if not enemy.is_death_anim_done():
                         enemy.set_flee_mode(player_invuln)
-                        # Pass empty array for enemy projectiles (the controller
-                        # manages them via the EnemyProjectiles node, not via this arg).
-                        enemy.update_enemy(maze, p_grid, p_pos, [])
+                        enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles)
 
-        # (3) Advance enemy projectiles
-        _advance_projectiles(enemy_projectiles_node, delta_ms)
+        # (3) Spawn enemy projectiles as Projectile nodes so they get rendered + collide
+        for proj_data in enemy_projectiles:
+                if not proj_data.get("active", false):
+                        continue
+                var proj_pos: Vector2 = proj_data.get("pos", Vector2.ZERO)
+                var proj_dir: Vector2 = proj_data.get("dir", Vector2.ZERO)
+                var proj_power: int = int(proj_data.get("power", 1))
+                var p_node := Node2D.new()
+                p_node.position = proj_pos
+                p_node.set_meta("pos", proj_pos)  # store original for collision
+                p_node.set_meta("dir", proj_dir)
+                p_node.set_meta("power", proj_power)
+                p_node.set_meta("velocity", proj_dir)  # store for movement
+                enemy_projectiles_node.add_child(p_node)
+
+        # (3b) Advance enemy projectiles (move them by their velocity)
+        for proj in enemy_projectiles_node.get_children():
+                if not proj is Node2D:
+                        continue
+                var vel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
+                proj.position += vel
+                # Remove if out of bounds
+                if proj.position.x < 0 or proj.position.x > C.WINDOW_WIDTH or \
+                   proj.position.y < C.UI_HEIGHT or proj.position.y > C.WINDOW_HEIGHT:
+                        proj.queue_free()
 
         # (4) Player projectiles vs enemies
         _check_player_projectiles_vs_enemies(player)
@@ -255,9 +288,52 @@ func _update_playing(delta_ms: float) -> void:
         # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
 
-        # (11) Magic portal (50% enemies killed)
-        spawner.trigger_portal_if_needed(maze, p_pos, player_invuln)
+        # (11) Magic portal (50% enemies killed) - spawn mini-boss too
+        spawner.trigger_portal_if_needed(maze, p_pos, player_invuln, _spawn_mini_boss)
         spawner.update_portal(maze, int(delta_ms))
+
+        # (11b) MiniBoss update + melee collision (mirror C++ riga 1581-1633)
+        if mini_boss != null and not mini_boss.is_dead():
+                mini_boss.set_flee_mode(player_invuln)
+                mini_boss.update_enemy(maze, p_grid, p_pos, [])
+                # MiniBoss melee attack: if attacking and player in range, damage
+                if mini_boss.has_method("is_attacking") and mini_boss.is_attacking():
+                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                        var mb_range: float = 36.0  # default attack range
+                        if mini_boss.has_method("get_attack_range"):
+                                mb_range = mini_boss.get_attack_range()
+                        if p_pos.distance_squared_to(mb_pos) < (mb_range + 10) ** 2:
+                                if not player.is_invulnerable() and not player.is_jumping():
+                                        var mb_dmg: int = 5  # default
+                                        if mini_boss.has_method("get_attack_damage"):
+                                                mb_dmg = mini_boss.get_attack_damage()
+                                        var num_hits: int = max(1, mb_dmg / 5)
+                                        for _i in num_hits:
+                                                player.take_damage()
+                                        if AudioManager:
+                                                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+        # MiniBoss death cleanup
+        if mini_boss != null and mini_boss.is_dead():
+                var score_reward: int = 5000
+                if mini_boss.has_method("get_score_reward"):
+                        score_reward = mini_boss.get_score_reward()
+                player.add_score(score_reward)
+                if EffectsManager:
+                        var p := EffectsManager.spawn_explosion(mini_boss.position,
+                                Color(0.8, 0.2, 0.1), 30, 0.8)
+                        collectibles_node.add_child(p)
+                mini_boss.queue_free()
+                mini_boss = null
+
+        # (11c) Scepter lightning strikes (5 strikes at 3s intervals)
+        if scepter_active:
+                scepter_timer_ms -= int(delta_ms)
+                if scepter_timer_ms <= 0 and scepter_strikes_left > 0:
+                        _fire_lightning_strike()
+                        scepter_strikes_left -= 1
+                        scepter_timer_ms = 3000  # 3s between strikes
+                        if scepter_strikes_left == 0:
+                                scepter_active = false
 
         # (12) Remove dead enemies
         spawner.remove_dead()
@@ -424,7 +500,11 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         item.active = false
                         item.queue_free()
                         if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                                AudioManager.play_sound(AudioManager.SoundType.SCEPTER_PICKUP)
+                        # Activate 5 lightning strikes at 3s intervals
+                        scepter_active = true
+                        scepter_strikes_left = 5
+                        scepter_timer_ms = 500  # first strike after 0.5s
                         # Particelle lightning (Godot-native)
                         if EffectsManager:
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
@@ -541,6 +621,15 @@ func start_level(lvl: int) -> void:
         spawner.spawn_enemies(maze)
         initial_enemy_count = spawner.enemies.size()
         portal_used = false
+        # Clear mini-boss + scepter state
+        if mini_boss != null:
+                mini_boss.queue_free()
+                mini_boss = null
+        mini_boss_spawned = false
+        scepter_active = false
+        scepter_strikes_left = 0
+        scepter_timer_ms = 0
+        lightning_bolts.clear()
         # Clear projectiles
         for child in enemy_projectiles_node.get_children():
                 child.queue_free()
@@ -677,6 +766,97 @@ func _find_empty_cell_near_center() -> Vector2i:
         return Vector2i(-1, -1)
 
 
+# ============================================================================
+# MiniBoss spawn (called by EnemySpawner.trigger_portal_if_needed)
+# ============================================================================
+const MiniBossClass = preload("res://scripts/bosses/MiniBoss.gd")
+
+func _spawn_mini_boss(col: int, row: int) -> void:
+        if mini_boss_spawned:
+                return
+        var mb_type: int = (current_level - 1) % 51  # cycle through 51 types
+        var mb := MiniBossClass.new()
+        mb.setup(mb_type, current_level, col, row)
+        add_child(mb)
+        mini_boss = mb
+        mini_boss_spawned = true
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+
+
+# ============================================================================
+# Scepter lightning strike (full-screen, hits all enemies on path)
+# ============================================================================
+func _fire_lightning_strike() -> void:
+        # Generate a zigzag lightning from top to bottom of screen
+        var start_x: float = randf() * C.WINDOW_WIDTH
+        var points: Array = []
+        var num_segs: int = 8
+        for i in num_segs + 1:
+                var y: float = C.UI_HEIGHT + float(i) / num_segs * (C.WINDOW_HEIGHT - C.UI_HEIGHT)
+                var x: float = start_x + (randf() * 2 - 1) * 30  # jitter
+                points.append(Vector2(x, y))
+        lightning_bolts.append({
+                "points": points,
+                "life": 30,  # frames
+                "max_life": 30,
+        })
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
+        if EffectsManager:
+                EffectsManager.screen_shake(8.0, 0.3)
+        # Damage all enemies near any lightning segment
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                for pt in points:
+                        if e_pos.distance_to(pt) < 50:
+                                enemy.take_damage(999)  # instant kill
+                                enemy.start_electrified(30)
+                                player.add_score(3000)
+                                break
+        # Damage mini-boss if present (35% max HP)
+        if mini_boss != null and not mini_boss.is_dead():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                for pt in points:
+                        if mb_pos.distance_to(pt) < 50:
+                                var mb_max_hp: int = 100
+                                if mini_boss.has_method("get_max_health"):
+                                        mb_max_hp = mini_boss.get_max_health()
+                                mini_boss.take_damage(int(mb_max_hp * 0.35))
+                                break
+
+
+# ============================================================================
+# Draw lightning bolts (called from _draw)
+# ============================================================================
+func _draw_lightning_bolts() -> void:
+        for bolt in lightning_bolts:
+                var pts: Array = bolt.get("points", [])
+                if pts.size() < 2:
+                        continue
+                var life: int = int(bolt.get("life", 0))
+                var alpha: float = float(life) / float(bolt.get("max_life", 30))
+                var col: Color = Color(0.5, 0.8, 1.0, alpha)
+                # Glow halo
+                for i in pts.size() - 1:
+                        draw_line(pts[i], pts[i + 1], Color(0.3, 0.6, 1.0, alpha * 0.3), 6.0)
+                # Main bolt
+                for i in pts.size() - 1:
+                        draw_line(pts[i], pts[i + 1], col, 3.0)
+                # White core
+                for i in pts.size() - 1:
+                        draw_line(pts[i], pts[i + 1], Color(1, 1, 1, alpha), 1.0)
+        # Decay lightning life
+        var alive_bolts: Array = []
+        for bolt in lightning_bolts:
+                bolt["life"] = int(bolt.get("life", 0)) - 1
+                if int(bolt.get("life", 0)) > 0:
+                        alive_bolts.append(bolt)
+        lightning_bolts = alive_bolts
+
+
 func _update_particles(delta_ms: float) -> void:
         var alive: Array = []
         for p in particles:
@@ -754,3 +934,6 @@ func _draw() -> void:
                 var alpha: float = float(screen_flash_timer_ms) / 200.0
                 draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
                         Color(1, 1, 1, alpha), false)
+
+        # Lightning bolts (scepter effect)
+        _draw_lightning_bolts()

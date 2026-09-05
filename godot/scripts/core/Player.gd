@@ -468,6 +468,8 @@ func update_player(maze: Object, free_movement: bool) -> void:
 
         # Apply sprite flip + jump offset for rendering.
         _update_sprite()
+        # Trigger redraw so projectiles/aura/muzzle flash update visually.
+        queue_redraw()
 
 
 # ===========================================================================
@@ -740,6 +742,7 @@ func _update_sprite() -> void:
 # ===========================================================================
 func _draw() -> void:
         # Draw projectiles (relative to player node origin = player position)
+        # 4 distinct shapes per weapon type (mirror C++ drawProjectiles)
         for proj in projectiles:
                 if not proj.get("active", false):
                         continue
@@ -748,9 +751,36 @@ func _draw() -> void:
                 var local_pos: Vector2 = p_pos - position
                 var w_type: int = proj.get("type", WeaponType.PISTOL)
                 var col: Color = _projectile_color(w_type)
-                # Draw projectile as a small glowing circle
-                draw_circle(local_pos, 5.0, col)
-                draw_circle(local_pos, 3.0, Color(col.r, col.g, col.b, 1.0))
+                match w_type:
+                        WeaponType.LASER:
+                                # Laser: thin elongated beam (14x3) rotated by direction
+                                var dir: Vector2 = proj.get("dir", Vector2(1, 0))
+                                # Draw as elongated beam with circles along direction
+                                for i in 7:
+                                        var offset: Vector2 = dir * (i - 3) * 2
+                                        draw_circle(local_pos + offset, 1.5, col)
+                        WeaponType.SHOTGUN:
+                                # Shotgun: 3 small pellets perpendicular to direction
+                                var dir: Vector2 = proj.get("dir", Vector2(1, 0))
+                                var perp: Vector2 = Vector2(-dir.y, dir.x)
+                                draw_circle(local_pos + perp * 3, 2.0, col)
+                                draw_circle(local_pos, 2.5, col)
+                                draw_circle(local_pos - perp * 3, 2.0, col)
+                        WeaponType.ROCKET:
+                                # Rocket: body + tip + trail
+                                var dir: Vector2 = proj.get("dir", Vector2(1, 0))
+                                # Trail
+                                draw_circle(local_pos - dir * 8, 3.0, Color(1, 0.4, 0.1, 0.5))
+                                draw_circle(local_pos - dir * 12, 2.0, Color(1, 0.3, 0.1, 0.3))
+                                # Body
+                                draw_circle(local_pos, 5.0, col)
+                                draw_circle(local_pos, 4.0, Color(0.6, 0.3, 0.1))
+                                # Tip
+                                draw_circle(local_pos + dir * 4, 3.0, Color(1, 0.9, 0.4))
+                        _:
+                                # Pistol: simple glowing yellow ball
+                                draw_circle(local_pos, 5.0, col)
+                                draw_circle(local_pos, 3.0, Color(col.r, col.g, col.b, 1.0))
 
         # Draw muzzle flash if shoot animation is playing
         if shoot_anim_timer > 0:
@@ -761,11 +791,18 @@ func _draw() -> void:
                 draw_circle(flash_pos, 8.0, Color(1.0, 0.9, 0.3, 0.8))
                 draw_circle(flash_pos, 5.0, Color(1.0, 1.0, 0.5, 1.0))
 
-        # Draw invincibility aura (chalice effect)
+        # Draw invincibility aura (chalice effect) - 8 flame circles around player
         if invincible_timer > 0:
                 var alpha: float = 0.3 + 0.2 * sin(float(invincible_timer) * 0.01)
+                # Outer glow
                 draw_circle(Vector2.ZERO, 28.0, Color(1.0, 0.84, 0.0, alpha * 0.3))
                 draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.84, 0.0, alpha * 0.5))
+                # 8 flame circles (mirror C++ drawFireAura)
+                for i in 8:
+                        var angle: float = i * TAU / 8.0 + anim_time * 0.005
+                        var flame_pos: Vector2 = Vector2(cos(angle), sin(angle)) * 18.0
+                        draw_circle(flame_pos, 3.0, Color(1.0, 0.4, 0.1, alpha))
+                        draw_circle(flame_pos, 1.5, Color(1.0, 0.9, 0.3, alpha))
 
         # Draw jump shadow
         if is_jumping():

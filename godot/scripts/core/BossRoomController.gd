@@ -183,11 +183,29 @@ func _update_boss(delta_ms: float) -> void:
 
 
 func _advance_boss_projectiles(_delta_ms: float) -> void:
+        # Move boss projectiles by their stored velocity, apply homing if enabled.
+        var player_pos: Vector2 = player.get_pixel_pos()
         var to_remove: Array = []
         for proj in boss_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
                 if not proj.visible:
+                        to_remove.append(proj)
+                        continue
+                # Get velocity (stored as meta by _shoot_pattern via Projectile node)
+                var vel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
+                # Homing: if homing_timer > 0, lerp velocity toward player
+                var homing_ms: int = int(proj.get_meta("homing_ms", 0))
+                if homing_ms > 0:
+                        homing_ms -= int(_delta_ms)
+                        proj.set_meta("homing_ms", homing_ms)
+                        var to_player: Vector2 = (player_pos - proj.position).normalized()
+                        vel = vel.lerp(to_player * vel.length(), 0.08)
+                        proj.set_meta("velocity", vel)
+                proj.position += vel
+                # Remove if out of bounds
+                if proj.position.x < -50 or proj.position.x > C.WINDOW_WIDTH + 50 or \
+                   proj.position.y < C.UI_HEIGHT - 50 or proj.position.y > C.WINDOW_HEIGHT + 50:
                         to_remove.append(proj)
         for p in to_remove:
                 boss_projectiles_node.remove_child(p)
