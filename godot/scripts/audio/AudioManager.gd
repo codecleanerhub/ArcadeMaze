@@ -142,7 +142,7 @@ func _ready() -> void:
 # Anti-overlap: if the same sound type is already playing, skip (debounce).
 var _last_sfx_type: int = -1
 var _last_sfx_time_ms: int = 0
-const SFX_DEBOUNCE_MS: int = 100  # min 100ms between same SFX
+const SFX_DEBOUNCE_MS: int = 200  # min 200ms between same SFX (anti-overlap)
 
 func play_sound(type: SoundType) -> void:
         var idx: int = int(type)
@@ -151,7 +151,7 @@ func play_sound(type: SoundType) -> void:
         var stream: AudioStreamWAV = _sfx_streams[idx]
         if stream == null:
                 return
-        # Debounce: skip if same sound was played < 100ms ago
+        # Debounce: skip if same sound was played < 200ms ago
         var now_ms: int = Time.get_ticks_msec()
         if idx == _last_sfx_type and (now_ms - _last_sfx_time_ms) < SFX_DEBOUNCE_MS:
                 return
