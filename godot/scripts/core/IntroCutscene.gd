@@ -24,7 +24,7 @@ var _skip_key_held: bool = false
 @onready var timer: Timer = $Timer
 
 func _ready() -> void:
-        print("[IntroCutscene] VERSION: c6db1d0 - loading intro images...")
+        print("[IntroCutscene] VERSION: 35ab8b3 - loading intro images...")
         # Carica le 4 immagini intro usando Image.load() (piu' robusto di load())
         for i in range(1, 5):
                 var path := "res://assets/cutscene/intro_" + str(i) + ".png"
