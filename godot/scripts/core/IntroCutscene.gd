@@ -24,16 +24,23 @@ var _skip_key_held: bool = false
 @onready var timer: Timer = $Timer
 
 func _ready() -> void:
+        print("[IntroCutscene] VERSION: de23bbc - loading intro images...")
         # Carica le 4 immagini intro
         for i in range(1, 5):
                 var path := "res://assets/cutscene/intro_" + str(i) + ".png"
+                print("[IntroCutscene] Loading %s exists=%s" % [path, ResourceLoader.exists(path)])
                 if ResourceLoader.exists(path):
-                        _images.append(load(path))
+                        var tex = load(path)
+                        if tex != null:
+                                _images.append(tex)
+                        else:
+                                print("[IntroCutscene] WARN: load returned null for %s" % path)
+                                _images.append(null)
                 else:
                         _images.append(null)
         
         if _images.is_empty() or _images[0] == null:
-                # Se non ci sono immagini, salta direttamente al gioco
+                print("[IntroCutscene] No images found, skipping to game")
                 _finish()
                 return
         
