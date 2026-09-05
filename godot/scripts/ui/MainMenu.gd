@@ -122,8 +122,19 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 GameManager.player2_character = p2_char
                 GameManager.current_level = 1
                 GameManager.config_joy_step = 0
-                # Go to intro cutscene (which then transitions to MainGame).
-                GameManager.go_to_intro()
+                # Flow: START GAME -> joystick config (if not done) -> select player -> intro -> game
+                # Check if joystick needs configuration (mirror C++ behavior)
+                if ConfigManager and not ConfigManager.p1_joystick_ready():
+                        # Joystick not configured yet: go to config first
+                        GameManager.config_joy_player = 1
+                        GameManager.go_to_config_joy()
+                elif num_players == 2 and ConfigManager and not ConfigManager.p2_joystick_ready():
+                        # P2 joystick not configured
+                        GameManager.config_joy_player = 2
+                        GameManager.go_to_config_joy()
+                else:
+                        # Joystick ready: go to character selection
+                        GameManager.go_to_select_player()
 
 
 func _on_credits_requested() -> void:

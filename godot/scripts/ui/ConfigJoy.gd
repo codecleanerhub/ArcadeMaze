@@ -23,8 +23,17 @@ func _ready() -> void:
         config_finished.connect(_on_config_finished)
 
 func _on_config_finished() -> void:
+        # After joystick config, go to character selection (not back to menu)
         if GameManager:
-                GameManager.go_to_menu()
+                if GameManager.config_joy_player == 1 and GameManager.num_players == 2:
+                        # P2 also needs config
+                        GameManager.config_joy_player = 2
+                        GameManager.config_joy_step = 0
+                        # Reload this scene for P2
+                        get_tree().reload_current_scene()
+                else:
+                        # Both configured (or 1P): go to select player
+                        GameManager.go_to_select_player()
 
 func _update_step() -> void:
         match step:

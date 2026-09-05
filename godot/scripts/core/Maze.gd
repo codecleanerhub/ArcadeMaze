@@ -575,47 +575,50 @@ func _render_wall_cell(px: float, py: float, size: float) -> void:
 ## varies by TreasureType. The C++ version draws full sprite art with
 ## primitives; we render a simpler version that's still distinct per type.
 func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) -> void:
-        # Pedestal
+        # Usa le texture procedurali dettagliate da EnvironmentArt
+        # (corona/oro/forziere/gemma/coppa) invece di semplici diamanti
+        if EnvironmentArt:
+                var tex: Texture2D = EnvironmentArt.get_treasure_texture(tres_type)
+                if tex:
+                        var draw_size: float = size * 0.8
+                        draw_texture_rect(tex,
+                                Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
+                                        draw_size, draw_size), false)
+                        return
+        # Fallback: semplice gem colorato
         var ped_rect := Rect2(px + size * 0.2, py + size * 0.6, size * 0.6, size * 0.2)
         draw_rect(ped_rect, Color(0.45, 0.40, 0.35), true)
-        draw_rect(ped_rect, Color(0.20, 0.18, 0.15), false, 1.0)
-        # Gem / item color depends on treasure type.
         var gem_color: Color = C.PALETTE[C.PAL_GOLD]
         match tres_type:
-                C.TreasureType.CROWN:
-                        gem_color = C.PALETTE[C.PAL_GOLD]
-                C.TreasureType.GOLD:
-                        gem_color = Color(1.0, 0.84, 0.0)
-                C.TreasureType.CHEST:
-                        gem_color = Color(0.55, 0.30, 0.15)
-                C.TreasureType.GEM:
-                        gem_color = C.PALETTE[C.PAL_CYAN]
-                C.TreasureType.CUP:
-                        gem_color = C.PALETTE[C.PAL_GOLD]
-                # Gem body (small diamond)
-
-                # Highlight on the upper facet
+                C.TreasureType.CROWN: gem_color = C.PALETTE[C.PAL_GOLD]
+                C.TreasureType.GOLD: gem_color = Color(1.0, 0.84, 0.0)
+                C.TreasureType.CHEST: gem_color = Color(0.55, 0.30, 0.15)
+                C.TreasureType.GEM: gem_color = C.PALETTE[C.PAL_CYAN]
+                C.TreasureType.CUP: gem_color = C.PALETTE[C.PAL_GOLD]
         var cx: float = px + size * 0.5
         var cy: float = py + size * 0.45
         var gs: float = size * 0.18
-        var points := PackedVector2Array(
-                [
-                        Vector2(cx, cy - gs),
-                        Vector2(cx + gs, cy),
-                        Vector2(cx, cy + gs),
-                        Vector2(cx - gs, cy),
-                ]
-        )
+        var points := PackedVector2Array([
+                Vector2(cx, cy - gs), Vector2(cx + gs, cy),
+                Vector2(cx, cy + gs), Vector2(cx - gs, cy),
+        ])
         draw_colored_polygon(points, gem_color)
-        # Highlight on the upper facet
         draw_line(Vector2(cx, cy - gs), Vector2(cx + gs, cy), Color(1.0, 1.0, 1.0, 0.6), 1.5)
 
 
-## Draws a weapon cell: a colored square indicating the weapon type. The
-## full weapon sprite (with shadow, shape, outline) belongs to a Weapon.gd
-## scene; the maze just shows a placeholder marker.
 func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) -> void:
+        # Usa le texture procedurali dettagliate da EnvironmentArt
+        # (pistola/fucile/razzo/laser) invece di semplici quadrati
         var wpn_type: int = weapon.get("type", C.WeaponType.PISTOL)
+        if EnvironmentArt:
+                var tex: Texture2D = EnvironmentArt.get_weapon_pickup_texture(wpn_type)
+                if tex:
+                        var draw_size: float = size * 0.8
+                        draw_texture_rect(tex,
+                                Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
+                                        draw_size, draw_size), false)
+                        return
+        # Fallback: quadrato colorato
         var col: Color = C.get_weapon_color(wpn_type)
         var wrect := Rect2(px + size * 0.25, py + size * 0.25, size * 0.5, size * 0.5)
         draw_rect(wrect, col, true)

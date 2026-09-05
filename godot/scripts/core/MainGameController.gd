@@ -103,7 +103,7 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: de23bbc - game controller ready")
+        print("[MainGameController] VERSION: 48eed09 - game controller ready")
         # Configure player characters from GameManager
         if GameManager:
                 current_level = GameManager.current_level
