@@ -43,8 +43,8 @@ extends Node
 const DESKTOP_FULLSCREEN_MODE: int = 3  # WINDOW_MODE_FULLSCREEN
 
 # Design resolution (must match project.godot viewport_width/height).
-const DESIGN_WIDTH: int = 1024
-const DESIGN_HEIGHT: int = 1024
+const DESIGN_WIDTH: int = 1920
+const DESIGN_HEIGHT: int = 1080
 
 
 func _ready() -> void:
@@ -101,7 +101,7 @@ func _setup_desktop(os_name: String) -> void:
         #    project.godot already sets this, but we re-apply defensively in
         #    case some platform override changed it.
         get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 
 
 ## Web (HTML5) setup: we can't force fullscreen, but we ensure the canvas

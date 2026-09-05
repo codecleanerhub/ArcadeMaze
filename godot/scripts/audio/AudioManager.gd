@@ -78,8 +78,8 @@ var _sfx_streams: Array[AudioStreamWAV] = []   # one per SoundType
 var _music_streams: Array[AudioStreamWAV] = []
 
 # Two dedicated channels (mirror `music` and `epicSound` in C++).
-@onready var _music_player: AudioStreamPlayer = AudioStreamPlayer.new()
-@onready var _epic_player:  AudioStreamPlayer = AudioStreamPlayer.new()
+var _music_player: AudioStreamPlayer = null
+var _epic_player:  AudioStreamPlayer = null
 
 # Current track index for the music channel (or -1 if stopped).
 var _current_music_track: int = -1
@@ -95,15 +95,25 @@ var music_enabled: bool = true
 # ============================================================================
 func _ready() -> void:
         # Build the node graph
+        _music_player = AudioStreamPlayer.new()
         _music_player.name = "MusicPlayer"
         _music_player.volume_db = linear_to_db(VOLUME_MUSIC)
         _music_player.bus = "Master"
         add_child(_music_player)
 
+        _epic_player = AudioStreamPlayer.new()
         _epic_player.name = "EpicPlayer"
         _epic_player.volume_db = linear_to_db(VOLUME_EPIC)
         _epic_player.bus = "Master"
         add_child(_epic_player)
+
+        # Ensure Master bus is not muted
+        var master_idx: int = AudioServer.get_bus_index("Master")
+        if master_idx >= 0:
+                AudioServer.set_bus_mute(master_idx, false)
+                AudioServer.set_bus_volume_db(master_idx, 0.0)
+        print("[AudioManager] Ready - music_player=%s epic_player=%s" % [
+                _music_player != null, _epic_player != null])
 
         # 30-voice SFX pool
         for i in 30:
@@ -173,6 +183,7 @@ func play_level_music(level: int, is_boss: bool) -> void:
 
 # Play the menu music (track 8), looping.
 func play_menu_music() -> void:
+        print("[AudioManager] play_menu_music called - music_enabled=%s" % music_enabled)
         _play_music_track(TRACK_MENU, true)
 
 
@@ -221,16 +232,25 @@ func _find_free_voice() -> AudioStreamPlayer:
 
 func _play_music_track(track_idx: int, loop: bool) -> void:
         if not music_enabled:
+                print("[AudioManager] _play_music_track SKIP - music disabled")
                 return
         if track_idx < 0 or track_idx >= _music_streams.size():
+                print("[AudioManager] _play_music_track SKIP - invalid track %d (size=%d)" % [track_idx, _music_streams.size()])
+                return
+        if _music_player == null:
+                print("[AudioManager] _play_music_track SKIP - music_player is null")
                 return
         _music_player.stop()
         var stream: AudioStreamWAV = _music_streams[track_idx]
+        if stream == null:
+                print("[AudioManager] _play_music_track SKIP - stream %d is null" % track_idx)
+                return
         # Toggle loop mode on the cached stream (cheaper than rebuilding).
         stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
         _music_player.stream = stream
         _music_player.play()
         _current_music_track = track_idx
+        print("[AudioManager] _play_music_track OK - track=%d loop=%s playing=%s" % [track_idx, loop, _music_player.playing])
 
 
 # ----------------------------------------------------------------------------
