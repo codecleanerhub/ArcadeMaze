@@ -254,6 +254,15 @@ func consume_boots(player_id: int) -> void:
                 active = false
                 owner_id = player_id
 
+# --- EXIT DOOR ---
+# Attiva la porta di uscita e fa partire l'animazione di apertura (800ms).
+# Chiamato dal Game quando tutti i tesori sono stati raccolti. L'anta si
+# restringe verso destra rivelando la scala sottostante (1:1 con C++).
+func start_open_animation() -> void:
+        if kind == Kind.EXIT_DOOR:
+                active = true
+                door_anim_timer_ms = 800
+
 
 # =========================================================
 # Collision callback
@@ -310,19 +319,38 @@ func _draw() -> void:
 
 
 func _draw_mine() -> void:
-        # Spiky ball: dark grey circle with 8 triangular spikes.
+        # Spiky ball with pulsing red aura + trail when bouncing.
+        # Mirrors C++ Game.cpp 5294-5350 (mine rendering):
+        #   * Aura rossa pulsante 18px (Color 200,50,20,50)
+        #   * Body (cerchio metallico scuro 7px pulsante)
+        #   * 4 spunzoni triangolari (Godot: 8 spikes, kept for retrocompat)
+        #   * LED rosso pulsante al centro
+        #   * Scia quando bouncing (3px arancio a pos-vel)
         var r := 10.0 + pulse * 1.5
         var col := Color(0.7, 0.6, 0.3)
         var dark := Color(0.2, 0.2, 0.2)
+        # --- Aura rossa pulsante (18px) ---
+        # In C++: pulse = sinf(mine.pulse * 5.f) * 0.2 + 1.f (range 0.8-1.2)
+        var aura_pulse: float = sin(anim_time * 5.0) * 0.2 + 1.0
+        var aura_r: float = 18.0 * aura_pulse
+        draw_circle(Vector2.ZERO, aura_r,
+                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 50.0 / 255.0))
+        # --- Scia quando rimbalza (3px at pos-velocity) ---
+        # Drawn in local space, so -velocity (since pos == local origin).
+        if bouncing:
+                var trail_pos: Vector2 = -velocity
+                draw_circle(trail_pos, 3.0,
+                        Color(255.0 / 255.0, 150.0 / 255.0, 50.0 / 255.0, 100.0 / 255.0))
+        # --- Corpo della mina (cerchio scuro) ---
         draw_circle(Vector2.ZERO, r, col)
-        # Spikes
+        # --- Spikes (8 triangulari attorno al corpo) ---
         for i in range(8):
                 var a := (float(i) / 8.0) * TAU + deg_to_rad(rotation_deg)
                 var tip := Vector2(cos(a), sin(a)) * (r + 4.0)
                 var base_l := Vector2(cos(a + 0.3), sin(a + 0.3)) * r
                 var base_r := Vector2(cos(a - 0.3), sin(a - 0.3)) * r
                 draw_colored_polygon(PackedVector2Array([tip, base_l, base_r]), dark)
-        # Blinking red light
+        # --- LED rosso pulsante (blinking, kept as original) ---
         if fmod(anim_time, 1.0) > 0.5:
                 draw_circle(Vector2.ZERO, 2.0, Color(1.0, 0.2, 0.2))
 
@@ -348,16 +376,105 @@ func _draw_chalice() -> void:
 
 
 func _draw_scepter() -> void:
-        # Tall staff with a glowing purple gem on top.
+        # Port 1:1 di Game::drawMagicScepter (C++ righe 3308-3478).
+        # Bastone di Gandalf con gemma azzurra incastonata in gabbia dorata.
+        # Strati (dal basso verso l'alto):
+        #   1. Aura magica pulsante (2 cerchi: gem + bianco)
+        #   2. Bastone lungo (3 strati: medio + venatura chiara + ombra scura)
+        #   3. 3 nodi del legno (con highlight 3D)
+        #   4. 4 prongs dorati che tengono la gemma (raggi inclinati a 45/135/225/315)
+        #   5. Cornice metallica dorata (gemBase, anello alla base della gemma)
+        #   6. Gemma cristallina (azzurra) + nucleo bianco + specchio
+        #   7. 4 raggi di luce rotanti (bianco semi-trasparente)
+        #   8. Impugnatura: anello oro + 3 strisce cuoio + anello oro
+        #   9. Ombra sul pavimento (ellisse scura)
+        # (sx, sy) e' il centro del bastone (gemma ~sy-18, impugnatura ~sy+18).
         var y_off := -bob_offset
-        # Aura
-        draw_circle(Vector2(0, -14 + y_off), 12.0 + pulse * 3.0,
-                                Color(0.85, 0.2, 1.0, 0.25))
-        # Staff
-        draw_rect(Rect2(-1.5, -10 + y_off, 3.0, 22.0), Color(0.5, 0.35, 0.2))
-        # Gem
-        draw_circle(Vector2(0, -14 + y_off), 6.0, Color(0.85, 0.2, 1.0))
-        draw_circle(Vector2(0, -14 + y_off), 3.0, Color(1.0, 0.9, 1.0))
+        var sx := 0.0
+        var sy := y_off
+        var s_pulse := 1.0 + pulse * 0.2  # fattore di pulsazione (>1 = piu' grande)
+        # Palette 16 colori OBBLIGATORIA (1:1 con C++ drawMagicScepter).
+        var col_black := Color(12.0 / 255.0, 12.0 / 255.0, 12.0 / 255.0)
+        var col_dark_wood := Color(48.0 / 255.0, 40.0 / 255.0, 36.0 / 255.0)
+        var col_mid_wood := Color(96.0 / 255.0, 80.0 / 255.0, 72.0 / 255.0)
+        var col_lit_wood := Color(160.0 / 255.0, 128.0 / 255.0, 112.0 / 255.0)
+        var col_pale := Color(200.0 / 255.0, 180.0 / 255.0, 160.0 / 255.0)
+        var col_gold := Color(220.0 / 255.0, 160.0 / 255.0, 40.0 / 255.0)
+        var col_gem := Color(80.0 / 255.0, 160.0 / 255.0, 220.0 / 255.0)
+        var col_white := Color(240.0 / 255.0, 240.0 / 255.0, 240.0 / 255.0)
+        # --- Aura magica pulsante attorno alla gemma (2 strati) ---
+        var aura_r := 22.0 * s_pulse
+        draw_circle(Vector2(sx, sy - 18.0), aura_r,
+                Color(col_gem.r, col_gem.g, col_gem.b, 55.0 / 255.0))
+        var aura_r2 := 12.0 * s_pulse
+        draw_circle(Vector2(sx, sy - 18.0), aura_r2,
+                Color(col_white.r, col_white.g, col_white.b, 80.0 / 255.0))
+        # --- Bastone lungo (legno grezzo, 3 strati di texture) ---
+        # Strato base: legno medio 4x32.
+        draw_rect(Rect2(sx - 2.0, sy - 4.0, 4.0, 32.0), col_mid_wood, true)
+        draw_rect(Rect2(sx - 2.0, sy - 4.0, 4.0, 32.0), col_black, false, 0.5)
+        # Strato chiaro (venatura del legno) - 1.2x32.
+        draw_rect(Rect2(sx - 1.5, sy - 4.0, 1.2, 32.0), col_lit_wood, true)
+        # Strato scuro (ombra venatura) - 0.8x32.
+        draw_rect(Rect2(sx + 0.8, sy - 4.0, 0.8, 32.0), col_dark_wood, true)
+        # --- 3 nodi del legno (effetto texture ruvida) ---
+        # Nodi scuri con highlight per dare carattere di legno grezzo.
+        for n in range(3):
+                var ny: float = sy - 2.0 + float(n) * 11.0
+                draw_circle(Vector2(sx - 1.2, ny), 1.2, col_dark_wood)
+                draw_circle(Vector2(sx - 0.8, ny - 0.3), 0.5, col_pale)
+        # --- 4 prongs dorati che tengono la gemma (gabbia metallica) ---
+        # Simula le rifle metalliche che tengono il cristallo (bastone Gandalf).
+        # 4 raggi inclinati a 45, 135, 225, 315 gradi dalla cima del bastone
+        # (sx, sy-4) verso i lati della gemma (sx +/- 5, sy-18 +/- 5).
+        for i in range(4):
+                var angle: float = float(i) * (PI / 2.0) + (PI / 4.0)
+                var ex: float = sx + cos(angle) * 5.0
+                var ey: float = (sy - 18.0) + sin(angle) * 5.0
+                draw_line(Vector2(sx, sy - 4.0), Vector2(ex, ey), col_gold, 1.2)
+        # --- Cornice metallica dorata (gemBase) ---
+        # Anello dorato alla base della gemma (dove il cristallo si inserisce).
+        draw_circle(Vector2(sx, sy - 18.0), 5.5, col_gold)
+        draw_circle(Vector2(sx, sy - 18.0), 5.5, col_dark_wood, false, 1.0)
+        # --- Gemma cristallina luminosa (azzurra, r=6*sPulse) ---
+        # Outline dorato spesso 1.2 (disegnato come cerchio piu' grande sotto).
+        var gem_r := 6.0 * s_pulse
+        draw_circle(Vector2(sx, sy - 18.0), gem_r + 1.2, col_gold)
+        draw_circle(Vector2(sx, sy - 18.0), gem_r, col_gem)
+        # --- Nucleo bianco luminoso + specchio ---
+        var core_r := 2.5 * s_pulse
+        draw_circle(Vector2(sx, sy - 18.0), core_r, col_white)
+        # Riflesso specchiato (piccolo puntino bianco in alto a sinistra).
+        draw_circle(Vector2(sx - 2.0, sy - 18.0 - 3.0), 0.8,
+                Color(col_white.r, col_white.g, col_white.b, 220.0 / 255.0))
+        # --- 4 raggi di luce rotanti dalla gemma ---
+        # Simula la luce magica che emana dal cristallo (rotazione lenta).
+        for i in range(4):
+                var angle: float = float(i) * (PI / 2.0) + s_pulse * 0.3
+                # Direzione del raggio (in coordinate schermo y-down):
+                # il raggio punta in direzione (-cos(angle), -sin(angle)).
+                var dir := Vector2(-cos(angle), -sin(angle))
+                var ray_len: float = 10.0 * s_pulse
+                var p_start := Vector2(sx, sy - 18.0)
+                var p_end: Vector2 = p_start + dir * ray_len
+                draw_line(p_start, p_end,
+                        Color(col_white.r, col_white.g, col_white.b, 120.0 / 255.0), 1.0)
+        # --- Impugnatura (grip) ---
+        # 1. Anello metallico superiore (oro) 6x1.5.
+        draw_rect(Rect2(sx - 3.0, sy + 16.0, 6.0, 1.5), col_gold, true)
+        draw_rect(Rect2(sx - 3.0, sy + 16.0, 6.0, 1.5), col_dark_wood, false, 0.4)
+        # 2. Cuoio avvolto (3 strisce di legno scuro).
+        for i in range(3):
+                var ly: float = sy + 18.0 + float(i) * 1.8
+                draw_rect(Rect2(sx - 2.75, ly, 5.5, 1.5), col_dark_wood, true)
+                draw_rect(Rect2(sx - 2.75, ly, 5.5, 1.5), col_black, false, 0.2)
+        # 3. Anello metallico inferiore (oro) 6x1.5.
+        draw_rect(Rect2(sx - 3.0, sy + 24.0, 6.0, 1.5), col_gold, true)
+        draw_rect(Rect2(sx - 3.0, sy + 24.0, 6.0, 1.5), col_dark_wood, false, 0.4)
+        # --- Ombra del bastone sul pavimento ---
+        # Ellisise piatta scura per ancoraggio visivo (in C++ scale 1.5x0.5).
+        draw_circle(Vector2(sx, sy + 28.0), 4.0,
+                Color(col_black.r, col_black.g, col_black.b, 80.0 / 255.0))
 
 
 func _draw_speed_boots() -> void:
@@ -431,32 +548,175 @@ func _draw_treasure() -> void:
 
 
 func _draw_exit_door() -> void:
-        # Glowing door portal in the wall.
-        var alpha := 1.0 if active else 0.5
-        # Frame
-        draw_rect(Rect2(-18.0, -30.0, 36.0, 60.0), Color(0.3, 0.2, 0.1, alpha))
-        # Inner glow (animated)
-        var inner_col := Color(0.3, 0.8, 1.0, 0.5 + door_glow_pulse * 0.4)
-        draw_rect(Rect2(-14.0, -26.0, 28.0, 52.0), inner_col)
-        # Runes on the sides
-        for i in range(3):
-                var y := -20.0 + float(i) * 18.0
-                draw_circle(Vector2(-22.0, y), 2.0, Color(1.0, 0.9, 0.4, alpha))
-                draw_circle(Vector2(22.0, y), 2.0, Color(1.0, 0.9, 0.4, alpha))
+        # Port 1:1 di Game::drawExitDoor (C++ righe 5440-5597).
+        # Porta di uscita che appare dopo aver raccolto tutti i tesori.
+        # Strati (dal basso verso l'alto):
+        #   1. Aura luminosa pulsante dorata (2 cerchi)
+        #   2. Architrave (40x6) + simbolo dorato (cerchio r=3)
+        #   3. 2 stipiti laterali (4x40 ciascuno)
+        #   4. 12 bande verticali gradiente (profondita' buio, da scuro a chiaro)
+        #   5. 6 gradini scala con prospettiva (largo+chiaro -> stretto+scuro)
+        #   6. Bagliore profondo + scintilla (in fondo alla scala)
+        #   7. Anta animata che si apre (si restringe verso destra)
+        #      - Venature del legno (3 strisce verticali)
+        #      - Maniglia (visibile quando anta quasi chiusa)
+        # (dx, dy) e' il centro della porta. La porta e' verticale, alta ~46px.
+        var dx := 0.0
+        var dy := 0.0
+        # --- Aura luminosa pulsante dorata (2 cerchi) ---
+        var pulse_factor: float = 1.0 + door_glow_pulse * 0.15
+        var aura_r: float = 32.0 * pulse_factor
+        draw_circle(Vector2(dx, dy), aura_r, Color(1.0, 0.78, 0.31, 50.0 / 255.0))
+        draw_circle(Vector2(dx, dy), aura_r * 0.6, Color(1.0, 0.86, 0.39, 80.0 / 255.0))
+        # --- Architrave (rettangolo orizzontale 40x6 sopra la porta) ---
+        draw_rect(Rect2(dx - 20.0, dy - 22.0, 40.0, 6.0), Color(0.471, 0.392, 0.314), true)
+        draw_rect(Rect2(dx - 20.0, dy - 22.0, 40.0, 6.0), Color(0.196, 0.157, 0.118), false, 1.0)
+        # Decorazione architrave (simbolo dorato, cerchio r=3)
+        draw_circle(Vector2(dx, dy - 20.0), 3.0, Color(0.784, 0.627, 0.235))
+        draw_circle(Vector2(dx, dy - 20.0), 3.0, Color(0.392, 0.314, 0.118), false, 0.8)
+        # --- 2 stipiti laterali (4x40 ciascuno) ---
+        # Stipite sinistro.
+        draw_rect(Rect2(dx - 20.0, dy - 16.0, 4.0, 40.0), Color(0.392, 0.333, 0.255), true)
+        draw_rect(Rect2(dx - 20.0, dy - 16.0, 4.0, 40.0), Color(0.157, 0.137, 0.098), false, 0.8)
+        # Stipite destro.
+        draw_rect(Rect2(dx + 16.0, dy - 16.0, 4.0, 40.0), Color(0.392, 0.333, 0.255), true)
+        draw_rect(Rect2(dx + 16.0, dy - 16.0, 4.0, 40.0), Color(0.157, 0.137, 0.098), false, 0.8)
+        # --- Interna della porta (12 bande verticali gradiente) ---
+        # Buio piu' intenso in alto (dove la scala sparisce), piu' chiaro in basso.
+        var door_h: float = 36.0
+        for i in range(12):
+                var t: float = float(i) / 11.0
+                var y0: float = dy - 14.0 + t * door_h
+                var band_h: float = door_h / 12.0 + 1.0
+                var dark_r: float = 2.0 + t * 18.0  # 2 -> 20
+                var dark_g: float = 2.0 + t * 12.0  # 2 -> 14
+                var dark_b: float = 1.0 + t * 7.0    # 1 -> 8
+                draw_rect(Rect2(dx - 16.0, y0, 32.0, band_h),
+                        Color(dark_r / 255.0, dark_g / 255.0, dark_b / 255.0), true)
+        # --- 6 gradini della scala con prospettiva ---
+        # Primo gradino in basso (largo + chiaro), ultimo in alto (stretto + scuro).
+        var num_steps: int = 6
+        var bot_step_y: float = dy + 16.0
+        var step_spacing: float = 5.0
+        var bot_step_w: float = 30.0
+        var top_step_w: float = 14.0
+        for i in range(num_steps):
+                var t: float = float(i) / float(num_steps - 1)
+                var step_y: float = bot_step_y - float(i) * step_spacing
+                var step_w: float = bot_step_w - (bot_step_w - top_step_w) * t
+                # Colore: piu' scuro andando verso l'alto (profondita').
+                var sr: float = 100.0 - t * 70.0   # 100 -> 30
+                var sg: float = 82.0 - t * 58.0    # 82 -> 24
+                var sb: float = 64.0 - t * 46.0    # 64 -> 18
+                # Gradino: rettangolo orizzontale (pianerottolo).
+                draw_rect(Rect2(dx - step_w / 2.0, step_y, step_w, 3.0),
+                        Color(sr / 255.0, sg / 255.0, sb / 255.0), true)
+                draw_rect(Rect2(dx - step_w / 2.0, step_y, step_w, 3.0),
+                        Color(sr / 510.0, sg / 510.0, sb / 510.0), false, 0.6)
+                # Alzata del gradino (parte verticale scura SOPRA il pianerottolo).
+                if i < num_steps - 1:
+                        var riser_h: float = step_spacing - 3.0
+                        draw_rect(Rect2(dx - step_w / 2.0, step_y - riser_h, step_w, riser_h),
+                                Color(sr * 0.4 / 255.0, sg * 0.4 / 255.0, sb * 0.4 / 255.0), true)
+                # Highlight sul bordo superiore del gradino (riflesso luce).
+                draw_rect(Rect2(dx - (step_w - 2.0) / 2.0, step_y, step_w - 2.0, 0.8),
+                        Color(minf(sr + 40.0, 255.0) / 255.0,
+                                minf(sg + 35.0, 255.0) / 255.0,
+                                minf(sb + 30.0, 255.0) / 255.0, 200.0 / 255.0), true)
+        # --- Bagliore profondo in fondo alla scala + scintilla ---
+        var glow_y: float = bot_step_y - float(num_steps - 1) * step_spacing - 2.0
+        var glow_pulse2: float = sin(anim_time * 2.0) * 0.3 + 0.7
+        draw_circle(Vector2(dx, glow_y), 4.0 * glow_pulse2,
+                Color(0.784, 0.627, 0.235, 120.0 / 255.0))
+        draw_circle(Vector2(dx, glow_y), 1.5 * glow_pulse2,
+                Color(1.0, 0.902, 0.471, 200.0 / 255.0))
+        # --- Anta della porta (animazione di apertura verso destra) ---
+        # openProgress = 1 - animTimer/800 (0 all'inizio, 1 quando aperta).
+        # doorWidth = 32 * (1 - openProgress) = 32 * (animTimer/800).
+        var open_progress: float = 1.0 - float(door_anim_timer_ms) / 800.0
+        open_progress = clampf(open_progress, 0.0, 1.0)
+        var door_width: float = 32.0 * (1.0 - open_progress)
+        if door_width > 0.5:
+                # Pannello della porta (legno scuro).
+                draw_rect(Rect2(dx - 16.0, dy - 14.0, door_width, 36.0),
+                        Color(0.353, 0.235, 0.098), true)
+                draw_rect(Rect2(dx - 16.0, dy - 14.0, door_width, 36.0),
+                        Color(0.157, 0.098, 0.039), false, 1.0)
+                # Venature del legno (3 strisce verticali).
+                for i in range(3):
+                        if door_width > 4.0 + float(i) * 6.0:
+                                draw_rect(Rect2(dx - 14.0 + float(i) * 6.0, dy - 12.0, 1.0, 30.0),
+                                        Color(0.235, 0.137, 0.059), true)
+                # Maniglia (appare quando la porta e' quasi chiusa).
+                if open_progress < 0.3:
+                        draw_circle(Vector2(dx + 8.0, dy + 1.0), 1.5, Color(0.863, 0.706, 0.235))
+                        draw_circle(Vector2(dx + 8.0, dy + 1.0), 1.5,
+                                Color(0.392, 0.275, 0.078), false, 0.4)
 
 
 func _draw_magic_portal() -> void:
-        # Swirling portal disc.
-        var r := 24.0 + pulse * 4.0
-        draw_circle(Vector2.ZERO, r * 1.4, Color(0.4, 0.2, 0.7, 0.20))
-        draw_circle(Vector2.ZERO, r, Color(0.6, 0.3, 0.9, 0.5))
-        # Swirl lines
-        var rot := deg_to_rad(rotation_deg)
-        for i in range(6):
-                var a := float(i) / 6.0 * TAU + rot
-                var inner := Vector2(cos(a), sin(a)) * r * 0.4
-                var outer := Vector2(cos(a + 0.6), sin(a + 0.6)) * r * 0.9
-                draw_line(inner, outer, Color(0.8, 0.5, 1.0, 0.8), 2.0)
+        # Port 1:1 di Game::drawMagicPortal (C++ righe 5353-5432).
+        # Portale magico che respawna i nemici. Strati:
+        #   1. 3 aure pulsanti (viola-blu, grande -> piccola, da 55 a 22 px)
+        #   2. 4 anelli concentrici rotanti (16, 24, 32, 40 px di raggio;
+        #      colori 240, 200, 160, 120 alpha da interno a esterno)
+        #   3. 12 particelle spirale rotanti (raggio variabile con sin)
+        #   4. Centro nero profondo (viola scuro, r=12)
+        #   5. Bagliore centrale phase-dependent (3 fasi: open/spawn/close)
+        # (px, py) e' il centro del portale. Usa rotation_deg per la rotazione.
+        var px := 0.0
+        var py := 0.0
+        var rot: float = deg_to_rad(rotation_deg)
+        var portal_pulse: float = 1.0 + sin(anim_time * 4.0) * 0.2
+        # --- 3 aure pulsanti (viola-blu, grande -> piccola) ---
+        var aura_r: float = 55.0 * portal_pulse
+        draw_circle(Vector2(px, py), aura_r, Color(120.0 / 255.0, 60.0 / 255.0, 220.0 / 255.0, 40.0 / 255.0))
+        draw_circle(Vector2(px, py), aura_r * 0.65,
+                Color(160.0 / 255.0, 80.0 / 255.0, 240.0 / 255.0, 60.0 / 255.0))
+        draw_circle(Vector2(px, py), aura_r * 0.4,
+                Color(200.0 / 255.0, 100.0 / 255.0, 255.0 / 255.0, 80.0 / 255.0))
+        # --- 4 anelli concentrici rotanti (16, 24, 32, 40 px di raggio) ---
+        # Colori 240->120 alpha da interno a esterno; spessore 3->1.5.
+        var ring_colors: Array[Color] = [
+                Color(220.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0, 240.0 / 255.0),
+                Color(180.0 / 255.0, 90.0 / 255.0, 240.0 / 255.0, 200.0 / 255.0),
+                Color(140.0 / 255.0, 70.0 / 255.0, 210.0 / 255.0, 160.0 / 255.0),
+                Color(100.0 / 255.0, 50.0 / 255.0, 180.0 / 255.0, 120.0 / 255.0),
+        ]
+        var ring_widths: Array[float] = [3.0, 2.5, 2.0, 1.5]
+        for ring in range(4):
+                var ring_r: float = (16.0 + float(ring) * 8.0) * portal_pulse
+                # Godot draw_circle non ha outline; uso draw_arc per gli anelli.
+                draw_arc(Vector2(px, py), ring_r, 0.0, TAU, 48,
+                        ring_colors[ring], ring_widths[ring])
+        # --- 12 particelle spirale rotanti ---
+        for i in range(12):
+                var a: float = rot * 2.0 + float(i) * PI / 6.0
+                var r: float = 14.0 + sin(rot + float(i)) * 8.0
+                var sx_p: float = px + cos(a) * r
+                var sy_p: float = py + sin(a) * r
+                var spark_size: float = 2.5 + sin(rot * 3.0 + float(i)) * 1.0
+                draw_circle(Vector2(sx_p, sy_p), spark_size,
+                        Color(230.0 / 255.0, 160.0 / 255.0, 255.0 / 255.0, 220.0 / 255.0))
+        # --- Centro del portale (nero/viola profondo, r=12) ---
+        draw_circle(Vector2(px, py), 12.0, Color(15.0 / 255.0, 5.0 / 255.0, 25.0 / 255.0, 220.0 / 255.0))
+        # --- Bagliore centrale phase-dependent (3 fasi) ---
+        if portal_phase == 0:
+                # Apertura: bagliore crescente.
+                var open_t: float = 1.0 - float(portal_phase_timer_ms) / 1000.0
+                var glow_r: float = 6.0 + open_t * 12.0
+                draw_circle(Vector2(px, py), glow_r,
+                        Color(200.0 / 255.0, 100.0 / 255.0, 255.0 / 255.0, 180.0 * open_t / 255.0))
+        elif portal_phase == 1:
+                # Spawn: bagliore intenso costante.
+                draw_circle(Vector2(px, py), 10.0,
+                        Color(255.0 / 255.0, 150.0 / 255.0, 255.0 / 255.0, 180.0 / 255.0))
+        elif portal_phase == 2:
+                # Chiusura: bagliore decrescente.
+                var close_t: float = float(portal_phase_timer_ms) / 800.0
+                var glow_r: float = 4.0 + close_t * 6.0
+                draw_circle(Vector2(px, py), glow_r,
+                        Color(150.0 / 255.0, 80.0 / 255.0, 200.0 / 255.0, 120.0 * close_t / 255.0))
 
 
 # =========================================================

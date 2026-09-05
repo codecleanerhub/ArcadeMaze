@@ -100,6 +100,13 @@ func _ready() -> void:
         generate(level)
 
 
+func _process(delta: float) -> void:
+        # Accumula il tempo per le animazioni (flicker torce). Ridisegna ogni
+        # frame perche' le torce sono animate (come in Maze::render C++).
+        _anim_time += delta
+        queue_redraw()
+
+
 func _draw() -> void:
         # Always redraw - the C++ Maze::render also draws every frame because
         # torches animate. For static mazes you can gate this on needs_redraw.
@@ -116,27 +123,78 @@ func _draw() -> void:
 var _torch_lights: Array = []
 # Posizioni delle torce per disegnarle nel _render_wall_decorations
 var _torch_positions: Array = []
+# Tempo accumulato per le animazioni (flicker torce). In secondi.
+var _anim_time: float = 0.0
+
+
+# ============================================================================
+# DETERMINISTIC HASH HELPERS
+# ============================================================================
+# Hash deterministico 0..1 per cella + sale, mimico del cellHash del C++
+# (usato per posizionare urne, crepe, muschio, ciottoli in modo stabile).
+static func _cell_hash(c: int, r: int, salt: int = 0) -> float:
+        var h: int = (c * 73856093) ^ (r * 19349663) ^ (salt * 83492791)
+        var uh: int = h if h >= 0 else -h
+        # Mischia i bit per evitare pattern regolari (xor-shift + multiply).
+        uh = (uh ^ (uh >> 13)) & 0xFFFFFFFF
+        uh = (uh * 2654435761) & 0xFFFFFFFF
+        uh = (uh ^ (uh >> 15)) & 0xFFFFFFFF
+        return float(uh & 0xFFFF) / 65535.0
+
+
+# Disegna un rettangolo w x h centrato in (cx, cy) ruotato di angle_deg.
+# Helper usato per crepe dei muri e del pavimento (in C++ sf::RectangleShape::rotate).
+func _draw_rotated_rect(cx: float, cy: float, w: float, h: float, angle_deg: float, color: Color) -> void:
+        var a: float = deg_to_rad(angle_deg)
+        var cos_a: float = cos(a)
+        var sin_a: float = sin(a)
+        var hw: float = w * 0.5
+        var hh: float = h * 0.5
+        # 4 angoli del rettangolo centrato in origine, poi ruotati e traslati.
+        var corners := PackedVector2Array([
+                Vector2(cx + (-hw * cos_a + hh * sin_a),  cy + (-hw * sin_a - hh * cos_a)),
+                Vector2(cx + ( hw * cos_a + hh * sin_a),  cy + ( hw * sin_a - hh * cos_a)),
+                Vector2(cx + ( hw * cos_a - hh * sin_a),  cy + ( hw * sin_a + hh * cos_a)),
+                Vector2(cx + (-hw * cos_a - hh * sin_a),  cy + (-hw * sin_a + hh * cos_a)),
+        ])
+        draw_colored_polygon(corners, color)
 
 
 # Renderizza decorazioni procedurali sulle pareti del dungeon.
 # Usa un seed deterministico basato su (c,r,level) per posizionare in modo
-# consistente teschi/ragnatele/creppe su certe celle WALL.
+# consistente teschi/ragnatele/creppe su certe celle WALL. Inoltre:
+#   - Disegna il supporto fisico della torcia (handle + bracket + fiamma)
+#     procedurale animato (1:1 con drawTorch del C++), non solo la texture.
+#   - Posiziona urne decorative in ~2.5% delle celle EMPTY (1:1 con drawUrn C++).
 func _render_wall_decorations() -> void:
-        if not EnvironmentArt:
-                return
-        var skull_tex: Texture2D = EnvironmentArt.get_skull_texture()
-        var cobweb_tex: Texture2D = EnvironmentArt.get_cobweb_texture()
-        var torch_tex: Texture2D = EnvironmentArt.get_torch_texture()
+        var skull_tex: Texture2D = null
+        var cobweb_tex: Texture2D = null
+        if EnvironmentArt:
+                skull_tex = EnvironmentArt.get_skull_texture()
+                cobweb_tex = EnvironmentArt.get_cobweb_texture()
+        # Le urne decorative sono disegnate in _render_floor_decorations per
+        # ogni cella EMPTY, insieme alle crepe/ciottoli del pavimento.
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
-                        if not is_wall(c, r):
+                        var cell_type: int = _get_cell_type(c, r)
+                        var px: float = c * C.TILE_SIZE
+                        var py: float = r * C.TILE_SIZE + C.UI_HEIGHT
+                        var size: float = C.TILE_SIZE
+                        # --- Urne decorative nelle celle EMPTY (~2.5%) ---
+                        # 1:1 con Maze.cpp drawUrn: cellHash(c+5000, r+6000) <= 0.025.
+                        # Le urne non bloccano il movimento ne' sono raccoglibili.
+                        if cell_type == C.CellType.EMPTY:
+                                if c > 2 or r > 2:
+                                        if _cell_hash(c, r, 5000) <= 0.025:
+                                                var cx_u: float = px + size * 0.5
+                                                var cy_u: float = py + size * 0.5
+                                                _draw_urn(cx_u, cy_u, _cell_hash(c, r, 333))
+                                continue
+                        if cell_type != C.CellType.WALL:
                                 continue
                         # Hash deterministico per scegliere decorazione
                         var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
                         var hash_val: int = abs(h) % 100
-                        var px: float = c * C.TILE_SIZE
-                        var py: float = r * C.TILE_SIZE + C.UI_HEIGHT
-                        var size: float = C.TILE_SIZE
                         # ~8% teschi (solo su celle interne)
                         if hash_val < 8 and c > 2 and c < C.MAZE_COLS - 2 and r > 2 and r < C.MAZE_ROWS - 2:
                                 if skull_tex:
@@ -148,12 +206,137 @@ func _render_wall_decorations() -> void:
                                 if cobweb_tex:
                                         draw_texture_rect(cobweb_tex,
                                                 Rect2(px, py, size * 0.8, size * 0.8), false)
-                        # ~5% torce (sprite solo; le luci sono create in generate)
+                        # ~5% torce: disegno procedurale con handle + bracket +
+                        # fiamma animata a 3 strati (1:1 con drawTorch del C++).
+                        # Le PointLight2D sono create in _spawn_torch_lights alle
+                        # stesse posizioni (vantaggio Godot: illuminazione reale).
                         elif hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
-                                if torch_tex:
-                                        draw_texture_rect(torch_tex,
-                                                Rect2(px + size * 0.2, py - size * 0.3,
-                                                      size * 0.6, size * 0.9), false)
+                                var torch_x: float = px + size * 0.5
+                                var torch_y: float = py + size * 0.35
+                                _draw_torch(torch_x, torch_y, _anim_time)
+
+
+# Disegna una torcia animata in posizione (x, y_base) dove y_base e' la base
+# del bastone (la fiamma e' sopra). Port 1:1 della lambda drawTorch in
+# Maze.cpp (righe 939-982). Disegna, nell'ordine:
+#   1. Aura luminosa calda (2 cerchi semitrasparenti, r=22 e r=14)
+#   2. Handle (rettangolo marrone 4x12 con outline scuro)
+#   3. Bracket metallico (trapezio rovesciato a 4 punti, grigio ferro)
+#   4. Fiamma a 3 strati animata con flicker sin/cos:
+#      - Strato esterno rosso scuro (r=6+flicker)
+#      - Strato medio arancione (r=4+flicker*0.6)
+#      - Strato interno giallo-bianco (r=2)
+func _draw_torch(x: float, y_base: float, t: float) -> void:
+        # --- Aura luminosa calda (2 cerchi semitrasparenti) ---
+        draw_circle(Vector2(x, y_base - 34.0), 22.0, Color(1.0, 0.71, 0.24, 0.14))
+        draw_circle(Vector2(x, y_base - 26.0), 14.0, Color(1.0, 0.78, 0.31, 0.22))
+        # --- Bastone della torcia (legno scuro 4x12) ---
+        draw_rect(Rect2(x - 2.0, y_base - 4.0, 4.0, 12.0), Color(0.235, 0.118, 0.039), true)
+        draw_rect(Rect2(x - 2.0, y_base - 4.0, 4.0, 12.0), Color(0.078, 0.039, 0.0), false, 0.8)
+        # --- Cestello metallico (trapezio rovesciato a 4 punti) ---
+        var bracket := PackedVector2Array([
+                Vector2(x - 5.0, y_base - 4.0),
+                Vector2(x + 5.0, y_base - 4.0),
+                Vector2(x + 4.0, y_base - 10.0),
+                Vector2(x - 4.0, y_base - 10.0),
+        ])
+        draw_colored_polygon(bracket, Color(0.314, 0.275, 0.235))
+        # Outline del bracket (disegnato come linee chiuse sopra il fill).
+        for i in range(4):
+                var p1: Vector2 = bracket[i]
+                var p2: Vector2 = bracket[(i + 1) % 4]
+                draw_line(p1, p2, Color(0.157, 0.118, 0.078), 0.8)
+        # --- Fiamma animata a 3 strati (flicker sin/cos come in C++) ---
+        # sinf(time*18) e cosf(time*22) con fase x per ogni torcia.
+        var flicker: float = sin(t * 18.0 + x) * 1.5
+        var flicker2: float = cos(t * 22.0 + x * 0.7) * 1.0
+        # Strato esterno (rosso scuro, r=6+flicker)
+        var r3: float = 6.0 + flicker
+        draw_circle(Vector2(x - flicker * 0.5, y_base - 24.0 + flicker2 * 0.3), r3,
+                Color(0.706, 0.118, 0.039, 0.863))
+        # Strato medio (arancione, r=4+flicker*0.6)
+        var r2: float = 4.0 + flicker * 0.6
+        draw_circle(Vector2(x - flicker * 0.3, y_base - 22.0 + flicker2 * 0.2), r2,
+                Color(1.0, 0.549, 0.118, 0.941))
+        # Strato interno (giallo-bianco, r=2)
+        draw_circle(Vector2(x - 2.0, y_base - 19.0), 2.0, Color(1.0, 0.941, 0.706, 0.980))
+
+
+# Disegna un'urna decorativa in (cx, cy). Port 1:1 di drawUrn in Maze.cpp
+# (righe 1079-1173). 3 varianti colore determinate da `variant` (0..1):
+#   - < 0.33: pietra grigia (decoro dorato)
+#   - < 0.66: bronzo (decoro rosso scuro)
+#   - >= 0.66: marmo scuro (decoro oro chiaro)
+# Disegna: ombra a terra, base, corpo ovoidale (parte superiore + inferiore),
+# bocca + bordo (cornicetta), highlight verticale, decoro centrale + simbolo
+# rombo. Le urne sono puramente decorative (non bloccano ne' sono raccoglibili).
+func _draw_urn(cx: float, cy: float, variant: float) -> void:
+        # Palette in base alla variante (1:1 con drawUrn C++).
+        var urn_col: Color
+        var urn_dark: Color
+        var urn_light: Color
+        var urn_decor: Color
+        if variant < 0.33:
+                # Pietra grigia
+                urn_col   = Color(0.431, 0.412, 0.392)
+                urn_dark  = Color(0.275, 0.255, 0.235)
+                urn_light = Color(0.667, 0.647, 0.627)
+                urn_decor = Color(0.706, 0.549, 0.235)  # decoro dorato
+        elif variant < 0.66:
+                # Bronzo
+                urn_col   = Color(0.471, 0.353, 0.196)
+                urn_dark  = Color(0.275, 0.196, 0.098)
+                urn_light = Color(0.706, 0.549, 0.314)
+                urn_decor = Color(0.314, 0.118, 0.078)  # decoro rosso scuro
+        else:
+                # Marmo scuro
+                urn_col   = Color(0.235, 0.216, 0.275)
+                urn_dark  = Color(0.118, 0.098, 0.157)
+                urn_light = Color(0.392, 0.373, 0.431)
+                urn_decor = Color(0.863, 0.784, 0.314)  # decoro oro chiaro
+        var outline_urn := Color(0.078, 0.059, 0.039)
+        # --- Ombra a terra morbida ---
+        draw_circle(Vector2(cx, cy + 8.0), 12.0, Color(0.0, 0.0, 0.0, 0.47))
+        # --- Base dell'urna (rettangolo piu' largo in basso) ---
+        draw_rect(Rect2(cx - 7.0, cy + 6.0, 14.0, 3.0), urn_dark, true)
+        draw_rect(Rect2(cx - 7.0, cy + 6.0, 14.0, 3.0), outline_urn, false, 0.8)
+        # --- Corpo ovoidale (parte superiore: largo al centro) ---
+        var body_top := PackedVector2Array([
+                Vector2(cx - 4.0, cy - 6.0),
+                Vector2(cx + 4.0, cy - 6.0),
+                Vector2(cx + 8.0, cy + 2.0),
+                Vector2(cx - 8.0, cy + 2.0),
+        ])
+        draw_colored_polygon(body_top, urn_col)
+        for i in range(4):
+                draw_line(body_top[i], body_top[(i + 1) % 4], outline_urn, 1.0)
+        # --- Parte inferiore del corpo (restringimento verso la base) ---
+        var body_bot := PackedVector2Array([
+                Vector2(cx - 8.0, cy + 2.0),
+                Vector2(cx + 8.0, cy + 2.0),
+                Vector2(cx + 5.0, cy + 6.0),
+                Vector2(cx - 5.0, cy + 6.0),
+        ])
+        draw_colored_polygon(body_bot, urn_col)
+        for i in range(4):
+                draw_line(body_bot[i], body_bot[(i + 1) % 4], outline_urn, 1.0)
+        # --- Highlight verticale (riflesso luce sul lato sinistro) ---
+        draw_rect(Rect2(cx - 5.0, cy - 5.0, 1.5, 10.0), urn_light, true)
+        # --- Bocca dell'urna (apertura superiore) + bordo (cornicetta) ---
+        draw_rect(Rect2(cx - 3.0, cy - 8.0, 6.0, 2.0), urn_dark, true)
+        draw_rect(Rect2(cx - 3.0, cy - 8.0, 6.0, 2.0), outline_urn, false, 0.5)
+        draw_rect(Rect2(cx - 4.0, cy - 9.0, 8.0, 1.5), urn_light, true)
+        draw_rect(Rect2(cx - 4.0, cy - 9.0, 8.0, 1.5), outline_urn, false, 0.5)
+        # --- Decoro centrale (striscia orizzontale colorata) ---
+        draw_rect(Rect2(cx - 5.0, cy - 1.0, 10.0, 1.5), urn_decor, true)
+        # --- Simbolo rombo centrale ---
+        var symbol := PackedVector2Array([
+                Vector2(cx, cy - 1.0),
+                Vector2(cx + 2.0, cy + 0.5),
+                Vector2(cx, cy + 2.0),
+                Vector2(cx - 2.0, cy + 0.5),
+        ])
+        draw_colored_polygon(symbol, urn_decor)
 
 
 # Crea le PointLight2D per le torce una volta sola (chiamato da generate).
@@ -509,9 +692,10 @@ func _render_floor_gradient() -> void:
                         draw_rect(Rect2(x0, y0, step_x + 1, step_y + 1), col, true)
 
 
-## Renders a single cell. WALL -> 5-band rocky gradient; TREASURE ->
-## pedestal + simple icon; WEAPON -> colored square (full Weapon rendering
-## belongs to a Weapon.gd scene, not the maze).
+## Renders a single cell. WALL -> 5-band rocky gradient + crepe/muschio;
+## TREASURE -> pedestal + simple icon; WEAPON -> colored square (full Weapon
+## rendering belongs to a Weapon.gd scene, not the maze); EMPTY -> crepe,
+## ciottoli e macchie di terriccio sopra il gradiente.
 func _render_cell(c: int, r: int) -> void:
         var cell_type: int = _get_cell_type(c, r)
         var px: float = c * C.TILE_SIZE
@@ -520,18 +704,21 @@ func _render_cell(c: int, r: int) -> void:
 
         match cell_type:
                 C.CellType.WALL:
-                        _render_wall_cell(px, py, size)
+                        _render_wall_cell(c, r, px, py, size)
                 C.CellType.TREASURE:
                         _render_treasure_cell(px, py, size, _get_cell_treasure(c, r))
                 C.CellType.WEAPON:
                         _render_weapon_cell(px, py, size, _get_cell_weapon(c, r))
                 C.CellType.EMPTY, _:
-                        pass  # Floor is already drawn by the gradient.
+                        _render_floor_decorations(c, r, px, py, size)
 
 
 ## Draws a WALL cell as a 5-band vertical gradient, mirroring the C++
 ## "rocky dungeon" effect: bright top (torch-lit) -> dark bottom (shadow).
-func _render_wall_cell(px: float, py: float, size: float) -> void:
+## Inoltre aggiunge micro-decorazioni: crepe sottili (~10% delle celle muro)
+## e muschio verde raro (~3%) alla base del muro, 1:1 con Maze.cpp righe
+## 422-445.
+func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> void:
         # Band 5 - deepest shadow at the bottom, covers the full cell.
         var col_bottom := Color(
                 maxf(wall_color.r - 55.0 / 255.0, 0.0),
@@ -569,6 +756,60 @@ func _render_wall_cell(px: float, py: float, size: float) -> void:
         draw_rect(Rect2(px, py, size, size * 0.12), col_top, true)
         # Dark outline so adjacent walls read as one mass.
         draw_rect(Rect2(px, py, size, size), Color(0.04, 0.04, 0.04), false, 1.0)
+        # --- Crepa rara (~10% delle celle muro, cellHash > 0.90) ---
+        # Sottile rettangolo 1.2x6 ruotato nero semi-trasparente, 1:1 con C++.
+        if _cell_hash(c + 99, r + 17) > 0.90:
+                var h1: float = _cell_hash(c * 5 + 31, r * 7 + 19)
+                var crack_cx: float = px + 8.0 + h1 * (size - 16.0)
+                var crack_cy: float = py + 18.0
+                var crack_ang: float = (h1 - 0.5) * 60.0
+                _draw_rotated_rect(crack_cx, crack_cy, 1.2, 6.0, crack_ang,
+                        Color(0.02, 0.02, 0.02, 0.51))
+        # --- Muschio verde molto raro (~3%, cellHash > 0.97) ---
+        # Piccolo cerchio verde alla base del muro (effetto umidita').
+        if _cell_hash(c + 555, r + 333) > 0.97:
+                var mx: float = px + 6.0 + _cell_hash(c, r) * (size - 12.0)
+                var my: float = py + size - 6.0
+                draw_circle(Vector2(mx, my), 2.5, Color(0.196, 0.353, 0.157, 0.78))
+
+
+## Disegna le micro-decorazioni del pavimento per una cella EMPTY:
+## crepe sottili (1-2 per cella), ciottoli (1-2 per cella) e macchie di
+## terriccio (~12% delle celle). Port 1:1 di Maze.cpp righe 462-510.
+## Le posizioni sono deterministiche (_cell_hash) per stabilita' tra frame.
+func _render_floor_decorations(c: int, r: int, px: float, py: float, size: float) -> void:
+        # --- Piccole crepe di terra (terriccio seccato): 1-2 per cella ---
+        var num_cracks: int = 1 + int(_cell_hash(c + 50, r + 25) * 2.0)
+        for i in range(num_cracks):
+                var h1: float = _cell_hash(c * 17 + i + 100, r * 3 + i + 50)
+                var h2: float = _cell_hash(c * 7 + i + 200, r * 13 + i + 70)
+                var fcx: float = px + 6.0 + h1 * (size - 12.0)
+                var fcy: float = py + 6.0 + h2 * (size - 12.0)
+                var fang: float = (h1 - 0.5) * 40.0
+                var flen: float = 5.0 + h2 * 4.0
+                _draw_rotated_rect(fcx, fcy, 0.8, flen, fang,
+                        Color(0.059, 0.031, 0.016, 0.55))
+        # --- Piccoli sassolini sparsi (~1-2 per cella) ---
+        var num_pebbles: int = 1 + int(_cell_hash(c + 200, r + 100) * 2.0)
+        for i in range(num_pebbles):
+                var h1: float = _cell_hash(c * 17 + i + 100, r * 3 + i + 50)
+                var h2: float = _cell_hash(c * 7 + i + 200, r * 13 + i + 70)
+                var h3: float = _cell_hash(c * 23 + i + 1,  r * 11 + i + 13)
+                var pbx: float = px + 4.0 + h1 * (size - 8.0)
+                var pby: float = py + 4.0 + h2 * (size - 8.0)
+                var pbr: float = 1.2 + h3 * 1.2
+                var pr: float = 0.373 + h3 * 0.118  # ~95..125
+                var pg: float = 0.314 + h3 * 0.098  # ~80..105
+                var pb: float = 0.235 + h3 * 0.071  # ~60..78
+                draw_circle(Vector2(pbx, pby), pbr, Color(pr, pg, pb, 1.0))
+        # --- Macchie di terra piu' scura (~12% delle celle) ---
+        if _cell_hash(c + 700, r + 350) > 0.88:
+                var h1: float = _cell_hash(c + 800, r + 400)
+                var h2: float = _cell_hash(c + 900, r + 500)
+                var sx: float = px + 8.0 + h1 * (size - 24.0)
+                var sy: float = py + 8.0 + h2 * (size - 24.0)
+                var sr: float = 3.0 + h1 * 2.0
+                draw_circle(Vector2(sx, sy), sr, Color(0.059, 0.031, 0.016, 0.51))
 
 
 ## Draws a treasure cell: small stone pedestal + colored gem marker that

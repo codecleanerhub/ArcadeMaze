@@ -159,6 +159,10 @@ var _last_flipped: bool = false
 func _ready() -> void:
         # Starting stats: position (1,1) cell, 3 lives, full energy, pistol.
         reset()
+        # Load fire-aura spritesheet via SpriteManager (mirror C++ static
+        # SpriteSheet load in Game::drawFireAura 3789-3794).
+        if SpriteManager:
+                _fire_aura_sheet = SpriteManager.get_sheet("effect_fireaura")
         # Aggiungi PointLight2D (aura del player) - vantaggio Godot, non in C++
         if EffectsManager:
                 var aura := EffectsManager.create_light(
@@ -311,6 +315,13 @@ func _apply_character_frame(frame_idx: int) -> void:
 var _character_sheet_texture: Texture2D = null
 var _character_sheet_path: String = ""
 var sprite_loaded: bool = false
+
+# Fire-aura spritesheet (effect_fireaura, 6x4 frames of 64x64, anchor 32,32).
+# Loaded via SpriteManager in _ready() and used in _draw() while the chalice
+# invincibility is active. Mirrors C++ Game::drawFireAura (3770-3879) which
+# loads the same spritesheet as a static SpriteSheet instance.
+var _fire_aura_sheet: Variant = null
+var _fire_aura_anim_time: float = 0.0  # accumulates for the fire flicker
 
 
 # ===========================================================================
@@ -726,6 +737,17 @@ func _update_sprite() -> void:
         var frame_idx: int = 0
         if is_jumping():
                 frame_idx = 3
+        elif shoot_anim_timer > 0:
+                # Attack animation: use attack frames if available.
+                # NOTE: the standard 4-frame sheet (player1_sheet.png etc.)
+                # only encodes walk/idle, so for now we fall back to frame 3
+                # (jump pose) which visually reads as an "arm-up" attack pose.
+                # TODO: load the dedicated attack sheets that exist in
+                # assets/sprites/ (player1_walk0_sheet.png, _walk1_, _walk2_,
+                # _walk3_, _jump_) and switch to a proper attack frameset
+                # (e.g. player1_attack0_sheet.png.._attack3_) so the muzzle
+                # flash + recoil is shown with the correct arm position.
+                frame_idx = 3
         elif dx != 0 or dy != 0:
                 # Walking: cycle frames 0-3 at ~8 FPS
                 var walk_frame: int = int(anim_time / 130.0) % 4
@@ -797,18 +819,11 @@ func _draw() -> void:
                 draw_circle(flash_pos, 8.0, Color(1.0, 0.9, 0.3, 0.8))
                 draw_circle(flash_pos, 5.0, Color(1.0, 1.0, 0.5, 1.0))
 
-        # Draw invincibility aura (chalice effect) - 8 flame circles around player
+        # Draw invincibility aura (chalice effect) - detailed fire aura:
+        # spritesheet + 3 glow circles + 12 procedural flames + 8 sparks +
+        # central nucleus. Mirrors C++ Game::drawFireAura (3770-3879).
         if invincible_timer > 0:
-                var alpha: float = 0.3 + 0.2 * sin(float(invincible_timer) * 0.01)
-                # Outer glow
-                draw_circle(Vector2.ZERO, 28.0, Color(1.0, 0.84, 0.0, alpha * 0.3))
-                draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.84, 0.0, alpha * 0.5))
-                # 8 flame circles (mirror C++ drawFireAura)
-                for i in 8:
-                        var angle: float = i * TAU / 8.0 + anim_time * 0.005
-                        var flame_pos: Vector2 = Vector2(cos(angle), sin(angle)) * 18.0
-                        draw_circle(flame_pos, 3.0, Color(1.0, 0.4, 0.1, alpha))
-                        draw_circle(flame_pos, 1.5, Color(1.0, 0.9, 0.3, alpha))
+                _draw_fire_aura()
 
         # Draw shadow (always visible, like C++)
         var shadow_y: float = 20.0 - jump_offset * 0.3
@@ -816,6 +831,10 @@ func _draw() -> void:
 
         # Fallback procedural character if no sprite loaded
         _draw_character_fallback()
+
+        # Equipped weapon (drawn on top of body so it's visible when held).
+        # Mirrors C++ Weapon::renderEquipped() in src/Weapon.cpp line 523-817.
+        _draw_equipped_weapon()
 
 
 func _projectile_color(w_type: int) -> Color:
@@ -830,6 +849,105 @@ func _projectile_color(w_type: int) -> Color:
                         return Color(0.3, 1.0, 0.3)  # green
                 _:
                         return Color(1.0, 1.0, 1.0)
+
+
+# ===========================================================================
+# _draw_fire_aura(): detailed chalice invincibility aura.
+#
+# Renders (in local space, centered on the player):
+#   0. effect_fireaura spritesheet frame (idle, animated by anim_time)
+#   1. Outer gold glow circle (32px pulsing)
+#   2. Inner dark-red glow circle (22px pulsing)
+#   3. Mid gold glow circle (14px pulsing)
+#   4. 12 procedural flames (gold base + red tip) arranged around the player
+#   5. 8 white sparks ascending upward (animated by anim_time)
+#   6. Central white nucleus (8px pulsing)
+#
+# Mirrors Game::drawFireAura in src/Game.cpp lines 3770-3879.
+# All drawing happens at Vector2.ZERO since this is the player's local origin.
+# ===========================================================================
+func _draw_fire_aura() -> void:
+        var COL_GOLD: Color = Color(220.0 / 255.0, 160.0 / 255.0, 40.0 / 255.0)
+        var COL_RED_L: Color = Color(200.0 / 255.0, 80.0 / 255.0, 80.0 / 255.0)
+        var COL_RED_D: Color = Color(160.0 / 255.0, 40.0 / 255.0, 40.0 / 255.0)
+        var COL_WHITE: Color = Color(240.0 / 255.0, 240.0 / 255.0, 240.0 / 255.0)
+        var inv_pulse: float = sin(float(invincible_timer) * 0.01) * 0.2 + 1.0
+        # Persist anim time across frames (mirror C++ static fireAnimTime)
+        _fire_aura_anim_time += 0.08
+        var fire_anim: float = _fire_aura_anim_time
+
+        # --- 0. Spritesheet PNG aura di fuoco (effect_fireaura) ---
+        # 6x4 frames of 64x64 with anchor (32, 32). Blend is alpha (normale)
+        # but procedural glows below give extra luminosity.
+        if _fire_aura_sheet != null and _fire_aura_sheet.is_loaded():
+                var frame_count: int = _fire_aura_sheet.get_frame_count("idle")
+                if frame_count <= 0:
+                        frame_count = 6
+                var frame_idx: int = int(fire_anim * 1000.0 / 80.0) % frame_count
+                if frame_idx < 0:
+                        frame_idx = 0
+                var tex: AtlasTexture = _fire_aura_sheet.get_frame_texture("idle", frame_idx)
+                if tex != null:
+                        var sprite_scale: float = 1.4 * inv_pulse
+                        var fw: float = float(tex.get_width()) * sprite_scale
+                        var fh: float = float(tex.get_height()) * sprite_scale
+                        # Anchor (32, 32) of 64x64 frame = centered on player
+                        draw_texture_rect(tex,
+                                Rect2(-fw / 2.0, -fh / 2.0, fw, fh), false)
+
+        # --- 1. Bagliore arancione pulsante (gold 32px) ---
+        var glow_r: float = 32.0 * inv_pulse
+        draw_circle(Vector2.ZERO, glow_r,
+                Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 70.0 / 255.0))
+        # --- 2. Bagliore interno rosso (22px) ---
+        var inner_r: float = 22.0 * inv_pulse
+        draw_circle(Vector2.ZERO, inner_r,
+                Color(COL_RED_D.r, COL_RED_D.g, COL_RED_D.b, 100.0 / 255.0))
+        # --- 3. Glow centrale oro (14px) ---
+        var mid_r: float = 14.0 * inv_pulse
+        draw_circle(Vector2.ZERO, mid_r,
+                Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 90.0 / 255.0))
+
+        # --- 4. 12 fiamme procedurali (gold base + red tip) ---
+        # Alternate gold base / red tip - matches Game.cpp 3832-3858.
+        for i in 12:
+                var angle: float = (float(i) / 12.0) * TAU
+                var fx: float = cos(angle) * 20.0
+                var fy: float = sin(angle) * 20.0
+                var flame_h: float = 10.0 + sin(fire_anim + float(i) * 0.7) * 5.0 + 5.0
+                var flame_w: float = 3.5
+                # Tip is offset horizontally by a sin wave for flicker
+                var tip_x: float = fx + sin(fire_anim * 2.0 + float(i)) * 3.0
+                var tip_y: float = fy - flame_h
+                # Base oro (triangolo)
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(fx - flame_w, fy),
+                        Vector2(fx + flame_w, fy),
+                        Vector2(tip_x, tip_y),
+                ]), Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 220.0 / 255.0))
+                # Apice rosso (triangolo piu' piccolo sovrapposto)
+                var tip_h: float = flame_h * 0.6
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(fx - flame_w * 0.6, fy - flame_h * 0.4),
+                        Vector2(fx + flame_w * 0.6, fy - flame_h * 0.4),
+                        Vector2(tip_x, fy - flame_h - tip_h * 0.3),
+                ]), Color(COL_RED_L.r, COL_RED_L.g, COL_RED_L.b, 230.0 / 255.0))
+
+        # --- 5. 8 scintille bianche ascending ---
+        # Sparks rise upward and fade as they go higher.
+        for i in 8:
+                var spark_x: float = sin(fire_anim * 1.5 + float(i) * 1.2) * 14.0
+                var spark_y: float = -10.0 - float(int(fire_anim * 20.0 + float(i) * 8.0) % 35)
+                var spark_r: float = 1.2 + sin(fire_anim + float(i)) * 0.5
+                var fade: int = int(fire_anim * 20.0 + float(i) * 8.0) % 35
+                draw_circle(Vector2(spark_x, spark_y), spark_r,
+                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                (220.0 - float(fade) * 6.0) / 255.0))
+
+        # --- 6. Nucleo centrale bianco pulsante (8px) ---
+        var core_r: float = 8.0 * inv_pulse
+        draw_circle(Vector2.ZERO, core_r,
+                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 180.0 / 255.0))
 
 
 # ===========================================================================
@@ -970,3 +1088,132 @@ func _draw_character_fallback() -> void:
                 draw_colored_polygon(PackedVector2Array([
                         Vector2(-14, 0), Vector2(-18, -2), Vector2(-18, 2)
                 ]), accent_col)
+
+
+# ===========================================================================
+# _draw_equipped_weapon(): draws the equipped weapon beside the player when
+# ammo > 0, oriented by `last_dx` (right when >= 0, left when < 0).
+# Mirrors C++ Weapon::renderEquipped() in src/Weapon.cpp line 523-817.
+# Each of the 4 weapon types has unique multi-layer rendering:
+#   * PISTOL:  2-layer grip + body + slide + gold insert + barrel + muzzle
+#   * SHOTGUN: 2-layer stock + double barrel + reflection + pump + groove
+#   * ROCKET:  2-layer tube + metal band + rocket body + conical tip + fin + scope
+#   * LASER:   glow + body + body top + 3-layer core (out/mid/inner) + emitter + ring
+# ===========================================================================
+func _draw_equipped_weapon() -> void:
+        if current_weapon.ammo <= 0:
+                return
+        var y: float = -8.0  # weapon height (above body centre, near the grip)
+        var facing_right: bool = last_dx >= 0
+
+        match current_weapon.type:
+                WeaponType.PISTOL:
+                        # Grip (2 layers: dark base + lighter mid)
+                        draw_rect(Rect2(_wxr(-3.0, 6.0, facing_right), y + 1, 6, 11),
+                                Color(0.20, 0.10, 0.05))
+                        draw_rect(Rect2(_wxr(-2.5, 5.0, facing_right), y + 1, 5, 11),
+                                Color(0.33, 0.20, 0.10))
+                        # Metal body + slide + gold insert
+                        draw_rect(Rect2(_wxr(-4.0, 13.0, facing_right), y - 7, 13, 9),
+                                Color(0.27, 0.27, 0.31))
+                        draw_rect(Rect2(_wxr(-4.0, 13.0, facing_right), y - 7, 13, 3),
+                                Color(0.47, 0.47, 0.51))
+                        draw_rect(Rect2(_wxr(-3.0, 2.0, facing_right), y - 6, 2, 3),
+                                Color(0.71, 0.55, 0.24))
+                        # Barrel + muzzle
+                        draw_rect(Rect2(_wxr(8.0, 8.0, facing_right), y - 5, 8, 5),
+                                Color(0.33, 0.33, 0.37))
+                        draw_circle(Vector2(_wxc(14.5, facing_right), y - 3.5), 1.5,
+                                Color(0.06, 0.06, 0.06))
+                WeaponType.SHOTGUN:
+                        # Wooden stock (2 layers: dark base + lighter top)
+                        draw_rect(Rect2(_wxr(-7.0, 14.0, facing_right), y + 3, 14, 10),
+                                Color(0.27, 0.16, 0.07))
+                        draw_rect(Rect2(_wxr(-7.0, 14.0, facing_right), y + 3, 14, 5),
+                                Color(0.51, 0.31, 0.14))
+                        # Double barrel + reflection
+                        draw_rect(Rect2(_wxr(-6.0, 20.0, facing_right), y - 6, 20, 4),
+                                Color(0.22, 0.22, 0.24))
+                        draw_rect(Rect2(_wxr(-6.0, 20.0, facing_right), y - 1, 20, 4),
+                                Color(0.20, 0.20, 0.22))
+                        draw_rect(Rect2(_wxr(-5.0, 18.0, facing_right), y - 5.5, 18, 1),
+                                Color(0.71, 0.71, 0.75))
+                        # Pump + groove
+                        draw_rect(Rect2(_wxr(1.0, 8.0, facing_right), y + 4, 8, 5),
+                                Color(0.55, 0.35, 0.18))
+                        draw_rect(Rect2(_wxr(4.0, 0.8, facing_right), y + 4.5, 0.8, 4),
+                                Color(0.24, 0.14, 0.06))
+                WeaponType.ROCKET:
+                        # Tube (2 layers) + metal band
+                        draw_rect(Rect2(_wxr(-9.0, 18.0, facing_right), y - 4, 18, 9),
+                                Color(0.24, 0.35, 0.20))
+                        draw_rect(Rect2(_wxr(-9.0, 18.0, facing_right), y - 4, 18, 3),
+                                Color(0.39, 0.55, 0.31))
+                        draw_rect(Rect2(_wxr(-2.0, 1.5, facing_right), y - 4, 1.5, 9),
+                                Color(0.71, 0.71, 0.71))
+                        # Rocket body + conical tip + fin
+                        draw_rect(Rect2(_wxr(5.0, 8.0, facing_right), y - 2.5, 8, 5),
+                                Color(0.71, 0.20, 0.20))
+                        _draw_wpoly(PackedVector2Array([
+                                Vector2(13.0, y - 2.5),
+                                Vector2(13.0, y + 2.5),
+                                Vector2(17.0, y),
+                        ]), Color(0.86, 0.31, 0.31), facing_right)
+                        _draw_wpoly(PackedVector2Array([
+                                Vector2(5.0, y - 2.5),
+                                Vector2(8.0, y - 2.5),
+                                Vector2(6.5, y - 5.0),
+                        ]), Color(0.55, 0.12, 0.12), facing_right)
+                        # Scope
+                        draw_rect(Rect2(_wxr(-3.0, 6.0, facing_right), y - 7, 6, 2),
+                                Color(0.12, 0.12, 0.16))
+                WeaponType.LASER:
+                        # Glow
+                        draw_circle(Vector2(_wxc(-8.0, facing_right), y - 6), 8,
+                                Color(0.31, 0.86, 1.0, 0.24))
+                        # Body (2 layers: base + top)
+                        draw_rect(Rect2(_wxr(-5.0, 16.0, facing_right), y - 4, 16, 9),
+                                Color(0.20, 0.22, 0.31))
+                        draw_rect(Rect2(_wxr(-5.0, 16.0, facing_right), y - 4, 16, 3),
+                                Color(0.39, 0.43, 0.59))
+                        # Luminous core (3 layers: outer / mid / inner)
+                        draw_circle(Vector2(_wxc(-4.0, facing_right), y - 4), 4,
+                                Color(0.39, 0.78, 1.0, 0.86))
+                        draw_circle(Vector2(_wxc(-2.5, facing_right), y - 2.5), 2.5,
+                                Color(0.71, 0.94, 1.0, 0.94))
+                        draw_circle(Vector2(_wxc(-1.2, facing_right), y - 1.2), 1.2,
+                                Color(1.0, 1.0, 1.0, 0.98))
+                        # Emitter + luminous ring
+                        draw_rect(Rect2(_wxr(8.0, 7.0, facing_right), y - 3, 7, 5),
+                                Color(0.27, 0.31, 0.43))
+                        draw_circle(Vector2(_wxc(13.0, facing_right), y - 2), 2,
+                                Color(0.59, 1.0, 1.0, 0.86))
+
+
+# _wxr(offset, width, facing_right): returns the X coordinate of a weapon
+# rect's left edge, mirrored around the player centre when facing left.
+# `offset` is the right-facing left-edge offset from x=0.
+static func _wxr(offset: float, w: float, facing_right: bool) -> float:
+        if facing_right:
+                return offset
+        return -offset - w
+
+
+# _wxc(offset, facing_right): returns the X coordinate of a weapon circle
+# centre, mirrored around the player centre when facing left.
+static func _wxc(offset: float, facing_right: bool) -> float:
+        return offset if facing_right else -offset
+
+
+# _draw_wpoly(points, color, facing_right): draws a polygon for the equipped
+# weapon, mirroring all X coordinates around the player centre when facing
+# left.
+func _draw_wpoly(points: PackedVector2Array, col: Color, facing_right: bool) -> void:
+        if facing_right:
+                draw_colored_polygon(points, col)
+                return
+        var mirrored := PackedVector2Array()
+        mirrored.resize(points.size())
+        for i in points.size():
+                mirrored[i] = Vector2(-points[i].x, points[i].y)
+        draw_colored_polygon(mirrored, col)

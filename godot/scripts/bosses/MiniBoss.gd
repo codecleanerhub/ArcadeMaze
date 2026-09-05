@@ -483,9 +483,22 @@ func _draw() -> void:
                 _draw_with_sprite()
         else:
                 _draw_primitives()
+        # Weapon swing overlay (when attacking) - drawn on top of the body so
+        # the weapon appears in front of the mini-boss during the swing arc.
+        # Mirrors the C++ weapon branch in src/MiniBoss.cpp line 199-308.
+        if attacking_timer_ms > 0:
+                _draw_weapon_swing(weapon, _get_facing_angle())
         # Burning overlay always on top.
         if burning_timer_ms > 0:
                 _draw_burning_overlay()
+
+
+# Facing angle (radians): 0.0 = right, PI = left. Used by _draw_weapon_swing
+# to flip the weapon to the side the mini-boss is facing.
+func _get_facing_angle() -> float:
+        if dx < 0:
+                return PI
+        return 0.0
 
 
 func _draw_with_sprite() -> void:
@@ -585,7 +598,12 @@ func _draw_hp_bar(scale_val: float) -> void:
         draw_rect(Rect2(-bar_w * 0.5, bar_y, bar_w * ratio, bar_h), hp_col)
 
 
-# Procedural fallback (mirrors C++ renderPrimitives).
+# Procedural fallback (mirrors C++ renderPrimitives at src/MiniBoss.cpp:582-776).
+# Draws aura, body, head, eyes, then type-specific details for the 17 main
+# LOTR/D&D mini-boss types via `match mb_type:`. Each branch adds 1-4
+# distinctive features (ears, horns, crown, cloak, tentacles, second head,
+# fire aura, etc.) so the procedural fallback is still distinguishable per
+# type even when the AI-generated sprite sheet is missing.
 func _draw_primitives() -> void:
         var body_col := _get_body_color()
         var accent := _get_accent_color()
@@ -602,15 +620,281 @@ func _draw_primitives() -> void:
 
         # Head
         var head_r := float(size) * 0.25
-        draw_circle(Vector2(0, -body_h * 0.5 - head_r * 0.3), head_r, body_col)
+        var head_y := -body_h * 0.5 - head_r * 0.3
+        draw_circle(Vector2(0, head_y), head_r, body_col)
 
         # Eyes
         var eye_r := 1.5
-        draw_circle(Vector2(-head_r * 0.5, -body_h * 0.5 - head_r * 0.3), eye_r, accent)
-        draw_circle(Vector2(head_r * 0.5, -body_h * 0.5 - head_r * 0.3), eye_r, accent)
+        draw_circle(Vector2(-head_r * 0.5, head_y), eye_r, accent)
+        draw_circle(Vector2(head_r * 0.5, head_y), eye_r, accent)
+
+        # --- Type-specific details (17 LOTR/D&D mini-boss types) ---
+        match mb_type:
+                Type.MB_GOBLIN_CHIEFTAIN:
+                        # Orecchie appuntite + corona d'oro
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r, head_y - 2),
+                                Vector2(-head_r - 6, head_y - 4),
+                                Vector2(-head_r + 2, head_y + 4),
+                        ]), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r, head_y - 2),
+                                Vector2(head_r + 6, head_y - 4),
+                                Vector2(head_r - 2, head_y + 4),
+                        ]), body_col)
+                        draw_rect(Rect2(-head_r, head_y - head_r - 4,
+                                        head_r * 2.0, 3.0), Color(0.86, 0.63, 0.16))
+                        for i in 3:
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(-head_r + i * head_r - 1.0, head_y - head_r - 4),
+                                        Vector2(-head_r + i * head_r + 1.0, head_y - head_r - 4),
+                                        Vector2(-head_r + i * head_r, head_y - head_r - 8),
+                                ]), Color(1.0, 0.86, 0.16))
+                Type.MB_CAVE_TROLL:
+                        # Grosso + grigio: extra bulk + zanne
+                        draw_rect(Rect2(-body_w * 0.5 - 3, -body_h * 0.4, 3, body_h * 0.8), body_col)
+                        draw_rect(Rect2(body_w * 0.5, -body_h * 0.4, 3, body_h * 0.8), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r * 0.5, head_y + head_r * 0.5),
+                                Vector2(-head_r * 0.7, head_y + head_r * 1.2),
+                                Vector2(-head_r * 0.2, head_y + head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r * 0.5, head_y + head_r * 0.5),
+                                Vector2(head_r * 0.7, head_y + head_r * 1.2),
+                                Vector2(head_r * 0.2, head_y + head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                Type.MB_ORC_BERSERKER:
+                        # Orecchie + cicatrici + frothing
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r, head_y - 2),
+                                Vector2(-head_r - 6, head_y - 4),
+                                Vector2(-head_r + 2, head_y + 4),
+                        ]), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r, head_y - 2),
+                                Vector2(head_r + 6, head_y - 4),
+                                Vector2(head_r - 2, head_y + 4),
+                        ]), body_col)
+                        draw_line(Vector2(-head_r * 0.5, head_y - head_r * 0.5),
+                                Vector2(head_r * 0.5, head_y + head_r * 0.5),
+                                Color(0.86, 0.31, 0.31), 1)
+                        draw_circle(Vector2(0, head_y + head_r * 0.7), 2,
+                                Color(1.0, 1.0, 1.0, 0.78))
+                        draw_circle(Vector2(-2, head_y + head_r * 0.8), 1.5,
+                                Color(1.0, 1.0, 1.0, 0.78))
+                        draw_circle(Vector2(2, head_y + head_r * 0.8), 1.5,
+                                Color(1.0, 1.0, 1.0, 0.78))
+                Type.MB_WARG_RIDER:
+                        # Cavaliere su lupo: corpo lupo sotto + orecchie + occhio rosso
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-body_w * 0.7, body_h * 0.4),
+                                Vector2(-body_w * 0.3, body_h * 0.5),
+                                Vector2(body_w * 0.3, body_h * 0.5),
+                                Vector2(body_w * 0.7, body_h * 0.4),
+                                Vector2(body_w * 0.8, body_h * 0.6),
+                                Vector2(-body_w * 0.8, body_h * 0.6),
+                        ]), Color(0.16, 0.16, 0.16))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-body_w * 0.6, body_h * 0.4),
+                                Vector2(-body_w * 0.7, body_h * 0.3),
+                                Vector2(-body_w * 0.5, body_h * 0.45),
+                        ]), Color(0.16, 0.16, 0.16))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(body_w * 0.6, body_h * 0.4),
+                                Vector2(body_w * 0.7, body_h * 0.3),
+                                Vector2(body_w * 0.5, body_h * 0.45),
+                        ]), Color(0.16, 0.16, 0.16))
+                        draw_circle(Vector2(body_w * 0.55, body_h * 0.45), 1.5,
+                                Color(1.0, 0.2, 0.0))
+                Type.MB_URUK_HAI:
+                        # Marchio bianco sulla fronte (linea verticale)
+                        draw_rect(Rect2(-1, head_y - head_r * 0.8, 2, head_r),
+                                Color(0.94, 0.94, 0.94))
+                Type.MB_NAZGUL:
+                        # Mantello nero incappucciato
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, head_y - head_r),
+                                Vector2(body_w * 0.9, body_h * 0.5),
+                                Vector2(-body_w * 0.9, body_h * 0.5),
+                        ]), Color(0.05, 0.05, 0.05, 0.86))
+                        draw_circle(Vector2(0, head_y), head_r, Color(0.02, 0.02, 0.02))
+                Type.MB_OGRE_BRUTE:
+                        # Grosso ventre
+                        draw_circle(Vector2(0, body_h * 0.2), body_w * 0.55, body_col)
+                        draw_circle(Vector2(0, body_h * 0.2), 1.5,
+                                Color(0.16, 0.12, 0.08))
+                Type.MB_GNOLL_PACKLORD:
+                        # Testa iena: muso elongato + orecchie + criniera
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r, head_y - 1),
+                                Vector2(head_r + 8, head_y),
+                                Vector2(head_r, head_y + 3),
+                        ]), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r, head_y - 2),
+                                Vector2(-head_r - 5, head_y - 6),
+                                Vector2(-head_r, head_y + 2),
+                        ]), body_col)
+                        for i in 3:
+                                var mx: float = -head_r * 0.5 + i * head_r * 0.4
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(mx, head_y - head_r),
+                                        Vector2(mx + 2, head_y - head_r),
+                                        Vector2(mx + 1, head_y - head_r - 4),
+                                ]), accent)
+                Type.MB_BUGBEAR_CHIEF:
+                        # Pelliccia (zigzag outline laterale)
+                        for i in 6:
+                                var fy: float = -body_h * 0.4 + i * body_h * 0.16
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(-body_w * 0.5, fy),
+                                        Vector2(-body_w * 0.5 - 4, fy + 2),
+                                        Vector2(-body_w * 0.5 - 2, fy + 4),
+                                        Vector2(-body_w * 0.5, fy + 6),
+                                ]), Color(0.27, 0.20, 0.16))
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(body_w * 0.5, fy),
+                                        Vector2(body_w * 0.5 + 4, fy + 2),
+                                        Vector2(body_w * 0.5 + 2, fy + 4),
+                                        Vector2(body_w * 0.5, fy + 6),
+                                ]), Color(0.27, 0.20, 0.16))
+                Type.MB_MINOTAUR:
+                        # Testa toro: corna + muso
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r * 0.7, head_y - head_r * 0.5),
+                                Vector2(-head_r * 1.6, head_y - head_r * 1.4),
+                                Vector2(-head_r * 0.4, head_y - head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r * 0.7, head_y - head_r * 0.5),
+                                Vector2(head_r * 1.6, head_y - head_r * 1.4),
+                                Vector2(head_r * 0.4, head_y - head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                        draw_rect(Rect2(-3, head_y + head_r * 0.5, 6, 4), body_col)
+                Type.MB_WIGHT_LORD:
+                        # Armatura spettrale (semi-trasparente + runa glowing)
+                        draw_rect(Rect2(-body_w * 0.4, -body_h * 0.3,
+                                        body_w * 0.8, body_h * 0.6),
+                                Color(accent.r, accent.g, accent.b, 0.3))
+                        draw_circle(Vector2(0, 0), 2,
+                                Color(0.47, 0.86, 0.86, 0.9))
+                Type.MB_CAVE_GIANT:
+                        # Grosso + primitivo: extra bulk + mazza
+                        draw_rect(Rect2(-body_w * 0.6, -body_h * 0.4,
+                                        body_w * 1.2, body_h * 0.8),
+                                Color(body_col.r, body_col.g, body_col.b, 0.5))
+                        draw_rect(Rect2(body_w * 0.5, -body_h * 0.3, 6, body_h * 0.7),
+                                Color(0.39, 0.27, 0.13))
+                Type.MB_DEATH_KNIGHT:
+                        # Elmo teschio
+                        draw_rect(Rect2(-head_r, head_y - head_r,
+                                        head_r * 2.0, head_r * 2.0),
+                                Color(0.94, 0.94, 0.86))
+                        draw_circle(Vector2(-head_r * 0.4, head_y), 2, Color(0.02, 0.02, 0.02))
+                        draw_circle(Vector2(head_r * 0.4, head_y), 2, Color(0.02, 0.02, 0.02))
+                        draw_rect(Rect2(-head_r * 0.6, head_y + head_r * 0.5,
+                                        head_r * 1.2, 2), Color(0.05, 0.05, 0.05))
+                Type.MB_ILLITHID:
+                        # Tentacoli facciali (4 piccoli attorno alla bocca)
+                        for i in 4:
+                                var ang: float = (i - 1.5) * 0.4
+                                var bx: float = cos(ang) * head_r * 0.7
+                                var by: float = head_y + head_r * 0.3 + sin(ang) * head_r * 0.3
+                                draw_line(Vector2(bx, by),
+                                        Vector2(bx + cos(ang) * 6, by + 6),
+                                        body_col, 1.5)
+                Type.MB_ETTIN:
+                        # Due teste: seconda testa piu' piccola a destra
+                        var head2_r := head_r * 0.8
+                        var head2_x := head_r + head2_r
+                        draw_circle(Vector2(head2_x, head_y - head2_r * 0.3),
+                                head2_r, body_col)
+                        draw_circle(Vector2(head2_x - head2_r * 0.5,
+                                        head_y - head2_r * 0.3), eye_r, accent)
+                Type.MB_FOMORIAN:
+                        # Deforme + un occhio
+                        draw_circle(Vector2(0, head_y), head_r * 0.6, Color(1.0, 1.0, 1.0))
+                        draw_circle(Vector2(0, head_y), head_r * 0.4,
+                                Color(0.08, 0.08, 0.16))
+                        draw_circle(Vector2(0, head_y), head_r * 0.2, Color(0.0, 0.0, 0.0))
+                Type.MB_BALROG_CULTIST:
+                        # Aura di fuoco (6 fiamme pulsanti attorno)
+                        for i in 6:
+                                var fang: float = (i / 6.0) * TAU + anim_time * 2.0
+                                var fr: float = float(size) * 0.55 + sin(anim_time * 4.0 + i) * 3.0
+                                draw_circle(Vector2(cos(fang) * fr, sin(fang) * fr),
+                                        2.5, Color(1.0, 0.63, 0.16, 0.86))
+                _:
+                        pass
 
         # HP bar
         _draw_hp_bar(1.0)
+
+
+# ===========================================================================
+# _draw_weapon_swing(weapon_type, angle): draws the equipped weapon in the
+# mini-boss's hand during the attack animation (attacking_timer_ms > 0).
+# The `angle` parameter (radians) orients the weapon: 0.0 = facing right,
+# PI = facing left (mirrored). Mirrors the C++ weapon branch in
+# src/MiniBoss.cpp line 199-308 (8 weapon types).
+# ===========================================================================
+func _draw_weapon_swing(weapon_type: int, angle: float) -> void:
+        # Weapon anchor: to the right of the body when angle ~ 0, mirrored when
+        # angle ~ PI. A small wobble simulates the swing motion.
+        var body_w := float(size) * 0.7
+        var facing_left := absf(angle - PI) < 0.5
+        var dir_x := -1.0 if facing_left else 1.0
+        var swing_off := sin((400.0 - float(attacking_timer_ms)) * 0.02) * 2.0
+        var wx: float = dir_x * (body_w * 0.6 + swing_off)
+        var wy: float = 0.0
+        var col_dark := Color(0.19, 0.16, 0.14)
+        var col_pale := Color(0.78, 0.71, 0.63)
+        var col_mid := Color(0.38, 0.31, 0.28)
+        var col_gold := Color(0.86, 0.63, 0.16)
+        match weapon_type:
+                Weapon.MBW_AXE:
+                        # Manico + lama triangolare
+                        draw_rect(Rect2(wx, wy - 6, 1.5, 12), col_dark)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(wx, wy - 6),
+                                Vector2(wx + dir_x * 8, wy - 4),
+                                Vector2(wx + dir_x * 1, wy + 2),
+                        ]), col_pale)
+                Weapon.MBW_MACE, Weapon.MBW_CLUB:
+                        # Manico + testa sferica con spuntoni
+                        draw_rect(Rect2(wx, wy - 7, 1.5, 14), col_dark)
+                        draw_circle(Vector2(wx, wy - 9), 4, col_mid)
+                        for i in 6:
+                                var sa: float = i * PI / 3.0
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(wx + cos(sa) * 4, wy - 9 + sin(sa) * 4),
+                                        Vector2(wx + cos(sa) * 6, wy - 9 + sin(sa) * 6),
+                                        Vector2(wx + cos(sa) * 4.5, wy - 9 + sin(sa) * 4.5),
+                                ]), col_pale)
+                Weapon.MBW_SWORD:
+                        # Lama dritta + elsa
+                        draw_rect(Rect2(wx, wy - 12, 1.5, 14), col_pale)
+                        draw_rect(Rect2(wx - 1.5, wy + 1, 5, 1.5), col_gold)
+                Weapon.MBW_DAGGER:
+                        # Pugnale corto + guardia
+                        draw_rect(Rect2(wx, wy - 6, 1.2, 8), col_pale)
+                        draw_rect(Rect2(wx - 0.9, wy + 1, 3, 1), col_gold)
+                Weapon.MBW_CHAIN:
+                        # Catena (3 anelli) + palla
+                        for i in 3:
+                                draw_circle(Vector2(wx + dir_x * i * 4, wy - 6), 1.5, col_dark)
+                        draw_circle(Vector2(wx + dir_x * 12, wy - 9.5), 3.5, col_mid)
+                Weapon.MBW_WHIP:
+                        # Frusta (4 segmenti curvi)
+                        for i in 4:
+                                var seg_y: float = wy - 8 + i * 4
+                                draw_rect(Rect2(wx + dir_x * i * 2, seg_y, 1, 4), col_dark)
+                Weapon.MBW_TENTACLES:
+                        # Tentacoli gia' disegnati come dettaglio del tipo (ILLITHID).
+                        pass
+                _:
+                        pass
 
 
 func _get_body_color() -> Color:

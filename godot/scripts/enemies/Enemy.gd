@@ -677,6 +677,10 @@ func _draw() -> void:
         draw_circle(Vector2(-4, -2) + eye_offset, 1.0, Color.BLACK)
         draw_circle(Vector2(4, -2) + eye_offset, 1.0, Color.BLACK)
 
+        # Type-specific procedural details (28 unique fallbacks).
+        # Mirrors Enemy::renderPrimitives() in src/Enemy.cpp line 885-1449.
+        _draw_primitive_fallback()
+
         # Health bar above enemy
         if health < max_health and not is_dead():
                 var bar_w2: float = 24.0
@@ -790,3 +794,263 @@ func _draw_death_fallback() -> void:
         # Inner brighter circle
         draw_circle(Vector2.ZERO, radius * 0.6,
                 Color(1.0, 0.6, 0.2, (1.0 - progress) * 0.7))
+
+
+# ===========================================================================
+# _draw_primitive_fallback(): type-specific procedural details drawn ON TOP
+# of the base circle + eyes. Each of the 28 enemy types gets unique
+# distinguishing features (arms, horns, wings, ears, hat, etc.) so the
+# fallback is still readable when the AI-generated sprite sheet is missing.
+# Mirrors Enemy::renderPrimitives() in src/Enemy.cpp line 885-1449.
+# ===========================================================================
+func _draw_primitive_fallback() -> void:
+        match type:
+                EnemyType.ZOMBIE:
+                        # Braccia verdi penzolanti + gamba
+                        draw_rect(Rect2(-18, -2, 12, 8), Color(0.39, 0.59, 0.31))
+                        draw_rect(Rect2(6, -2, 12, 8), Color(0.39, 0.59, 0.31))
+                        draw_rect(Rect2(-8, 8, 8, 12), Color(0.24, 0.31, 0.16))
+                EnemyType.SKELETON:
+                        # Arco convesso + freccia
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -8), Vector2(14, -4),
+                                Vector2(12, 8), Vector2(6, 4),
+                        ]), Color(0.55, 0.27, 0.07))
+                        draw_rect(Rect2(-2, -1, 16, 1), Color(0.9, 0.9, 0.85))
+                EnemyType.GHOST:
+                        # Corpoco trasparente fluttuante: wisps sotto
+                        draw_circle(Vector2(-8, 14), 4, Color(0.59, 0.78, 1.0, 0.4))
+                        draw_circle(Vector2(8, 14), 4, Color(0.59, 0.78, 1.0, 0.4))
+                        draw_circle(Vector2(0, 16), 4, Color(0.59, 0.78, 1.0, 0.4))
+                EnemyType.BAT:
+                        # Ali (quadrilateri simili a ventagli)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-20, -8),
+                                Vector2(-16, 4), Vector2(-4, 4),
+                        ]), Color(0.31, 0.0, 0.31))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(20, -8),
+                                Vector2(16, 4), Vector2(4, 4),
+                        ]), Color(0.31, 0.0, 0.31))
+                EnemyType.SPIDER:
+                        # 8 zampe (4 per lato)
+                        for i in 4:
+                                var y_off: float = -2.0 + i * 3.0
+                                draw_line(Vector2(-8, y_off), Vector2(-20, y_off - 4),
+                                        Color(0.78, 0.78, 0.78), 1.5)
+                                draw_line(Vector2(8, y_off), Vector2(20, y_off - 4),
+                                        Color(0.78, 0.78, 0.78), 1.5)
+                EnemyType.SLIME:
+                        # Blob gelatinoso: highlights
+                        draw_circle(Vector2(-5, 2), 1.5, Color(0.78, 0.95, 0.78))
+                        draw_circle(Vector2(5, 2), 1.5, Color(0.78, 0.95, 0.78))
+                EnemyType.DEMON:
+                        # Corna + ali
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -16), Vector2(-12, -26), Vector2(-4, -18),
+                        ]), Color(0.31, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -16), Vector2(12, -26), Vector2(4, -18),
+                        ]), Color(0.31, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-12, -4), Vector2(-24, -8),
+                                Vector2(-20, 8), Vector2(-8, 6),
+                        ]), Color(0.47, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(12, -4), Vector2(24, -8),
+                                Vector2(20, 8), Vector2(8, 6),
+                        ]), Color(0.47, 0.0, 0.0))
+                EnemyType.ROBOT:
+                        # Antenna + LED + cingoli
+                        draw_rect(Rect2(-1, -28, 2, 8), Color(0.31, 0.31, 0.31))
+                        draw_circle(Vector2(0, -29), 2, Color(1.0, 0.2, 0.2))
+                        draw_rect(Rect2(-14, 12, 28, 6), Color(0.12, 0.12, 0.12))
+                EnemyType.GOBLIN:
+                        # Orecchie appuntite + pugnale
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -10), Vector2(-16, -8), Vector2(-8, -6),
+                        ]), Color(0.27, 0.71, 0.27))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -10), Vector2(16, -8), Vector2(8, -6),
+                        ]), Color(0.27, 0.71, 0.27))
+                        draw_rect(Rect2(8, -2, 2, 8), Color(0.78, 0.78, 0.78))
+                EnemyType.ORC:
+                        # Armatura + zanne
+                        draw_rect(Rect2(-8, -6, 16, 8), Color(0.39, 0.39, 0.39))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-6, -12), Vector2(-8, -6), Vector2(-2, -10),
+                        ]), Color(1.0, 1.0, 0.78))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(6, -12), Vector2(8, -6), Vector2(2, -10),
+                        ]), Color(1.0, 1.0, 0.78))
+                EnemyType.WRAITH:
+                        # Mantello fluttuante + cappuccio
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, -16), Vector2(14, -4),
+                                Vector2(12, 14), Vector2(-12, 14),
+                                Vector2(-14, -4),
+                        ]), Color(0.16, 0.0, 0.24, 0.78))
+                        draw_circle(Vector2(0, -16), 8, Color(0.08, 0.0, 0.12))
+                EnemyType.GHOUL:
+                        # Corpo decomposto: artigli
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-12, -2), Vector2(-18, 2), Vector2(-12, 4),
+                        ]), Color(0.78, 0.78, 0.78))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(12, -2), Vector2(18, 2), Vector2(12, 4),
+                        ]), Color(0.78, 0.78, 0.78))
+                EnemyType.IMP:
+                        # Piccolo con ali + corna
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-16, -12),
+                                Vector2(-12, -2), Vector2(-2, 2),
+                        ]), Color(0.47, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(16, -12),
+                                Vector2(12, -2), Vector2(2, 2),
+                        ]), Color(0.47, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-4, -16), Vector2(-8, -22), Vector2(-2, -16),
+                        ]), Color(0.08, 0.08, 0.08))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(4, -16), Vector2(8, -22), Vector2(2, -16),
+                        ]), Color(0.08, 0.08, 0.08))
+                EnemyType.RAT:
+                        # Coda lunga + muso
+                        draw_line(Vector2(-12, 4), Vector2(-20, 8),
+                                Color(1.0, 0.78, 0.78), 2)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -4), Vector2(18, -4), Vector2(12, 4),
+                        ]), Color(0.39, 0.35, 0.31))
+                EnemyType.CULTIST:
+                        # Tunica con cappuccio + pugnale
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, -14), Vector2(12, -4),
+                                Vector2(8, 14), Vector2(-8, 14),
+                                Vector2(-12, -4),
+                        ]), Color(0.31, 0.0, 0.31))
+                        draw_rect(Rect2(8, 2, 2, 10), Color(0.78, 0.78, 0.78))
+                EnemyType.MIMIC:
+                        # Forziere con denti
+                        draw_rect(Rect2(-14, -4, 28, 14), Color(0.43, 0.27, 0.12))
+                        draw_rect(Rect2(-14, -10, 28, 6), Color(0.31, 0.20, 0.08))
+                        for i in 5:
+                                var tx: float = -12.0 + i * 6.0
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(tx, -4), Vector2(tx + 4, -4),
+                                        Vector2(tx + 2, 2),
+                                ]), Color(1.0, 1.0, 0.86))
+                EnemyType.WOLF:
+                        # Coda arruffata + orecchie
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-14, -2), Vector2(-22, -8),
+                                Vector2(-20, 2), Vector2(-14, 2),
+                        ]), Color(0.24, 0.24, 0.27))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -16), Vector2(-6, -22), Vector2(0, -18),
+                        ]), Color(0.31, 0.31, 0.35))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -16), Vector2(12, -22), Vector2(6, -18),
+                        ]), Color(0.31, 0.31, 0.35))
+                EnemyType.WITCH:
+                        # Cappello a punta + pozione
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-12, -22), Vector2(12, -22), Vector2(2, -38),
+                        ]), Color(0.08, 0.08, 0.08))
+                        draw_rect(Rect2(8, 2, 4, 8), Color(0.39, 1.0, 0.39, 0.78))
+                EnemyType.BONE_GOLEM:
+                        # Gabbia toracica + teschio grande
+                        for i in 3:
+                                draw_rect(Rect2(-14, -4.0 + i * 5.0, 28, 2),
+                                        Color(0.47, 0.47, 0.39))
+                        draw_rect(Rect2(-9, -28, 18, 14), Color(0.86, 0.86, 0.78))
+                EnemyType.ASH_SERPENT:
+                        # Serpente sinuoso + lingua biforcuta
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-16, 8), Vector2(-8, 2),
+                                Vector2(-2, 8), Vector2(8, 2),
+                                Vector2(14, 8), Vector2(-2, -2),
+                        ]), Color(0.47, 0.43, 0.39))
+                        draw_line(Vector2(14, -4), Vector2(20, -4),
+                                Color(1.0, 0.31, 0.31), 1)
+                EnemyType.DAMNED_KNIGHT:
+                        # Armatura nera + crepa luminosa + spada
+                        draw_rect(Rect2(-11, -8, 22, 20), Color(0.16, 0.16, 0.20))
+                        draw_rect(Rect2(-11, -26, 16, 14), Color(0.12, 0.12, 0.16))
+                        draw_rect(Rect2(-4, -4, 2, 8), Color(1.0, 0.47, 0.0))
+                        draw_rect(Rect2(12, -12, 2, 18), Color(0.71, 0.71, 0.71))
+                EnemyType.MAD_WIZARD:
+                        # Cappello con stella + pergamene fluttuanti
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-10, -24), Vector2(10, -24), Vector2(4, -42),
+                        ]), Color(0.16, 0.08, 0.24))
+                        draw_circle(Vector2(2, -32), 2, Color(1.0, 1.0, 0.39))
+                        draw_rect(Rect2(-18, -6, 6, 8), Color(0.86, 0.78, 0.55))
+                        draw_rect(Rect2(12, -4, 6, 8), Color(0.86, 0.78, 0.55))
+                EnemyType.DEMONIC_CROW:
+                        # Ali nere + becco metallico
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-20, -12),
+                                Vector2(-16, 4), Vector2(-2, 4),
+                        ]), Color(0.08, 0.08, 0.12))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(20, -12),
+                                Vector2(16, 4), Vector2(2, 4),
+                        ]), Color(0.08, 0.08, 0.12))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -12), Vector2(14, -10), Vector2(8, -8),
+                        ]), Color(0.71, 0.71, 0.78))
+                EnemyType.TENTACLE:
+                        # Tentacolo con ventose
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-4, 12), Vector2(-10, 4),
+                                Vector2(-6, -8), Vector2(2, -12),
+                                Vector2(8, -4), Vector2(6, 12),
+                        ]), Color(0.39, 0.31, 0.47))
+                        for i in 3:
+                                draw_circle(Vector2(-6.0 + i * 4.0, -4.0 + i * 4.0),
+                                        1.5, Color(0.71, 0.59, 0.78))
+                EnemyType.GARGOYLE:
+                        # Ali di pietra + corna
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-10, -6), Vector2(-20, -12),
+                                Vector2(-22, -4), Vector2(-18, 2), Vector2(-12, -2),
+                        ]), Color(0.27, 0.27, 0.30))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(10, -6), Vector2(20, -12),
+                                Vector2(22, -4), Vector2(18, 2), Vector2(12, -2),
+                        ]), Color(0.27, 0.27, 0.30))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -24), Vector2(-12, -30), Vector2(-6, -26),
+                        ]), Color(0.31, 0.31, 0.33))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -24), Vector2(12, -30), Vector2(6, -26),
+                        ]), Color(0.31, 0.31, 0.33))
+                EnemyType.WELL_SPIRIT:
+                        # Corpo acquoso + bolle
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, -20), Vector2(12, -8),
+                                Vector2(10, 10), Vector2(-10, 10), Vector2(-12, -8),
+                        ]), Color(0.47, 0.78, 1.0, 0.5))
+                        for i in 3:
+                                draw_circle(Vector2(-8.0 + i * 6.0, 4),
+                                        1.0 + (i % 2), Color(0.78, 0.94, 1.0, 0.71))
+                EnemyType.CURSED_BOAR:
+                        # Zanne + 4 zampe
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(10, -4), Vector2(16, -2), Vector2(10, 2),
+                        ]), Color(0.78, 0.78, 0.71))
+                        for i in 4:
+                                draw_rect(Rect2(-12.0 + i * 8.0, 8, 4, 6),
+                                        Color(0.24, 0.18, 0.14))
+                EnemyType.PREDATOR_FUNGUS:
+                        # Cappello fungo + macchie luminose
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-16, -2), Vector2(-12, -14),
+                                Vector2(0, -18), Vector2(12, -14), Vector2(16, -2),
+                        ]), Color(0.71, 0.31, 0.78))
+                        for i in 3:
+                                draw_circle(Vector2(-8.0 + i * 6.0, -12),
+                                        1.5, Color(1.0, 0.86, 0.39))
+                _:
+                        pass

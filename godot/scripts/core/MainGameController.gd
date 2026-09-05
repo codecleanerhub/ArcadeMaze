@@ -95,6 +95,13 @@ var blood_stains: Array = []  # [{pos, life, max_life, radius, color}]
 var ash_piles: Array = []     # [{pos, life, max_life, radius, anim_time}]
 var fire_bursts: Array = []   # [{pos, life, max_life, scale, anim_time}]
 
+# Spritesheets for advanced decals (loaded in _ready via SpriteManager).
+# Mirror Game.cpp drawAshPiles/drawFireBursts (3998-4132 / 3892-3990):
+#   - effect_ashpile: 6x4 frame 64x64 (anchor 32,56)
+#   - effect_fireburst: 6x4 frame 64x64 (anchor 32,40)
+var _ashpile_sheet: Variant = null
+var _fireburst_sheet: Variant = null
+
 # Frame delta in ms (for timer decrements matching C++ @ 60 FPS)
 const FRAME_MS: float = 1000.0 / 60.0
 
@@ -104,6 +111,11 @@ const FRAME_MS: float = 1000.0 / 60.0
 # ============================================================================
 func _ready() -> void:
         print("[MainGameController] VERSION: 35ab8b3 - game controller ready")
+        # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
+        # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
+        if SpriteManager:
+                _ashpile_sheet = SpriteManager.get_sheet("effect_ashpile")
+                _fireburst_sheet = SpriteManager.get_sheet("effect_fireburst")
         # Configure player characters from GameManager
         if GameManager:
                 current_level = GameManager.current_level
@@ -942,16 +954,57 @@ func _spawn_mini_boss(col: int, row: int) -> void:
 # Scepter lightning strike (full-screen, hits all enemies on path)
 # ============================================================================
 func _fire_lightning_strike() -> void:
-        # Generate a zigzag lightning from top to bottom of screen
-        var start_x: float = randf() * C.WINDOW_WIDTH
-        var points: Array = []
-        var num_segs: int = 8
-        for i in num_segs + 1:
-                var y: float = C.UI_HEIGHT + float(i) / num_segs * (C.WINDOW_HEIGHT - C.UI_HEIGHT)
-                var x: float = start_x + (randf() * 2 - 1) * 30  # jitter
-                points.append(Vector2(x, y))
+        # Generate a full-screen zigzag lightning with 1 of 3 start angles.
+        # Mirrors Game.cpp createFullScreenLightning (3540-3564):
+        #   mode 0 = vertical: start at (end_x, UI_HEIGHT) above the impact point
+        #   mode 1 = diagonal sx: start at top-left corner (20, UI_HEIGHT)
+        #   mode 2 = diagonal dx: start at top-right corner (W-20, UI_HEIGHT)
+        # The path uses 18 segments + 35px jitter perpendicular to direction
+        # (generateLightningPath 3492-3523) so the zigzag is visible but
+        # anchored at start and end.
+        var end_x: float = randf() * float(C.WINDOW_WIDTH)
+        var end_pos: Vector2 = Vector2(end_x, float(C.WINDOW_HEIGHT))
+        var mode: int = randi() % 3
+        var start_pos: Vector2
+        match mode:
+                0:
+                        start_pos = Vector2(end_x, float(C.UI_HEIGHT))
+                1:
+                        start_pos = Vector2(20.0, float(C.UI_HEIGHT))
+                _:
+                        start_pos = Vector2(float(C.WINDOW_WIDTH) - 20.0, float(C.UI_HEIGHT))
+        var points: Array = _generate_lightning_path(start_pos, end_pos, 18, 35.0)
+        # Pre-compute 4 lateral branches (5 segments each, 6 points). The
+        # branches are anchored at random points along the main path and
+        # descend with horizontal jitter, matching Game.cpp 3683-3714.
+        var branches: Array = []
+        if points.size() >= 4:
+                var br_rng := RandomNumberGenerator.new()
+                br_rng.seed = randi()
+                for _b in 4:
+                        var seg_idx: int = 1 + br_rng.randi_range(0, points.size() - 3)
+                        var b_cur: Vector2 = points[seg_idx]
+                        var b_pts: Array = [b_cur]
+                        for _s in 5:
+                                var bx: float = b_cur.x + float(br_rng.randi_range(-8, 8))
+                                var by: float = b_cur.y + 4.0 + float(br_rng.randi_range(0, 5))
+                                b_cur = Vector2(bx, by)
+                                b_pts.append(b_cur)
+                        branches.append(b_pts)
+        # Pre-compute 10 radial sparks (2-layer each: glow + core). Stable
+        # across frames so the sparks don't jitter - matches Game.cpp 3718-3735.
+        var sparks: Array = []
+        var sp_rng := RandomNumberGenerator.new()
+        sp_rng.seed = randi()
+        for i in 10:
+                var a: float = (float(i) / 10.0) * TAU
+                var r: float = 10.0 + float(sp_rng.randi_range(0, 11))
+                sparks.append({"angle": a, "radius": r})
         lightning_bolts.append({
+                "pos": end_pos,
                 "points": points,
+                "branches": branches,
+                "sparks": sparks,
                 "life": 30,  # frames
                 "max_life": 30,
         })
@@ -982,26 +1035,109 @@ func _fire_lightning_strike() -> void:
                                 break
 
 
+# Generate a zigzag lightning path from start_pos to end_pos with `num_segs`
+# segments and perpendicular jitter (faded to 0 at the endpoints so the bolt
+# stays anchored). Mirrors Game.cpp generateLightningPath 3492-3523.
+func _generate_lightning_path(start_pos: Vector2, end_pos: Vector2,
+                num_segs: int, jitter: float) -> Array:
+        var pts: Array = [start_pos]
+        var d: Vector2 = end_pos - start_pos
+        var dir_len: float = d.length()
+        var perp: Vector2 = Vector2.ZERO
+        if dir_len > 0.001:
+                perp = Vector2(-d.y, d.x) / dir_len
+        for i in range(1, num_segs):
+                var t: float = float(i) / float(num_segs)
+                var p: Vector2 = start_pos + d * t
+                # sin(t*PI): 0 at endpoints, 1 in the middle - keeps the
+                # bolt anchored to start/end while allowing big mid jitter.
+                var edge_fade: float = sin(t * PI)
+                var jit: float = (randf() * 2.0 - 1.0) * jitter * edge_fade
+                p += perp * jit
+                pts.append(p)
+        pts.append(end_pos)
+        return pts
+
+
 # ============================================================================
 # Draw lightning bolts (called from _draw)
 # ============================================================================
 func _draw_lightning_bolts() -> void:
+        # Detailed 3-strata lightning renderer with halo, flash, 4 lateral
+        # branches, 10 radial sparks (2-layer) and an expanding shockwave.
+        # Mirrors Game.cpp drawLightning (3582-3747).
+        var COL_GEM_BLUE: Color = Color(80.0 / 255.0, 160.0 / 255.0, 220.0 / 255.0)
+        var COL_CYAN: Color = Color(120.0 / 255.0, 200.0 / 255.0, 200.0 / 255.0)
+        var COL_WHITE: Color = Color(240.0 / 255.0, 240.0 / 255.0, 240.0 / 255.0)
         for bolt in lightning_bolts:
                 var pts: Array = bolt.get("points", [])
                 if pts.size() < 2:
                         continue
                 var life: int = int(bolt.get("life", 0))
-                var alpha: float = float(life) / float(bolt.get("max_life", 30))
-                var col: Color = Color(0.5, 0.8, 1.0, alpha)
-                # Glow halo
+                var max_life: int = int(bolt.get("max_life", 30))
+                var alpha: float = float(life) / float(max_life)
+                var impact: Vector2 = bolt.get("pos", pts[pts.size() - 1])
+                var lx: float = impact.x
+                var ly: float = impact.y
+                # --- 1. Halo esterno (bagliore grande attorno al punto di impatto) ---
+                draw_circle(impact, 55.0,
+                        Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b, alpha * 0.15))
+                # --- 2. Glow medio ---
+                draw_circle(impact, 28.0,
+                        Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.35))
+                # --- 3. Glow interno ---
+                draw_circle(impact, 14.0,
+                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.5))
+                # --- 4. Saetta zigzag (3 strati per segmento) ---
+                # Strato 1: glow esterno azzurro (6px)
                 for i in pts.size() - 1:
-                        draw_line(pts[i], pts[i + 1], Color(0.3, 0.6, 1.0, alpha * 0.3), 6.0)
-                # Main bolt
+                        draw_line(pts[i], pts[i + 1],
+                                Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b,
+                                        alpha * 0.2), 6.0)
+                # Strato 2: glow medio ciano (3px)
                 for i in pts.size() - 1:
-                        draw_line(pts[i], pts[i + 1], col, 3.0)
-                # White core
+                        draw_line(pts[i], pts[i + 1],
+                                Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
+                                        alpha * 0.5), 3.0)
+                # Strato 3: nucleo centrale bianco (1.5px)
                 for i in pts.size() - 1:
-                        draw_line(pts[i], pts[i + 1], Color(1, 1, 1, alpha), 1.0)
+                        draw_line(pts[i], pts[i + 1],
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha), 1.5)
+                # --- 5. Flash centrale al punto di impatto (10px) ---
+                draw_circle(impact, 10.0,
+                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha))
+                # --- 6. Ramificazioni laterali (4 rami, 5 segmenti ciascuno) ---
+                # Ogni ramo: glow ciano 2px + nucleo bianco 1px (Game.cpp 3683-3714)
+                var branches: Array = bolt.get("branches", [])
+                for br in branches:
+                        if br.size() < 2:
+                                continue
+                        for i in br.size() - 1:
+                                draw_line(br[i], br[i + 1],
+                                        Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
+                                                alpha * 0.4), 2.0)
+                        for i in br.size() - 1:
+                                draw_line(br[i], br[i + 1],
+                                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
+                                                alpha * 0.8), 1.0)
+                # --- 7. Scintille radiali (10, 2 strati: glow + nucleo) ---
+                var sparks: Array = bolt.get("sparks", [])
+                for sp in sparks:
+                        var a: float = float(sp.get("angle", 0.0))
+                        var r: float = float(sp.get("radius", 10.0))
+                        var sx: float = lx + cos(a) * r
+                        var sy: float = ly + sin(a) * r
+                        # Glow scintilla (2.5px ciano)
+                        draw_circle(Vector2(sx, sy), 2.5,
+                                Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.5))
+                        # Nucleo scintilla (1.2px bianco)
+                        draw_circle(Vector2(sx, sy), 1.2,
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.9))
+                # --- 8. Onda d'urto circolare (shockwave che si espande) ---
+                var shock_r: float = (1.0 - alpha) * 50.0
+                if shock_r > 0.5:
+                        draw_arc(impact, shock_r, 0.0, TAU, 32,
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.4), 1.5)
         # Decay lightning life
         var alive_bolts: Array = []
         for bolt in lightning_bolts:
@@ -1124,6 +1260,10 @@ func _draw_decals() -> void:
                                 Color(base_col.r, base_col.g, base_col.b, alpha * 0.7))
 
         # --- Ash piles ---
+        # Detailed rendering: shadow + spritesheet (effect_ashpile) with
+        # life-based anim selection (idle/walk/attack/death) + 4 braci
+        # incandescenti pulsanti + 5 fumo + 5 detriti di carbone ruotati.
+        # Mirrors Game.cpp drawAshPiles (3998-4132).
         for ap in ash_piles:
                 var pos: Vector2 = ap.get("pos", Vector2.ZERO)
                 var radius: float = float(ap.get("radius", 12.0))
@@ -1132,21 +1272,69 @@ func _draw_decals() -> void:
                 if life_ratio < 0.0:
                         life_ratio = 0.0
                 var alpha: float = 1.0 * life_ratio
-                # Shadow (squashed dark ellipse)
-                var shadow_r: float = radius * 1.4
-                draw_circle(pos, shadow_r * 0.5,
+                # 1. Shadow (squashed dark ellipse)
+                var shadow_r: float = radius * 0.7
+                draw_circle(pos, shadow_r,
                         Color(0.05, 0.05, 0.05, 0.4 * life_ratio))
-                # Main pile (dark grey/brown, flattened)
-                draw_circle(pos, radius * 0.6,
-                        Color(0.47, 0.39, 0.35, alpha))
-                # Mid layer (lighter)
-                draw_circle(Vector2(pos.x, pos.y - radius * 0.2), radius * 0.4,
-                        Color(0.63, 0.50, 0.44, alpha))
-                # Top highlight (lightest)
-                draw_circle(Vector2(pos.x, pos.y - radius * 0.4), radius * 0.25,
-                        Color(0.78, 0.71, 0.63, alpha))
-                # Rising smoke particles (grey puffs) - 5 small circles
-                # drifting upward and fading. Mirrors Game.cpp 4101-4115.
+                # 2. Spritesheet PNG (effect_ashpile) - life-based anim phase
+                var drew_sprite: bool = false
+                if _ashpile_sheet != null and _ashpile_sheet.is_loaded():
+                        var anim_name: String = "idle"
+                        if life_ratio > 0.75:
+                                anim_name = "idle"       # fresco
+                        elif life_ratio > 0.5:
+                                anim_name = "walk"        # smoldering
+                        elif life_ratio > 0.25:
+                                anim_name = "attack"      # cooling
+                        else:
+                                anim_name = "death"        # old
+                        var frame_count: int = _ashpile_sheet.get_frame_count(anim_name)
+                        if frame_count <= 0:
+                                anim_name = "idle"
+                                frame_count = _ashpile_sheet.get_frame_count(anim_name)
+                        if frame_count > 0:
+                                var frame_idx: int = int(anim_time * 1000.0 / 200.0) % frame_count
+                                var tex: AtlasTexture = _ashpile_sheet.get_frame_texture(anim_name, frame_idx)
+                                if tex != null:
+                                        var sprite_scale: float = radius / 24.0
+                                        if sprite_scale < 0.8:
+                                                sprite_scale = 0.8
+                                        var fw: float = float(tex.get_width()) * sprite_scale
+                                        var fh: float = float(tex.get_height()) * sprite_scale
+                                        # Anchor (32, 56) of 64x64 frame -> ground at y+radius*0.5
+                                        var anchor_y: float = 56.0 * sprite_scale
+                                        draw_texture_rect(tex,
+                                                Rect2(pos.x - fw / 2.0, pos.y - anchor_y, fw, fh),
+                                                false, Color(1, 1, 1, alpha))
+                                        drew_sprite = true
+                if not drew_sprite:
+                        # Fallback: 3 layered circles (vecchio comportamento)
+                        draw_circle(pos, radius * 0.6,
+                                Color(0.47, 0.39, 0.35, alpha))
+                        draw_circle(Vector2(pos.x, pos.y - radius * 0.2), radius * 0.4,
+                                Color(0.63, 0.50, 0.44, alpha))
+                        draw_circle(Vector2(pos.x, pos.y - radius * 0.4), radius * 0.25,
+                                Color(0.78, 0.71, 0.63, alpha))
+                # 3. Braci incandescenti (4 puntini rosso/oro che brillano)
+                # Solo nei primi 75% della vita (poi si spengono)
+                if life_ratio > 0.25:
+                        var ember_pulse: float = 0.7 + 0.3 * sin(anim_time * 5.0)
+                        var ember_alpha: float = (life_ratio - 0.25) / 0.75
+                        for i in 4:
+                                var e_angle: float = (float(i) / 4.0) * TAU + anim_time * 0.3
+                                var ex: float = pos.x + cos(e_angle) * radius * 0.4
+                                var ey: float = pos.y - 4.0 + sin(e_angle) * radius * 0.2 - float(i) * 2.0
+                                # Glow attorno alla brace (3px rosso)
+                                var e_glow_r: float = 3.0 * ember_pulse
+                                draw_circle(Vector2(ex, ey), e_glow_r,
+                                        Color(200.0 / 255.0, 80.0 / 255.0, 80.0 / 255.0,
+                                                0.31 * ember_alpha))
+                                # Centro brace (1px gold)
+                                draw_circle(Vector2(ex, ey), 1.0,
+                                        Color(220.0 / 255.0, 160.0 / 255.0, 40.0 / 255.0,
+                                                1.0 * ember_alpha))
+                # 4. Fumo che sale (5 particelle grigie)
+                # Solo nei primi 60% della vita
                 if life_ratio > 0.4:
                         var smoke_alpha: float = (life_ratio - 0.4) / 0.6
                         for i in 5:
@@ -1156,8 +1344,31 @@ func _draw_decals() -> void:
                                 draw_circle(Vector2(sx, sy), sr2,
                                         Color(0.7, 0.67, 0.63,
                                                 0.4 * smoke_alpha * (1.0 - float(i) * 0.15)))
+                # 5. Detriti di carbone (5 pezzi scuri attorno al mucchio, ruotati)
+                # Rectangle 3x2 centered at the debris position, rotated by the
+                # position angle around the pile (Game.cpp 4117-4130).
+                for i in 5:
+                        var d_angle: float = (float(i) / 5.0) * TAU + 0.5
+                        var d_dist: float = radius * 1.1
+                        var dx: float = pos.x + cos(d_angle) * d_dist
+                        var dy: float = pos.y + sin(d_angle) * d_dist * 0.4
+                        var c: float = cos(d_angle)
+                        var s: float = sin(d_angle)
+                        var hw: float = 1.5
+                        var hh: float = 1.0
+                        # 4 corners of the rotated rect
+                        var p1: Vector2 = Vector2(dx + (-hw * c + hh * s), dy + (-hw * s - hh * c))
+                        var p2: Vector2 = Vector2(dx + (hw * c + hh * s), dy + (hw * s - hh * c))
+                        var p3: Vector2 = Vector2(dx + (hw * c - hh * s), dy + (hw * s + hh * c))
+                        var p4: Vector2 = Vector2(dx + (-hw * c - hh * s), dy + (-hw * s + hh * c))
+                        draw_colored_polygon(PackedVector2Array([p1, p2, p3, p4]),
+                                Color(48.0 / 255.0, 40.0 / 255.0, 36.0 / 255.0,
+                                        0.78 * life_ratio))
 
         # --- Fire bursts ---
+        # Detailed rendering: 4 glow layers (outer orange, mid red, inner gold,
+        # white core) + effect_fireburst spritesheet (life-based anim phase)
+        # + 6 radial sparks. Mirrors Game.cpp drawFireBursts (3892-3990).
         for fb in fire_bursts:
                 var pos: Vector2 = fb.get("pos", Vector2.ZERO)
                 var life_ratio: float = float(fb.get("life", 0)) / float(fb.get("max_life", 40))
@@ -1171,23 +1382,53 @@ func _draw_decals() -> void:
                 var age: float = 1.0 - life_ratio
                 # Expanding radius (grows with age, base 28 px scaled)
                 var expand: float = 1.0 + age * 1.5
-                # Outer orange glow
+                # 1. Outer orange glow
                 var outer_r: float = 28.0 * scale * pulse * expand
                 draw_circle(pos, outer_r,
                         Color(1.0, 0.39, 0.0, 0.27 * life_ratio))
-                # Mid red glow
+                # 2. Mid red glow
                 var mid_r: float = 20.0 * scale * pulse * expand
                 draw_circle(pos, mid_r,
                         Color(0.78, 0.31, 0.31, 0.39 * life_ratio))
-                # Inner gold glow
+                # 3. Inner gold glow
                 var inner_r: float = 12.0 * scale * pulse * expand
                 draw_circle(pos, inner_r,
                         Color(0.86, 0.63, 0.16, 0.55 * life_ratio))
-                # White-hot core
+                # 4. White-hot core
                 var core_r: float = 6.0 * scale * pulse * expand
                 draw_circle(pos, core_r,
                         Color(0.94, 0.94, 0.94, 0.7 * life_ratio))
-                # 6 sparks flying outward (procedural, mirrors Game.cpp 3977-3988)
+                # 5. Spritesheet PNG (effect_fireburst) - life-based anim phase
+                if _fireburst_sheet != null and _fireburst_sheet.is_loaded():
+                        var anim_name: String = "idle"
+                        if life_ratio > 0.75:
+                                anim_name = "idle"        # inizio espansione
+                        elif life_ratio > 0.5:
+                                anim_name = "walk"        # espansione massima
+                        elif life_ratio > 0.25:
+                                anim_name = "attack"      # picco
+                        else:
+                                anim_name = "death"        # dissipazione
+                        var frame_count: int = _fireburst_sheet.get_frame_count(anim_name)
+                        if frame_count <= 0:
+                                anim_name = "idle"
+                                frame_count = _fireburst_sheet.get_frame_count(anim_name)
+                        if frame_count > 0:
+                                # Elapsed ms (simulated): (maxLife - life) * 50
+                                var elapsed_ms: int = int((float(int(fb.get("max_life", 40))) - float(fb.get("life", 0))) * 50.0)
+                                var frame_idx: int = (elapsed_ms / 50) % frame_count
+                                var tex: AtlasTexture = _fireburst_sheet.get_frame_texture(anim_name, frame_idx)
+                                if tex != null:
+                                        # Scale grows during expansion, decays in dissipation
+                                        var sprite_scale: float = scale * (1.2 + (1.0 - life_ratio) * 0.5)
+                                        var fw: float = float(tex.get_width()) * sprite_scale
+                                        var fh: float = float(tex.get_height()) * sprite_scale
+                                        # Anchor (32, 40) of 64x64 frame
+                                        var anchor_y: float = 40.0 * sprite_scale
+                                        draw_texture_rect(tex,
+                                                Rect2(pos.x - fw / 2.0, pos.y - anchor_y, fw, fh),
+                                                false, Color(1, 1, 1, life_ratio))
+                # 6. 6 sparks flying outward (procedural, mirrors Game.cpp 3977-3988)
                 for i in 6:
                         var angle: float = (float(i) / 6.0) * 2.0 * PI + anim_time * 0.5
                         var sdist: float = age * 30.0 * scale
