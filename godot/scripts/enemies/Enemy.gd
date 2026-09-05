@@ -739,18 +739,11 @@ func _draw_sprite_frame() -> void:
                 bob_y = sin(float(anim_time) * 0.01) * 2.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
+        # Use draw_texture_rect with transpose+flip_h to mirror horizontally.
         var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
         if dx < 0:
-                # Flip by drawing with reversed source rect.
-                var flipped_at := AtlasTexture.new()
-                flipped_at.atlas = at.atlas
-                flipped_at.region = Rect2(
-                        at.region.position.x + at.region.size.x,
-                        at.region.position.y,
-                        -at.region.size.x,
-                        at.region.size.y
-                )
-                draw_texture_rect(flipped_at, dest_rect, false)
+                # Godot 4.7 draw_texture_rect supports tile+transpose+flip_h
+                draw_texture_rect(at, dest_rect, false, Color.WHITE, false, true)
         else:
                 draw_texture_rect(at, dest_rect, false)
 

@@ -541,9 +541,15 @@ func _update_collectibles(delta_ms: float) -> void:
         for child in collectibles_node.get_children():
                 if not child is Node2D:
                         continue
+                # Skip GPUParticles2D (spawned by EffectsManager for visual effects)
+                if child is GPUParticles2D:
+                        continue
+                # Skip nodes that don't have update_step (defensive)
+                if not child.has_method("update_step"):
+                        continue
                 # Update item animation/behavior
                 child.update_step(delta_ms, p1_pos, 1)
-                if not child.active:
+                if not child.has_method("get") or not child.get("active"):
                         continue
                 var item_pos: Vector2 = child.pos
                 # Check P1 collision
