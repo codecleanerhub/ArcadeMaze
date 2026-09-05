@@ -83,7 +83,7 @@ func _finish() -> void:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         back_to_menu_requested.emit()
         if GameManager:
-                GameManager.go_to_menu()
+                GameManager.go_to_credits()
 
 
 func _draw() -> void:

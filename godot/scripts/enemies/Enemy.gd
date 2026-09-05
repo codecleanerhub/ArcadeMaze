@@ -160,6 +160,7 @@ var prev_flee_mode: bool = false
 var _sprite_sheet: Object = null  # SpriteManager.Sheet
 var _sprite_loaded: bool = false
 var _sprite_id: String = ""
+var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
 
 
 # ===========================================================================
@@ -217,6 +218,11 @@ func _load_sprite() -> void:
         if SpriteManager:
                 _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
                 _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
+
+        # Load effect spritesheet for burning overlay
+        _burn_effect_sheet = null
+        if SpriteManager:
+                _burn_effect_sheet = SpriteManager.get_sheet("effect_fireaura")
 
         # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
         if CharacterArt and sprite:
@@ -608,8 +614,17 @@ func _draw() -> void:
                 _draw_sprite_frame()
                 # Overlay effects on top of the sprite
                 if is_burning():
-                        draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.5))
-                        draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.7))
+                        # Draw fire aura spritesheet if loaded
+                        if _burn_effect_sheet != null and _burn_effect_sheet.is_loaded():
+                                var burn_progress: float = 1.0 - float(burning_timer) / 50.0
+                                var burn_frame: int = int(burn_progress * 4) % 4
+                                var burn_at: AtlasTexture = _burn_effect_sheet.get_frame_texture("idle", burn_frame)
+                                if burn_at != null:
+                                        draw_texture_rect(burn_at, Rect2(-24, -24, 48, 48), false)
+                        else:
+                                # Fallback: simple flame circles
+                                draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.5))
+                                draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.7))
                 if is_electrified():
                         for i in range(4):
                                 var angle: float = i * PI / 2.0 + anim_time * 0.1
@@ -624,8 +639,12 @@ func _draw() -> void:
                         draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
                                 Color(0.2, 0.0, 0.0, 0.8), true)
                         var hp_ratio: float = float(health) / float(max_health)
-                        draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
-                                Color(1.0, 0.3, 0.1, 1.0), true)
+                        var hp_col: Color = Color(0.86, 0.16, 0.16)  # red < 25%
+                        if hp_ratio > 0.5:
+                                hp_col = Color(0.31, 0.86, 0.31)  # green > 50%
+                        elif hp_ratio > 0.25:
+                                hp_col = Color(0.86, 0.71, 0.16)  # yellow 25-50%
+                        draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h), hp_col, true)
                 return
 
         # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
@@ -666,8 +685,12 @@ func _draw() -> void:
                 draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
                         Color(0.2, 0.0, 0.0, 0.8), true)
                 var hp_ratio2: float = float(health) / float(max_health)
-                draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2),
-                        Color(1.0, 0.3, 0.1, 1.0), true)
+                var hp_col2: Color = Color(0.86, 0.16, 0.16)  # red < 25%
+                if hp_ratio2 > 0.5:
+                        hp_col2 = Color(0.31, 0.86, 0.31)  # green > 50%
+                elif hp_ratio2 > 0.25:
+                        hp_col2 = Color(0.86, 0.71, 0.16)  # yellow 25-50%
+                draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2), hp_col2, true)
 
         # Flee mode indicator (fear exclamation mark - rendered as yellow triangle)
         if flee_mode:
@@ -716,13 +739,11 @@ func _draw_sprite_frame() -> void:
                 frame_duration = 100
                 var fc_walk: int = _sprite_sheet.get_frame_count("walk")
                 frame = (int(anim_time) / frame_duration) % fc_walk
-        # Idle (4 frames @ 200ms)
+        # Idle (frame 0 fisso, come C++ che evita separazione busto/bacino)
         else:
                 anim_name = "idle"
                 frame_duration = 200
-                var fc_idle: int = _sprite_sheet.get_frame_count("idle")
-                if fc_idle > 0:
-                        frame = (int(anim_time) / frame_duration) % fc_idle
+                frame = 0  # SEMPRE frame 0 (non cycling)
         # Get the AtlasTexture for this frame.
         var at: AtlasTexture = _sprite_sheet.get_frame_texture(anim_name, frame)
         if at == null:

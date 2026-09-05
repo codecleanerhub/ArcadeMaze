@@ -175,6 +175,13 @@ func _update_boss(delta_ms: float) -> void:
                         boss.take_damage(1)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+        # P2 invincibility also damages boss
+        if boss and not boss.is_dead() and player2.visible and player2.invincible_timer > 0:
+                player2.invincible_timer = max(0, player2.invincible_timer - int(delta_ms))
+                if player2.get_pixel_pos().distance_squared_to(boss.pos) < (boss.size / 2.0) ** 2:
+                        boss.take_damage(1)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
 
         # (7) Boss room weapons pickup
         _check_boss_room_weapon_pickup(player)

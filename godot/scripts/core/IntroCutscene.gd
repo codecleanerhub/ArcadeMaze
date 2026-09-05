@@ -66,7 +66,7 @@ func _show_frame(idx: int) -> void:
         caption.text = CAPTIONS[idx] if idx < CAPTIONS.size() else ""
         progress.text = str(idx + 1) + "/4"
         _frame_timer = 0.0
-        timer.start(8.0)
+        timer.start(180.0)
 
 func _on_timer_timeout() -> void:
         if _current_frame < _images.size() - 1:

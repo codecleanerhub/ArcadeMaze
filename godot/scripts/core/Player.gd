@@ -728,7 +728,7 @@ func _update_sprite() -> void:
                 frame_idx = 3
         elif dx != 0 or dy != 0:
                 # Walking: cycle frames 0-3 at ~8 FPS
-                var walk_frame: int = int(anim_time / 120.0) % 4
+                var walk_frame: int = int(anim_time / 130.0) % 4
                 frame_idx = walk_frame
         else:
                 # Idle: frame 0 with slight breathing (optional: 2-frame cycle)
@@ -810,10 +810,9 @@ func _draw() -> void:
                         draw_circle(flame_pos, 3.0, Color(1.0, 0.4, 0.1, alpha))
                         draw_circle(flame_pos, 1.5, Color(1.0, 0.9, 0.3, alpha))
 
-        # Draw jump shadow
-        if is_jumping():
-                var shadow_y: float = 20.0 - jump_offset * 0.3
-                draw_circle(Vector2(0, shadow_y), 16.0, Color(0, 0, 0, 0.3))
+        # Draw shadow (always visible, like C++)
+        var shadow_y: float = 20.0 - jump_offset * 0.3
+        draw_circle(Vector2(0, shadow_y), 12.0, Color(0, 0, 0, 0.3))
 
         # Fallback procedural character if no sprite loaded
         _draw_character_fallback()

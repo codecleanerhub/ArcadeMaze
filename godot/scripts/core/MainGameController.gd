@@ -222,6 +222,27 @@ func _handle_input() -> void:
                         player2.shoot_cooldown = 150
                 if Input.is_action_just_pressed("p2_jump"):
                         player2.activate_jump()
+                # P2 joystick input (if configured)
+                if ConfigManager and ConfigManager.p2_joystick_ready():
+                        var joy_pads2: Array = Input.get_connected_joypads()
+                        if joy_pads2.size() > 1:
+                                var joy_id2: int = joy_pads2[1]
+                                var axis_x2: float = Input.get_joy_axis(joy_id2, ConfigManager.joy2_axis_x())
+                                var axis_y2: float = Input.get_joy_axis(joy_id2, ConfigManager.joy2_axis_y())
+                                if absf(axis_x2) > 0.3 or absf(axis_y2) > 0.3:
+                                        if absf(axis_x2) > absf(axis_y2):
+                                                p2_dx = 1 if axis_x2 > 0 else -1
+                                                p2_dy = 0
+                                        else:
+                                                p2_dx = 0
+                                                p2_dy = 1 if axis_y2 > 0 else -1
+                                var joy2_jump_btn: int = ConfigManager.joy2_jump()
+                                var joy2_shoot_btn: int = ConfigManager.joy2_shoot()
+                                if joy2_jump_btn >= 0 and Input.is_joy_button_pressed(joy_id2, joy2_jump_btn):
+                                        player2.activate_jump()
+                                if joy2_shoot_btn >= 0 and Input.is_joy_button_pressed(joy_id2, joy2_shoot_btn) and player2.shoot_cooldown == 0:
+                                        player2.shoot()
+                                        player2.shoot_cooldown = 150
 
         # Pause toggle (P key)
         if Input.is_action_just_pressed("pause"):
@@ -430,6 +451,8 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 if enemy.is_dead():
                                         p.add_score(5000)
                                         if AudioManager:
+                                                AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
+                                                AudioManager.play_sound(AudioManager.SoundType.BLOOD_SPLAT)
                                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                                         # Spawn decals at enemy death position
                                         # (C++ Game.cpp lines 1664-1667 / 1779-1782).
@@ -513,6 +536,12 @@ func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
                         p.add_score(5000)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        # Also burn mini-boss if present
+        if mini_boss != null and not mini_boss.is_dead() and not mini_boss.is_burning():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                if p_pos.distance_squared_to(mb_pos) < 1200.0:
+                        mini_boss.start_burning(50)
+                        p.add_score(2000)
 
 
 func _check_death() -> void:
@@ -620,6 +649,8 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         item.queue_free()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.SCEPTER_PICKUP)
+                        if AudioManager and AudioManager.music_enabled:
+                                AudioManager.play_epic_music(7)  # TRACK_EPIC_SCEPTER
                         # Activate 5 lightning strikes at 3s intervals
                         scepter_active = true
                         scepter_strikes_left = 5
