@@ -119,52 +119,79 @@ func _load_sheet(base_path: String, id: String) -> void:
         var png_path := base_path + id + "_sheet.png"
         var meta_path := base_path + id + "_meta.json"
 
-        var tex := load(png_path) as Texture2D
+        # --- HD PRIORITY: carica la versione HD 256x256 se disponibile ---
+        # Gli HD sheet sono in res://assets/sprites/hd/<id>_hd_sheet.png
+        # e hanno 4x la risoluzione degli originali 64x64 (256x256 totali).
+        var hd_png_path := "res://assets/sprites/hd/" + id + "_hd_sheet.png"
+        var tex: Texture2D = null
+        var is_hd: bool = false
+        if ResourceLoader.exists(hd_png_path):
+                tex = load(hd_png_path) as Texture2D
+                if tex != null:
+                        is_hd = true
+        # Fallback: carica lo sheet originale se l'HD non esiste
+        if tex == null:
+                tex = load(png_path) as Texture2D
         if tex == null:
                 return
 
         var sheet := Sheet.new()
         sheet.texture = tex
 
-        # Default size (matches README: 6 cols x 4 rows, 64x64 frames for full sheets,
-        # but boss spritesheets are 4x1 64x64). Detect from texture size if no meta.
-        sheet.frame_w = 64
-        sheet.frame_h = 64
-        sheet.columns = 4
-        sheet.rows = 1
-
-        # Try metadata JSON for exact dimensions/animations.
-        var meta: Variant = _load_json(meta_path)
-        if meta != null and not meta.is_empty():
-                sheet.frame_w = int(meta.get("frameWidth", 64))
-                sheet.frame_h = int(meta.get("frameHeight", 64))
-                sheet.columns = int(meta.get("columns", 4))
-                sheet.rows = int(meta.get("rows", 1))
-                var anims: Dictionary = meta.get("animations", {})
-                for anim_name in anims:
-                        var info = anims[anim_name]
-                        if info is Dictionary:
-                                sheet.animations[anim_name] = {
-                                        "row": int(info.get("row", 0)),
-                                        "frames": int(info.get("frames", 1)),
-                                        "frameDuration": int(info.get("frameDuration", 200)),
-                                }
+        # Default size: 64x64 frames per originali, 256x256 per HD (singolo frame grande)
+        if is_hd:
+                # HD sheet: singola immagine 256x256 (1 frame grande ad alta risoluzione)
+                sheet.frame_w = 256
+                sheet.frame_h = 256
+                sheet.columns = 1
+                sheet.rows = 1
         else:
-                # No meta - infer from texture size assuming 64x64 frames.
-                var tw: int = tex.get_width()
-                var th: int = tex.get_height()
-                if tw > 0 and th > 0:
-                        sheet.columns = int(tw) / sheet.frame_w
-                        sheet.rows = int(th) / sheet.frame_h
-                        if sheet.columns < 1:
-                                sheet.columns = 1
-                        if sheet.rows < 1:
-                                sheet.rows = 1
+                # Sheet originale 256x64 = 4 frame da 64x64
+                sheet.frame_w = 64
+                sheet.frame_h = 64
+                sheet.columns = 4
+                sheet.rows = 1
+
+        # Try metadata JSON for exact dimensions/animations (solo per sheet originali).
+        # Gli HD sheet sono singoli frame, ignorano i metadata delle animazioni.
+        if not is_hd:
+                var meta: Variant = _load_json(meta_path)
+                if meta != null and not meta.is_empty():
+                        sheet.frame_w = int(meta.get("frameWidth", 64))
+                        sheet.frame_h = int(meta.get("frameHeight", 64))
+                        sheet.columns = int(meta.get("columns", 4))
+                        sheet.rows = int(meta.get("rows", 1))
+                        var anims: Dictionary = meta.get("animations", {})
+                        for anim_name in anims:
+                                var info = anims[anim_name]
+                                if info is Dictionary:
+                                        sheet.animations[anim_name] = {
+                                                "row": int(info.get("row", 0)),
+                                                "frames": int(info.get("frames", 1)),
+                                                "frameDuration": int(info.get("frameDuration", 200)),
+                                        }
+                else:
+                        # No meta - infer from texture size assuming 64x64 frames.
+                        var tw: int = tex.get_width()
+                        var th: int = tex.get_height()
+                        if tw > 0 and th > 0:
+                                sheet.columns = int(tw) / sheet.frame_w
+                                sheet.rows = int(th) / sheet.frame_h
+                                if sheet.columns < 1:
+                                        sheet.columns = 1
+                                if sheet.rows < 1:
+                                        sheet.rows = 1
                 # Default animations: single row, columns = idle frame count.
                 sheet.animations["idle"] = {"row": 0, "frames": sheet.columns, "frameDuration": 200}
                 sheet.animations["walk"] = {"row": 0, "frames": sheet.columns, "frameDuration": 120}
                 sheet.animations["attack"] = {"row": 0, "frames": sheet.columns, "frameDuration": 90}
                 sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        else:
+                # HD sheet: singolo frame 256x256, una sola animazione "idle" con 1 frame.
+                sheet.animations["idle"] = {"row": 0, "frames": 1, "frameDuration": 200}
+                sheet.animations["walk"] = {"row": 0, "frames": 1, "frameDuration": 200}
+                sheet.animations["attack"] = {"row": 0, "frames": 1, "frameDuration": 200}
+                sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 200}
 
         _sheets[id] = sheet
 
