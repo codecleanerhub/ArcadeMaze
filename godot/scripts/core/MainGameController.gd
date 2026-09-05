@@ -153,9 +153,41 @@ func _handle_input() -> void:
                 p1_dx = -1
         elif Input.is_action_pressed("move_right"):
                 p1_dx = 1
+
+        # P1 joystick input (if configured)
+        if ConfigManager and ConfigManager.p1_joystick_ready():
+                var joy_id: int = 0  # first joystick
+                if Input.get_connected_joypads().size() > 0:
+                        joy_id = Input.get_connected_joypads()[0]
+                var axis_x: float = Input.get_joy_axis(joy_id, ConfigManager.joy_axis_x())
+                var axis_y: float = Input.get_joy_axis(joy_id, ConfigManager.joy_axis_y())
+                if absf(axis_x) > 0.3 or absf(axis_y) > 0.3:
+                        # Dominant axis wins
+                        if absf(axis_x) > absf(axis_y):
+                                p1_dx = 1 if axis_x > 0 else -1
+                                p1_dy = 0
+                        else:
+                                p1_dx = 0
+                                p1_dy = 1 if axis_y > 0 else -1
+                # Joystick buttons for shoot/jump
+                var joy_jump_btn: int = ConfigManager.joy_jump()
+                var joy_shoot_btn: int = ConfigManager.joy_shoot()
+                if joy_jump_btn >= 0 and Input.is_joy_button_pressed(joy_id, joy_jump_btn):
+                        var was_jumping: bool = player.is_jumping()
+                        player.activate_jump()
+                        if not was_jumping and player.is_jumping() and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.JUMP)
+                if joy_shoot_btn >= 0 and Input.is_joy_button_just_pressed(joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
+                        var ammo_before: int = player.current_weapon.get("ammo", 0)
+                        player.shoot()
+                        var ammo_after: int = player.current_weapon.get("ammo", 0)
+                        if ammo_after < ammo_before and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.PISTOL)
+                        player.shoot_cooldown = 150
+
         player.set_direction(p1_dx, p1_dy)
 
-        # P1 shoot
+        # P1 keyboard shoot (fallback if no joystick)
         if Input.is_action_just_pressed("shoot") and player.shoot_cooldown == 0:
                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                 player.shoot()
@@ -164,7 +196,7 @@ func _handle_input() -> void:
                         AudioManager.play_sound(AudioManager.SoundType.PISTOL)
                 player.shoot_cooldown = 150
 
-        # P1 jump
+        # P1 keyboard jump (fallback if no joystick)
         if Input.is_action_just_pressed("jump"):
                 var was_jumping: bool = player.is_jumping()
                 player.activate_jump()

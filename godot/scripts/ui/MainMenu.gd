@@ -122,18 +122,20 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 GameManager.player2_character = p2_char
                 GameManager.current_level = 1
                 GameManager.config_joy_step = 0
-                # Flow: START GAME -> joystick config (if not done) -> select player -> intro -> game
-                # Check if joystick needs configuration (mirror C++ behavior)
-                if ConfigManager and not ConfigManager.p1_joystick_ready():
-                        # Joystick not configured yet: go to config first
+                # Flow: START GAME -> joystick config (if not done AND joystick present)
+                # -> select player -> intro -> game
+                # If no joystick connected, skip config and go to select player.
+                var joy_connected: bool = Input.get_connected_joypads().size() > 0
+                if joy_connected and ConfigManager and not ConfigManager.p1_joystick_ready():
+                        # Joystick connected but not configured yet: go to config first
                         GameManager.config_joy_player = 1
                         GameManager.go_to_config_joy()
-                elif num_players == 2 and ConfigManager and not ConfigManager.p2_joystick_ready():
+                elif joy_connected and num_players == 2 and ConfigManager and not ConfigManager.p2_joystick_ready():
                         # P2 joystick not configured
                         GameManager.config_joy_player = 2
                         GameManager.go_to_config_joy()
                 else:
-                        # Joystick ready: go to character selection
+                        # No joystick or already configured: go to character selection
                         GameManager.go_to_select_player()
 
 

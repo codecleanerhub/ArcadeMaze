@@ -303,7 +303,9 @@ func _samples_to_stream(samples: PackedFloat32Array) -> AudioStreamWAV:
         stream.mix_rate = SR
         stream.stereo = false
         stream.data = bytes
-        stream.loop_mode = AudioStreamWAV.LOOP_DISABLED
+        stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+        stream.loop_begin = 0
+        stream.loop_end = samples.size()
         return stream
 
 
