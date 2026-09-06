@@ -400,6 +400,10 @@ func _draw_scepter() -> void:
         var sx := 0.0
         var sy := y_off
         var s_pulse := 1.0 + pulse * 0.2  # fattore di pulsazione (>1 = piu' grande)
+        # FIX (scepter troppo piccolo): applica uno scale 2.0 a tutto il
+        # drawing del scepter usando draw_set_transform. Così tutti i calcoli
+        # esistenti (sx, sy, posizioni, dimensioni) vengono ingranditi.
+        draw_set_transform(Vector2.ZERO, 0.0, Vector2(2.0, 2.0))
         # Palette 16 colori OBBLIGATORIA (1:1 con C++ drawMagicScepter).
         var col_black := Color(12.0 / 255.0, 12.0 / 255.0, 12.0 / 255.0)
         var col_dark_wood := Color(48.0 / 255.0, 40.0 / 255.0, 36.0 / 255.0)
@@ -482,20 +486,24 @@ func _draw_scepter() -> void:
         # Ellisise piatta scura per ancoraggio visivo (in C++ scale 1.5x0.5).
         draw_circle(Vector2(sx, sy + 28.0), 4.0,
                 Color(col_black.r, col_black.g, col_black.b, 80.0 / 255.0))
+        # Reset transform (riporta a 1:1 per i disegni successivi)
+        draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 1.0))
 
 
 func _draw_speed_boots() -> void:
-        # Usa sprite AI bonus_speedboots se caricato da SpriteManager,
-        # altrimenti fallback procedurale.
+        # FIX (sprite troppo piccolo): usa sprite AI bonus_speedboots scalato
+        # a 48x48 (era 64x64 nativo, troppo piccolo nel tile 48px).
         var y_off := -bob_offset
+        # Glow giallo
+        draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.85, 0.2, 0.2))
         if SpriteManager:
                 var sheet = SpriteManager.get_sheet("bonus_speedboots")
                 if sheet != null and sheet.is_loaded():
                         var at: AtlasTexture = sheet.get_frame_texture("idle", 0)
                         if at != null:
-                                var tw: float = at.get_width()
-                                var th: float = at.get_height()
-                                draw_texture_rect(at, Rect2(-tw / 2.0, -th / 2.0 + y_off, tw, th), false)
+                                # Scala a 48x48 per visibilità
+                                var size: float = 48.0
+                                draw_texture_rect(at, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                                 return
         # Fallback: Winged boot icon
         draw_rect(Rect2(-6.0, 0.0 + y_off, 10.0, 6.0), Color(0.4, 0.3, 0.2))

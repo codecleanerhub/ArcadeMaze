@@ -365,17 +365,8 @@ func _handle_input() -> void:
                         if ammo_after < ammo_before and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.PISTOL)
                         player.shoot_cooldown = 150
-                # DEBUG: ogni 60 frame (~1s), stampa quali pulsanti sono premuti
-                # per aiutare l'utente a diagnosticare quale btn_index corrisponde
-                # a quale tasto fisico del suo controller.
-                if Engine.get_process_frames() % 60 == 0:
-                        var pressed_btns: Array = []
-                        for btn in range(16):
-                                if Input.is_joy_button_pressed(p1_joy_id, btn):
-                                        pressed_btns.append(btn)
-                        if pressed_btns.size() > 0:
-                                print("[MainGame] DEBUG btn premuti: ", pressed_btns,
-                                      " (jump=", joy_jump_btn, " shoot=", joy_shoot_btn, ")")
+        # FIX: rimossi i debug print ogni 60 frame ora che la config joystick
+        # funziona correttamente (joy_jump/joy_shoot vengono caricati dal disco).
 
         # Keyboard arrows (always work, even without joystick).
         # Note: in C++ keyboard + joystick both contribute; whichever is
@@ -533,7 +524,10 @@ func _update_playing(delta_ms: float) -> void:
                 p_node.set_meta("pos", proj_pos)  # store original for collision
                 p_node.set_meta("dir", proj_dir)
                 p_node.set_meta("power", proj_power)
-                p_node.set_meta("velocity", proj_dir)  # store for movement
+                # FIX (proiettili nemici troppo lenti): la velocity era solo
+                # la direzione (unit vector, 1px/frame). Moltiplichiamo per
+                # 6px/frame (come i proiettili del player che sono 8px/frame).
+                p_node.set_meta("velocity", proj_dir * 6.0)
                 enemy_projectiles_node.add_child(p_node)
 
         # (3b) Advance enemy projectiles (move them by their velocity)
