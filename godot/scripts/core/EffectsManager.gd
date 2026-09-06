@@ -17,11 +17,16 @@ const GLOW_SHADER = preload("res://shaders/glow.gdshader")
 const FIRE_SHADER = preload("res://shaders/fire.gdshader")
 const LIGHTNING_SHADER = preload("res://shaders/lightning.gdshader")
 const VIGNETTE_SHADER = preload("res://shaders/vignette.gdshader")
+const WALK_CYCLE_SHADER = preload("res://shaders/walk_cycle.gdshader")
 
 # Cache dei materiali shader (per non ricrearli ogni volta)
 var _glow_materials: Dictionary = {}
 var _fire_material: ShaderMaterial = null
 var _lightning_material: ShaderMaterial = null
+# Walk cycle material: one shared material, params updated each frame.
+# Each CanvasItem that wants the effect gets its own instance so we can set
+# per-enemy accent colors; the shader itself is shared via preload.
+var _walk_cycle_materials: Dictionary = {}  # key: accent_color_str -> ShaderMaterial
 
 # Screen shake state
 var _shake_amount: float = 0.0
@@ -260,3 +265,122 @@ func create_vignette_rect() -> ColorRect:
         rect.material = mat
         rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
         return rect
+
+
+# ============================================================================
+# Walk cycle light/shadow shader (complements DeformableSprite).
+# ============================================================================
+# Returns a cached ShaderMaterial for the given accent color. Each unique
+# accent color gets its own material instance so multiple enemies with
+# different accents can coexist without stepping on each other's uniforms.
+func get_walk_cycle_material(accent_color: Color = Color(1.0, 0.5, 0.2, 1.0)) -> ShaderMaterial:
+        var key: String = "walk_%s" % str(accent_color.to_html())
+        if _walk_cycle_materials.has(key):
+                return _walk_cycle_materials[key]
+        var mat := ShaderMaterial.new()
+        mat.shader = WALK_CYCLE_SHADER
+        mat.set_shader_parameter("accent_color", accent_color)
+        mat.set_shader_parameter("walk_phase", 0.0)
+        mat.set_shader_parameter("walk_speed", 8.0)
+        mat.set_shader_parameter("facing_right", 1.0)
+        mat.set_shader_parameter("time", 0.0)
+        mat.set_shader_parameter("shadow_strength", 0.35)
+        mat.set_shader_parameter("saturation_boost", 1.12)
+        _walk_cycle_materials[key] = mat
+        return mat
+
+
+# Update the walk-cycle shader uniforms on a CanvasItem's material.
+# Call this every frame from the Enemy/MiniBoss update method.
+func update_walk_cycle(canvas_item: CanvasItem, walk_phase: float,
+                facing_right: bool, time_sec: float,
+                walk_speed: float = 8.0) -> void:
+        if canvas_item == null or canvas_item.material == null:
+                return
+        var mat: ShaderMaterial = canvas_item.material as ShaderMaterial
+        if mat == null:
+                return
+        mat.set_shader_parameter("walk_phase", walk_phase)
+        mat.set_shader_parameter("walk_speed", walk_speed)
+        mat.set_shader_parameter("facing_right", 1.0 if facing_right else 0.0)
+        mat.set_shader_parameter("time", time_sec)
+
+
+# Attach the walk-cycle shader to a CanvasItem. The accent color is used to
+# tint the warm pulse (per-enemy-type variation).
+func apply_walk_cycle(canvas_item: CanvasItem,
+                accent_color: Color = Color(1.0, 0.5, 0.2, 1.0)) -> void:
+        if canvas_item == null:
+                return
+        canvas_item.material = get_walk_cycle_material(accent_color)
+
+
+# ============================================================================
+# Dust particles under feet (for walking enemies/minibosses).
+# ============================================================================
+# Spawns a small puff of dust at the given world position. The puff is a
+# GPUParticles2D with ~8 particles that fade quickly. Caller should add the
+# returned node to the scene tree (e.g. as a child of the main game node)
+# and the puff will auto-free after its lifetime.
+var _dust_puffs_active: int = 0  # cap to avoid runaway particle counts
+const MAX_DUST_PUFFS: int = 64
+
+func spawn_dust_puff(world_pos: Vector2,
+                accent_color: Color = Color(0.6, 0.55, 0.45, 1.0)) -> GPUParticles2D:
+        if _dust_puffs_active >= MAX_DUST_PUFFS:
+                return null
+        var p := GPUParticles2D.new()
+        p.position = world_pos
+        p.emitting = true
+        p.one_shot = true
+        p.amount = 8
+        p.lifetime = 0.4
+        p.explosiveness = 0.8
+        p.fixed_fps = 30
+        # Material: small grey-tan circles fading out, drifting upward.
+        var mat := ParticleProcessMaterial.new()
+        mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+        mat.emission_sphere_radius = 3.0
+        mat.direction = Vector3(0, -1, 0)
+        mat.spread = 35.0
+        mat.initial_velocity_min = 8.0
+        mat.initial_velocity_max = 18.0
+        mat.gravity = Vector3(0, 30, 0)
+        mat.scale_min = 0.6
+        mat.scale_max = 1.4
+        mat.color = accent_color
+        # Build a GradientTexture2D for the fade ramp (white -> transparent).
+        # Note: in Godot 4.7 the GradientTexture2D.FILL_* enum names were
+        # removed in favour of integer values (0=Linear, 1=Radial, 2=Square,
+        # 3=Conic). We use the integer literal for portability.
+        var ramp_tex := GradientTexture2D.new()
+        ramp_tex.gradient = _make_dust_ramp()
+        ramp_tex.fill = 0  # GradientTexture2D.FILL_LINEAR (vertical gradient)
+        ramp_tex.fill_from = Vector2(0.5, 0.0)
+        ramp_tex.fill_to = Vector2(0.5, 1.0)
+        mat.color_ramp = ramp_tex
+        p.process_material = mat
+        _dust_puffs_active += 1
+        return p
+
+
+# Build a gradient for the dust ramp (white -> transparent).
+# Cached after first call.
+var _dust_ramp: Gradient = null
+func _make_dust_ramp() -> Gradient:
+        if _dust_ramp != null:
+                return _dust_ramp
+        _dust_ramp = Gradient.new()
+        _dust_ramp.set_color(0, Color(1, 1, 1, 0.9))
+        _dust_ramp.set_offset(0, 0.0)
+        _dust_ramp.set_color(1, Color(1, 1, 1, 0.0))
+        _dust_ramp.set_offset(1, 1.0)
+        # Intermediate point for smoother fade
+        _dust_ramp.add_point(0.5, Color(1, 1, 1, 0.5))
+        return _dust_ramp
+
+
+# Called by the scene tree when a dust puff node is freed.
+func notify_dust_puff_freed() -> void:
+        if _dust_puffs_active > 0:
+                _dust_puffs_active -= 1

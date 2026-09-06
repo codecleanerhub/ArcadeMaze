@@ -3,6 +3,10 @@ extends Control
 # SelectPlayer.gd - Selezione personaggio con RUOTA VISIVA in prospettiva.
 # Porting fedele di Game.cpp drawSelectPlayer() (righe 4528-4750).
 #
+# Background: AI-generated crypt/ruderi/fantasy image (bg_select_player.png).
+# The procedural crypt originally drawn here has been extracted to
+# EnvironmentArt.draw_crypt_background() (reusable by ConfigJoy and other menus).
+#
 # La ruota e' un'ellisse (cerchio compresso verticalmente) con:
 #   * 8 personaggi disposti attorno al perimetro
 #   * Raggi dal centro al bordo
@@ -44,6 +48,8 @@ var anim_time: float = 0.0
 
 # Cached character textures (loaded once)
 var _char_textures: Array = []
+# AI-generated background texture (loaded once)
+var _bg_texture: Texture2D = null
 
 
 func _ready() -> void:
@@ -68,6 +74,10 @@ func _ready() -> void:
                         if img.load(path) == OK:
                                 tex = ImageTexture.create_from_image(img)
                 _char_textures.append(tex)
+        # Preload the AI-generated crypt/ruderi background.
+        var bg_path := "res://assets/backgrounds/bg_select_player.png"
+        if ResourceLoader.exists(bg_path):
+                _bg_texture = load(bg_path) as Texture2D
         # Self-wire
         player_selected.connect(_on_player_selected)
 
@@ -158,72 +168,25 @@ func _draw() -> void:
         var cx: float = vp_size.x / 2.0
         var cy: float = vp_size.y / 2.0 + 80.0  # piu' in basso per il titolo
 
-        # --- SFONDO FANTASY CRIPTA ---
-        # 1. Gradiente notte profonda (dall'alto scuro al basso viola scuro)
-        for i in 32:
-                var t: float = float(i) / 31.0
-                var r: float = 8.0 + (1.0 - t) * 12.0
-                var g: float = 6.0 + (1.0 - t) * 8.0
-                var b: float = 18.0 + (1.0 - t) * 22.0
-                var band_h: float = vp_size.y / 32.0 + 1.0
-                draw_rect(Rect2(0, i * band_h, vp_size.x, band_h),
-                        Color(r / 255.0, g / 255.0, b / 255.0), true)
+        # --- BACKGROUND: AI-generated crypt/ruderi/fantasy image ---
+        # Cover-fit math (same pattern as WinScreen/LoseScreen/ContinuesScreen):
+        # scale = max(vp/tex) so the entire viewport is filled (no black bars),
+        # and center the draw rect on the viewport.
+        if _bg_texture != null:
+                var tex_size: Vector2 = _bg_texture.get_size()
+                var scale_x: float = vp_size.x / tex_size.x
+                var scale_y: float = vp_size.y / tex_size.y
+                var bg_scale: float = maxf(scale_x, scale_y)
+                var draw_size: Vector2 = tex_size * bg_scale
+                var draw_pos: Vector2 = (vp_size - draw_size) * 0.5
+                draw_texture_rect(_bg_texture, Rect2(draw_pos, draw_size), false)
+        else:
+                # Fallback: procedural crypt background (if AI image missing)
+                if EnvironmentArt:
+                        EnvironmentArt.draw_crypt_background(self, vp_size, anim_time)
 
-        # 2. Nebbia animata in basso (pulsazione lenta)
-        var fog_alpha: float = 0.12 + 0.06 * sin(anim_time * 0.8)
-        for i in 5:
-                var fog_y: float = vp_size.y - 60.0 - float(i) * 30.0
-                var fog_r: float = 200.0 + i * 60.0
-                var fog_col: Color = Color(0.15, 0.12, 0.25, fog_alpha * (1.0 - float(i) * 0.15))
-                draw_circle(Vector2(cx + sin(anim_time * 0.5 + i) * 80, fog_y), fog_r, fog_col)
-
-        # 3. Colonne di pietra laterali (stile cripta D&D)
-        _draw_crypt_column(vp_size.x * 0.08, vp_size.y * 0.15, 0.7)
-        _draw_crypt_column(vp_size.x * 0.92, vp_size.y * 0.15, 0.7)
-
-        # 4. Arco di pietra in alto (decorazione architettonica)
-        var arch_y: float = vp_size.y * 0.08
-        var arch_w: float = vp_size.x * 0.7
-        for i in 24:
-                var angle: float = PI + float(i) / 23.0 * PI
-                var ax: float = cx + cos(angle) * (arch_w / 2.0)
-                var ay: float = arch_y + sin(angle) * 40.0
-                draw_circle(Vector2(ax, ay), 8.0, Color(0.15, 0.12, 0.10))
-
-        # 5. Teschi decorativi sui lati
-        if EnvironmentArt:
-                var skull_tex: Texture2D = EnvironmentArt.get_skull_texture()
-                if skull_tex:
-                        draw_texture_rect(skull_tex,
-                                Rect2(vp_size.x * 0.05, vp_size.y * 0.35, 64, 64), false)
-                        draw_texture_rect(skull_tex,
-                                Rect2(vp_size.x * 0.05, vp_size.y * 0.55, 48, 48), false)
-                        draw_texture_rect(skull_tex,
-                                Rect2(vp_size.x * 0.90, vp_size.y * 0.35, 64, 64), false)
-                        draw_texture_rect(skull_tex,
-                                Rect2(vp_size.x * 0.92, vp_size.y * 0.55, 48, 48), false)
-
-        # 6. Torce animate sui lati
-        _draw_torch_flame(vp_size.x * 0.12, vp_size.y * 0.25)
-        _draw_torch_flame(vp_size.x * 0.88, vp_size.y * 0.25)
-
-        # 7. Ruderi sul pavimento (pietre spezzate)
-        for i in 6:
-                var rubble_x: float = (0.1 + float(i) * 0.15) * vp_size.x
-                var rubble_y: float = vp_size.y - 30.0 + sin(float(i) * 1.7) * 10.0
-                var rubble_col: Color = Color(0.2, 0.18, 0.15)
-                if i % 2 == 0:
-                        rubble_col = Color(0.25, 0.22, 0.18)
-                draw_circle(Vector2(rubble_x, rubble_y), 12.0 + float(i % 3) * 4.0, rubble_col)
-                draw_circle(Vector2(rubble_x + 8, rubble_y - 4), 6.0, rubble_col.darkened(0.3))
-
-        # 8. Vignette scuro ai bordi per profondita'
-        for i in 10:
-                var vign_alpha: float = 0.05 * (10 - i) / 10.0
-                draw_rect(Rect2(0, 0, float(i) * 4.0, vp_size.y),
-                        Color(0, 0, 0, vign_alpha), true)
-                draw_rect(Rect2(vp_size.x - float(i) * 4.0, 0, 4.0, vp_size.y),
-                        Color(0, 0, 0, vign_alpha), true)
+        # Dark overlay so the wheel and text stand out against the busy art
+        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.35), true)
 
         # --- Titolo ---
         var title: String = "SELECT PLAYER " + str(player_num)
@@ -359,56 +322,3 @@ func _draw_ellipse_outline(cx: float, cy: float, rx: float, ry: float, col: Colo
                 var curr: Vector2 = Vector2(cx + cos(angle) * rx, cy + sin(angle) * ry)
                 draw_line(prev, curr, col, width)
                 prev = curr
-
-
-# --- Decorazioni sfondo cripta ---
-
-# Colonna di pietra con capitello, scanalature, crepe e muschio
-func _draw_crypt_column(x: float, y: float, scale_val: float) -> void:
-        var col_w: float = 50.0 * scale_val
-        var col_h: float = 500.0 * scale_val
-        var rock_dark: Color = Color(0.12, 0.10, 0.09)
-        var rock_mid: Color = Color(0.20, 0.17, 0.14)
-        var rock_light: Color = Color(0.28, 0.24, 0.20)
-        # Base (piu' larga)
-        draw_rect(Rect2(x - col_w / 2.0 - 5, y + col_h - 10, col_w + 10, 20), rock_dark)
-        # Fusto
-        draw_rect(Rect2(x - col_w / 2.0, y, col_w, col_h), rock_mid)
-        # Scanalature
-        for i in 3:
-                var sx: float = x - col_w / 2.0 + float(i + 1) * col_w / 4.0
-                draw_rect(Rect2(sx - 1, y, 2, col_h), rock_dark)
-        # Highlight sinistro (luce da torce)
-        draw_rect(Rect2(x - col_w / 2.0, y, 3, col_h), rock_light)
-        # Capitello (parte superiore)
-        draw_rect(Rect2(x - col_w / 2.0 - 5, y - 10, col_w + 10, 15), rock_dark)
-        draw_rect(Rect2(x - col_w / 2.0 - 3, y - 15, col_w + 6, 8), rock_mid)
-        # Crepe
-        draw_line(Vector2(x + 5, y + 50), Vector2(x + 8, y + 200), Color(0.05, 0.04, 0.03), 1)
-        draw_line(Vector2(x - 10, y + 100), Vector2(x - 7, y + 250), Color(0.05, 0.04, 0.03), 1)
-        # Muschio alla base
-        draw_rect(Rect2(x - col_w / 2.0, y + col_h - 8, col_w, 6), Color(0.12, 0.22, 0.08))
-        for i in 4:
-                draw_circle(Vector2(x - 15 + float(i) * 10, y + col_h - 5), 2.0, Color(0.15, 0.28, 0.10))
-
-
-# Torcia con fiamma animata
-func _draw_torch_flame(x: float, y: float) -> void:
-        var flicker: float = sin(anim_time * 18.0) * 1.5
-        var flicker2: float = cos(anim_time * 22.0) * 1.0
-        # Supporto metallico
-        draw_rect(Rect2(x - 2, y, 4, 15), Color(0.25, 0.22, 0.20))
-        # Aura
-        draw_circle(Vector2(x, y), 16.0, Color(1.0, 0.6, 0.2, 0.15))
-        draw_circle(Vector2(x, y), 10.0, Color(1.0, 0.5, 0.1, 0.25))
-        # Fiamma esterna (arancione)
-        draw_circle(Vector2(x, y - 5), 6.0 + flicker, Color(1.0, 0.4, 0.0, 0.8))
-        # Fiamma media (gialla)
-        draw_circle(Vector2(x, y - 5), 4.0 + flicker * 0.6, Color(1.0, 0.8, 0.2, 0.9))
-        # Nucleo (bianco)
-        draw_circle(Vector2(x, y - 5), 2.0 + flicker2 * 0.5, Color(1.0, 1.0, 0.8, 1.0))
-        # Scintille
-        for i in 3:
-                var spark_y: float = y - 10.0 - float(i) * 5.0 + sin(anim_time * 3.0 + i) * 2.0
-                var spark_x: float = x + cos(anim_time * 4.0 + i * 2.0) * 3.0
-                draw_circle(Vector2(spark_x, spark_y), 1.0, Color(1.0, 0.7, 0.2, 0.6))

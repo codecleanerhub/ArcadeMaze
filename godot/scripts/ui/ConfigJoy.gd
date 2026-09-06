@@ -2,12 +2,18 @@ extends Control
 
 # ConfigJoy.gd - Configurazione joystick (2 step per player)
 # Porting di Game.cpp STATE_CONFIG_JOY / STATE_CONFIG_JOY_2
+#
+# Background: now uses the same procedural crypt/ruderi/fantasy background
+# as SelectPlayer (via EnvironmentArt.draw_crypt_background). The flat dark
+# ColorRect that was previously the only background has been removed in
+# favour of a unified menu visual style.
 
 signal config_finished
 
 var step: int = 0  # 0 = jump button, 1 = shoot button
 var player_num: int = 1
 var wait_for_release: bool = false
+var _anim_time: float = 0.0  # for animated background elements (torches, fog)
 
 @onready var step_label: Label = $StepLabel
 @onready var player_label: Label = $PlayerLabel
@@ -40,7 +46,10 @@ func _update_step() -> void:
                 0: step_label.text = "PRESS JUMP BUTTON"
                 1: step_label.text = "PRESS SHOOT BUTTON"
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+        _anim_time += delta
+        # Redraw the animated background each frame (torches flicker, fog drifts).
+        queue_redraw()
         # ESC: torna al menu
         if Input.is_action_just_pressed("ui_cancel"):
                 config_finished.emit()
@@ -102,3 +111,12 @@ func _process(_delta: float) -> void:
                                                         config_finished.emit()
                                                 wait_for_release = true
                                 return
+
+
+# Draw the procedural crypt/ruderi background (shared with SelectPlayer).
+func _draw() -> void:
+        var vp_size: Vector2 = size
+        if EnvironmentArt:
+                EnvironmentArt.draw_crypt_background(self, vp_size, _anim_time)
+        # Dark overlay so the labels stand out
+        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.45), true)

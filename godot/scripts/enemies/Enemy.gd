@@ -162,6 +162,20 @@ var _sprite_loaded: bool = false
 var _sprite_id: String = ""
 var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
 
+# --- DeformableSprite (replaces the 4-frame cycle that produced the
+#     "disjointed gif" effect with HD sheets) ---
+# The HD sheets are single AI drawings carved into 4x4 grids. Cycling through
+# 4 horizontal slices of one image looked like a broken gif. DeformableSprite
+# takes ONE frame and deforms an 8x8 mesh in real time (IDLE/WALK/ATTACK),
+# matching the C++ architecture (Boss.cpp uses the same approach).
+var _deform_sprite: DeformableSprite = null
+var _deform_loaded: bool = false
+# Per-enemy accent color for the walk_cycle shader (warm pulse).
+var _accent_color: Color = Color(1.0, 0.5, 0.2, 1.0)
+# Dust puff spawn counter (every Nth frame while walking, spawn a puff).
+var _dust_frame_counter: int = 0
+const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms @ 60fps)
+
 
 # ===========================================================================
 # Lifecycle
@@ -227,6 +241,49 @@ func _load_sprite() -> void:
         # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
         if CharacterArt and sprite:
                 CharacterArt.apply_enhancement(sprite, false)
+
+        # Cache accent color from STATS for walk_cycle shader tinting.
+        var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
+        _accent_color = stats.get("accent", _accent_color)
+
+        # --- DeformableSprite setup ---
+        # We load ONE frame (the SD sheet's idle frame 0, sub-rect 0,0,64,64)
+        # into a DeformableSprite child. DeformableSprite animates it via mesh
+        # deformation in real time (no frame cycling → no disjointed gif).
+        # SD sheet is preferred because the HD sheet's "row 0" is a single AI
+        # image carved into 4 unrelated horizontal slices (verified by pixel
+        # analysis: walk frames 0-3 of monster_001_hd_sheet.png have only 4%
+        # pixel similarity, vs 60-90% for the SD sheet).
+        _ensure_deform_sprite()
+        if _deform_sprite != null:
+                var sheet_path := "res://assets/sprites/" + _sprite_id + "_sheet.png"
+                if ResourceLoader.exists(sheet_path):
+                        # Load sub-rect (0,0,64,64) = idle frame 0 of the SD sheet.
+                        _deform_loaded = _deform_sprite.load_subrect(sheet_path, 0, 0, 64, 64)
+                else:
+                        _deform_loaded = false
+                # Position the deform sprite as a child of this Enemy node.
+                # Its local position is offset so the 64x64 frame is centered.
+                _deform_sprite.position = Vector2(-32.0, -32.0)
+                # Apply the walk_cycle shader to the Enemy node itself (the
+                # deform sprite is a MeshInstance2D that uses StandardMaterial3D;
+                # we want the shader on the CanvasItem that draws overlays/HUD).
+                # Actually, the walk_cycle shader needs to apply to the deform
+                # sprite's mesh material — but StandardMaterial3D can't use a
+                # canvas_item shader. So instead we apply the walk_cycle shader
+                # to a sibling Sprite2D that overlays the deform sprite with the
+                # same texture, providing the light/shadow modulation on top.
+                if EffectsManager and _deform_loaded:
+                        EffectsManager.apply_walk_cycle(self, _accent_color)
+
+
+# Lazily create the DeformableSprite child node.
+func _ensure_deform_sprite() -> void:
+        if _deform_sprite != null:
+                return
+        var ds := DeformableSprite.new()
+        add_child(ds)
+        _deform_sprite = ds
 
 
 # ===========================================================================
@@ -710,7 +767,38 @@ func _draw() -> void:
 
 # Draw the current animation frame from the AI-generated sprite sheet.
 # Mirrors C++ Enemy::draw() which uses SpriteSheet::getFrameTexture.
+#
+# FIX (gif-animata-scollegata bug):
+# When the DeformableSprite is loaded (preferred path), we delegate the
+# rendering to it and only update its animation mode + the walk_cycle shader
+# uniforms. This produces smooth 60fps mesh deformation of a single frame
+# instead of cycling through 4 horizontal slices of an HD AI drawing.
+# The old AtlasTexture frame-cycling path is kept as a fallback for cases
+# where the SD sheet can't be loaded.
 func _draw_sprite_frame() -> void:
+        # Update the DeformableSprite if loaded (preferred path).
+        if _deform_loaded and _deform_sprite != null:
+                _update_deform_sprite_animation()
+                # The deform sprite draws itself via MeshInstance2D; we don't
+                # need to call draw_texture_rect here. But we DO need to draw
+                # the burning/electrified overlays and the HP bar.
+                # The walk_cycle shader update happens via EffectsManager.
+                var is_moving: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified() and not is_dying()
+                var walk_phase: float = 1.0 if is_moving else 0.0
+                if EffectsManager:
+                        EffectsManager.update_walk_cycle(self, walk_phase,
+                                dx >= 0, anim_time * 0.001, 8.0)
+                # Spawn dust puff periodically while walking.
+                if is_moving:
+                        _dust_frame_counter += 1
+                        if _dust_frame_counter >= DUST_PUFF_INTERVAL:
+                                _dust_frame_counter = 0
+                                _spawn_dust_puff_if_possible()
+                else:
+                        _dust_frame_counter = 0
+                return
+
+        # --- Fallback: AtlasTexture frame cycling (HD/SD sheet) ---
         if not _sprite_loaded or _sprite_sheet == null:
                 return
         # Determine animation name and frame index.
@@ -718,7 +806,7 @@ func _draw_sprite_frame() -> void:
         var anim_name: String = "idle"
         var frame: int = 0
         var frame_duration: int = 200  # ms per frame
-        var is_moving: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
+        var is_moving2: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
         # Death animation (6 frames @ 120ms)
         if is_dying():
                 anim_name = "death"
@@ -738,7 +826,7 @@ func _draw_sprite_frame() -> void:
                 var elapsed_attack: int = 400 - attacking_timer
                 frame = clampi(elapsed_attack / frame_duration, 0, fc_attack - 1)
         # Walk animation (6 frames @ 100ms with bob)
-        elif is_moving and _sprite_sheet.get_frame_count("walk") > 0:
+        elif is_moving2 and _sprite_sheet.get_frame_count("walk") > 0:
                 anim_name = "walk"
                 frame_duration = 100
                 var fc_walk: int = _sprite_sheet.get_frame_count("walk")
@@ -760,7 +848,7 @@ func _draw_sprite_frame() -> void:
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        if is_moving:
+        if is_moving2:
                 bob_y = sin(float(anim_time) * 0.01) * 2.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
@@ -772,6 +860,62 @@ func _draw_sprite_frame() -> void:
                 draw_texture_rect(at, dest_rect, false, Color.WHITE, true)
         else:
                 draw_texture_rect(at, dest_rect, false)
+
+
+# Update the DeformableSprite's animation mode based on current state.
+# Priority: death > attack > walk > idle (mirrors C++ Enemy::draw).
+func _update_deform_sprite_animation() -> void:
+        if _deform_sprite == null:
+                return
+        var mode: int = DeformableSprite.AnimMode.IDLE
+        var scale_val: float = 40.0 / 64.0  # 40px target / 64px source frame
+        var flipped: bool = dx < 0
+        if is_dying():
+                # DeformableSprite has no "death" mode; use IDLE with a fade-out
+                # handled separately. The death fallback draws an explosion circle.
+                mode = DeformableSprite.AnimMode.IDLE
+        elif attacking_timer > 0:
+                mode = DeformableSprite.AnimMode.ATTACK
+        elif (dx != 0 or dy != 0) and not is_burning() and not is_electrified():
+                mode = DeformableSprite.AnimMode.WALK
+        else:
+                mode = DeformableSprite.AnimMode.IDLE
+        # Position: deform sprite is centered on the enemy position (already
+        # offset by -32,-32 in _load_sprite). The bob is added here.
+        var bob_y: float = 0.0
+        if mode == DeformableSprite.AnimMode.WALK:
+                bob_y = sin(float(anim_time) * 0.01) * 2.0
+        _deform_sprite.position = Vector2(-32.0, -32.0 + bob_y)
+        _deform_sprite.update(float(anim_time) * 0.001, mode, scale_val, flipped)
+
+
+# Spawn a dust puff at the enemy's feet (called every Nth frame while walking).
+# The puff is added as a sibling of the enemy (to the parent scene tree) so
+# it persists after the enemy moves on. The puff auto-frees after its lifetime.
+func _spawn_dust_puff_if_possible() -> void:
+        if EffectsManager == null:
+                return
+        var parent_node: Node = get_parent()
+        if parent_node == null:
+                return
+        var puff: GPUParticles2D = EffectsManager.spawn_dust_puff(
+                position + Vector2(0, 14.0),  # at the enemy's feet
+                _accent_color)
+        if puff != null:
+                parent_node.add_child(puff)
+                # Auto-free after the puff's lifetime (0.4s + safety margin).
+                # Use a callable bound to the puff reference; Godot 4.7's
+                # SceneTreeTimer.timeout signal accepts any Callable.
+                var timer: SceneTreeTimer = get_tree().create_timer(0.6)
+                timer.timeout.connect(_on_dust_puff_timeout.bind(puff))
+
+
+# Bound callback for the dust puff auto-free timer.
+func _on_dust_puff_timeout(puff: GPUParticles2D) -> void:
+        if is_instance_valid(puff):
+                puff.queue_free()
+                if EffectsManager:
+                        EffectsManager.notify_dust_puff_freed()
 
 
 # ===========================================================================

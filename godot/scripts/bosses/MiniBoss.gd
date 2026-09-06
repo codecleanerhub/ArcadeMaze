@@ -107,6 +107,18 @@ var sprite_id: String = ""
 var sprite_loaded: bool = false
 var sprite_sheet = null  # SpriteManager.Sheet
 
+# --- DeformableSprite (replaces 4-frame cycle that produced the
+#     "disjointed gif" effect with HD sheets) ---
+# Same approach as Enemy.gd: load ONE frame into a DeformableSprite and
+# animate it via mesh deformation (no frame cycling, no disjointed gif).
+var _deform_sprite: DeformableSprite = null
+var _deform_loaded: bool = false
+# Per-miniboss accent color for walk_cycle shader.
+var _accent_color: Color = Color(0.86, 0.63, 0.16, 1.0)
+# Dust puff spawn counter.
+var _dust_frame_counter: int = 0
+const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms)
+
 # Maze reference (set by Game). Must expose `is_wall(col, row) -> bool`.
 var maze: Node = null
 
@@ -146,6 +158,33 @@ func _load_sprite() -> void:
         # apply the material to the node itself rather than a child Sprite2D.
         if CharacterArt:
                 CharacterArt.apply_enhancement_to_canvas_item(self, true)
+
+        # Cache accent color for walk_cycle shader tinting.
+        _accent_color = _get_accent_color()
+
+        # --- DeformableSprite setup ---
+        # Same fix as Enemy.gd: load ONE frame (SD sheet's idle frame 0)
+        # into a DeformableSprite child. No more 4-frame cycling of HD AI
+        # drawing slices → no more "disjointed gif" effect.
+        _ensure_deform_sprite()
+        if _deform_sprite != null:
+                var sheet_path := "res://assets/sprites/" + sprite_id + "_sheet.png"
+                if ResourceLoader.exists(sheet_path):
+                        _deform_loaded = _deform_sprite.load_subrect(sheet_path, 0, 0, 64, 64)
+                else:
+                        _deform_loaded = false
+                _deform_sprite.position = Vector2(-32.0, -32.0)
+                if EffectsManager and _deform_loaded:
+                        EffectsManager.apply_walk_cycle(self, _accent_color)
+
+
+# Lazily create the DeformableSprite child node.
+func _ensure_deform_sprite() -> void:
+        if _deform_sprite != null:
+                return
+        var ds := DeformableSprite.new()
+        add_child(ds)
+        _deform_sprite = ds
 
 
 # ============================================================
@@ -508,6 +547,46 @@ func _draw_with_sprite() -> void:
         var bob_y := sin(anim_time * 3.0) * 1.0
         var flipped := dx < 0
 
+        # --- FIX (gif-animata-scollegata): prefer DeformableSprite ---
+        # When loaded, delegate rendering to the deform sprite (mesh deformation
+        # of one frame) instead of cycling through 4 unrelated HD AI slices.
+        if _deform_loaded and _deform_sprite != null:
+                # Determine animation mode (mirror C++ priority: death > attack > walk > idle).
+                var mode: int = DeformableSprite.AnimMode.IDLE
+                if dying_timer_ms > 0:
+                        mode = DeformableSprite.AnimMode.IDLE
+                elif attacking_timer_ms > 0:
+                        mode = DeformableSprite.AnimMode.ATTACK
+                elif (dx != 0 or dy != 0) and burning_timer_ms == 0:
+                        mode = DeformableSprite.AnimMode.WALK
+                _deform_sprite.position = Vector2(-32.0 * scale_val,
+                        -32.0 * scale_val + bob_y)
+                _deform_sprite.update(anim_time, mode, scale_val, flipped)
+                # Update the walk_cycle shader uniforms on this CanvasItem.
+                var walk_phase: float = 1.0 if mode == DeformableSprite.AnimMode.WALK else 0.0
+                if EffectsManager:
+                        EffectsManager.update_walk_cycle(self, walk_phase,
+                                dx >= 0, anim_time, 8.0)
+                # Spawn dust puff periodically while walking.
+                if mode == DeformableSprite.AnimMode.WALK:
+                        _dust_frame_counter += 1
+                        if _dust_frame_counter >= DUST_PUFF_INTERVAL:
+                                _dust_frame_counter = 0
+                                _spawn_dust_puff_if_possible()
+                else:
+                        _dust_frame_counter = 0
+                # Aura + HP bar + shadow still drawn on top of the deform sprite.
+                var accent := _get_accent_color()
+                var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
+                draw_circle(Vector2(0, 0), aura_r,
+                        Color(accent.r, accent.g, accent.b, 0.15))
+                _draw_hp_bar(scale_val)
+                var sh_r := float(size) * 0.4 * scale_val
+                draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
+                        Color(0.05, 0.05, 0.05, 0.4))
+                return
+
+        # --- Fallback: AtlasTexture frame cycling (when SD sheet can't load) ---
         # Animation: death > attack > walk > idle
         var anim_name := "idle"
         var frame := 0
@@ -562,6 +641,30 @@ func _draw_with_sprite() -> void:
         var sh_r := float(size) * 0.4 * scale_val
         draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
                                 Color(0.05, 0.05, 0.05, 0.4))
+
+
+# Spawn a dust puff at the miniboss's feet (called every Nth frame while walking).
+func _spawn_dust_puff_if_possible() -> void:
+        if EffectsManager == null:
+                return
+        var parent_node: Node = get_parent()
+        if parent_node == null:
+                return
+        var puff: GPUParticles2D = EffectsManager.spawn_dust_puff(
+                pos + Vector2(0, float(size) * 0.4),  # at the feet
+                _accent_color)
+        if puff != null:
+                parent_node.add_child(puff)
+                var timer: SceneTreeTimer = get_tree().create_timer(0.6)
+                timer.timeout.connect(_on_dust_puff_timeout.bind(puff))
+
+
+# Bound callback for the dust puff auto-free timer.
+func _on_dust_puff_timeout(puff: GPUParticles2D) -> void:
+        if is_instance_valid(puff):
+                puff.queue_free()
+                if EffectsManager:
+                        EffectsManager.notify_dust_puff_freed()
 
 
 func _get_accent_color() -> Color:
