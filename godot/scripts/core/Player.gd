@@ -173,21 +173,29 @@ func _ready() -> void:
                 )
                 aura.name = "AuraLight"
                 add_child(aura)
-        # Camera2D per screen shake - come figlio della scena root (NON del player)
-        # perche' se figlia del player, la position e' relativa al player.
-        # La camera deve stare a (0, 0) globale = angolo alto-sinistra del viewport.
+        # Camera2D per screen shake - viene aggiunta al root del scene tree
+        # (NON come figlia del player né del MainGame root che è scalato).
+        # Se figlia di un nodo scalato, la camera erediterà la scala e lo
+        # screen-shake avverrebbe in coordinates scalate invece che in pixel
+        # del viewport. Aggiungendola al viewport root, resta a scala 1:1.
         var cam := Camera2D.new()
         cam.name = "PlayerCamera"
         cam.enabled = true
         cam.position = Vector2.ZERO  # angolo alto-sinistra (0, 0)
         cam.position_smoothing_enabled = false
-        # Aggiungi come sibling del player (non figlio), così la position e' globale
-        if get_parent():
-                get_parent().add_child(cam)
+        # FIX (add_child error + camera scaling): usa call_deferred per
+        # aggiungere la camera al scene root, NON al MainGame scalato.
+        # Il viewport root è sempre a scala 1:1, quindi lo screen-shake
+        # avverrà in pixel reali del viewport.
+        var scene_root: Node = get_tree().current_scene
+        if scene_root:
+                scene_root.add_child.call_deferred(cam)
+        elif get_parent():
+                get_parent().add_child.call_deferred(cam)
         else:
-                add_child(cam)
+                add_child.call_deferred(cam)
         if EffectsManager:
-                EffectsManager.set_camera(cam)
+                EffectsManager.set_camera.call_deferred(cam)
 
 
 # ===========================================================================
@@ -776,28 +784,31 @@ func _update_sprite() -> void:
                 sprite.flip_h = not _last_flipped
 
         # --- Animation frame selection ---
-        # FIX (graphics gap #1): prefer the dedicated per-frame sheets that the
-        # asset pipeline ships (player1_walk0..3_sheet.png, _jump_sheet.png).
-        # Each is a single 64x64 PNG already cropped to the right pose. We fall
-        # back to the main 4-frame sheet's atlas if a dedicated sheet is missing.
+        # FIX (player cambia aspetto quando cammina/salta):
+        # Le walk_sheet dedicate (player1_walk0..3_sheet.png) e il jump_sheet
+        # dedicato hanno STILE DIVERSO dal main sheet (sono AI calls separate
+        # con prompt diversi) → swap di texture cambiava aspetto/colore.
+        # Il C++ (Player.cpp:432-443) NON swappava sheet per walk/jump:
+        # usava il main 4-frame sheet per tutto, e applicava un arc Y
+        # sinusoidale per il salto (lo stesso sprite che si alzava in aria).
+        # Ora torniamo a quel modello: main sheet 4-frame per idle/walk/attack,
+        # jump = stessa sprite con offset Y sin(progress*PI)*25 (effetto "salto
+        # visivo" tipo arc, NON swap di texture).
         if is_jumping():
-                if _jump_sheet_texture != null:
-                        _apply_character_dedicated_texture(_jump_sheet_texture)
-                else:
-                        _apply_character_frame(3)  # fallback: jump pose on main sheet
+                # Jump: NON swappare texture. Usa frame 0 (idle) dello stesso
+                # main sheet. L'offset Y (jump_offset) viene applicato sotto
+                # per dare l'effetto "salto in aria" con il solito sprite.
+                _apply_character_frame(0)
         elif shoot_anim_timer > 0:
-                # Attack: there's no dedicated attack sheet shipped yet, so we
-                # use the main sheet's frame 3 (jump/arm-up pose) which reads
-                # as an attack recoil. When _attack0..3_sheet.png files are
-                # eventually added to the asset pipeline, swap them in here.
+                # Attack: use frame 3 (arm-up pose on main sheet) which reads
+                # as an attack recoil. Same texture as walk/idle → no swap.
                 _apply_character_frame(3)
         elif dx != 0 or dy != 0:
-                # Walking: cycle frames 0-3 at ~8 FPS (130ms/frame, matching C++).
+                # Walking: cycle frames 0-3 of the MAIN sheet at ~8 FPS
+                # (130ms/frame, matching C++). Same texture, just different
+                # sub-rect → no style/colour shift.
                 var walk_frame: int = int(anim_time / 130.0) % 4
-                if _walk_sheet_textures.size() == 4 and _walk_sheet_textures[walk_frame] != null:
-                        _apply_character_dedicated_texture(_walk_sheet_textures[walk_frame])
-                else:
-                        _apply_character_frame(walk_frame)
+                _apply_character_frame(walk_frame)
         else:
                 # Idle: frame 0 of the main sheet.
                 _apply_character_frame(0)

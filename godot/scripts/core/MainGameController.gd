@@ -110,13 +110,16 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: engine/godot-engine-fixes - game controller ready")
-        # FIX #4 (fullscreen black bars): with aspect="expand", the actual
-        # viewport is wider than 1024x1024 on 16:9 monitors. The maze (1008
-        # wide) + HUD (80 tall) sit inside the 1024x1024 design space, so we
-        # center the whole MainGame scene horizontally inside the larger
-        # viewport. This eliminates the "play area only a portion, rest is
-        # black" effect the user reported.
+        print("[MainGameController] VERSION: engine/godot-engine-fixes-v2 - game controller ready")
+        # FIX (sprite troppo piccoli + labirinto piccolo): il design space è
+        # 1024x1024 (1:1) ma ora il viewport è 1920x1080 (16:9). Scaliamo il
+        # MainGame root per riempire l'altezza dello schermo (1080/1024 = 1.0547)
+        # e centriamo orizzontalmente. Lo scale fa apparire gli sprite più
+        # grandi (era 64x64 → ora 67x67 visualizzati) e il labirinto riempie
+        # verticalmente tutto lo schermo. I bordi laterali neri (1920-1080=840px
+        # totali) saranno riempiti dal background fantasy disegnato in un nodo
+        # figlio NON scalato (vedi _create_background_layer sotto).
+        _create_background_layer()
         _recenter_play_area()
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
@@ -145,20 +148,71 @@ func _ready() -> void:
                 add_child(vignette)
 
 
-# Center the play area (1024x1024 design space) horizontally inside the
-# actual viewport when the viewport is wider than 1024 (16:9 monitor with
-# aspect="expand"). Vertical centering is unnecessary because the HUD is at
-# the top and the maze fills the rest of the design height.
+# Background layer node (NON scaled). Drawn behind the scaled maze play area
+# to fill the lateral black bars with thematic fantasy decoration.
+var _bg_layer: Control = null
+# Background animation timer (for crypt torches / fog drift).
+var _bg_anim_time: float = 0.0
+
+
+func _create_background_layer() -> void:
+        # Create a full-viewport Control that draws the crypt background.
+        # This node is NOT affected by the root's scale, so the background
+        # always covers the entire screen at native resolution.
+        _bg_layer = Control.new()
+        _bg_layer.name = "BackgroundLayer"
+        _bg_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _bg_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        _bg_layer.z_index = -100  # behind everything
+        # Custom script-less draw: we connect the draw signal.
+        _bg_layer.draw.connect(_on_bg_layer_draw)
+        # Insert as the FIRST child so it renders behind everything else.
+        add_child(_bg_layer, false, Node.INTERNAL_MODE_BACK)
+
+
+# Called when the background layer needs to redraw. Draws the procedural
+# crypt background at native viewport resolution (not scaled).
+func _on_bg_layer_draw() -> void:
+        if _bg_layer == null:
+                return
+        var vp_size: Vector2 = _bg_layer.size
+        if vp_size.x < 1.0 or vp_size.y < 1.0:
+                vp_size = get_viewport_rect().size
+        if EnvironmentArt:
+                EnvironmentArt.draw_crypt_background(_bg_layer, vp_size, _bg_anim_time)
+        # Subtle dark overlay so the maze + HUD stand out.
+        _bg_layer.draw_rect(Rect2(0, 0, vp_size.x, vp_size.y),
+                Color(0, 0, 0, 0.30), true)
+
+
+func _process(delta: float) -> void:
+        _bg_anim_time += delta
+        # Redraw the background layer every frame so the torches flicker and
+        # the fog drifts (EnvironmentArt.draw_crypt_background is animated).
+        if _bg_layer != null:
+                _bg_layer.queue_redraw()
+
+
+# Center and scale the play area (1024x1024 design space) inside the actual
+# viewport (1920x1080 in fullscreen). Scale = viewport_height / design_height
+# so the maze fills the full vertical space. Horizontal centering leaves
+# (viewport_w - design_w * scale) / 2 of empty space on each side, which is
+# filled by the procedural fantasy background drawn in _create_background_layer.
 func _recenter_play_area() -> void:
         var viewport_size: Vector2 = get_viewport_rect().size
         var design_w: float = float(C.WINDOW_WIDTH)
-        # If viewport is wider than design width, shift everything right by
-        # (viewport_w - design_w) / 2 so the play area is centered.
-        if viewport_size.x > design_w:
-                var offset_x: float = (viewport_size.x - design_w) * 0.5
+        var design_h: float = float(C.WINDOW_HEIGHT)
+        # Scale to fit viewport height (so maze fills the screen vertically).
+        var scale_val: float = viewport_size.y / design_h
+        scale = Vector2(scale_val, scale_val)
+        # Center horizontally: shift right by half the leftover space.
+        var scaled_w: float = design_w * scale_val
+        if viewport_size.x > scaled_w:
+                var offset_x: float = (viewport_size.x - scaled_w) * 0.5
                 position.x = offset_x
         else:
                 position.x = 0.0
+        position.y = 0.0
 
 
 func _physics_process(_delta: float) -> void:

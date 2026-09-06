@@ -269,7 +269,10 @@ func _build_ui() -> void:
         _bg.name = "Background"
         _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
         _bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-        _bg.stretch_mode = TextureRect.STRETCH_SCALE
+        # FIX (viewport 1920x1080): STRETCH_SCALE distorce la texture 1024x1024.
+        # STRETCH_KEEP_ASPECT_COVERED riempie il viewport mantenendo l'aspect
+        # ratio della texture (cover-fit, no distorsione, ritaglia i bordi).
+        _bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
         var tex := load("res://assets/backgrounds/bg_menu.jpg")
         if tex is Texture:
                 _bg.texture = tex
