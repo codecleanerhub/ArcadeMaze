@@ -305,13 +305,11 @@ func load_character_sprite() -> void:
                         # Initial frame (idle = main sheet frame 0)
                         _apply_character_frame(0)
                         sprite_loaded = true
-                        # FIX (player troppo grande rispetto alla strada del
-                        # labirinto): scale ridotta da 1.5 a 1.0. Il player
-                        # sprite è 64x64 nativo, il tile è 48px. Con scale 1.0
-                        # il player occupa 64px (leggermente più del tile ma
-                        # visibile e proporzionato ai nemici).
+                        # FIX (sprite troppo piccoli): scale aumentata da 1.0 a 1.3
+                        # per rendere il player più visibile nel tile 48px.
+                        # 64*1.3=83px, leggermente più del tile ma visibile.
                         if sprite:
-                                sprite.scale = Vector2(1.0, 1.0)
+                                sprite.scale = Vector2(1.3, 1.3)
                                 sprite.centered = true
                         # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
                         if CharacterArt and sprite:
@@ -758,19 +756,29 @@ func _update_sprite() -> void:
         var default_right: bool = SPRITE_DEFAULT_FACES_RIGHT.get(
                 character_type, true)
 
-        # Determine desired flipped state (in world terms: "facing left").
+        # FIX (player donna si gira dal lato opposto): la logica precedente
+        # era confusa con l'inversione per default_left. Logica corretta:
+        #   * Lo sprite PNG ha un facing di default (right o left).
+        #   * flip_h = true specchia orizzontalmente lo sprite.
+        #   * Vogliamo che il player guardi verso last_dx:
+        #     - se last_dx > 0 (muove a destra), l'output deve guardare a destra
+        #     - se last_dx < 0 (muove a sinistra), l'output deve guardare a sinistra
+        #   * Se default_right: l'output "guarda destra" quando flip_h=false,
+        #     "guarda sinistra" quando flip_h=true. Quindi:
+        #       flip_h = (last_dx < 0)
+        #   * Se default_left (NOT default_right): l'output "guarda sinistra"
+        #     quando flip_h=false, "guarda destra" quando flip_h=true. Quindi:
+        #       flip_h = (last_dx > 0)
+        # In entrambi i casi, quando last_dx == 0 mantieni l'ultima orientazione.
         if last_dx > 0:
-                _last_flipped = false
+                # Moving right
+                _last_flipped = false if default_right else true
         elif last_dx < 0:
-                _last_flipped = true
+                # Moving left
+                _last_flipped = true if default_right else false
         # else: keep _last_flipped from previous frame.
 
-        # If the sprite PNG defaults to LEFT, invert the flip so the visible
-        # orientation still matches movement direction.
-        if default_right:
-                sprite.flip_h = _last_flipped
-        else:
-                sprite.flip_h = not _last_flipped
+        sprite.flip_h = _last_flipped
 
         # --- Animation frame selection ---
         # FIX (player cambia aspetto quando cammina/salta):
@@ -793,10 +801,10 @@ func _update_sprite() -> void:
                 # as an attack recoil. Same texture as walk/idle → no swap.
                 _apply_character_frame(3)
         elif dx != 0 or dy != 0:
-                # Walking: cycle frames 0-3 of the MAIN sheet at ~8 FPS
-                # (130ms/frame, matching C++). Same texture, just different
-                # sub-rect → no style/colour shift.
-                var walk_frame: int = int(anim_time / 130.0) % 4
+                # Walking: cycle frames 0-3 of the MAIN sheet at ~12 FPS
+                # (FIX: era 130ms/frame = ~7.5fps, troppo lento → sembrava
+                # statico. Ridotto a 80ms/frame = ~12.5fps, più visibile).
+                var walk_frame: int = int(anim_time / 80.0) % 4
                 _apply_character_frame(walk_frame)
         else:
                 # Idle: frame 0 of the main sheet.

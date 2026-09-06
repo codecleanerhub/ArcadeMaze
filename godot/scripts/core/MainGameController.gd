@@ -235,13 +235,19 @@ func _process(delta: float) -> void:
 # Handle pause + ESC via _unhandled_input so they work even when the game
 # tree is paused (process_mode = PROCESS_MODE_ALWAYS on this node).
 func _unhandled_input(event: InputEvent) -> void:
+        # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
+        # fase di uscita dalla scena. Usiamo una variabile locale con null check.
         if event.is_action_pressed("pause") and not event.is_echo():
                 _toggle_pause()
-                get_viewport().set_input_as_handled()
+                var vp: Viewport = get_viewport()
+                if vp != null:
+                        vp.set_input_as_handled()
                 return
         if event.is_action_pressed("ui_cancel") and not event.is_echo():
                 _return_to_menu()
-                get_viewport().set_input_as_handled()
+                var vp2: Viewport = get_viewport()
+                if vp2 != null:
+                        vp2.set_input_as_handled()
                 return
 
 

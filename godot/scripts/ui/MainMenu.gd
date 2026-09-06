@@ -717,13 +717,19 @@ func _apply_fullscreen() -> void:
 # fills the new window size correctly (otherwise it stays at the old size
 # and appears "shifted" in the bottom-left corner).
 func _refresh_layout_after_resize() -> void:
+        # FIX (menu shiftato dopo fullscreen toggle): forza il root window
+        # a ridimensionare il content_scale e riapplica gli anchor a tutti
+        # i Control figli. Usiamo call_deferred per garantire che il resize
+        # della finestra sia completo prima di riapplicare il layout.
+        var root: Window = get_tree().root
+        if root:
+                root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+                root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
         set_anchors_preset(Control.PRESET_FULL_RECT)
         # Re-apply the same to the background TextureRect if present.
         if _bg != null:
                 _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-        # FIX (parse error): Control non ha queue_sort(). Per forzare il
-        # layout update, usiamo update_minimum_size() + queue_redraw().
-        # NOTIFICATION_RESORTED è interno e non va chiamato direttamente.
+        # Force a layout pass + redraw.
         update_minimum_size()
         queue_redraw()
 

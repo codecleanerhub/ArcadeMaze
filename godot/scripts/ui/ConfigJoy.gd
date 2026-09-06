@@ -118,27 +118,32 @@ func _unhandled_input(event: InputEvent) -> void:
         match step:
                 0:
                         # Jump button
+                        # FIX CRITICAL: le chiavi del config dict sono UPPERCASE
+                        # ("JOY_JUMP") non lowercase ("joy_jump"). GDScript
+                        # Dictionary è case-sensitive! ConfigJoy scriveva in
+                        # una chiave "joy_jump" fantasma invece di aggiornare
+                        # "JOY_JUMP", quindi MainGame leggeva -1.
                         if player_num == 1:
-                                ConfigManager.config.joy_jump = btn
-                                print("[ConfigJoy] P1 jump button = ", btn)
+                                ConfigManager.config["JOY_JUMP"] = btn
+                                print("[ConfigJoy] P1 JOY_JUMP = ", btn)
                         else:
-                                ConfigManager.config.joy2_jump = btn
-                                ConfigManager.config.joy2_id = jid
-                                print("[ConfigJoy] P2 jump button = ", btn, " on joy_id ", jid)
+                                ConfigManager.config["JOY2_JUMP"] = btn
+                                ConfigManager.config["JOY2_ID"] = jid
+                                print("[ConfigJoy] P2 JOY2_JUMP = ", btn, " on joy_id ", jid)
                         step = 1
                         _update_step()
                         wait_for_release = true
                 1:
                         # Shoot button — assicuriamoci che sia diverso da jump
                         # (lo stesso tasto non può essere sia jump che shoot).
-                        var jump_btn: int = ConfigManager.config.joy_jump if player_num == 1 else ConfigManager.config.joy2_jump
+                        var jump_btn: int = ConfigManager.config["JOY_JUMP"] if player_num == 1 else ConfigManager.config["JOY2_JUMP"]
                         if btn == jump_btn:
                                 # Stesso tasto: ignora e aspetta un altro
                                 print("[ConfigJoy] same button as jump, ignoring")
                                 return
                         if player_num == 1:
-                                ConfigManager.config.joy_shoot = btn
-                                print("[ConfigJoy] P1 shoot button = ", btn)
+                                ConfigManager.config["JOY_SHOOT"] = btn
+                                print("[ConfigJoy] P1 JOY_SHOOT = ", btn)
                                 ConfigManager.save_config()
                                 if GameManager.num_players == 2:
                                         player_num = 2
@@ -149,8 +154,8 @@ func _unhandled_input(event: InputEvent) -> void:
                                 else:
                                         config_finished.emit()
                         else:
-                                ConfigManager.config.joy2_shoot = btn
-                                print("[ConfigJoy] P2 shoot button = ", btn)
+                                ConfigManager.config["JOY2_SHOOT"] = btn
+                                print("[ConfigJoy] P2 JOY2_SHOOT = ", btn)
                                 ConfigManager.save_config()
                                 config_finished.emit()
                         wait_for_release = true

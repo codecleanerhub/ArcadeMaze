@@ -921,13 +921,10 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
         var beat_dur: float = 60.0 / tempo
         var sixteenth_dur: float = beat_dur / 4.0
         var samples_per_sixteenth: int = int(SR * sixteenth_dur)
-        # FIX (musiche troppo brevi e ripetitive): estese da 32 a 64 barre
-        # (~2.5 min per traccia a 100 BPM). Struttura AABA:
-        #   barre 0-15:  Verse A (progressione i-VI-III-VII)
-        #   barre 16-31: Verse A' (stessa progressione, variazione melodica)
-        #   barre 32-47: Bridge B (progressione IV-III-VI-V, modulazione)
-        #   barre 48-63: Verse A'' (ritorno, con fill di batteria finale)
-        var num_bars: int = 64
+        # FIX (lento avvio gioco): ridotto da 64 a 48 barre per velocizzare
+        # la generazione procedurale delle musiche all'avvio (1.5 min invece
+        # di 2.5 min, ancora sufficiente per non essere ripetitivo).
+        var num_bars: int = 48
         var total: int = num_bars * 4 * samples_per_sixteenth
 
         # Due progressioni: A (principale) e B (bridge, modulata)
@@ -962,15 +959,15 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
                 else:
                         prog = prog_a
                 var chord_root: float = scale[prog[bar % 4]]
-                # Sezione coro: ogni 8 barre (es. 8-11, 24-27, 56-59) — più pieno
+                # Sezione coro: ogni 8 barre (es. 8-11, 24-27, 40-43) — più pieno
                 var is_chorus: bool = ((bar >= 8 and bar <= 11) or
                                        (bar >= 24 and bar <= 27) or
-                                       (bar >= 56 and bar <= 59))
+                                       (bar >= 40 and bar <= 43))
                 # Variazione melodica: il pattern del lead cambia ogni 16 barre
                 # per evitare la sensazione di loop ripetitivo.
                 var lead_pattern: int = (bar / 16) % 3  # 0, 1, 2
-                # Fill di batteria sull'ultima barra di ogni sezione (7, 15, 31, 47, 63)
-                var is_fill_bar: bool = (bar == 7 or bar == 15 or bar == 31 or bar == 47 or bar == 63)
+                # Fill di batteria sull'ultima barra di ogni sezione (7, 15, 31, 47)
+                var is_fill_bar: bool = (bar == 7 or bar == 15 or bar == 31 or bar == 47)
                 for beat in 4:
                         for s in 4:
                                 # Lead: pattern arpeggio che varia per sezione
