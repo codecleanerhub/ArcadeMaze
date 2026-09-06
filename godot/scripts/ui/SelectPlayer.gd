@@ -213,7 +213,8 @@ func _draw() -> void:
         _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, 185, 28, player_color)
 
         # --- Parametri ruota ---
-        var wheel_radius_x: float = 300.0
+        # FIX (wheel radius aumentato per sprite più grandi 128px)
+        var wheel_radius_x: float = 380.0
         var perspective_ratio: float = 0.32
         var wheel_radius_y: float = wheel_radius_x * perspective_ratio
 
@@ -276,7 +277,9 @@ func _draw() -> void:
                 var i: int = p.idx
                 if i < _char_textures.size() and _char_textures[i] != null:
                         var tex: Texture2D = _char_textures[i]
-                        var char_size: float = 64.0 * p.scale
+                        # FIX (personaggi troppo piccoli): size da 64 a 128
+                        # per renderli visibili e dettagliati nella ruota.
+                        var char_size: float = 128.0 * p.scale
                         var draw_rect := Rect2(p.x - char_size / 2.0, p.y - char_size, char_size, char_size)
                         # AtlasTexture for first frame (64x64)
                         var at := AtlasTexture.new()
@@ -292,12 +295,15 @@ func _draw() -> void:
                                 Color(1, 1, 1, p.alpha))
 
                 # Glow on selected character (front)
+                # FIX (pallino giallo intermittente troppo grande): era 30px+22px
+                # oro che copriva quasi tutto il personaggio. Ridotto a 8px+5px
+                # con alpha molto più basso per un effetto sottile.
                 if i == wheel_index:
                         var glow: float = 0.5 + 0.5 * sin(anim_time * 4.0)
                         draw_circle(Vector2(p.x, p.y - 20),
-                                30.0 * p.scale, Color(1.0, 0.84, 0.0, 0.3 * glow))
+                                8.0 * p.scale, Color(1.0, 0.84, 0.0, 0.2 * glow))
                         draw_circle(Vector2(p.x, p.y - 20),
-                                22.0 * p.scale, Color(1.0, 0.84, 0.0, 0.5 * glow))
+                                5.0 * p.scale, Color(1.0, 0.84, 0.0, 0.35 * glow))
 
         # --- 8. Nome personaggio selezionato (in basso) ---
         _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, vp_size.y - 60, 32,

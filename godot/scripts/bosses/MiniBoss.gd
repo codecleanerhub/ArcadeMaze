@@ -113,6 +113,8 @@ var sprite_sheet = null  # SpriteManager.Sheet
 # animate it via mesh deformation (no frame cycling, no disjointed gif).
 var _deform_sprite: DeformableSprite = null
 var _deform_loaded: bool = false
+# SD sheet cache (forced to avoid HD gif effect)
+var _sd_sheet: Object = null
 # Per-miniboss accent color for walk_cycle shader.
 var _accent_color: Color = Color(0.86, 0.63, 0.16, 1.0)
 # Dust puff spawn counter.
@@ -163,19 +165,10 @@ func _load_sprite() -> void:
         _accent_color = _get_accent_color()
 
         # --- DeformableSprite setup ---
-        # Same fix as Enemy.gd: load ONE frame (SD sheet's idle frame 0)
-        # into a DeformableSprite child. No more 4-frame cycling of HD AI
-        # drawing slices → no more "disjointed gif" effect.
-        _ensure_deform_sprite()
-        if _deform_sprite != null:
-                var sheet_path := "res://assets/sprites/" + sprite_id + "_sheet.png"
-                if ResourceLoader.exists(sheet_path):
-                        _deform_loaded = _deform_sprite.load_subrect(sheet_path, 0, 0, 64, 64)
-                else:
-                        _deform_loaded = false
-                _deform_sprite.position = Vector2(-32.0, -32.0)
-                if EffectsManager and _deform_loaded:
-                        EffectsManager.apply_walk_cycle(self, _accent_color)
+        # FIX (lag): disabilitato per performance (come Enemy). Il _sync_mesh
+        # ogni frame è troppo lento. Torniamo al frame cycling del SD sheet.
+        # _ensure_deform_sprite()  # DISABILITATO per performance
+        _deform_loaded = false
 
 
 # Lazily create the DeformableSprite child node.
@@ -185,6 +178,28 @@ func _ensure_deform_sprite() -> void:
         var ds := DeformableSprite.new()
         add_child(ds)
         _deform_sprite = ds
+
+
+# Load the SD version of a sprite sheet (256x64 = 4 frame walk cycle).
+# Used to avoid the HD "gif scollegata" effect.
+func _load_sd_sheet(sprite_id: String) -> Object:
+        var sd_path := "res://assets/sprites/" + sprite_id + "_sheet.png"
+        if not ResourceLoader.exists(sd_path):
+                return null
+        var tex := load(sd_path) as Texture2D
+        if tex == null:
+                return null
+        var sheet := SpriteManager.Sheet.new()
+        sheet.texture = tex
+        sheet.frame_w = 64
+        sheet.frame_h = 64
+        sheet.columns = 4
+        sheet.rows = 1
+        sheet.animations["idle"] = {"row": 0, "frames": 4, "frameDuration": 200}
+        sheet.animations["walk"] = {"row": 0, "frames": 4, "frameDuration": 100}
+        sheet.animations["attack"] = {"row": 0, "frames": 4, "frameDuration": 90}
+        sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        return sheet
 
 
 # ============================================================
@@ -587,36 +602,46 @@ func _draw_with_sprite() -> void:
                 return
 
         # --- Fallback: AtlasTexture frame cycling (when SD sheet can't load) ---
+        # FIX (gif scollegata): forziamo SD sheet come per Enemy.
+        var active_sheet := sprite_sheet
+        if sprite_sheet != null and sprite_sheet.rows == 4 and sprite_sheet.columns == 4:
+                # HD sheet → cerca SD
+                if _sd_sheet == null:
+                        _sd_sheet = _load_sd_sheet(sprite_id)
+                if _sd_sheet != null:
+                        active_sheet = _sd_sheet
+        if active_sheet == null:
+                active_sheet = sprite_sheet
         # Animation: death > attack > walk > idle
         var anim_name := "idle"
         var frame := 0
         var frame_duration := 200
-        if dying_timer_ms > 0 and sprite_sheet.get_frame_count("death") > 0:
+        if dying_timer_ms > 0 and active_sheet.get_frame_count("death") > 0:
                 anim_name = "death"
                 frame_duration = 120
                 var elapsed := 600 - dying_timer_ms
-                var fc: int = sprite_sheet.get_frame_count("death")
+                var fc: int = active_sheet.get_frame_count("death")
                 frame = elapsed / frame_duration
                 frame = clampi(frame, 0, fc - 1)
-        elif attacking_timer_ms > 0 and sprite_sheet.get_frame_count("attack") > 0:
+        elif attacking_timer_ms > 0 and active_sheet.get_frame_count("attack") > 0:
                 anim_name = "attack"
                 frame_duration = 50
                 var elapsed := 400 - attacking_timer_ms
-                var fc: int = sprite_sheet.get_frame_count("attack")
+                var fc: int = active_sheet.get_frame_count("attack")
                 frame = elapsed / frame_duration
                 frame = clampi(frame, 0, fc - 1)
-        elif (dx != 0 or dy != 0) and sprite_sheet.get_frame_count("walk") > 0:
+        elif (dx != 0 or dy != 0) and active_sheet.get_frame_count("walk") > 0:
                 anim_name = "walk"
                 frame_duration = 100
-                var fc: int = sprite_sheet.get_frame_count("walk")
+                var fc: int = active_sheet.get_frame_count("walk")
                 frame = (int(anim_time * 1000.0) / frame_duration) % fc
-        elif sprite_sheet.get_frame_count("idle") > 0:
+        elif active_sheet.get_frame_count("idle") > 0:
                 anim_name = "idle"
                 frame = 0
 
         var at: AtlasTexture = null
-        if sprite_sheet != null:
-                at = sprite_sheet.get_frame_texture(anim_name, frame)
+        if active_sheet != null:
+                at = active_sheet.get_frame_texture(anim_name, frame)
         if at != null:
                 # Centered draw with vertical bob. Flip horizontally via src_rect.
                 var tw: int = 64  # mini-boss visual size (HD sheet scaled down)

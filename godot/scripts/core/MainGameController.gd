@@ -565,8 +565,10 @@ func _update_playing(delta_ms: float) -> void:
                 mini_boss.set_flee_mode(player_invuln)
                 mini_boss.update_step(maze, p_grid, p_pos, int(delta_ms))
                 # MiniBoss melee attack: if attacking and player in range, damage
+                # FIX CRASH: MiniBoss non ha get_pixel_pos(); usa la property
+                # `pos` (Vector2) direttamente con .get().
                 if mini_boss.has_method("is_attacking") and mini_boss.is_attacking():
-                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                        var mb_pos: Vector2 = mini_boss.get("pos") if mini_boss.get("pos") != null else Vector2.ZERO
                         var mb_range: float = 36.0  # default attack range
                         if mini_boss.has_method("get_attack_range"):
                                 mb_range = mini_boss.get_attack_range()

@@ -707,6 +707,23 @@ func _apply_fullscreen() -> void:
                 # Assicurati che il content_scale sia corretto per windowed
                 if get_tree():
                         get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+                # FIX (menu in basso a sinistra dopo fullscreen off): forziamo
+                # il ridisegno del menu dopo che la finestra ha cambiato size.
+                # Usiamo call_deferred per garantire che il resize sia completo.
+                call_deferred("_refresh_layout_after_resize")
+
+
+# Re-applies the full-rect anchor preset after a window resize so the menu
+# fills the new window size correctly (otherwise it stays at the old size
+# and appears "shifted" in the bottom-left corner).
+func _refresh_layout_after_resize() -> void:
+        set_anchors_preset(Control.PRESET_FULL_RECT)
+        # Re-apply the same to the background TextureRect if present.
+        if _bg != null:
+                _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+        # Force a layout pass + redraw.
+        queue_sort()
+        queue_redraw()
 
 
 # Activate the currently-selected menu item (Enter/Space/A button).

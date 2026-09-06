@@ -192,28 +192,32 @@ func _render_wall_decorations() -> void:
                                 continue
                         if cell_type != C.CellType.WALL:
                                 continue
-                        # Hash deterministico per scegliere decorazione
-                        var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
-                        var hash_val: int = abs(h) % 100
-                        # ~8% teschi (solo su celle interne)
-                        if hash_val < 8 and c > 2 and c < C.MAZE_COLS - 2 and r > 2 and r < C.MAZE_ROWS - 2:
-                                if skull_tex:
-                                        draw_texture_rect(skull_tex,
-                                                Rect2(px + size * 0.15, py + size * 0.1,
-                                                      size * 0.7, size * 0.7), false)
-                        # ~6% ragnatele (angoli)
-                        elif hash_val < 14 and (c <= 2 or c >= C.MAZE_COLS - 3 or r <= 2 or r >= C.MAZE_ROWS - 3):
-                                if cobweb_tex:
-                                        draw_texture_rect(cobweb_tex,
-                                                Rect2(px, py, size * 0.8, size * 0.8), false)
+                        # FIX (decorazioni dentro i muri): l'utente ha segnalato
+                        # "teschi dentro i muri resi male e senza senso".
+                        # Disabilitiamo le decorazioni skull/cobweb/torch sui
+                        # muri. I muri ora sono solo pietra nuda, più puliti.
+                        # var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
+                        # var hash_val: int = abs(h) % 100
+                        # if hash_val < 8 and c > 2 and c < C.MAZE_COLS - 2 and r > 2 and r < C.MAZE_ROWS - 2:
+                        #         if skull_tex:
+                        #                 draw_texture_rect(skull_tex,
+                        #                         Rect2(px + size * 0.15, py + size * 0.1,
+                        #                               size * 0.7, size * 0.7), false)
+                        # elif hash_val < 14 and (c <= 2 or c >= C.MAZE_COLS - 3 or r <= 2 or r >= C.MAZE_ROWS - 3):
+                        #         if cobweb_tex:
+                        #                 draw_texture_rect(cobweb_tex,
+                        #                         Rect2(px, py, size * 0.8, size * 0.8), false)
                         # ~5% torce: disegno procedurale con handle + bracket +
                         # fiamma animata a 3 strati (1:1 con drawTorch del C++).
                         # Le PointLight2D sono create in _spawn_torch_lights alle
                         # stesse posizioni (vantaggio Godot: illuminazione reale).
-                        elif hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
-                                var torch_x: float = px + size * 0.5
-                                var torch_y: float = py + size * 0.35
-                                _draw_torch(torch_x, torch_y, _anim_time)
+                        # FIX: anche le torce sui muri sono state disabilitate
+                        # (l'utente vuole muri puliti, niente decorazioni
+                        # "dentro i muri resi male e senza senso").
+                        # elif hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
+                        #         var torch_x: float = px + size * 0.5
+                        #         var torch_y: float = py + size * 0.35
+                        #         _draw_torch(torch_x, torch_y, _anim_time)
 
 
 # Disegna una torcia animata in posizione (x, y_base) dove y_base e' la base
