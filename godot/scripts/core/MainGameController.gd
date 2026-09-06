@@ -402,11 +402,18 @@ func _handle_input() -> void:
                 player.shoot_cooldown = 150
 
         # P1 keyboard jump (also works without joystick)
-        if Input.is_action_just_pressed("jump"):
-                var was_jumping: bool = player.is_jumping()
-                player.activate_jump()
-                if not was_jumping and player.is_jumping() and AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.JUMP)
+        # FIX (spazio fa jump invece di saltare livello in test mode):
+        # In test mode, Space serve per saltare il livello (o killare il boss),
+        # NON per far saltare il player. Disabilitiamo il jump da tastiera
+        # quando test mode è attivo. Il test_mode_skip viene gestito più sotto
+        # nella stessa funzione.
+        var test_mode_active: bool = GameManager and GameManager.test_mode_enabled
+        if not test_mode_active:
+                if Input.is_action_just_pressed("jump"):
+                        var was_jumping: bool = player.is_jumping()
+                        player.activate_jump()
+                        if not was_jumping and player.is_jumping() and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.JUMP)
 
         # P2 input (if 2 players)
         if GameManager and GameManager.num_players == 2 and player2.visible:

@@ -908,12 +908,18 @@ func _draw_sprite_frame() -> void:
                 bob_y = sin(float(anim_time) * 0.01) * 2.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
-        # Godot 4.7 draw_texture_rect: max 5 args (texture, rect, tile, modulate, transpose)
-        # For horizontal flip, use transpose=false and draw normally (flip is visual-only).
+        # FIX (scheletro ruota a sinistra): il quinto parametro di
+        # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
+        # NON lo flip orizzontalmente. Per fare un flip H orizzontale,
+        # creiamo una copia dell'AtlasTexture con flip_h = true.
         var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
         if dx < 0:
-                # Flip by drawing with transpose (mirrors X when used on AtlasTexture)
-                draw_texture_rect(at, dest_rect, false, Color.WHITE, true)
+                # Crea un AtlasTexture flippato orizzontalmente
+                var flipped_at := AtlasTexture.new()
+                flipped_at.atlas = at.atlas
+                flipped_at.region = at.region
+                flipped_at.flip_h = true
+                draw_texture_rect(flipped_at, dest_rect, false)
         else:
                 draw_texture_rect(at, dest_rect, false)
 

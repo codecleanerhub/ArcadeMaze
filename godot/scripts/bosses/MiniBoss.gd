@@ -652,8 +652,13 @@ func _draw_with_sprite() -> void:
                 var draw_pos := Vector2(-tw / 2, -th / 2 + 8 + bob_y)
                 var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:
-                        # Flip using transpose (Godot 4.7 max 5 args on draw_texture_rect)
-                        draw_texture_rect(at, dest_rect, false, Color.WHITE, true)
+                        # FIX (ruota invece di flip): usa AtlasTexture.flip_h
+                        # invece di transpose=true che ruota di 90°.
+                        var flipped_at := AtlasTexture.new()
+                        flipped_at.atlas = at.atlas
+                        flipped_at.region = at.region
+                        flipped_at.flip_h = true
+                        draw_texture_rect(flipped_at, dest_rect, false)
                 else:
                         draw_texture_rect(at, dest_rect, false)
 

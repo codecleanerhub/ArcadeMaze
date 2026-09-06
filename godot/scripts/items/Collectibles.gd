@@ -508,24 +508,31 @@ func _draw_speed_boots() -> void:
 
 
 func _draw_treasure() -> void:
-        # FIX (tesori troppo piccoli e irriconoscibili): ingrandito da 32px a 64px.
+        # FIX (tesori non riconoscibili): usa sprite PNG dedicati invece
+        # delle texture procedurali di EnvironmentArt (che erano troppo
+        # astratte e non riconoscibili). I PNG sono generati con AI a
+        # 1024x1024 e scalati a 48x48 per il display.
         var y_off := -bob_offset
-        # Soft glow più grande
-        draw_circle(Vector2.ZERO, 30.0, Color(1.0, 0.85, 0.3, 0.25))
-        draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.85, 0.3, 0.15))
-        if EnvironmentArt:
-                var tex: Texture2D = EnvironmentArt.get_treasure_texture(treasure_type)
-                if tex:
-                        # Disegna la texture 128x128 scalata a 64x64 centrata
-                        # (FIX: era 32x32, troppo piccola)
-                        var size: float = 64.0
+        # Soft glow dorato
+        draw_circle(Vector2.ZERO, 24.0, Color(1.0, 0.85, 0.3, 0.2))
+        draw_circle(Vector2.ZERO, 16.0, Color(1.0, 0.85, 0.3, 0.15))
+        # Carica la texture PNG dedicata per questo tipo di tesoro
+        var tex_path: String = ""
+        match treasure_type:
+                TreasureType.TRES_CROWN: tex_path = "res://assets/sprites/treasures/treasure_crown.png"
+                TreasureType.TRES_GOLD: tex_path = "res://assets/sprites/treasures/treasure_gold.png"
+                TreasureType.TRES_CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
+                TreasureType.TRES_GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
+                TreasureType.TRES_CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
+        if not tex_path.is_empty() and ResourceLoader.exists(tex_path):
+                var tex: Texture2D = load(tex_path) as Texture2D
+                if tex != null:
+                        # Disegna la texture 1024x1024 scalata a 48x48 centrata
+                        var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
-                        # Outline dorato per renderlo più riconoscibile
-                        var gold_outline: Color = Color(1.0, 0.85, 0.2, 0.8)
-                        draw_rect(draw_rect, gold_outline, false, 2.0)
                         return
-        # Fallback: rendering semplice se EnvironmentArt non disponibile
+        # Fallback: rendering semplice se il PNG non è disponibile
         match treasure_type:
                 TreasureType.TRES_CROWN:
                         draw_rect(Rect2(-8.0, 0.0 + y_off, 16.0, 4.0), Color(1.0, 0.85, 0.2))
