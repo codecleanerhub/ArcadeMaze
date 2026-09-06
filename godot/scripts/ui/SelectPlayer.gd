@@ -129,6 +129,29 @@ func _process(delta: float) -> void:
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
                 player_selected.emit(wheel_index, player_num)
+        else:
+                # FIX: oltre all'azione "confirm" standard (che include
+                # JOY_BUTTON_A/B/START), controlliamo anche il tasto di fuoco
+                # e di salto CONFIGURATO dell'utente (ConfigManager.joy_shoot/
+                # joy_jump). Se l'utente ha configurato un tasto custom
+                # diverso da A/B/Start (es. X o Y), l'action map non lo
+                # triggererebbe come "confirm".
+                if ConfigManager and _joy_confirm_cooldown <= 0:
+                        var joy_pads: Array = Input.get_connected_joypads()
+                        if joy_pads.size() > 0:
+                                var jid: int = joy_pads[0]
+                                var joy_shoot_btn: int = ConfigManager.joy_shoot()
+                                var joy_jump_btn: int = ConfigManager.joy_jump()
+                                var fire_pressed: bool = false
+                                if joy_shoot_btn >= 0 and Input.is_joy_button_pressed(jid, joy_shoot_btn):
+                                        fire_pressed = true
+                                if joy_jump_btn >= 0 and Input.is_joy_button_pressed(jid, joy_jump_btn):
+                                        fire_pressed = true
+                                if fire_pressed:
+                                        _joy_confirm_cooldown = 0.5
+                                        if AudioManager:
+                                                AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+                                        player_selected.emit(wheel_index, player_num)
 
         queue_redraw()
 

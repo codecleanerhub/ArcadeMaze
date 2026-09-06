@@ -21,6 +21,7 @@ var _bg_texture: Texture2D = null
 
 @onready var step_label: Label = $StepLabel
 @onready var player_label: Label = $PlayerLabel
+@onready var hint_label: Label = $HintLabel
 
 func _ready() -> void:
         # Read which player we're configuring from GameManager (set by MainMenu).
@@ -53,6 +54,9 @@ func _update_step() -> void:
         match step:
                 0: step_label.text = "PRESS JUMP BUTTON"
                 1: step_label.text = "PRESS SHOOT BUTTON"
+        # Update the hint label to remind the user they can cancel with ESC.
+        if hint_label:
+                hint_label.text = "ESC TO CANCEL  •  STEP %d OF 2" % (step + 1)
 
 func _process(delta: float) -> void:
         _anim_time += delta

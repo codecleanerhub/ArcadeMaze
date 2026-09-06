@@ -110,17 +110,25 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: engine/godot-engine-fixes-v2 - game controller ready")
-        # FIX (sprite troppo piccoli + labirinto piccolo): il design space è
-        # 1024x1024 (1:1) ma ora il viewport è 1920x1080 (16:9). Scaliamo il
-        # MainGame root per riempire l'altezza dello schermo (1080/1024 = 1.0547)
-        # e centriamo orizzontalmente. Lo scale fa apparire gli sprite più
-        # grandi (era 64x64 → ora 67x67 visualizzati) e il labirinto riempie
-        # verticalmente tutto lo schermo. I bordi laterali neri (1920-1080=840px
-        # totali) saranno riempiti dal background fantasy disegnato in un nodo
-        # figlio NON scalato (vedi _create_background_layer sotto).
+        print("[MainGameController] VERSION: engine/godot-engine-fixes-v3 - game controller ready")
+        # FIX (maze decentrato in basso a destra):
+        # L'approccio precedente scalava il MainGame root Node2D, ma il Camera2D
+        # creato in Player.gd veniva aggiunto come figlio di scene_root (che È
+        # il MainGame scalato) → la camera ereditava la trasformazione di scale
+        # e position → vista sballata con maze in basso a destra.
+        # Ora usiamo un approccio corretto:
+        #   1. MainGame root resta a scale (1,1) e position (0,0) — nessuna
+        #      trasformazione ereditata dai figli.
+        #   2. Una Camera2D indipendente (aggiunta al Window root, NON al
+        #      MainGame) con zoom = 1080/1024 = 1.0547 e position = (512, 512)
+        #      (centro del design space) → il maze 1024×1024 riempie tutta
+        #      l'altezza dello schermo 1920×1080, centrato orizzontalmente.
+        #   3. Background crypt via CanvasLayer a layer -1 (dietro tutto,
+        #      non influenzato dalla camera).
+        # Il MainGame root NON viene scalato; è la camera che "zooma" sul
+        # design space 1024×1024.
         _create_background_layer()
-        _recenter_play_area()
+        _setup_camera()
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
         if SpriteManager:
@@ -148,30 +156,69 @@ func _ready() -> void:
                 add_child(vignette)
 
 
-# Background layer node (NON scaled). Drawn behind the scaled maze play area
-# to fill the lateral black bars with thematic fantasy decoration.
+# Background layer node (CanvasLayer, independent of camera and MainGame scale).
+# Drawn behind everything to fill the lateral black bars with thematic fantasy.
+var _bg_canvas: CanvasLayer = null
 var _bg_layer: Control = null
 # Background animation timer (for crypt torches / fog drift).
 var _bg_anim_time: float = 0.0
 
 
 func _create_background_layer() -> void:
-        # Create a full-viewport Control that draws the crypt background.
-        # This node is NOT affected by the root's scale, so the background
-        # always covers the entire screen at native resolution.
+        # CanvasLayer renders independently of the 2D transform hierarchy.
+        # layer = -100 puts it behind everything else.
+        _bg_canvas = CanvasLayer.new()
+        _bg_canvas.layer = -100
         _bg_layer = Control.new()
         _bg_layer.name = "BackgroundLayer"
         _bg_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
         _bg_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        _bg_layer.z_index = -100  # behind everything
-        # Custom script-less draw: we connect the draw signal.
         _bg_layer.draw.connect(_on_bg_layer_draw)
-        # Insert as the FIRST child so it renders behind everything else.
-        add_child(_bg_layer, false, Node.INTERNAL_MODE_BACK)
+        _bg_canvas.add_child(_bg_layer)
+        # Add the CanvasLayer to the Window root (NOT to self, which would
+        # make it a child of the MainGame node and potentially affected by
+        # any future transforms).
+        get_tree().root.add_child(_bg_canvas)
+
+
+# Setup a Camera2D that zooms into the 1024x1024 design space to fill the
+# 1920x1080 viewport. The camera is added to the Window root (NOT to the
+# MainGame node) so it doesn't inherit any transform from the game scene.
+var _game_camera: Camera2D = null
+func _setup_camera() -> void:
+        if _game_camera != null:
+                return
+        _game_camera = Camera2D.new()
+        _game_camera.name = "GameCamera"
+        _game_camera.enabled = true
+        # Center the camera on the middle of the design space (1024x1024).
+        # This way the camera sees from (512 - vp_w/(2*zoom)) to (512 + vp_w/(2*zoom))
+        # vertically and horizontally.
+        _game_camera.position = Vector2(512.0, 512.0)
+        _game_camera.position_smoothing_enabled = false
+        # Zoom = viewport_height / design_height.
+        # This makes the 1024px design height fill the viewport height.
+        # Use DisplayServer.screen_get_size as the authoritative source for
+        # the actual screen resolution in fullscreen mode, since
+        # get_viewport_rect() can return incorrect sizes during _ready on
+        # some platforms (especially headless or multi-monitor setups).
+        var vp_size: Vector2 = get_viewport_rect().size
+        var screen_id: int = DisplayServer.get_primary_screen()
+        var screen_size: Vector2i = DisplayServer.screen_get_size(screen_id)
+        if screen_size.x > 0 and screen_size.y > 0:
+                vp_size = Vector2(screen_size)
+        var design_h: float = float(C.WINDOW_HEIGHT)
+        var zoom_val: float = vp_size.y / design_h
+        _game_camera.zoom = Vector2(zoom_val, zoom_val)
+        # Add to the Window root so it's NOT a child of the scaled MainGame.
+        get_tree().root.add_child(_game_camera)
+        # Register with EffectsManager for screen-shake.
+        if EffectsManager:
+                EffectsManager.set_camera(_game_camera)
 
 
 # Called when the background layer needs to redraw. Draws the procedural
-# crypt background at native viewport resolution (not scaled).
+# crypt background at native viewport resolution (not affected by camera zoom).
 func _on_bg_layer_draw() -> void:
         if _bg_layer == null:
                 return
@@ -193,26 +240,17 @@ func _process(delta: float) -> void:
                 _bg_layer.queue_redraw()
 
 
-# Center and scale the play area (1024x1024 design space) inside the actual
-# viewport (1920x1080 in fullscreen). Scale = viewport_height / design_height
-# so the maze fills the full vertical space. Horizontal centering leaves
-# (viewport_w - design_w * scale) / 2 of empty space on each side, which is
-# filled by the procedural fantasy background drawn in _create_background_layer.
-func _recenter_play_area() -> void:
-        var viewport_size: Vector2 = get_viewport_rect().size
-        var design_w: float = float(C.WINDOW_WIDTH)
-        var design_h: float = float(C.WINDOW_HEIGHT)
-        # Scale to fit viewport height (so maze fills the screen vertically).
-        var scale_val: float = viewport_size.y / design_h
-        scale = Vector2(scale_val, scale_val)
-        # Center horizontally: shift right by half the leftover space.
-        var scaled_w: float = design_w * scale_val
-        if viewport_size.x > scaled_w:
-                var offset_x: float = (viewport_size.x - scaled_w) * 0.5
-                position.x = offset_x
-        else:
-                position.x = 0.0
-        position.y = 0.0
+# Cleanup: when leaving the MainGame scene, remove the camera and background
+# CanvasLayer from the Window root (they were added there to avoid inheriting
+# the MainGame transform). Without this cleanup, they would persist into the
+# next scene (e.g. MainMenu) and cause rendering issues.
+func _exit_tree() -> void:
+        if _game_camera != null and is_instance_valid(_game_camera):
+                _game_camera.queue_free()
+                _game_camera = null
+        if _bg_canvas != null and is_instance_valid(_bg_canvas):
+                _bg_canvas.queue_free()
+                _bg_canvas = null
 
 
 func _physics_process(_delta: float) -> void:

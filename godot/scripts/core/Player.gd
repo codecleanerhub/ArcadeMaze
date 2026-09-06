@@ -173,29 +173,14 @@ func _ready() -> void:
                 )
                 aura.name = "AuraLight"
                 add_child(aura)
-        # Camera2D per screen shake - viene aggiunta al root del scene tree
-        # (NON come figlia del player né del MainGame root che è scalato).
-        # Se figlia di un nodo scalato, la camera erediterà la scala e lo
-        # screen-shake avverrebbe in coordinates scalate invece che in pixel
-        # del viewport. Aggiungendola al viewport root, resta a scala 1:1.
-        var cam := Camera2D.new()
-        cam.name = "PlayerCamera"
-        cam.enabled = true
-        cam.position = Vector2.ZERO  # angolo alto-sinistra (0, 0)
-        cam.position_smoothing_enabled = false
-        # FIX (add_child error + camera scaling): usa call_deferred per
-        # aggiungere la camera al scene root, NON al MainGame scalato.
-        # Il viewport root è sempre a scala 1:1, quindi lo screen-shake
-        # avverrà in pixel reali del viewport.
-        var scene_root: Node = get_tree().current_scene
-        if scene_root:
-                scene_root.add_child.call_deferred(cam)
-        elif get_parent():
-                get_parent().add_child.call_deferred(cam)
-        else:
-                add_child.call_deferred(cam)
-        if EffectsManager:
-                EffectsManager.set_camera.call_deferred(cam)
+        # FIX: la Camera2D viene ora creata da MainGameController._setup_camera
+        # e aggiunta al Window root (NON come figlia del MainGame scalato né
+        # del player). Questo evita che la camera erediti trasformazioni di
+        # scale/position dai genitori. Player.gd non crea più la sua camera;
+        # si limita a registrare la posizione del player per eventuali
+        # screen-shake futuri (gestiti da EffectsManager.set_camera).
+        # Non facciamo nulla qui — MainGameController._setup_camera() crea
+        # una camera globale con zoom 1080/1024 = 1.0547 centrata su (512,512).
 
 
 # ===========================================================================

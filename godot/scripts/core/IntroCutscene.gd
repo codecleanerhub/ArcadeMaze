@@ -88,11 +88,36 @@ func _finish() -> void:
 
 func _process(delta: float) -> void:
         # Pulsante skip: Enter o qualsiasi tasto di azione
-        if Input.is_action_just_pressed("confirm") or Input.is_action_just_pressed("jump"):
-                if _current_frame < _images.size() - 1:
-                        _show_frame(_current_frame + 1)
+        # FIX: oltre all'azione "confirm"/"jump" standard (che include
+        # JOY_BUTTON_A/B/START), controlliamo anche il tasto di fuoco e di
+        # salto CONFIGURATO dell'utente (ConfigManager.joy_shoot/joy_jump).
+        # Se l'utente ha configurato un tasto custom diverso da A/B/Start
+        # (es. X o Y), l'action map non lo triggererebbe.
+        var skip_pressed: bool = false
+        skip_pressed = skip_pressed or Input.is_action_just_pressed("confirm")
+        skip_pressed = skip_pressed or Input.is_action_just_pressed("jump")
+        # Check configured joystick buttons directly.
+        if ConfigManager and not skip_pressed:
+                var joy_pads: Array = Input.get_connected_joypads()
+                if joy_pads.size() > 0:
+                        var jid: int = joy_pads[0]
+                        var joy_shoot_btn: int = ConfigManager.joy_shoot()
+                        var joy_jump_btn: int = ConfigManager.joy_jump()
+                        if joy_shoot_btn >= 0 and Input.is_joy_button_pressed(jid, joy_shoot_btn):
+                                skip_pressed = true
+                        if joy_jump_btn >= 0 and Input.is_joy_button_pressed(jid, joy_jump_btn):
+                                skip_pressed = true
+        if skip_pressed:
+                if _skip_key_held:
+                        pass  # already pressed last frame, don't re-trigger
                 else:
-                        _finish()
+                        _skip_key_held = true
+                        if _current_frame < _images.size() - 1:
+                                _show_frame(_current_frame + 1)
+                        else:
+                                _finish()
+        else:
+                _skip_key_held = false
         
         # ESC: salta tutto
         if Input.is_action_just_pressed("ui_cancel"):
