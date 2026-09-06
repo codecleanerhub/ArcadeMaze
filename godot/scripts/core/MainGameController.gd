@@ -35,6 +35,7 @@ var current_level: int = 1
 var is_boss_state: bool = false  # false in MainGame (maze), true in BossRoom
 var is_paused: bool = false
 var test_skip_key_held: bool = false
+var _joy_debug_printed: bool = false  # print joystick config once on first frame
 
 # --- Collectibles (port of C++ Game members) ---
 var exit_door: Dictionary = {
@@ -296,6 +297,12 @@ func _handle_input() -> void:
         var joy_pads: Array = Input.get_connected_joypads()
         if joy_pads.size() > 0:
                 p1_joy_id = joy_pads[0]
+        # DEBUG: stampa i valori configurati una volta sola all'inizio del gioco
+        if not _joy_debug_printed and p1_joy_id >= 0 and ConfigManager:
+                _joy_debug_printed = true
+                print("[MainGame] DEBUG joystick: joy_id=", p1_joy_id,
+                      " joy_jump=", ConfigManager.joy_jump(),
+                      " joy_shoot=", ConfigManager.joy_shoot())
         if p1_joy_id >= 0:
                 # Read the configured axes (default 0=X, 1=Y) — same as C++.
                 var axis_x: float = Input.get_joy_axis(p1_joy_id, ConfigManager.joy_axis_x()) if ConfigManager else Input.get_joy_axis(p1_joy_id, 0)
@@ -352,6 +359,17 @@ func _handle_input() -> void:
                         if ammo_after < ammo_before and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.PISTOL)
                         player.shoot_cooldown = 150
+                # DEBUG: ogni 60 frame (~1s), stampa quali pulsanti sono premuti
+                # per aiutare l'utente a diagnosticare quale btn_index corrisponde
+                # a quale tasto fisico del suo controller.
+                if Engine.get_process_frames() % 60 == 0:
+                        var pressed_btns: Array = []
+                        for btn in range(16):
+                                if Input.is_joy_button_pressed(p1_joy_id, btn):
+                                        pressed_btns.append(btn)
+                        if pressed_btns.size() > 0:
+                                print("[MainGame] DEBUG btn premuti: ", pressed_btns,
+                                      " (jump=", joy_jump_btn, " shoot=", joy_shoot_btn, ")")
 
         # Keyboard arrows (always work, even without joystick).
         # Note: in C++ keyboard + joystick both contribute; whichever is

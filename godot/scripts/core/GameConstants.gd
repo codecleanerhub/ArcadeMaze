@@ -25,11 +25,16 @@ class_name GameConstants
 # 40 colonne x 20 righe (= 1920x960 px) con UI bar di 80px sopra.
 # TILE_SIZE resta 48px (compatibile con tutti gli sprite 64x64 scalati a 40
 # per i nemici, e con il rendering procedurale del maze).
+# FIX (doppio muro in basso): MAZE_ROWS aumentato da 20 a 22 per riempire
+# meglio l'altezza del viewport 1080px. 22*48=1056 + 80 UI = 1136 (56px
+# overflow coperti dal floor gradient). Il "doppio muro" che l'utente vedeva
+# era causato dal bordo inferiore del maze (riga 20 = WALL) + 40px di sfondo
+# scuro tra il maze e il bordo dello schermo.
 const WINDOW_WIDTH: int = 1920
 const WINDOW_HEIGHT: int = 1080
 const TILE_SIZE: int = 48
 const MAZE_COLS: int = 40
-const MAZE_ROWS: int = 20
+const MAZE_ROWS: int = 22
 const UI_HEIGHT: int = 80
 
 # ============================================================================

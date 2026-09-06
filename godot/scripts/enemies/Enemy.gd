@@ -872,8 +872,10 @@ func _draw_sprite_frame() -> void:
                 at = active_sheet.get_frame_texture("idle", 0)
                 if at == null:
                         return
-        # Draw centered at enemy size (48x48 to match tile size, was 40).
-        var target_size: float = 48.0
+        # Draw centered at enemy size (64x64, same as player, was 48).
+        # FIX (nemici troppo piccoli): aumentato da 48 a 64px per corrispondere
+        # al player e riempire meglio il tile 48px del labirinto.
+        var target_size: float = 64.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
@@ -897,9 +899,9 @@ func _update_deform_sprite_animation() -> void:
         if _deform_sprite == null:
                 return
         var mode: int = DeformableSprite.AnimMode.IDLE
-        # FIX (sprite troppo piccoli): scale da 40/64=0.625 a 56/64=0.875
-        # (sprite più grandi, quasi tile size 48).
-        var scale_val: float = 56.0 / 64.0
+        # FIX (nemici troppo piccoli): scale da 56/64=0.875 a 64/64=1.0
+        # (sprite a 64px, uguale al player, riempie meglio il tile 48px).
+        var scale_val: float = 64.0 / 64.0
         var flipped: bool = dx < 0
         if is_dying():
                 # DeformableSprite has no "death" mode; use IDLE with a fade-out

@@ -305,12 +305,13 @@ func load_character_sprite() -> void:
                         # Initial frame (idle = main sheet frame 0)
                         _apply_character_frame(0)
                         sprite_loaded = true
-                        # FIX (sprite troppo piccoli): scala il player sprite
-                        # da 64x64 a 96x96 (scale 1.5) per renderlo visibile
-                        # nel tile 48px. L'anchor del sprite è centrato nel
-                        # nodo CharacterBody2D (position del player).
+                        # FIX (player troppo grande rispetto alla strada del
+                        # labirinto): scale ridotta da 1.5 a 1.0. Il player
+                        # sprite è 64x64 nativo, il tile è 48px. Con scale 1.0
+                        # il player occupa 64px (leggermente più del tile ma
+                        # visibile e proporzionato ai nemici).
                         if sprite:
-                                sprite.scale = Vector2(1.5, 1.5)
+                                sprite.scale = Vector2(1.0, 1.0)
                                 sprite.centered = true
                         # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
                         if CharacterArt and sprite:
