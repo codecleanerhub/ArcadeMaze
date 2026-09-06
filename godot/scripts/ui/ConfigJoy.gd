@@ -99,7 +99,9 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
         if not (event is InputEventJoypadButton):
                 return
-        if not event.pressed or event.echo:
+        # FIX CRASH: InputEventJoypadButton non ha la property 'echo'
+        # (solo InputEventKey ce l'ha). Usa event.pressed per il check.
+        if not event.pressed:
                 return
         # Se siamo in attesa di release, ignora qualsiasi pressione.
         if wait_for_release:

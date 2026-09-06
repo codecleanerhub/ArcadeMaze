@@ -681,16 +681,32 @@ func _change_option(delta: int) -> void:
 
 
 # Apply the current fullscreen state via DisplayServer.
-# Uses WINDOW_MODE_FULLSCREEN (exclusive fullscreen, mode 3) which is the
-# most compatible mode across all Godot 4.x builds (WINDOW_MODE_WINDOWED_FULLSCREEN
-# is missing in some 4.7 builds).
+# FIX (fullscreen off non funzionava): quando si passa da FULLSCREEN a
+# WINDOWED, Godot non ripristina le dimensioni della finestra. Impostiamo
+# esplicitamente una finestra 1280x720 centrata sullo schermo quando si
+# esce dal fullscreen. Inoltre resettiamo il content_scale_aspect a EXPAND
+# per evitare letterboxing residuo.
 func _apply_fullscreen() -> void:
-        var mode: int
+        var win: Window = get_window()
         if _fullscreen_enabled:
-                mode = DisplayServer.WINDOW_MODE_FULLSCREEN
+                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
         else:
-                mode = DisplayServer.WINDOW_MODE_WINDOWED
-        DisplayServer.window_set_mode(mode)
+                # Passa a windowed mode
+                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+                # Imposta dimensioni finestra ragionevoli (1280x720, 16:9)
+                if win:
+                        win.size = Vector2i(1280, 720)
+                        # Centra la finestra sullo schermo primario
+                        var screen_id: int = DisplayServer.get_primary_screen()
+                        var screen_size: Vector2i = DisplayServer.screen_get_size(screen_id)
+                        var screen_pos: Vector2i = DisplayServer.screen_get_position(screen_id)
+                        win.position = Vector2i(
+                                screen_pos.x + (screen_size.x - 1280) / 2,
+                                screen_pos.y + (screen_size.y - 720) / 2
+                        )
+                # Assicurati che il content_scale sia corretto per windowed
+                if get_tree():
+                        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 
 
 # Activate the currently-selected menu item (Enter/Space/A button).

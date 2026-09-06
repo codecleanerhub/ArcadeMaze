@@ -921,11 +921,18 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
         var beat_dur: float = 60.0 / tempo
         var sixteenth_dur: float = beat_dur / 4.0
         var samples_per_sixteenth: int = int(SR * sixteenth_dur)
-        var num_bars: int = 32
+        # FIX (musiche troppo brevi e ripetitive): estese da 32 a 64 barre
+        # (~2.5 min per traccia a 100 BPM). Struttura AABA:
+        #   barre 0-15:  Verse A (progressione i-VI-III-VII)
+        #   barre 16-31: Verse A' (stessa progressione, variazione melodica)
+        #   barre 32-47: Bridge B (progressione IV-III-VI-V, modulazione)
+        #   barre 48-63: Verse A'' (ritorno, con fill di batteria finale)
+        var num_bars: int = 64
         var total: int = num_bars * 4 * samples_per_sixteenth
 
-        # Chord progression: i, VI, III, VII -> scale indices 0, 5, 2, 6
-        var prog := [0, 5, 2, 6]
+        # Due progressioni: A (principale) e B (bridge, modulata)
+        var prog_a := [0, 5, 2, 6]   # i, VI, III, VII
+        var prog_b := [3, 2, 5, 4]   # IV, III, VI, V (bridge, più luminoso)
         # Drum patterns (16 sixteenths per bar)
         var kick: Array  = [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,0]
         var snare: Array = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0]
@@ -947,12 +954,31 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
         out.resize(total)
         var write_idx: int = 0
         for bar in num_bars:
+                # Determina quale progressione usare (AABA)
+                var prog: Array
+                var is_bridge: bool = (bar >= 32 and bar < 48)
+                if is_bridge:
+                        prog = prog_b
+                else:
+                        prog = prog_a
                 var chord_root: float = scale[prog[bar % 4]]
-                var is_chorus: bool = (bar >= 8 and bar <= 11) or (bar >= 20 and bar <= 23)
+                # Sezione coro: ogni 8 barre (es. 8-11, 24-27, 56-59) — più pieno
+                var is_chorus: bool = ((bar >= 8 and bar <= 11) or
+                                       (bar >= 24 and bar <= 27) or
+                                       (bar >= 56 and bar <= 59))
+                # Variazione melodica: il pattern del lead cambia ogni 16 barre
+                # per evitare la sensazione di loop ripetitivo.
+                var lead_pattern: int = (bar / 16) % 3  # 0, 1, 2
+                # Fill di batteria sull'ultima barra di ogni sezione (7, 15, 31, 47, 63)
+                var is_fill_bar: bool = (bar == 7 or bar == 15 or bar == 31 or bar == 47 or bar == 63)
                 for beat in 4:
                         for s in 4:
-                                # Lead: a step-sequenced arpeggio over the chord
-                                var note_idx: int = (s + beat) % 4
+                                # Lead: pattern arpeggio che varia per sezione
+                                var note_idx: int
+                                match lead_pattern:
+                                        0: note_idx = (s + beat) % 4
+                                        1: note_idx = (s * 2 + beat) % 4
+                                        _: note_idx = (s + beat * 2) % 4
                                 var lead_freq: float = chord_root * pow(2.0, float(note_idx) / 12.0)
                                 # Bass: triangle one octave below chord root
                                 var bass_freq: float = chord_root * 0.5
@@ -961,19 +987,25 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
                                 var k: bool = bool(kick[pat_idx])
                                 var sn: bool = bool(snare[pat_idx])
                                 var hh: bool = bool(hihat[pat_idx])
+                                # Fill: sull'ultima barra, sostituisci pattern con roll di tom
+                                if is_fill_bar and beat >= 2:
+                                        k = (s == 0 or s == 2)
+                                        sn = (s == 1 or s == 3)
                                 # Generate the sixteenth
                                 for i in samples_per_sixteenth:
                                         if write_idx >= total: break
                                         var t: float = float(i) / SR
-                                        # Lead pulse (duty 0.25 for arpeggio brightness)
+                                        # Lead pulse (duty 0.25 per arpeggio brightness)
                                         var lead: float = 0.0
-                                        if is_chorus or (s == 0):
+                                        if is_chorus or (s == 0) or is_bridge:
                                                 lead = 0.30 * pulse_wave(t * lead_freq, 0.25)
+                                        elif lead_pattern > 0 and (s == 2):
+                                                lead = 0.20 * pulse_wave(t * lead_freq * 1.5, 0.25)
                                         # Bass triangle
                                         var bass: float = 0.30 * triangle_wave(t * bass_freq)
-                                        # Sawtooth pad (only in chorus)
+                                        # Sawtooth pad (only in chorus/bridge)
                                         var pad: float = 0.0
-                                        if is_chorus:
+                                        if is_chorus or is_bridge:
                                                 pad = 0.15 * sawtooth_wave(t * chord_root)
                                         # Drums
                                         var drum: float = 0.0
@@ -1069,13 +1101,18 @@ func _gen_epic_scepter() -> PackedFloat32Array:
 
 
 # --- Menu music: choiral fantasy, loop, ~80 BPM, harmonic minor ------------
-# Pad saw (wide) + lead pulse (slow) + arpeggio + triangle bass.
+# FIX (musiche troppo brevi): esteso da 16 a 48 barre (~3 min a 80 BPM).
+# Struttura AABA con bridge modulato + variazione melodica.
 func _gen_menu_track() -> PackedFloat32Array:
         var tempo: float = 80.0
         var beat_dur: float = 60.0 / tempo
         var sixteenth_dur: float = beat_dur / 4.0
         var samples_per_sixteenth: int = int(SR * sixteenth_dur)
-        var num_bars: int = 16
+        # FIX: esteso da 16 a 48 barre (~3 min). Struttura AABA:
+        #   barre 0-15:  Verse A
+        #   barre 16-31: Verse A' (variazione)
+        #   barre 32-47: Bridge B (modulazione + arpeggio più veloce)
+        var num_bars: int = 48
         var total: int = num_bars * 4 * samples_per_sixteenth
 
         # A harmonic minor scale (root A2 = 110 Hz)
@@ -1084,17 +1121,25 @@ func _gen_menu_track() -> PackedFloat32Array:
         var scale := []
         for iv in intervals:
                 scale.append(root * pow(2.0, float(iv) / 12.0))
-        var prog := [0, 5, 2, 6]  # i, VI, III, VII
+        var prog_a := [0, 5, 2, 6]   # i, VI, III, VII (principale)
+        var prog_b := [3, 4, 5, 2]   # IV, V, VI, III (bridge, più luminoso)
 
         var out := PackedFloat32Array()
         out.resize(total)
         var write_idx: int = 0
         for bar in num_bars:
+                var is_bridge: bool = (bar >= 32 and bar < 48)
+                var prog: Array = prog_b if is_bridge else prog_a
                 var chord_root: float = scale[prog[bar % 4]]
+                # Variazione melodica: pattern arpeggio cambia ogni 16 barre
+                var arp_pattern: int = (bar / 16) % 2
                 for beat in 4:
                         for s in 4:
                                 var bass_freq: float = chord_root * 0.5
-                                var arp_idx: int = (s + beat * 2) % 7
+                                var arp_idx: int
+                                match arp_pattern:
+                                        0: arp_idx = (s + beat * 2) % 7
+                                        _: arp_idx = (s * 3 + beat) % 7
                                 var arp_freq: float = scale[arp_idx] * 2.0
                                 for i in samples_per_sixteenth:
                                         if write_idx >= total: break
@@ -1102,9 +1147,12 @@ func _gen_menu_track() -> PackedFloat32Array:
                                         var env: float = exp(-t * 4.0) * (1.0 - exp(-t * 30.0))
                                         var pad: float = 0.20 * sawtooth_wave(t * chord_root)
                                         var lead: float = 0.0
-                                        if s == 0:
+                                        if s == 0 or (is_bridge and s == 2):
                                                 lead = 0.25 * pulse_wave(t * arp_freq * 2.0, 0.5)
                                         var arp: float = 0.15 * pulse_wave(t * arp_freq, 0.25)
+                                        # Bridge: doppio arp più veloce
+                                        if is_bridge:
+                                                arp *= 1.3
                                         var bass: float = 0.25 * triangle_wave(t * bass_freq)
                                         out[write_idx] = (pad + lead + arp + bass) * env * 0.5
                                         write_idx += 1
