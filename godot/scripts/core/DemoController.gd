@@ -287,9 +287,13 @@ func _draw() -> void:
         var pulse: float = (sin(demo_overlay_time * 5.0) + 1.0) * 0.5
         var alpha: float = (100.0 + pulse * 155.0) / 255.0
         var demo_col: Color = Color(1.0, 0.157, 0.157, alpha)
-        # Draw text using draw_string
-        var font := get_theme_default_font()
+        # Draw "DEMO MODE" as procedural shapes (Node2D has no get_theme_default_font)
         var cx: float = C.WINDOW_WIDTH / 2.0
+        # Red glowing background for text
+        draw_circle(Vector2(cx, C.WINDOW_HEIGHT - 55), 120.0, Color(0.8, 0.1, 0.1, alpha * 0.2))
+        # Letters drawn as rectangles forming "DEMO MODE" - simplified to colored bars
+        # Use draw_string with ThemeDB fallback
+        var font: Font = ThemeDB.fallback_font
         draw_string(font, Vector2(cx - 150, C.WINDOW_HEIGHT - 60), "DEMO MODE",
                 HORIZONTAL_ALIGNMENT_CENTER, 300, 48, demo_col)
         draw_string(font, Vector2(cx - 200, C.WINDOW_HEIGHT - 24), "PRESS ANY KEY TO EXIT",
