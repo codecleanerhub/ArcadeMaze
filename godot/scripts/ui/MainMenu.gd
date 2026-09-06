@@ -134,9 +134,35 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 GameManager.player2_character = p2_char
                 GameManager.current_level = 1
                 GameManager.config_joy_step = 0
-                # Flow: START GAME -> select player (ruota) -> intro -> game
-                # Always go to select player first (character selection is mandatory)
-                GameManager.go_to_select_player()
+                # FIX #1 (menu flow): the C++ engine (Game.cpp::startGameAfterSelectPlayer
+                # at line ~8585) routed through STATE_CONFIG_JOY *before* the intro/game
+                # whenever `joy_jump < 0 || joy_shoot < 0` (i.e. joystick not yet
+                # calibrated). The previous Godot port skipped this check entirely,
+                # going straight to SelectPlayer, which meant the user could enter a
+                # game with an unconfigured joystick (Bug #5 root cause).
+                # Now we mirror the C++ flow:
+                #   START GAME
+                #     -> if (1P and p1 joy not ready) OR (2P and either joy not ready):
+                #            CONFIG_JOY (P1, then P2)
+                #     -> else if not yet at SELECT_PLAYER stage:
+                #            SELECT_PLAYER (always mandatory before game)
+                # The "always go to SelectPlayer first" rule matches the user's
+                # explicit requirement and the C++ engine behavior.
+                var need_joy_config: bool = false
+                if ConfigManager:
+                        need_joy_config = (not ConfigManager.p1_joystick_ready())
+                        if num_players == 2 and (not ConfigManager.p2_joystick_ready()):
+                                need_joy_config = true
+                if need_joy_config:
+                        # Force joystick config first; ConfigJoy.gd will route to
+                        # SelectPlayer automatically after both players are configured.
+                        GameManager.config_joy_player = 1
+                        GameManager.config_joy_step = 0
+                        GameManager.go_to_config_joy()
+                else:
+                        # Joystick already calibrated -> still force player selection
+                        # (mandatory per user requirement and C++ flow).
+                        GameManager.go_to_select_player()
 
 
 func _on_credits_requested() -> void:
@@ -531,8 +557,13 @@ func _unhandled_input(event: InputEvent) -> void:
                                 # Quit the game from the main menu.
                                 get_tree().quit()
 
-        # Joystick / controller hat motion (d-pad)
-        # Debounce: only trigger once per tilt (not every frame)
+        # FIX #2 (menu navigation broken with joystick):
+        # The previous implementation only listened to JOY_AXIS_LEFT_X/Y (the
+        # analog sticks) and JOY_BUTTON_A. Many arcade-style controllers and
+        # D-pads on Windows/Linux expose the D-pad as JOY_BUTTON_DPAD_UP/
+        # DOWN/LEFT/RIGHT (button indices 11..14) — these were silently ignored.
+        # We now also handle the D-pad as discrete buttons (matching what we
+        # added to project.godot's input map).
         elif event is InputEventJoypadMotion:
                 var ax: float = event.axis_value
                 if event.axis == JOY_AXIS_LEFT_Y:
@@ -549,11 +580,58 @@ func _unhandled_input(event: InputEvent) -> void:
                         elif ax > 0.5 and _joy_nav_cooldown <= 0:
                                 _change_option(1)
                                 _joy_nav_cooldown = 0.3
+                # Some controllers report the D-pad as a hat (axis 6 = X, 7 = Y).
+                # The values jump to ±1.0 instantly, so the same threshold works.
+                # We use numeric axis ids to stay portable across controller types.
+                elif event.axis == 6:  # Hat X (D-pad left/right on many pads)
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
+                                _change_option(-1)
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
+                                _change_option(1)
+                                _joy_nav_cooldown = 0.3
+                elif event.axis == 7:  # Hat Y (D-pad up/down on many pads)
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
+                                _move_selection(-1)
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
+                                _move_selection(1)
+                                _joy_nav_cooldown = 0.3
 
-        # Joystick button (confirm)
+        # Joystick button (confirm + D-pad as buttons)
         elif event is InputEventJoypadButton and event.pressed:
-                if event.button_index == JOY_BUTTON_A:
-                        _activate_current()
+                match event.button_index:
+                        JOY_BUTTON_A:
+                                # A button = confirm/activate (mirrors C++ confirm
+                                # which uses joy_jump or joy_shoot fallback)
+                                _activate_current()
+                        JOY_BUTTON_DPAD_UP:
+                                if _joy_nav_cooldown <= 0:
+                                        _move_selection(-1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_DPAD_DOWN:
+                                if _joy_nav_cooldown <= 0:
+                                        _move_selection(1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_DPAD_LEFT:
+                                if _joy_nav_cooldown <= 0:
+                                        _change_option(-1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_DPAD_RIGHT:
+                                if _joy_nav_cooldown <= 0:
+                                        _change_option(1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_START:
+                                # Start button = also confirm (mirrors C++ behavior)
+                                _activate_current()
+                        JOY_BUTTON_BACK:
+                                # Back/Select button = quit (matches ESC)
+                                get_tree().quit()
+                        JOY_BUTTON_B:
+                                # B button = toggle music on/off as a convenience
+                                _menu_item_index = 2
+                                _update_items_text()
+                                _change_option(1)
 
 
 # Move the selection cursor up/down by `delta` (-1 or +1), wrapping around.

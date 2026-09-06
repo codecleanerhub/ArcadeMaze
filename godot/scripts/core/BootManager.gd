@@ -88,20 +88,20 @@ func _setup_desktop(os_name: String) -> void:
                 win.size = screen_size
                 win.position = DisplayServer.screen_get_position(screen_id)
 
-        # 3. Switch to borderless fullscreen (MODE_WINDOWED_FULLSCREEN).
-        #    This is preferred over exclusive fullscreen (MODE_FULLSCREEN)
-        #    because:
-        #    - No resolution change flicker
-        #    - Faster Alt+Tab / multi-monitor switching
-        #    - Works reliably on all compositors (X11, Wayland, Windows, macOS)
+        # 3. Switch to exclusive fullscreen (matches project.godot mode=3).
+        #    We keep mode 3 (exclusive) because it matches the project setting;
+        #    it works on all platforms and the Godot GL Compatibility renderer
+        #    handles the resolution switch cleanly.
         DisplayServer.window_set_mode(DESKTOP_FULLSCREEN_MODE)
 
-        # 4. Ensure the stretch mode is canvas_items + expand so the UI
-        #    adapts to the actual screen aspect ratio (16:9, 16:10, 21:9, ...).
-        #    project.godot already sets this, but we re-apply defensively in
-        #    case some platform override changed it.
+        # 4. FIX #4 (fullscreen black bars): was CONTENT_SCALE_ASPECT_KEEP, which
+        #    letterboxed the 1024x1024 design space inside a 16:9 monitor with
+        #    black bars on the sides. EXPAND lets the canvas fill the whole
+        #    screen; the maze (21*48=1008 wide, 19*48=912 tall, +80px HUD bar)
+        #    stays inside the 1024x1024 design space and is centered by
+        #    MainGameController._recenter_play_area() at runtime.
         get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 
 
 ## Web (HTML5) setup: we can't force fullscreen, but we ensure the canvas
@@ -112,8 +112,10 @@ func _setup_desktop(os_name: String) -> void:
 func _setup_web() -> void:
         # On Web, the window is the browser canvas. We just make sure the
         # stretch mode is correct so the game scales cleanly.
+        # FIX #4: EXPAND (was KEEP) so the canvas fills the whole browser viewport
+        # without black bars; MainGameController centers the play area at runtime.
         get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
         # NOTE: To enter real fullscreen in the browser, the user must press
         # F11 (browser fullscreen) or click a button in-game. Godot's
         # DisplayServer.window_set_mode(MODE_FULLSCREEN) on Web requires a

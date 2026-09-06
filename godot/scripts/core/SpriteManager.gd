@@ -138,13 +138,22 @@ func _load_sheet(base_path: String, id: String) -> void:
         var sheet := Sheet.new()
         sheet.texture = tex
 
-        # Default size: 64x64 frames per originali, 256x256 per HD (singolo frame grande)
+        # Default size: 64x64 frames per originali, 64x64 (4x4 grid) per HD.
+        # FIX (graphics gap #2 — HD sprites treated as single 256x256 frame):
+        # The HD sheets are 256x256 RGBA and contain a TRUE 4x4 grid of 16
+        # distinct 64x64 frames (verified by inspecting boss_021_hd_sheet.png:
+        # the 4 quadrants are visually different images). The previous code
+        # treated the whole 256x256 as ONE giant frame, throwing away 15/16 of
+        # the pixel data and preventing HD sprites from animating. We now treat
+        # HD sheets as 4x4 = 16 frames, matching the asset pipeline intent and
+        # letting every HD creature animate through 4 idle / 4 walk / 4 attack
+        # / 4 death frames at no extra art cost.
         if is_hd:
-                # HD sheet: singola immagine 256x256 (1 frame grande ad alta risoluzione)
-                sheet.frame_w = 256
-                sheet.frame_h = 256
-                sheet.columns = 1
-                sheet.rows = 1
+                # HD sheet: 256x256 = 4 cols x 4 rows of 64x64 frames.
+                sheet.frame_w = 64
+                sheet.frame_h = 64
+                sheet.columns = 4
+                sheet.rows = 4
         else:
                 # Sheet originale 256x64 = 4 frame da 64x64
                 sheet.frame_w = 64
@@ -187,11 +196,18 @@ func _load_sheet(base_path: String, id: String) -> void:
                 sheet.animations["attack"] = {"row": 0, "frames": sheet.columns, "frameDuration": 90}
                 sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
         else:
-                # HD sheet: singolo frame 256x256, una sola animazione "idle" con 1 frame.
-                sheet.animations["idle"] = {"row": 0, "frames": 1, "frameDuration": 200}
-                sheet.animations["walk"] = {"row": 0, "frames": 1, "frameDuration": 200}
-                sheet.animations["attack"] = {"row": 0, "frames": 1, "frameDuration": 200}
-                sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 200}
+                # HD sheet (4x4 grid). Use the standard 4-row animation layout
+                # matching the C++ SpriteSheet convention (SpriteSheet.cpp:54):
+                #   row 0 = idle (4 frames)
+                #   row 1 = walk  (4 frames)
+                #   row 2 = attack (4 frames)
+                #   row 3 = death (4 frames)
+                # This finally realises the README's original 4-row spritesheet
+                # spec at HD resolution for all 106 HD creatures.
+                sheet.animations["idle"] = {"row": 0, "frames": 4, "frameDuration": 200}
+                sheet.animations["walk"] = {"row": 1, "frames": 4, "frameDuration": 120}
+                sheet.animations["attack"] = {"row": 2, "frames": 4, "frameDuration": 90}
+                sheet.animations["death"] = {"row": 3, "frames": 4, "frameDuration": 120}
 
         _sheets[id] = sheet
 

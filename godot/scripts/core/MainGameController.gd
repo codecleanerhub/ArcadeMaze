@@ -110,7 +110,14 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: 35ab8b3 - game controller ready")
+        print("[MainGameController] VERSION: engine/godot-engine-fixes - game controller ready")
+        # FIX #4 (fullscreen black bars): with aspect="expand", the actual
+        # viewport is wider than 1024x1024 on 16:9 monitors. The maze (1008
+        # wide) + HUD (80 tall) sit inside the 1024x1024 design space, so we
+        # center the whole MainGame scene horizontally inside the larger
+        # viewport. This eliminates the "play area only a portion, rest is
+        # black" effect the user reported.
+        _recenter_play_area()
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
         if SpriteManager:
@@ -138,6 +145,22 @@ func _ready() -> void:
                 add_child(vignette)
 
 
+# Center the play area (1024x1024 design space) horizontally inside the
+# actual viewport when the viewport is wider than 1024 (16:9 monitor with
+# aspect="expand"). Vertical centering is unnecessary because the HUD is at
+# the top and the maze fills the rest of the design height.
+func _recenter_play_area() -> void:
+        var viewport_size: Vector2 = get_viewport_rect().size
+        var design_w: float = float(C.WINDOW_WIDTH)
+        # If viewport is wider than design width, shift everything right by
+        # (viewport_w - design_w) / 2 so the play area is centered.
+        if viewport_size.x > design_w:
+                var offset_x: float = (viewport_size.x - design_w) * 0.5
+                position.x = offset_x
+        else:
+                position.x = 0.0
+
+
 func _physics_process(_delta: float) -> void:
         if is_paused:
                 return
@@ -154,9 +177,90 @@ func _physics_process(_delta: float) -> void:
 # Input handling
 # ============================================================================
 func _handle_input() -> void:
-        # P1 keyboard arrows (mutually exclusive, dominant axis wins)
+        # P1 input — keyboard OR joystick (joystick is read first if a pad is
+        # connected, then keyboard is layered on top so the user can mix).
+        # The C++ engine (Game.cpp:1417-1431) read both at once and picked the
+        # dominant axis (whichever had |value| > 30%). We mirror that here.
         var p1_dx: int = 0
         var p1_dy: int = 0
+
+        # FIX #5 (joystick doesn't move player):
+        # The previous code gated the joystick block behind
+        # `ConfigManager.p1_joystick_ready()` (which requires JOY_JUMP >= 0 AND
+        # JOY_SHOOT >= 0). The user could move the joystick but the player
+        # wouldn't move until they had ALSO gone through ConfigJoy to bind
+        # jump+shoot buttons. The C++ engine never gated MOVEMENT on button
+        # config — only jump/shoot buttons need to be configured. We now:
+        #   * Always read joystick axes when a pad is connected (movement works
+        #     out-of-the-box even without ConfigJoy).
+        #   * For jump/shoot, fall back to JOY_BUTTON_A / JOY_BUTTON_B if the
+        #     user hasn't configured custom bindings yet (so the game is
+        #     playable immediately).
+        var p1_joy_id: int = -1
+        var joy_pads: Array = Input.get_connected_joypads()
+        if joy_pads.size() > 0:
+                p1_joy_id = joy_pads[0]
+        if p1_joy_id >= 0:
+                # Read the configured axes (default 0=X, 1=Y) — same as C++.
+                var axis_x: float = Input.get_joy_axis(p1_joy_id, ConfigManager.joy_axis_x()) if ConfigManager else Input.get_joy_axis(p1_joy_id, 0)
+                var axis_y: float = Input.get_joy_axis(p1_joy_id, ConfigManager.joy_axis_y()) if ConfigManager else Input.get_joy_axis(p1_joy_id, 1)
+                # Deadzone 0.3 — mirrors C++ threshold fabs > 30/100.
+                if absf(axis_x) > 0.3 or absf(axis_y) > 0.3:
+                        # Dominant axis only — no diagonal movement (matches C++).
+                        if absf(axis_x) > absf(axis_y):
+                                p1_dx = 1 if axis_x > 0 else -1
+                                p1_dy = 0
+                        else:
+                                p1_dx = 0
+                                p1_dy = 1 if axis_y > 0 else -1
+                else:
+                        # D-pad as buttons fallback (some controllers expose the
+                        # D-pad as JOY_BUTTON_DPAD_* instead of axes 6/7).
+                        if Input.is_joy_button_pressed(p1_joy_id, JOY_BUTTON_DPAD_UP):
+                                p1_dy = -1
+                        elif Input.is_joy_button_pressed(p1_joy_id, JOY_BUTTON_DPAD_DOWN):
+                                p1_dy = 1
+                        elif Input.is_joy_button_pressed(p1_joy_id, JOY_BUTTON_DPAD_LEFT):
+                                p1_dx = -1
+                        elif Input.is_joy_button_pressed(p1_joy_id, JOY_BUTTON_DPAD_RIGHT):
+                                p1_dx = 1
+                        else:
+                                # Hat axes fallback (axes 6/7 on many PC controllers)
+                                var hat_x: float = Input.get_joy_axis(p1_joy_id, 6)
+                                var hat_y: float = Input.get_joy_axis(p1_joy_id, 7)
+                                if absf(hat_x) > 0.3 or absf(hat_y) > 0.3:
+                                        if absf(hat_x) > absf(hat_y):
+                                                p1_dx = 1 if hat_x > 0 else -1
+                                        else:
+                                                p1_dy = 1 if hat_y > 0 else -1
+
+                # Joystick buttons for shoot/jump. If ConfigJoy has been run,
+                # use the configured buttons. Otherwise fall back to the
+                # common Xbox/PlayStation layout: A=jump, B=shoot (matches the
+                # C++ fallback of "joy_jump if >=0 else 0" in some code paths).
+                var joy_jump_btn: int = ConfigManager.joy_jump() if ConfigManager else -1
+                var joy_shoot_btn: int = ConfigManager.joy_shoot() if ConfigManager else -1
+                if joy_jump_btn < 0:
+                        joy_jump_btn = JOY_BUTTON_A  # default: A button = jump
+                if joy_shoot_btn < 0:
+                        joy_shoot_btn = JOY_BUTTON_B  # default: B button = shoot
+                if Input.is_joy_button_pressed(p1_joy_id, joy_jump_btn):
+                        var was_jumping: bool = player.is_jumping()
+                        player.activate_jump()
+                        if not was_jumping and player.is_jumping() and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.JUMP)
+                if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
+                        var ammo_before: int = player.current_weapon.get("ammo", 0)
+                        player.shoot()
+                        var ammo_after: int = player.current_weapon.get("ammo", 0)
+                        if ammo_after < ammo_before and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.PISTOL)
+                        player.shoot_cooldown = 150
+
+        # Keyboard arrows (always work, even without joystick).
+        # Note: in C++ keyboard + joystick both contribute; whichever is
+        # pressed wins. We let keyboard OVERRIDE the joystick if the user is
+        # also pressing keys (common pattern when testing).
         if Input.is_action_pressed("move_up"):
                 p1_dy = -1
         elif Input.is_action_pressed("move_down"):
@@ -166,39 +270,9 @@ func _handle_input() -> void:
         elif Input.is_action_pressed("move_right"):
                 p1_dx = 1
 
-        # P1 joystick input (if configured)
-        if ConfigManager and ConfigManager.p1_joystick_ready():
-                var joy_pads: Array = Input.get_connected_joypads()
-                if joy_pads.size() > 0:
-                        var joy_id: int = joy_pads[0]
-                        var axis_x: float = Input.get_joy_axis(joy_id, ConfigManager.joy_axis_x())
-                        var axis_y: float = Input.get_joy_axis(joy_id, ConfigManager.joy_axis_y())
-                        if absf(axis_x) > 0.3 or absf(axis_y) > 0.3:
-                                if absf(axis_x) > absf(axis_y):
-                                        p1_dx = 1 if axis_x > 0 else -1
-                                        p1_dy = 0
-                                else:
-                                        p1_dx = 0
-                                        p1_dy = 1 if axis_y > 0 else -1
-                        # Joystick buttons for shoot/jump
-                        var joy_jump_btn: int = ConfigManager.joy_jump()
-                        var joy_shoot_btn: int = ConfigManager.joy_shoot()
-                        if joy_jump_btn >= 0 and Input.is_joy_button_pressed(joy_id, joy_jump_btn):
-                                var was_jumping: bool = player.is_jumping()
-                                player.activate_jump()
-                                if not was_jumping and player.is_jumping() and AudioManager:
-                                        AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                        if joy_shoot_btn >= 0 and Input.is_joy_button_pressed(joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
-                                var ammo_before: int = player.current_weapon.get("ammo", 0)
-                                player.shoot()
-                                var ammo_after: int = player.current_weapon.get("ammo", 0)
-                                if ammo_after < ammo_before and AudioManager:
-                                        AudioManager.play_sound(AudioManager.SoundType.PISTOL)
-                                player.shoot_cooldown = 150
-
         player.set_direction(p1_dx, p1_dy)
 
-        # P1 keyboard shoot (fallback if no joystick)
+        # P1 keyboard shoot (also works without joystick — matches C++ fallback)
         if Input.is_action_just_pressed("shoot") and player.shoot_cooldown == 0:
                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                 player.shoot()
@@ -207,7 +281,7 @@ func _handle_input() -> void:
                         AudioManager.play_sound(AudioManager.SoundType.PISTOL)
                 player.shoot_cooldown = 150
 
-        # P1 keyboard jump (fallback if no joystick)
+        # P1 keyboard jump (also works without joystick)
         if Input.is_action_just_pressed("jump"):
                 var was_jumping: bool = player.is_jumping()
                 player.activate_jump()
@@ -218,8 +292,7 @@ func _handle_input() -> void:
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 var p2_dx: int = 0
                 var p2_dy: int = 0
-                # P2 uses WASD via secondary input actions (fallback to arrows
-                # if no separate mapping exists - Godot Input map)
+                # P2 keyboard: WASD (mirrors C++ defaults W/S/A/D)
                 if Input.is_action_pressed("p2_up"):
                         p2_dy = -1
                 elif Input.is_action_pressed("p2_down"):
@@ -228,47 +301,65 @@ func _handle_input() -> void:
                         p2_dx = -1
                 elif Input.is_action_pressed("p2_right"):
                         p2_dx = 1
+                # P2 joystick input (always read when a 2nd pad is connected —
+                # same gating-fix logic as P1 above).
+                var p2_joy_id: int = -1
+                if joy_pads.size() > 1:
+                        p2_joy_id = joy_pads[1]
+                if p2_joy_id >= 0:
+                        var ax2_cfg: int = ConfigManager.joy2_axis_x() if ConfigManager else 0
+                        var ay2_cfg: int = ConfigManager.joy2_axis_y() if ConfigManager else 1
+                        var axis_x2: float = Input.get_joy_axis(p2_joy_id, ax2_cfg)
+                        var axis_y2: float = Input.get_joy_axis(p2_joy_id, ay2_cfg)
+                        if absf(axis_x2) > 0.3 or absf(axis_y2) > 0.3:
+                                if absf(axis_x2) > absf(axis_y2):
+                                        p2_dx = 1 if axis_x2 > 0 else -1
+                                        p2_dy = 0
+                                else:
+                                        p2_dx = 0
+                                        p2_dy = 1 if axis_y2 > 0 else -1
+                        else:
+                                if Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_UP):
+                                        p2_dy = -1
+                                elif Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_DOWN):
+                                        p2_dy = 1
+                                elif Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_LEFT):
+                                        p2_dx = -1
+                                elif Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_RIGHT):
+                                        p2_dx = 1
+                        # P2 jump/shoot buttons (configured or fallback to A/B)
+                        var j2_jump: int = ConfigManager.joy2_jump() if ConfigManager else -1
+                        var j2_shoot: int = ConfigManager.joy2_shoot() if ConfigManager else -1
+                        if j2_jump < 0:
+                                j2_jump = JOY_BUTTON_A
+                        if j2_shoot < 0:
+                                j2_shoot = JOY_BUTTON_B
+                        if Input.is_joy_button_pressed(p2_joy_id, j2_jump):
+                                player2.activate_jump()
+                        if Input.is_joy_button_pressed(p2_joy_id, j2_shoot) and player2.shoot_cooldown == 0:
+                                player2.shoot()
+                                player2.shoot_cooldown = 150
                 player2.set_direction(p2_dx, p2_dy)
                 if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
                         player2.shoot()
                         player2.shoot_cooldown = 150
                 if Input.is_action_just_pressed("p2_jump"):
                         player2.activate_jump()
-                # P2 joystick input (if configured)
-                if ConfigManager and ConfigManager.p2_joystick_ready():
-                        var joy_pads2: Array = Input.get_connected_joypads()
-                        if joy_pads2.size() > 1:
-                                var joy_id2: int = joy_pads2[1]
-                                var axis_x2: float = Input.get_joy_axis(joy_id2, ConfigManager.joy2_axis_x())
-                                var axis_y2: float = Input.get_joy_axis(joy_id2, ConfigManager.joy2_axis_y())
-                                if absf(axis_x2) > 0.3 or absf(axis_y2) > 0.3:
-                                        if absf(axis_x2) > absf(axis_y2):
-                                                p2_dx = 1 if axis_x2 > 0 else -1
-                                                p2_dy = 0
-                                        else:
-                                                p2_dx = 0
-                                                p2_dy = 1 if axis_y2 > 0 else -1
-                                var joy2_jump_btn: int = ConfigManager.joy2_jump()
-                                var joy2_shoot_btn: int = ConfigManager.joy2_shoot()
-                                if joy2_jump_btn >= 0 and Input.is_joy_button_pressed(joy_id2, joy2_jump_btn):
-                                        player2.activate_jump()
-                                if joy2_shoot_btn >= 0 and Input.is_joy_button_pressed(joy_id2, joy2_shoot_btn) and player2.shoot_cooldown == 0:
-                                        player2.shoot()
-                                        player2.shoot_cooldown = 150
 
-        # Pause toggle (P key)
+        # Pause toggle (P key or joystick Start button)
         if Input.is_action_just_pressed("pause"):
                 _toggle_pause()
 
-        # Test mode skip (Space)
+        # Test mode skip (Space) — mirrors C++ Game.cpp:2692-2714.
+        # In boss levels, instant-kills the boss. Otherwise advances 1 level.
         if GameManager and GameManager.test_mode_enabled:
                 var space_now: bool = Input.is_key_pressed(KEY_SPACE)
                 if space_now and not test_skip_key_held:
                         _test_mode_skip()
                 test_skip_key_held = space_now
 
-        # ESC: return to main menu (instead of forcing user to kill Godot)
-        if Input.is_key_pressed(KEY_ESCAPE):
+        # ESC: return to main menu. Use just_pressed to avoid repeat-fire.
+        if Input.is_action_just_pressed("ui_cancel") or Input.is_key_pressed(KEY_ESCAPE):
                 _return_to_menu()
 
 
@@ -1012,6 +1103,13 @@ func _fire_lightning_strike() -> void:
                 AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
         if EffectsManager:
                 EffectsManager.screen_shake(8.0, 0.3)
+        # FIX (graphics gap #8 — missing screen flash on lightning strike):
+        # C++ Game.cpp:8238-8247 had `screenFlashTimer = 200` (200ms white
+        # overlay, alpha 80→0) on every scepter lightning strike. The Godot
+        # port had the draw code (MainGameController.gd:1508) but never set
+        # screen_flash_timer_ms > 0. We now set it here so the full-screen
+        # white flash plays on every strike, matching the C++ feel.
+        screen_flash_timer_ms = 200
         # Damage all enemies near any lightning segment
         for enemy in spawner.enemies:
                 if enemy.is_dead():

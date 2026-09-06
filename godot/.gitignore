@@ -1,6 +1,7 @@
-# Godot 4 editor cache and import cache
+# Godot 4 editor cache (do NOT ignore *.import or *.uid files - they ARE
+# required to build the project; without them Godot 4.7 cannot resolve
+# resources at runtime, see "No loader found for resource" errors).
 .godot/
-*.godot.import
 
 # OS files
 .DS_Store

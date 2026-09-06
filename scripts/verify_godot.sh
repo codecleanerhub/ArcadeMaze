@@ -1,10 +1,25 @@
 #!/bin/bash
 # verify_godot.sh - Verifica tutti i file GDScript prima del push
 # Controlla: sintassi (gdparse), indentazione, riferimenti a file
+#
+# Requisiti:
+#   - gdparse (da `pip install gdtoolkit` o `npm install -g @gdparse/cli`)
+#   - Godot 4.7+ binario `godot` nel PATH (per test headless opzionali)
+#
+# Lo script cerca gdparse in PATH + /home/z/.local/bin (installazione pip user)
+# per robustezza tra ambienti.
 
 GODOT_DIR="/home/z/my-project/ArcadeMaze/godot"
-GDPARSE="/home/z/.local/bin/gdparse"
 ERRORS=0
+
+# Trova gdparse: PATH prima, fallback a /home/z/.local/bin
+GDPARSE="$(command -v gdparse 2>/dev/null || echo /home/z/.local/bin/gdparse)"
+if [ ! -x "$GDPARSE" ]; then
+  echo "WARN: gdparse non trovato in PATH né in /home/z/.local/bin"
+  echo "      Installa con: pip install gdtoolkit --break-system-packages"
+  echo "      (lo script userà godot --headless --check-only come fallback)"
+  GDPARSE=""
+fi
 
 echo "=== VERIFICA GODOT PROJECT ==="
 echo ""
@@ -13,14 +28,38 @@ echo ""
 echo "--- Sintassi GDScript ---"
 for f in $(find "$GODOT_DIR/scripts" -name "*.gd" | sort); do
   rel=${f#$GODOT_DIR/}
-  if $GDPARSE "$f" 2>/dev/null; then
-    echo "  OK: $rel"
+  if [ -n "$GDPARSE" ]; then
+    if $GDPARSE "$f" 2>/dev/null; then
+      echo "  OK: $rel"
+    else
+      echo "  FAIL: $rel"
+      $GDPARSE "$f" 2>&1 | head -5
+      ERRORS=$((ERRORS + 1))
+    fi
   else
-    echo "  FAIL: $rel"
-    $GDPARSE "$f" 2>&1 | head -5
-    ERRORS=$((ERRORS + 1))
+    # Fallback: gdparse non disponibile, salta la sintassi
+    echo "  SKIP: $rel (gdparse non installato)"
   fi
 done
+
+# 1b. Verifica runtime headless con godot 4.7+ (test vero che scopre
+#     Identifier-not-found, parse errors runtime, etc.)
+echo ""
+echo "--- Runtime headless (godot) ---"
+if command -v godot >/dev/null 2>&1; then
+  echo "  Eseguo godot --headless --quit per 30s..."
+  RUNTIME_OUT=$(timeout 30 godot --headless --quit --path "$GODOT_DIR" 2>&1)
+  RUNTIME_ERRS=$(echo "$RUNTIME_OUT" | rg -i 'SCRIPT ERROR|Parse Error|Compile Error|Identifier not found|Cannot infer' | head -20)
+  if [ -z "$RUNTIME_ERRS" ]; then
+    echo "  OK: runtime headless senza errori di script"
+  else
+    echo "  FAIL: errori runtime trovati:"
+    echo "$RUNTIME_ERRS" | sed 's/^/    /'
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  SKIP: godot non trovato nel PATH"
+fi
 
 # 2. Verifica scene .tscn
 echo ""
@@ -60,16 +99,18 @@ fi
 # 5. Verifica autoload esistono
 echo ""
 echo "--- Autoloads ---"
-grep '^\*' "$GODOT_DIR/project.godot" | while IFS='=' read -r name path; do
-  name=$(echo $name | tr -d '*' | tr -d ' ')
-  path=$(echo $path | tr -d '"' | tr -d ' ' | sed 's|res://||')
+# Each autoload line is `Name="*res://path/to/script.gd"`. Match lines whose
+# value contains `*res://` (the autoload marker) and split on the first `=`.
+while IFS='=' read -r name path; do
+  name=$(echo $name | tr -d ' ')
+  path=$(echo $path | tr -d '"' | tr -d ' ' | sed 's|^\*||' | sed 's|res://||')
   if [ -f "$GODOT_DIR/$path" ]; then
     echo "  OK: $name -> $path"
   else
     echo "  FAIL: $name -> $path (non trovato)"
     ERRORS=$((ERRORS + 1))
   fi
-done
+done < <(grep '"\*res://' "$GODOT_DIR/project.godot")
 
 echo ""
 echo "=== RISULTATO: $ERRORS errori ==="

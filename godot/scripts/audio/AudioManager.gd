@@ -289,8 +289,18 @@ static func noise_gen() -> float:
 # ----------------------------------------------------------------------------
 # Convert a list of float samples (in [-1, 1]) to a mono 16-bit PCM
 # AudioStreamWAV. Mirrors `loadFromSamples(samples, count, 1, SR)` in C++.
+#
+# IMPORTANT (fix bug audio #3 — sibilo continuo):
+#   SFX one-shot MUST NOT loop. In C++ AudioManager, sf::Sound::setLoop(false)
+#   was always applied to SFX voices. In the previous Godot port, every stream
+#   (including SFX) was created with LOOP_FORWARD, so each SFX trigger laid
+#   down a permanently looping blip. After ~30 menu moves, all 30 SFX voices
+#   were looping the same 880 Hz pulse wave on top of the menu music,
+#   producing the "continuous whistle" the user reported.
+#   Now: SFX streams default to LOOP_DISABLED; only the music path passes
+#   loop=true (and _play_music_track already toggles loop_mode correctly).
 # ----------------------------------------------------------------------------
-func _samples_to_stream(samples: PackedFloat32Array) -> AudioStreamWAV:
+func _samples_to_stream(samples: PackedFloat32Array, loop: bool = false) -> AudioStreamWAV:
         var bytes := PackedByteArray()
         bytes.resize(samples.size() * 2)
         var i: int = 0
@@ -314,7 +324,8 @@ func _samples_to_stream(samples: PackedFloat32Array) -> AudioStreamWAV:
         stream.mix_rate = SR
         stream.stereo = false
         stream.data = bytes
-        stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+        # SFX must be one-shot (loop=false). Music tracks set loop=true.
+        stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
         stream.loop_begin = 0
         stream.loop_end = samples.size()
         return stream

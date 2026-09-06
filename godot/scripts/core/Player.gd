@@ -270,9 +270,16 @@ func set_character(ct: int, p_num: int) -> void:
 
 
 # Load the sprite for the current character_type from
-# assets/sprites/<base>_sheet.png. The sheet is 256x64 (4 frames of 64x64).
-# We create an AtlasTexture so only the current animation frame is shown,
-# and update it each frame in _update_sprite() based on anim_time.
+# assets/sprites/<base>_sheet.png. The main sheet is 256x64 (4 frames of 64x64).
+# FIX (graphics gap #1 — per-frame walk/jump sheets were unused dead assets):
+# The C++ engine (Player.cpp:132-139) loaded SIX sheets per character:
+#   <base>_sheet.png, <base>_walk0..3_sheet.png, <base>_jump_sheet.png.
+# Each sheet is a single 64x64 frame; the engine picked the right sheet per
+# animation state (idle/walk0..3/jump). The previous Godot port only loaded
+# the main sheet and used the 4 frames inside it as a walk cycle (frame 3
+# doubling as the jump pose). The 48 dedicated walk/jump PNGs were dead weight.
+# We now load all 6 sheets and pick the right one per state, recovering the
+# per-frame art the asset pipeline already ships.
 func load_character_sprite() -> void:
         var base: String = CHARACTER_SPRITE_BASE.get(character_type, CHARACTER_SPRITE_BASE[CharacterType.HERO_M])
         var path := base + "_sheet.png"
@@ -285,7 +292,28 @@ func load_character_sprite() -> void:
                         _character_sheet_path = base
                         sprite.modulate = tint
                         sprite.flip_h = false
-                        # Initial frame (idle = frame 0)
+                        # Pre-load the dedicated per-frame sheets. Each is a
+                        # 64x64 single-frame PNG. Missing files are silently
+                        # skipped — we fall back to the main sheet frames.
+                        _walk_sheet_textures.resize(4)
+                        for i in 4:
+                                var walk_path := base + "_walk%d_sheet.png" % i
+                                if ResourceLoader.exists(walk_path):
+                                        var walk_tex := load(walk_path)
+                                        if walk_tex is Texture2D:
+                                                _walk_sheet_textures[i] = walk_tex
+                                else:
+                                        _walk_sheet_textures[i] = null
+                        var jump_path := base + "_jump_sheet.png"
+                        if ResourceLoader.exists(jump_path):
+                                var jump_tex := load(jump_path)
+                                if jump_tex is Texture2D:
+                                        _jump_sheet_texture = jump_tex
+                                else:
+                                        _jump_sheet_texture = null
+                        else:
+                                _jump_sheet_texture = null
+                        # Initial frame (idle = main sheet frame 0)
                         _apply_character_frame(0)
                         sprite_loaded = true
                         # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
@@ -298,7 +326,9 @@ func load_character_sprite() -> void:
 
 
 # Apply a specific frame index from the character sheet to the Sprite2D.
-# The sheet is 256x64 = 4 frames of 64x64.
+# The main sheet is 256x64 = 4 frames of 64x64.
+# When a dedicated per-frame sheet exists for the requested state (walk/jump),
+# we use it directly (it's already a 64x64 single-frame texture).
 func _apply_character_frame(frame_idx: int) -> void:
         if _character_sheet_texture == null or sprite == null:
                 return
@@ -312,9 +342,23 @@ func _apply_character_frame(frame_idx: int) -> void:
         sprite.texture = at
 
 
+# Apply a dedicated single-frame texture (walk0..3 or jump) directly to the
+# Sprite2D. Used by _update_sprite() when the dedicated sheet exists.
+func _apply_character_dedicated_texture(tex: Texture2D) -> void:
+        if tex == null or sprite == null:
+                return
+        sprite.texture = tex
+
+
 var _character_sheet_texture: Texture2D = null
 var _character_sheet_path: String = ""
 var sprite_loaded: bool = false
+# Dedicated per-frame sheets (loaded once at character-switch time).
+# walk0..3 = walk cycle; jump = jump pose. Each is a single 64x64 frame.
+# Any entry that's null means the dedicated sheet wasn't found on disk; we
+# fall back to the main 4-frame sheet (_apply_character_frame).
+var _walk_sheet_textures: Array = [null, null, null, null]
+var _jump_sheet_texture: Texture2D = null
 
 # Fire-aura spritesheet (effect_fireaura, 6x4 frames of 64x64, anchor 32,32).
 # Loaded via SpriteManager in _ready() and used in _draw() while the chalice
@@ -732,30 +776,31 @@ func _update_sprite() -> void:
                 sprite.flip_h = not _last_flipped
 
         # --- Animation frame selection ---
-        # 4-frame sheet: frame 0 = idle, 1-3 = walk cycle.
-        # When jumping, use frame 3 (or a dedicated jump sheet if available).
-        var frame_idx: int = 0
+        # FIX (graphics gap #1): prefer the dedicated per-frame sheets that the
+        # asset pipeline ships (player1_walk0..3_sheet.png, _jump_sheet.png).
+        # Each is a single 64x64 PNG already cropped to the right pose. We fall
+        # back to the main 4-frame sheet's atlas if a dedicated sheet is missing.
         if is_jumping():
-                frame_idx = 3
+                if _jump_sheet_texture != null:
+                        _apply_character_dedicated_texture(_jump_sheet_texture)
+                else:
+                        _apply_character_frame(3)  # fallback: jump pose on main sheet
         elif shoot_anim_timer > 0:
-                # Attack animation: use attack frames if available.
-                # NOTE: the standard 4-frame sheet (player1_sheet.png etc.)
-                # only encodes walk/idle, so for now we fall back to frame 3
-                # (jump pose) which visually reads as an "arm-up" attack pose.
-                # TODO: load the dedicated attack sheets that exist in
-                # assets/sprites/ (player1_walk0_sheet.png, _walk1_, _walk2_,
-                # _walk3_, _jump_) and switch to a proper attack frameset
-                # (e.g. player1_attack0_sheet.png.._attack3_) so the muzzle
-                # flash + recoil is shown with the correct arm position.
-                frame_idx = 3
+                # Attack: there's no dedicated attack sheet shipped yet, so we
+                # use the main sheet's frame 3 (jump/arm-up pose) which reads
+                # as an attack recoil. When _attack0..3_sheet.png files are
+                # eventually added to the asset pipeline, swap them in here.
+                _apply_character_frame(3)
         elif dx != 0 or dy != 0:
-                # Walking: cycle frames 0-3 at ~8 FPS
+                # Walking: cycle frames 0-3 at ~8 FPS (130ms/frame, matching C++).
                 var walk_frame: int = int(anim_time / 130.0) % 4
-                frame_idx = walk_frame
+                if _walk_sheet_textures.size() == 4 and _walk_sheet_textures[walk_frame] != null:
+                        _apply_character_dedicated_texture(_walk_sheet_textures[walk_frame])
+                else:
+                        _apply_character_frame(walk_frame)
         else:
-                # Idle: frame 0 with slight breathing (optional: 2-frame cycle)
-                frame_idx = 0
-        _apply_character_frame(frame_idx)
+                # Idle: frame 0 of the main sheet.
+                _apply_character_frame(0)
 
         # Apply jump arc as a vertical offset (sprite only, not the Node2D).
         # In C++ the sprite is drawn at pos.y + 24 - jumpOffset; here we shift
