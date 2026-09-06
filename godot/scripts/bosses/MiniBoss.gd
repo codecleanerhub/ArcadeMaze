@@ -603,7 +603,10 @@ func _draw_with_sprite() -> void:
 
         # --- Fallback: AtlasTexture frame cycling (when SD sheet can't load) ---
         # FIX (gif scollegata): forziamo SD sheet come per Enemy.
-        var active_sheet := sprite_sheet
+        # FIX (parse error): sprite_sheet è untyped (var sprite_sheet = null),
+        # quindi `var active_sheet := sprite_sheet` non può inferire il tipo.
+        # Usiamo tipo esplicito Variant per evitare l'errore di type inference.
+        var active_sheet: Variant = sprite_sheet
         if sprite_sheet != null and sprite_sheet.rows == 4 and sprite_sheet.columns == 4:
                 # HD sheet → cerca SD
                 if _sd_sheet == null:

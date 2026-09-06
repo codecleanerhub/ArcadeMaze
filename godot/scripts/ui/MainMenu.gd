@@ -721,8 +721,10 @@ func _refresh_layout_after_resize() -> void:
         # Re-apply the same to the background TextureRect if present.
         if _bg != null:
                 _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-        # Force a layout pass + redraw.
-        queue_sort()
+        # FIX (parse error): Control non ha queue_sort(). Per forzare il
+        # layout update, usiamo update_minimum_size() + queue_redraw().
+        # NOTIFICATION_RESORTED è interno e non va chiamato direttamente.
+        update_minimum_size()
         queue_redraw()
 
 
