@@ -99,45 +99,36 @@ func _process(delta: float) -> void:
                         elif diff < 0:
                                 wheel_index = (wheel_index - 1 + CHARACTER_COUNT) % CHARACTER_COUNT
 
-        # Input: keyboard arrows
-        if Input.is_action_just_pressed("move_left"):
-                wheel_target = (wheel_target + 1) % CHARACTER_COUNT
-                if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
-        elif Input.is_action_just_pressed("move_right"):
-                wheel_target = (wheel_target - 1 + CHARACTER_COUNT) % CHARACTER_COUNT
-                if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
-        elif Input.is_action_just_pressed("confirm"):
-                if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
-                player_selected.emit(wheel_index, player_num)
-
-        # Input: joystick (debounced)
-        var joy_pads: Array = Input.get_connected_joypads()
-        if joy_pads.size() > 0:
-                var jid: int = joy_pads[0]
-                var axis_x: float = Input.get_joy_axis(jid, 0)
-                if absf(axis_x) > 0.5 and _joy_nav_cooldown <= 0:
-                        if axis_x > 0:
-                                wheel_target = (wheel_target - 1 + CHARACTER_COUNT) % CHARACTER_COUNT
-                        else:
-                                wheel_target = (wheel_target + 1) % CHARACTER_COUNT
-                        _joy_nav_cooldown = 0.3
-                        if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
-                var btn_a: bool = Input.is_joy_button_pressed(jid, 0)
-                if btn_a and _joy_confirm_cooldown <= 0:
-                        _joy_confirm_cooldown = 0.5
-                        if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
-                        player_selected.emit(wheel_index, player_num)
-
-        # Decrement cooldowns
+        # FIX (joystick skips 2 per move):
+        # Previously, BOTH `is_action_just_pressed("move_left")` (which now
+        # triggers for JoypadMotion too, thanks to the input map bindings we
+        # added in project.godot) AND the raw `Input.get_joy_axis(jid, 0)` block
+        # below were firing on the same joystick tilt → 2 increments per move.
+        # The raw joystick block is now redundant: the input map already maps
+        # left-stick X and D-pad left/right to move_left/move_right, and A/Start
+        # to confirm. We just keep a short debounce so a single tilt doesn't
+        # re-trigger the very next frame (the action-just-pressed edge already
+        # handles this, but a defensive cooldown doesn't hurt).
         if _joy_nav_cooldown > 0:
                 _joy_nav_cooldown -= delta
         if _joy_confirm_cooldown > 0:
                 _joy_confirm_cooldown -= delta
+
+        if Input.is_action_just_pressed("move_left"):
+                wheel_target = (wheel_target + 1) % CHARACTER_COUNT
+                _joy_nav_cooldown = 0.3
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+        elif Input.is_action_just_pressed("move_right"):
+                wheel_target = (wheel_target - 1 + CHARACTER_COUNT) % CHARACTER_COUNT
+                _joy_nav_cooldown = 0.3
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+        elif Input.is_action_just_pressed("confirm"):
+                _joy_confirm_cooldown = 0.5
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+                player_selected.emit(wheel_index, player_num)
 
         queue_redraw()
 

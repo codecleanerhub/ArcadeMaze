@@ -3,10 +3,11 @@ extends Control
 # ConfigJoy.gd - Configurazione joystick (2 step per player)
 # Porting di Game.cpp STATE_CONFIG_JOY / STATE_CONFIG_JOY_2
 #
-# Background: now uses the same procedural crypt/ruderi/fantasy background
-# as SelectPlayer (via EnvironmentArt.draw_crypt_background). The flat dark
-# ColorRect that was previously the only background has been removed in
-# favour of a unified menu visual style.
+# Background: uses the same AI-generated crypt/ruderi image as SelectPlayer
+# (bg_select_player.png) for visual consistency across the menu chain. The
+# procedural crypt (EnvironmentArt.draw_crypt_background) is kept as a
+# fallback if the AI image is missing. A subtle dark overlay ensures the
+# label text stays readable on top of the busy art.
 
 signal config_finished
 
@@ -14,6 +15,9 @@ var step: int = 0  # 0 = jump button, 1 = shoot button
 var player_num: int = 1
 var wait_for_release: bool = false
 var _anim_time: float = 0.0  # for animated background elements (torches, fog)
+# AI-generated background texture (loaded once). Same image as SelectPlayer
+# so the menu chain (MainMenu → ConfigJoy → SelectPlayer) feels cohesive.
+var _bg_texture: Texture2D = null
 
 @onready var step_label: Label = $StepLabel
 @onready var player_label: Label = $PlayerLabel
@@ -25,6 +29,10 @@ func _ready() -> void:
                 step = 0 if GameManager.config_joy_step == 0 else 1
         player_label.text = "PLAYER " + str(player_num)
         _update_step()
+        # Preload the AI-generated crypt/ruderi background (same as SelectPlayer).
+        var bg_path := "res://assets/backgrounds/bg_select_player.png"
+        if ResourceLoader.exists(bg_path):
+                _bg_texture = load(bg_path) as Texture2D
         # Self-wire: when config finishes, go back to menu.
         config_finished.connect(_on_config_finished)
 
@@ -113,10 +121,31 @@ func _process(delta: float) -> void:
                                 return
 
 
-# Draw the procedural crypt/ruderi background (shared with SelectPlayer).
+# Draw the background. Uses the same AI crypt/ruderi image as SelectPlayer
+# for visual consistency; falls back to the procedural crypt if the AI image
+# is missing. A subtle dark overlay keeps the label text legible.
 func _draw() -> void:
         var vp_size: Vector2 = size
-        if EnvironmentArt:
+        # Defensive fallback: if the Control root hasn't resolved its anchors
+        # yet (size == 0), use the viewport size directly so the background
+        # is always drawn covering the full screen.
+        if vp_size.x < 1.0 or vp_size.y < 1.0:
+                vp_size = get_viewport_rect().size
+        if _bg_texture != null:
+                # Cover-fit math (same as SelectPlayer/WinScreen/LoseScreen):
+                # scale = max(vp/tex) so the entire viewport is filled with no
+                # black bars, and center the draw rect.
+                var tex_size: Vector2 = _bg_texture.get_size()
+                var scale_x: float = vp_size.x / tex_size.x
+                var scale_y: float = vp_size.y / tex_size.y
+                var bg_scale: float = maxf(scale_x, scale_y)
+                var draw_size: Vector2 = tex_size * bg_scale
+                var draw_pos: Vector2 = (vp_size - draw_size) * 0.5
+                draw_texture_rect(_bg_texture, Rect2(draw_pos, draw_size), false)
+        elif EnvironmentArt:
+                # Fallback: procedural crypt background (if AI image missing)
                 EnvironmentArt.draw_crypt_background(self, vp_size, _anim_time)
-        # Dark overlay so the labels stand out
-        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.45), true)
+        # Subtle dark overlay (25%) so the labels stand out without crushing
+        # the rich crypt detail. Previous value was 0.45 which made the
+        # already-dark gradient nearly invisible.
+        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)
