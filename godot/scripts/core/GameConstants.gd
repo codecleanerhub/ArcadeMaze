@@ -20,14 +20,16 @@ class_name GameConstants
 # ============================================================================
 # 1. WINDOW / GRID DIMENSIONS  (from Utils.h)
 # ============================================================================
-# The logical window is square 1024x1024. The maze occupies a 21x19 grid of
-# 48px tiles. 21*48 = 1008 (<=1024) and 19*48 = 912 (<= 1024-80). The 80px UI
-# bar sits at the top.
-const WINDOW_WIDTH: int = 1024
-const WINDOW_HEIGHT: int = 1024
+# FIX (labirinto esteso a tutto schermo): design space portato a 1920x1080
+# (16:9) per corrispondere al viewport di project.godot. Maze esteso a
+# 40 colonne x 20 righe (= 1920x960 px) con UI bar di 80px sopra.
+# TILE_SIZE resta 48px (compatibile con tutti gli sprite 64x64 scalati a 40
+# per i nemici, e con il rendering procedurale del maze).
+const WINDOW_WIDTH: int = 1920
+const WINDOW_HEIGHT: int = 1080
 const TILE_SIZE: int = 48
-const MAZE_COLS: int = 21
-const MAZE_ROWS: int = 19
+const MAZE_COLS: int = 40
+const MAZE_ROWS: int = 20
 const UI_HEIGHT: int = 80
 
 # ============================================================================

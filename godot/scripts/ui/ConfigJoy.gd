@@ -67,13 +67,22 @@ func _process(delta: float) -> void:
                 config_finished.emit()
                 return
         
-        # Scansiona tutti i pulsanti di tutti i joystick
+        # FIX (configurati tasti sbagliati): il polling diretto con
+        # Input.is_joy_button_pressed parte sempre da btn=0 e rileva il primo
+        # tasto premuto. Se l'utente tiene premuto X (es. button 2) mentre
+        # preme Y (button 3) per il secondo step, il loop rileva X PRIMA di Y
+        # perché btn=2 < btn=3. Inoltre alcuni controller inviano eventi
+        # "ghost" su button 0 o 1 quando altri vengono premuti.
+        # Usiamo _unhandled_input con InputEventJoypadButton che fornisce il
+        # button_index ESATTO dell'evento appena verificatosi, non un polling.
+        # La logica wait_for_release è gestita qui: aspettiamo che TUTTI i
+        # pulsanti siano rilasciati prima di accettare un nuovo evento.
         if wait_for_release:
                 # Aspetta che tutti i pulsanti siano rilasciati
                 var any_pressed := false
                 for jid in range(8):
                         if Input.is_joy_known(jid):
-                                for btn in range(min(128, 128)):
+                                for btn in range(128):
                                         if Input.is_joy_button_pressed(jid, btn):
                                                 any_pressed = true
                                                 break
@@ -82,47 +91,68 @@ func _process(delta: float) -> void:
                 if not any_pressed:
                         wait_for_release = false
                 return
-        
-        # Cerca pulsante premuto
-        for jid in range(8):
-                if not Input.is_joy_known(jid):
-                        continue
-                var max_btns: int = 128
-                if max_btns > 128:
-                        max_btns = 128
-                for btn in range(max_btns):
-                        if Input.is_joy_button_pressed(jid, btn):
-                                AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
-                                match step:
-                                        0:
-                                                # Salva jump button
-                                                if player_num == 1:
-                                                        ConfigManager.config.joy_jump = btn
-                                                else:
-                                                        ConfigManager.config.joy2_jump = btn
-                                                        ConfigManager.config.joy2_id = jid
-                                                step = 1
-                                                _update_step()
-                                                wait_for_release = true
-                                        1:
-                                                # Salva shoot button
-                                                if player_num == 1:
-                                                        ConfigManager.config.joy_shoot = btn
-                                                        ConfigManager.save_config()
-                                                        if GameManager.num_players == 2:
-                                                                player_num = 2
-                                                                step = 0
-                                                                player_label.text = "PLAYER 2"
-                                                                _update_step()
-                                                                wait_for_release = true
-                                                        else:
-                                                                config_finished.emit()
-                                                else:
-                                                        ConfigManager.config.joy2_shoot = btn
-                                                        ConfigManager.save_config()
-                                                        config_finished.emit()
-                                                wait_for_release = true
+
+
+# Input event handler: riceve l'evento del joystick ESATTO appena premuto,
+# non un polling. Questo evita il bug dove il tasto sbagliato viene
+# registrato perché il polling parte da btn=0.
+func _unhandled_input(event: InputEvent) -> void:
+        if not (event is InputEventJoypadButton):
+                return
+        if not event.pressed or event.echo:
+                return
+        # Se siamo in attesa di release, ignora qualsiasi pressione.
+        if wait_for_release:
+                return
+        var jid: int = event.device
+        var btn: int = event.button_index
+        # Salta i tasti "virtuali" che alcuni controller inviano (es. il
+        # guide button o combo keys che non dovrebbero essere mappati).
+        # Permettiamo btn 0..15 (standard Xbox/PS layout: A/B/X/Y/LB/RB/
+        # Back/Start/LStick/RStick/DPad×4/Touchpad).
+        if btn < 0 or btn > 15:
+                return
+        AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+        match step:
+                0:
+                        # Jump button
+                        if player_num == 1:
+                                ConfigManager.config.joy_jump = btn
+                                print("[ConfigJoy] P1 jump button = ", btn)
+                        else:
+                                ConfigManager.config.joy2_jump = btn
+                                ConfigManager.config.joy2_id = jid
+                                print("[ConfigJoy] P2 jump button = ", btn, " on joy_id ", jid)
+                        step = 1
+                        _update_step()
+                        wait_for_release = true
+                1:
+                        # Shoot button — assicuriamoci che sia diverso da jump
+                        # (lo stesso tasto non può essere sia jump che shoot).
+                        var jump_btn: int = ConfigManager.config.joy_jump if player_num == 1 else ConfigManager.config.joy2_jump
+                        if btn == jump_btn:
+                                # Stesso tasto: ignora e aspetta un altro
+                                print("[ConfigJoy] same button as jump, ignoring")
                                 return
+                        if player_num == 1:
+                                ConfigManager.config.joy_shoot = btn
+                                print("[ConfigJoy] P1 shoot button = ", btn)
+                                ConfigManager.save_config()
+                                if GameManager.num_players == 2:
+                                        player_num = 2
+                                        step = 0
+                                        player_label.text = "PLAYER 2"
+                                        _update_step()
+                                        wait_for_release = true
+                                else:
+                                        config_finished.emit()
+                        else:
+                                ConfigManager.config.joy2_shoot = btn
+                                print("[ConfigJoy] P2 shoot button = ", btn)
+                                ConfigManager.save_config()
+                                config_finished.emit()
+                        wait_for_release = true
+        get_viewport().set_input_as_handled()
 
 
 # Draw the background. Uses the same AI crypt/ruderi image as SelectPlayer

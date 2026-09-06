@@ -163,16 +163,12 @@ func _ready() -> void:
         # SpriteSheet load in Game::drawFireAura 3789-3794).
         if SpriteManager:
                 _fire_aura_sheet = SpriteManager.get_sheet("effect_fireaura")
-        # Aggiungi PointLight2D (aura del player) - vantaggio Godot, non in C++
-        if EffectsManager:
-                var aura := EffectsManager.create_light(
-                        Vector2.ZERO,
-                        Color(1.0, 0.9, 0.6, 1.0),
-                        0.8,  # energy
-                        80.0  # radius
-                )
-                aura.name = "AuraLight"
-                add_child(aura)
+        # FIX (pallina gialla intermittente sotto il player): il PointLight2D
+        # AuraLight creato qui era una luce gialla che pulsava sotto il player
+        # e copriva quasi tutto lo sprite. L'utente lo ha segnalato come bug.
+        # Rimuoviamo il PointLight2D — l'aura del player viene disegnata
+        # proceduralmente solo quando è invincibile (chalice effect, vedi
+        # _draw_fire_aura) e non come luce ambientale permanente.
         # FIX: la Camera2D viene ora creata da MainGameController._setup_camera
         # e aggiunta al Window root (NON come figlia del MainGame scalato né
         # del player). Questo evita che la camera erediti trasformazioni di
@@ -827,38 +823,42 @@ func _draw() -> void:
                                 # Draw as elongated beam with circles along direction
                                 for i in 7:
                                         var offset: Vector2 = dir * (i - 3) * 2
-                                        draw_circle(local_pos + offset, 1.5, col)
+                                        draw_circle(local_pos + offset, 1.0, col)
                         WeaponType.SHOTGUN:
                                 # Shotgun: 3 small pellets perpendicular to direction
                                 var dir: Vector2 = proj.get("dir", Vector2(1, 0))
                                 var perp: Vector2 = Vector2(-dir.y, dir.x)
-                                draw_circle(local_pos + perp * 3, 2.0, col)
-                                draw_circle(local_pos, 2.5, col)
-                                draw_circle(local_pos - perp * 3, 2.0, col)
+                                draw_circle(local_pos + perp * 2, 1.5, col)
+                                draw_circle(local_pos, 2.0, col)
+                                draw_circle(local_pos - perp * 2, 1.5, col)
                         WeaponType.ROCKET:
                                 # Rocket: body + tip + trail
                                 var dir: Vector2 = proj.get("dir", Vector2(1, 0))
                                 # Trail
-                                draw_circle(local_pos - dir * 8, 3.0, Color(1, 0.4, 0.1, 0.5))
-                                draw_circle(local_pos - dir * 12, 2.0, Color(1, 0.3, 0.1, 0.3))
+                                draw_circle(local_pos - dir * 6, 2.0, Color(1, 0.4, 0.1, 0.5))
+                                draw_circle(local_pos - dir * 9, 1.5, Color(1, 0.3, 0.1, 0.3))
                                 # Body
-                                draw_circle(local_pos, 5.0, col)
-                                draw_circle(local_pos, 4.0, Color(0.6, 0.3, 0.1))
+                                draw_circle(local_pos, 3.5, col)
+                                draw_circle(local_pos, 2.5, Color(0.6, 0.3, 0.1))
                                 # Tip
-                                draw_circle(local_pos + dir * 4, 3.0, Color(1, 0.9, 0.4))
+                                draw_circle(local_pos + dir * 3, 2.0, Color(1, 0.9, 0.4))
                         _:
-                                # Pistol: simple glowing yellow ball
-                                draw_circle(local_pos, 5.0, col)
-                                draw_circle(local_pos, 3.0, Color(col.r, col.g, col.b, 1.0))
+                                # Pistol: small red fire bullet (was: huge yellow ball).
+                                # FIX (pallino giallo troppo grande e giallo):
+                                # era draw_circle(local_pos, 5.0, yellow) → ora 2px rosso.
+                                draw_circle(local_pos, 2.0, col)
+                                draw_circle(local_pos, 1.0, Color(1.0, 1.0, 0.8, 1.0))
 
-        # Draw muzzle flash if shoot animation is playing
+        # Draw muzzle flash if shoot animation is playing.
+        # FIX (muzzle flash troppo grande e giallo): era 8px+5px giallo,
+        # ora 3px+2px rosso/arancio (più realistico).
         if shoot_anim_timer > 0:
                 var flash_dir: Vector2 = Vector2(last_dx, last_dy)
                 if flash_dir == Vector2.ZERO:
                         flash_dir = Vector2(1, 0)
-                var flash_pos: Vector2 = flash_dir * 24.0
-                draw_circle(flash_pos, 8.0, Color(1.0, 0.9, 0.3, 0.8))
-                draw_circle(flash_pos, 5.0, Color(1.0, 1.0, 0.5, 1.0))
+                var flash_pos: Vector2 = flash_dir * 18.0
+                draw_circle(flash_pos, 3.0, Color(1.0, 0.3, 0.1, 0.9))
+                draw_circle(flash_pos, 1.5, Color(1.0, 0.9, 0.5, 1.0))
 
         # Draw invincibility aura (chalice effect) - detailed fire aura:
         # spritesheet + 3 glow circles + 12 procedural flames + 8 sparks +
@@ -881,7 +881,7 @@ func _draw() -> void:
 func _projectile_color(w_type: int) -> Color:
         match w_type:
                 WeaponType.PISTOL:
-                        return Color(1.0, 1.0, 0.6)  # yellow
+                        return Color(1.0, 0.25, 0.1)  # red fire (was yellow)
                 WeaponType.SHOTGUN:
                         return Color(1.0, 0.5, 0.2)  # orange
                 WeaponType.ROCKET:

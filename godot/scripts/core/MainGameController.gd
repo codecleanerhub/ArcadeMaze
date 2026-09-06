@@ -111,6 +111,14 @@ const FRAME_MS: float = 1000.0 / 60.0
 # ============================================================================
 func _ready() -> void:
         print("[MainGameController] VERSION: engine/godot-engine-fixes-v3 - game controller ready")
+        # FIX (pause P non toggle): quando get_tree().paused = true, _physics_process
+        # non gira più → is_action_just_pressed("pause") non viene rilevato per
+        # togliere la pausa. Impostando process_mode = PROCESS_MODE_ALWAYS il nodo
+        # continua a processare input anche con il game tree in pausa.
+        process_mode = Node.PROCESS_MODE_ALWAYS
+        # FIX (no sfondo esterno necessario): il design space è ora 1920x1080
+        # (= viewport), il maze riempie tutto lo schermo. Niente più background
+        # cripta esterno. La camera è zoom 1:1 centrata sul design space.
         # FIX (maze decentrato in basso a destra):
         # L'approccio precedente scalava il MainGame root Node2D, ma il Camera2D
         # creato in Player.gd veniva aggiunto come figlio di scene_root (che È
@@ -120,14 +128,10 @@ func _ready() -> void:
         #   1. MainGame root resta a scale (1,1) e position (0,0) — nessuna
         #      trasformazione ereditata dai figli.
         #   2. Una Camera2D indipendente (aggiunta al Window root, NON al
-        #      MainGame) con zoom = 1080/1024 = 1.0547 e position = (512, 512)
-        #      (centro del design space) → il maze 1024×1024 riempie tutta
-        #      l'altezza dello schermo 1920×1080, centrato orizzontalmente.
-        #   3. Background crypt via CanvasLayer a layer -1 (dietro tutto,
-        #      non influenzato dalla camera).
+        #      MainGame) con zoom = 1:1 e position = (960, 540) (centro del
+        #      design space 1920x1080) → il maze riempie tutto lo schermo.
         # Il MainGame root NON viene scalato; è la camera che "zooma" sul
-        # design space 1024×1024.
-        _create_background_layer()
+        # design space.
         _setup_camera()
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
@@ -181,9 +185,10 @@ func _create_background_layer() -> void:
         get_tree().root.add_child(_bg_canvas)
 
 
-# Setup a Camera2D that zooms into the 1024x1024 design space to fill the
-# 1920x1080 viewport. The camera is added to the Window root (NOT to the
-# MainGame node) so it doesn't inherit any transform from the game scene.
+# Setup a Camera2D for the play area. With the design space now at 1920x1080
+# (matching the viewport), the camera uses zoom = 1:1 and is positioned at
+# (960, 540) = center of the design space. The camera is added to the Window
+# root (NOT to the MainGame node) so it doesn't inherit any transform.
 var _game_camera: Camera2D = null
 func _setup_camera() -> void:
         if _game_camera != null:
@@ -191,25 +196,11 @@ func _setup_camera() -> void:
         _game_camera = Camera2D.new()
         _game_camera.name = "GameCamera"
         _game_camera.enabled = true
-        # Center the camera on the middle of the design space (1024x1024).
-        # This way the camera sees from (512 - vp_w/(2*zoom)) to (512 + vp_w/(2*zoom))
-        # vertically and horizontally.
-        _game_camera.position = Vector2(512.0, 512.0)
+        # Center of the design space (1920x1080 → center = 960, 540).
+        _game_camera.position = Vector2(float(C.WINDOW_WIDTH) * 0.5, float(C.WINDOW_HEIGHT) * 0.5)
         _game_camera.position_smoothing_enabled = false
-        # Zoom = viewport_height / design_height.
-        # This makes the 1024px design height fill the viewport height.
-        # Use DisplayServer.screen_get_size as the authoritative source for
-        # the actual screen resolution in fullscreen mode, since
-        # get_viewport_rect() can return incorrect sizes during _ready on
-        # some platforms (especially headless or multi-monitor setups).
-        var vp_size: Vector2 = get_viewport_rect().size
-        var screen_id: int = DisplayServer.get_primary_screen()
-        var screen_size: Vector2i = DisplayServer.screen_get_size(screen_id)
-        if screen_size.x > 0 and screen_size.y > 0:
-                vp_size = Vector2(screen_size)
-        var design_h: float = float(C.WINDOW_HEIGHT)
-        var zoom_val: float = vp_size.y / design_h
-        _game_camera.zoom = Vector2(zoom_val, zoom_val)
+        # Zoom = 1:1 since design space now matches the viewport size.
+        _game_camera.zoom = Vector2(1.0, 1.0)
         # Add to the Window root so it's NOT a child of the scaled MainGame.
         get_tree().root.add_child(_game_camera)
         # Register with EffectsManager for screen-shake.
@@ -238,6 +229,19 @@ func _process(delta: float) -> void:
         # the fog drifts (EnvironmentArt.draw_crypt_background is animated).
         if _bg_layer != null:
                 _bg_layer.queue_redraw()
+
+
+# Handle pause + ESC via _unhandled_input so they work even when the game
+# tree is paused (process_mode = PROCESS_MODE_ALWAYS on this node).
+func _unhandled_input(event: InputEvent) -> void:
+        if event.is_action_pressed("pause") and not event.is_echo():
+                _toggle_pause()
+                get_viewport().set_input_as_handled()
+                return
+        if event.is_action_pressed("ui_cancel") and not event.is_echo():
+                _return_to_menu()
+                get_viewport().set_input_as_handled()
+                return
 
 
 # Cleanup: when leaving the MainGame scene, remove the camera and background
@@ -438,9 +442,8 @@ func _handle_input() -> void:
                 if Input.is_action_just_pressed("p2_jump"):
                         player2.activate_jump()
 
-        # Pause toggle (P key or joystick Start button)
-        if Input.is_action_just_pressed("pause"):
-                _toggle_pause()
+        # Pause + ESC sono ora gestiti da _unhandled_input (funzionano anche
+        # quando il game tree è in pausa grazie a process_mode=ALWAYS).
 
         # Test mode skip (Space) — mirrors C++ Game.cpp:2692-2714.
         # In boss levels, instant-kills the boss. Otherwise advances 1 level.
@@ -449,10 +452,6 @@ func _handle_input() -> void:
                 if space_now and not test_skip_key_held:
                         _test_mode_skip()
                 test_skip_key_held = space_now
-
-        # ESC: return to main menu. Use just_pressed to avoid repeat-fire.
-        if Input.is_action_just_pressed("ui_cancel") or Input.is_key_pressed(KEY_ESCAPE):
-                _return_to_menu()
 
 
 func _return_to_menu() -> void:
@@ -558,9 +557,13 @@ func _update_playing(delta_ms: float) -> void:
         spawner.update_portal(maze, int(delta_ms))
 
         # (11b) MiniBoss update + melee collision (mirror C++ riga 1581-1633)
+        # FIX CRASH: MiniBoss espone update_step(maze, p_grid, p_pos, delta_ms)
+        # non update_enemy(). Il crash "Nonexistent function 'update_enemy'"
+        # bloccava il gioco dopo qualche minuto quando il portal spawnava un
+        # mini-boss.
         if mini_boss != null and not mini_boss.is_dead():
                 mini_boss.set_flee_mode(player_invuln)
-                mini_boss.update_enemy(maze, p_grid, p_pos, [])
+                mini_boss.update_step(maze, p_grid, p_pos, int(delta_ms))
                 # MiniBoss melee attack: if attacking and player in range, damage
                 if mini_boss.has_method("is_attacking") and mini_boss.is_attacking():
                         var mb_pos: Vector2 = mini_boss.get_pixel_pos()
