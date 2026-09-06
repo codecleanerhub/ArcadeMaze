@@ -706,30 +706,29 @@ func _apply_fullscreen() -> void:
                         )
                 # Assicurati che il content_scale sia corretto per windowed
                 if get_tree():
+                        get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
                         get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
-                # FIX (menu in basso a sinistra dopo fullscreen off): forziamo
-                # il ridisegno del menu dopo che la finestra ha cambiato size.
-                # Usiamo call_deferred per garantire che il resize sia completo.
-                call_deferred("_refresh_layout_after_resize")
+                # FIX (menu in basso a sinistra dopo fullscreen off): il
+                # call_deferred non era sufficiente perché il resize della
+                # finestra non era completo entro la fine del frame corrente.
+                # Usiamo una coroutine che aspetta 2 frame prima di riapplicare
+                # gli anchor, garantendo che il viewport abbia la nuova size.
+                _refresh_layout_after_resize_async.call_deferred()
 
 
-# Re-applies the full-rect anchor preset after a window resize so the menu
-# fills the new window size correctly (otherwise it stays at the old size
-# and appears "shifted" in the bottom-left corner).
-func _refresh_layout_after_resize() -> void:
-        # FIX (menu shiftato dopo fullscreen toggle): forza il root window
-        # a ridimensionare il content_scale e riapplica gli anchor a tutti
-        # i Control figli. Usiamo call_deferred per garantire che il resize
-        # della finestra sia completo prima di riapplicare il layout.
+# Coroutine che aspetta 2 frame e poi riapplica gli anchor.
+# Questo garantisce che DisplayServer.window_set_mode e win.size siano
+# stati processati dal window manager prima di riapplicare il layout.
+func _refresh_layout_after_resize_async() -> void:
+        await get_tree().process_frame
+        await get_tree().process_frame
         var root: Window = get_tree().root
         if root:
                 root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
                 root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
         set_anchors_preset(Control.PRESET_FULL_RECT)
-        # Re-apply the same to the background TextureRect if present.
         if _bg != null:
                 _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-        # Force a layout pass + redraw.
         update_minimum_size()
         queue_redraw()
 
