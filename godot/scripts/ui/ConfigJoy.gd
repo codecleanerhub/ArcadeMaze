@@ -154,7 +154,12 @@ func _unhandled_input(event: InputEvent) -> void:
                                 ConfigManager.save_config()
                                 config_finished.emit()
                         wait_for_release = true
-        get_viewport().set_input_as_handled()
+        # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
+        # fase di uscita dalla scena (dopo config_finished.emit() che cambia
+        # scena). Aggiungiamo null check prima di chiamare set_input_as_handled.
+        var vp: Viewport = get_viewport()
+        if vp != null:
+                vp.set_input_as_handled()
 
 
 # Draw the background. Uses the same AI crypt/ruderi image as SelectPlayer
