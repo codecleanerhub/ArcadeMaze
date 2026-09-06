@@ -491,12 +491,12 @@ func _return_to_menu() -> void:
 func _update_playing(delta_ms: float) -> void:
         # (1) Player update + treasure pickup detection
         var treasures_before: int = maze.get_remaining_treasures()
-        player.update_player(maze, false)
+        player.update_player(maze, false, delta_ms)
         if player.consume_picked_weapon():
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
         if GameManager and GameManager.num_players == 2 and player2.visible:
-                player2.update_player(maze, false)
+                player2.update_player(maze, false, delta_ms)
                 if player2.consume_picked_weapon() and AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
         if maze.get_remaining_treasures() < treasures_before:
@@ -854,7 +854,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
-                        p.set_invincible_timer(15000)
+                        p.set_invincible_timer(15000)  # 15s chalice invincibility
                         p.add_score(15000)
                         item.active = false
                         item.queue_free()
@@ -1217,8 +1217,8 @@ func _fire_lightning_strike() -> void:
                 "points": points,
                 "branches": branches,
                 "sparks": sparks,
-                "life": 30,  # frames
-                "max_life": 30,
+                "life": 60,  # frames (1s @ 60fps, was 30 = 0.5s)
+                "max_life": 60,
         })
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
@@ -1731,3 +1731,19 @@ func _draw() -> void:
 
         # Lightning bolts (scepter effect)
         _draw_lightning_bolts()
+
+        # FIX (proiettili nemici non visibili): i proiettili nemici sono Node2D
+        # vuoti senza _draw. Li disegniamo qui come piccole sfere rosso/arancio.
+        for proj in enemy_projectiles_node.get_children():
+                if not proj is Node2D:
+                        continue
+                var ppos: Vector2 = proj.position
+                # Glow esterno arancione
+                draw_circle(ppos, 6.0, Color(1.0, 0.4, 0.1, 0.4))
+                # Nucleo rosso brillante
+                draw_circle(ppos, 3.0, Color(1.0, 0.2, 0.05, 1.0))
+                # Scia (pos - velocity*2)
+                var pvel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
+                if pvel != Vector2.ZERO:
+                        draw_circle(ppos - pvel * 2.0, 2.0,
+                                Color(1.0, 0.6, 0.2, 0.3))

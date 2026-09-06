@@ -412,7 +412,7 @@ func try_move(t_dx: int, t_dy: int, maze: Object) -> bool:
 #  4. Cell pickups (treasure / weapon).
 #  5. Projectile advance (8 px/frame) + erase-remove inactive.
 # ===========================================================================
-func update_player(maze: Object, free_movement: bool) -> void:
+func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) -> void:
         # 1) Jump visual offset: half sin curve (0 -> peak -> 0 over max_jump_time).
         if jump_timer > 0:
                 jump_timer -= 1
@@ -421,13 +421,17 @@ func update_player(maze: Object, free_movement: bool) -> void:
         else:
                 jump_offset = 0.0
 
-        # 2) Tick all simulated-ms timers (threshold to 0 to avoid leftover 1..15).
-        damage_timer = _tick_timer(damage_timer)
-        shoot_cooldown = _tick_timer(shoot_cooldown)
-        shoot_anim_timer = _tick_timer(shoot_anim_timer)
-        anim_time += 16
-        speed_boost_timer = _tick_timer(speed_boost_timer)
-        tick_invincible_timer()
+        # 2) Tick all simulated-ms timers using REAL delta_ms (not fixed 16).
+        # FIX (calice durava meno di 15s): _tick_timer usava 16ms fissi per
+        # frame, ma se il gioco gira a FPS diverso da 60, la durata reale
+        # cambia (120fps → 7.8s, 30fps → 31s). Ora usiamo delta_ms reale
+        # passato dal MainGameController per garantire durate corrette.
+        damage_timer = _tick_timer_ms(damage_timer, delta_ms)
+        shoot_cooldown = _tick_timer_ms(shoot_cooldown, delta_ms)
+        shoot_anim_timer = _tick_timer_ms(shoot_anim_timer, delta_ms)
+        anim_time += int(delta_ms)
+        speed_boost_timer = _tick_timer_ms(speed_boost_timer, delta_ms)
+        invincible_timer = _tick_timer_ms(invincible_timer, delta_ms)
 
         # Effective speed: base 2, +1 if any boost active (permanent or temp).
         var boosted: bool = permanent_speed_boost or speed_boost_timer > 0
@@ -696,6 +700,14 @@ func get_pixel_pos() -> Vector2:
 # Matches the `if (t > 16) t -= 16; else t = 0;` idiom in Player.cpp.
 static func _tick_timer(t: int) -> int:
         return t - 16 if t > 16 else 0
+
+
+# FIX (calice durava meno di 15s): tick basato su delta_ms reale invece di
+# 16ms fissi. Garantisce che i timer (invincible_timer, shoot_cooldown, etc.)
+# durino il tempo reale specificato indipendentemente dal frame rate.
+static func _tick_timer_ms(t: int, delta_ms: float) -> int:
+        var new_t: int = t - int(delta_ms)
+        return new_t if new_t > 0 else 0
 
 
 # _make_weapon(t): factory mirroring Weapon::generate() in src/Weapon.cpp.

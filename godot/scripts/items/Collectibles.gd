@@ -319,60 +319,67 @@ func _draw() -> void:
 
 
 func _draw_mine() -> void:
-        # Spiky ball with pulsing red aura + trail when bouncing.
-        # Mirrors C++ Game.cpp 5294-5350 (mine rendering):
-        #   * Aura rossa pulsante 18px (Color 200,50,20,50)
-        #   * Body (cerchio metallico scuro 7px pulsante)
-        #   * 4 spunzoni triangolari (Godot: 8 spikes, kept for retrocompat)
-        #   * LED rosso pulsante al centro
-        #   * Scia quando bouncing (3px arancio a pos-vel)
-        var r := 10.0 + pulse * 1.5
+        # FIX (sprite mina irriconoscibile): ingrandito tutto ×2.5.
+        var scale_factor: float = 2.5
+        var r := (10.0 + pulse * 1.5) * scale_factor
         var col := Color(0.7, 0.6, 0.3)
         var dark := Color(0.2, 0.2, 0.2)
-        # --- Aura rossa pulsante (18px) ---
-        # In C++: pulse = sinf(mine.pulse * 5.f) * 0.2 + 1.f (range 0.8-1.2)
+        # --- Aura rossa pulsante ---
         var aura_pulse: float = sin(anim_time * 5.0) * 0.2 + 1.0
-        var aura_r: float = 18.0 * aura_pulse
+        var aura_r: float = 18.0 * aura_pulse * scale_factor
         draw_circle(Vector2.ZERO, aura_r,
-                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 50.0 / 255.0))
-        # --- Scia quando rimbalza (3px at pos-velocity) ---
-        # Drawn in local space, so -velocity (since pos == local origin).
+                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 80.0 / 255.0))
+        # --- Scia quando rimbalza ---
         if bouncing:
                 var trail_pos: Vector2 = -velocity
-                draw_circle(trail_pos, 3.0,
-                        Color(255.0 / 255.0, 150.0 / 255.0, 50.0 / 255.0, 100.0 / 255.0))
-        # --- Corpo della mina (cerchio scuro) ---
+                draw_circle(trail_pos, 3.0 * scale_factor,
+                        Color(255.0 / 255.0, 150.0 / 255.0, 50.0 / 255.0, 150.0 / 255.0))
+        # --- Corpo della mina ---
         draw_circle(Vector2.ZERO, r, col)
-        # --- Spikes (8 triangulari attorno al corpo) ---
+        draw_circle(Vector2.ZERO, r, dark, false, 1.5)
+        # --- Spikes ---
         for i in range(8):
                 var a := (float(i) / 8.0) * TAU + deg_to_rad(rotation_deg)
-                var tip := Vector2(cos(a), sin(a)) * (r + 4.0)
+                var tip := Vector2(cos(a), sin(a)) * (r + 4.0 * scale_factor)
                 var base_l := Vector2(cos(a + 0.3), sin(a + 0.3)) * r
                 var base_r := Vector2(cos(a - 0.3), sin(a - 0.3)) * r
                 draw_colored_polygon(PackedVector2Array([tip, base_l, base_r]), dark)
-        # --- LED rosso pulsante (blinking, kept as original) ---
+        # --- LED rosso pulsante ---
         if fmod(anim_time, 1.0) > 0.5:
-                draw_circle(Vector2.ZERO, 2.0, Color(1.0, 0.2, 0.2))
+                draw_circle(Vector2.ZERO, 2.0 * scale_factor, Color(1.0, 0.2, 0.2))
 
 
 func _draw_chalice() -> void:
-        # Golden chalice with a pulsing aura.
-        var aura_r := 18.0 + pulse * 3.0
+        # FIX (sprite calice irriconoscibile): ingrandito tutto ×2.5.
+        # Era: top 16x4, body 12x10, base 6x4. Ora: top 40x10, body 30x25,
+        # base 15x10. Più visibile e riconoscibile come calice dorato.
+        var scale_factor: float = 2.5
+        var aura_r := (18.0 + pulse * 3.0) * scale_factor
         draw_circle(Vector2.ZERO - Vector2(0, bob_offset), aura_r,
-                                Color(1.0, 0.85, 0.2, 0.20))
+                                Color(1.0, 0.85, 0.2, 0.25))
         # Cup body
         var gold := Color(1.0, 0.85, 0.2)
+        var gold_dark := Color(0.7, 0.55, 0.1)
         var y_off := -bob_offset
-        var top := Rect2(-8.0, -10.0 + y_off, 16.0, 4.0)
-        var body := Rect2(-6.0, -6.0 + y_off, 12.0, 10.0)
-        var base := Rect2(-3.0, 4.0 + y_off, 6.0, 4.0)
+        var top := Rect2(-8.0 * scale_factor, -10.0 * scale_factor + y_off,
+                         16.0 * scale_factor, 4.0 * scale_factor)
+        var body := Rect2(-6.0 * scale_factor, -6.0 * scale_factor + y_off,
+                          12.0 * scale_factor, 10.0 * scale_factor)
+        var base := Rect2(-3.0 * scale_factor, 4.0 * scale_factor + y_off,
+                          6.0 * scale_factor, 4.0 * scale_factor)
         draw_rect(top, gold)
         draw_rect(body, gold)
-        draw_rect(base, gold)
+        draw_rect(base, gold_dark)
         # Stem
-        draw_rect(Rect2(-1.5, -2.0 + y_off, 3.0, 6.0), gold)
+        draw_rect(Rect2(-1.5 * scale_factor, -2.0 * scale_factor + y_off,
+                        3.0 * scale_factor, 6.0 * scale_factor), gold)
         # Highlight
-        draw_rect(Rect2(-5.0, -5.0 + y_off, 2.0, 4.0), Color(1.0, 1.0, 0.7))
+        draw_rect(Rect2(-5.0 * scale_factor, -5.0 * scale_factor + y_off,
+                        2.0 * scale_factor, 4.0 * scale_factor),
+                  Color(1.0, 1.0, 0.7))
+        # Outline for visibility
+        draw_rect(top, gold_dark, false, 1.5)
+        draw_rect(body, gold_dark, false, 1.5)
 
 
 func _draw_scepter() -> void:
@@ -501,18 +508,22 @@ func _draw_speed_boots() -> void:
 
 
 func _draw_treasure() -> void:
-        # Usa texture procedurali ad alta risoluzione da EnvironmentArt
-        # (miglioramento grafico Godot-native vs PNG AI 64x64 del C++)
+        # FIX (tesori troppo piccoli e irriconoscibili): ingrandito da 32px a 64px.
         var y_off := -bob_offset
-        # Soft glow
-        draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.85, 0.3, 0.2))
+        # Soft glow più grande
+        draw_circle(Vector2.ZERO, 30.0, Color(1.0, 0.85, 0.3, 0.25))
+        draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.85, 0.3, 0.15))
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_treasure_texture(treasure_type)
                 if tex:
-                        # Disegna la texture 128x128 scalata a 32x32 centrata
-                        var size: float = 32.0
+                        # Disegna la texture 128x128 scalata a 64x64 centrata
+                        # (FIX: era 32x32, troppo piccola)
+                        var size: float = 64.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
+                        # Outline dorato per renderlo più riconoscibile
+                        var gold_outline: Color = Color(1.0, 0.85, 0.2, 0.8)
+                        draw_rect(draw_rect, gold_outline, false, 2.0)
                         return
         # Fallback: rendering semplice se EnvironmentArt non disponibile
         match treasure_type:

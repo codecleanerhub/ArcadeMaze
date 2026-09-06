@@ -116,7 +116,7 @@ const STATS := {
 const _DEFAULT_STATS := {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.6, 0.4, 0.3), "accent": Color(0.9, 0.7, 0.5)}
 
 # --- Anti-stuck + AI constants (mirror src/Enemy.cpp line 358-360) ----------
-const STUCK_THRESHOLD_MS: int = 600        # 36 frames @ 60 FPS
+const STUCK_THRESHOLD_MS: int = 300        # ridotto da 600 a 300 per anti-stuck più reattivo
 const PATH_RECALC_INTERVAL_MS: int = 200   # normal BFS recalc cadence
 const SHOOT_RANGE_PX: float = 500.0
 const SHOOT_COOLDOWN_MIN_MS: int = 1000
@@ -353,6 +353,33 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         else:
                 stuck_timer = 0
         last_pos = position
+
+        # FIX (nemici si bloccano nel maze): se il nemico è bloccato da più
+        # di 1 secondo (1000ms), teletrasportalo al centro della cella più
+        # vicina per sbloccarlo. Questo previene il caso in cui il nemico è
+        # lontano dal centro cella e l'anti-stuck non scatta mai.
+        if stuck_timer > 1000:
+                stuck_timer = 0
+                var snap_col: int = int(position.x / TILE_SIZE)
+                var snap_row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
+                snap_col = clampi(snap_col, 1, MAZE_COLS - 2)
+                snap_row = clampi(snap_row, 1, MAZE_ROWS - 2)
+                # Trova la cella vuota più vicina
+                for radius in range(0, 5):
+                        for dc in range(-radius, radius + 1):
+                                for dr in range(-radius, radius + 1):
+                                        var nc: int = snap_col + dc
+                                        var nr: int = snap_row + dr
+                                        if nc > 0 and nc < MAZE_COLS - 1 and nr > 0 and nr < MAZE_ROWS - 1:
+                                                if not maze.is_wall(nc, nr):
+                                                        position.x = nc * TILE_SIZE + TILE_SIZE / 2.0
+                                                        position.y = nr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                                                        last_pos = position
+                                                        break
+                                if last_pos == position:
+                                        break
+                        if last_pos == position:
+                                break
 
         # When close enough to cell centre, snap and try to recalc direction.
         if absf(position.x - center_x) < speed \
