@@ -18,6 +18,7 @@ const C = preload("res://scripts/core/GameConstants.gd")
 const WeaponClass = preload("res://scripts/items/Weapon.gd")
 const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 const Boss = preload("res://scripts/bosses/Boss.gd")
+const Projectile = preload("res://scripts/items/Projectile.gd")
 
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
@@ -226,7 +227,9 @@ func _update_boss(delta_ms: float) -> void:
 
 
 func _advance_boss_projectiles(_delta_ms: float) -> void:
-        # Move boss projectiles by their stored velocity, apply homing if enabled.
+        # Move boss projectiles by their velocity, apply homing if enabled.
+        # FIX: Projectile ha property `dir` (Vector2 velocity) e `homing_timer_ms`
+        # non meta. Leggiamo direttamente le property.
         var player_pos: Vector2 = player.get_pixel_pos()
         var to_remove: Array = []
         for proj in boss_projectiles_node.get_children():
@@ -235,16 +238,18 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                 if not proj.visible:
                         to_remove.append(proj)
                         continue
-                # Get velocity (stored as meta by _shoot_pattern via Projectile node)
-                var vel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
-                # Homing: if homing_timer > 0, lerp velocity toward player
-                var homing_ms: int = int(proj.get_meta("homing_ms", 0))
-                if homing_ms > 0:
-                        homing_ms -= int(_delta_ms)
-                        proj.set_meta("homing_ms", homing_ms)
-                        var to_player: Vector2 = (player_pos - proj.position).normalized()
-                        vel = vel.lerp(to_player * vel.length(), 0.08)
-                        proj.set_meta("velocity", vel)
+                # Get velocity: Projectile ha `dir` come property velocity
+                var vel: Vector2 = Vector2.ZERO
+                if proj is Projectile:
+                        vel = proj.dir
+                        # Homing
+                        if proj.homing_timer_ms > 0:
+                                proj.homing_timer_ms -= int(_delta_ms)
+                                var to_player: Vector2 = (player_pos - proj.position).normalized()
+                                vel = vel.lerp(to_player * vel.length(), 0.08)
+                                proj.dir = vel
+                else:
+                        vel = proj.get_meta("velocity", Vector2.ZERO)
                 proj.position += vel
                 # Remove if out of bounds
                 if proj.position.x < -50 or proj.position.x > C.WINDOW_WIDTH + 50 or \
@@ -675,6 +680,47 @@ func _draw() -> void:
                         col = w_entry["weapon"].get_color()
                 draw_circle(pos, 16.0, Color(0.2, 0.2, 0.2, 0.8))
                 draw_circle(pos, 12.0, col)
+
+        # FIX (boss non sparano): i proiettili del boss venivano avanzati ma
+        # mai disegnati. Aggiungiamo il disegno di tutti i proiettili figli
+        # di boss_projectiles_node. Ogni proiettile ha un colore diverso
+        # in base al BossProjKind (vedi Projectile.gd).
+        for proj in boss_projectiles_node.get_children():
+                if not proj is Node2D:
+                        continue
+                var ppos: Vector2 = proj.position
+                # Colore in base al tipo di proiettile
+                var bp_kind: int = 0
+                if proj is Projectile:
+                        bp_kind = proj.bp_kind
+                elif proj.has_meta("bp_kind"):
+                        bp_kind = int(proj.get_meta("bp_kind"))
+                var proj_col: Color = Color(1.0, 0.4, 0.1)  # default rosso/arancio
+                match bp_kind:
+                        1: proj_col = Color(0.6, 0.4, 0.2)  # BOULDER (marrone)
+                        2: proj_col = Color(0.2, 1.0, 0.3)   # NECRO_BOLT (verde)
+                        3: proj_col = Color(1.0, 0.3, 0.1)   # FIREBALL (rosso fuoco)
+                        4: proj_col = Color(0.8, 0.8, 0.8)   # WEBSHOT (bianco)
+                        5: proj_col = Color(0.8, 0.3, 0.5)   # FLESH_CHUNK (rosa)
+                        6: proj_col = Color(0.2, 0.6, 1.0)   # INK_SPRAY (blu)
+                        7: proj_col = Color(1.0, 0.5, 0.1)   # DRAGON_BREATH (arancio)
+                        8: proj_col = Color(0.5, 0.5, 1.0)   # GHOST_BOLT (azzurro)
+                        9: proj_col = Color(0.9, 0.1, 0.2)  # BLOOD_BOLT (rosso sangue)
+                        10: proj_col = Color(1.0, 1.0, 0.2) # EYE_RAY (giallo)
+                        11: proj_col = Color(0.4, 0.2, 0.1) # GHOUL_CLAW (marrone scuro)
+                        12: proj_col = Color(0.6, 0.6, 1.0) # SPECTRAL_FANG (blu pallido)
+                        13: proj_col = Color(0.8, 0.2, 0.8)  # CULT_ORB (viola)
+                        14: proj_col = Color(0.5, 0.8, 0.2)  # MIMIC_GOO (verde slime)
+                        15: proj_col = Color(0.6, 0.5, 0.3)  # RAT_SWARM (marrone)
+                        16: proj_col = Color(0.9, 0.3, 0.9) # WITCH_HEX (magenta)
+                        17: proj_col = Color(0.7, 0.7, 0.9)  # TWILIGHT_BLADE (argento)
+                # Glow esterno
+                draw_circle(ppos, 8.0, Color(proj_col.r, proj_col.g, proj_col.b, 0.3))
+                # Nucleo
+                draw_circle(ppos, 4.0, proj_col)
+                # Highlight
+                draw_circle(ppos - Vector2(1, 1), 1.5,
+                        Color(proj_col.r + 0.3, proj_col.g + 0.3, proj_col.b + 0.3))
 
 
 # Disegna decorazioni ambiente: bare, colonne, ruderi, teschi sul pavimento.

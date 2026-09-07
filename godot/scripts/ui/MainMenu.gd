@@ -372,7 +372,6 @@ func _build_ui() -> void:
                 "GAME MODE:",
                 "MUSIC:",
                 "TEST MODE:",
-                "FULLSCREEN:",
                 "CONFIGURE JOYSTICK",
                 "START GAME",
                 "CREDITS",
@@ -521,10 +520,9 @@ func _update_items_text() -> void:
         _item_labels[1].text = "GAME MODE: %s" % ("STORY" if _game_mode == GameMode.STORY else "INFINITE")
         _item_labels[2].text = "MUSIC: %s" % ("ON" if _music_enabled else "OFF")
         _item_labels[3].text = "TEST MODE: %s" % ("ON" if _test_mode_enabled else "OFF")
-        _item_labels[4].text = "FULLSCREEN: %s" % ("ON" if _fullscreen_enabled else "OFF")
-        _item_labels[5].text = "CONFIGURE JOYSTICK"
-        _item_labels[6].text = "START GAME"
-        _item_labels[7].text = "CREDITS"
+        _item_labels[4].text = "CONFIGURE JOYSTICK"
+        _item_labels[5].text = "START GAME"
+        _item_labels[6].text = "CREDITS"
 
 
 # Updates the visual highlight of the character wheel.
@@ -650,7 +648,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # Move the selection cursor up/down by `delta` (-1 or +1), wrapping around.
 func _move_selection(delta: int) -> void:
-        _menu_item_index = posmod(_menu_item_index + delta, 8)
+        _menu_item_index = posmod(_menu_item_index + delta, 7)  # FIX: era 8, rimosso FULLSCREEN
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
 
@@ -671,10 +669,7 @@ func _change_option(delta: int) -> void:
                                         AudioManager.play_menu_music()
                 3:  # Test mode on/off
                         _test_mode_enabled = not _test_mode_enabled
-                4:  # Fullscreen on/off (toggles immediately)
-                        _fullscreen_enabled = not _fullscreen_enabled
-                        _apply_fullscreen()
-                5, 6, 7:
+                4, 5, 6:
                         # These items are not toggleable, just activate them.
                         pass
                 _:
@@ -756,18 +751,18 @@ func _activate_current() -> void:
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         match _menu_item_index:
-                5:
+                4:
                         # CONFIGURE JOYSTICK - P1 first, then P2 (if 2 players)
                         configure_joystick_requested.emit(1)
-                6:
+                5:
                         # START GAME - in 2P mode the second player's joystick config
                         # is requested automatically (handled by parent via signal).
                         start_requested.emit(_num_players, _game_mode, _music_enabled,
                                          _p1_character, _p2_character)
-                7:
+                6:
                         credits_requested.emit()
                 _:
-                        # Toggleable items (0..4) confirm their current value.
+                        # Toggleable items (0..3) confirm their current value.
                         _change_option(1 if _menu_item_index == 0 else 0)
 
 

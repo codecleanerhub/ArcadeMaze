@@ -146,11 +146,13 @@ func setup(level: int, screen_w: int, screen_h: int) -> void:
         boss_level = level
         boss_type = get_boss_index(level)
 
-        # Size scaling (matches C++ formula).
+        # Size scaling (FIX: aumentato del 60% per schermo 1920x1080).
+        # Era: 120 + level*4 (124..160), cap 180.
+        # Ora: 192 + level*6 (198..256), cap 288.
         if level <= 10:
-                size = float(120 + level * 4)        # 124..160
+                size = float(192 + level * 6)        # 198..252
         else:
-                size = float(160 + min(20, (level - 10) * 2))  # cap 180
+                size = float(252 + min(36, (level - 10) * 3))  # cap 288
 
         # Initial position: centered horizontally, below the UI bar.
         pos = Vector2(screen_w / 2.0, UI_HEIGHT + 120.0 + size)
