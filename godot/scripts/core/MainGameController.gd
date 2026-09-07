@@ -1760,8 +1760,12 @@ func _draw() -> void:
 
         # FIX (proiettili nemici non visibili): i proiettili nemici sono Node2D
         # vuoti senza _draw. Li disegniamo qui come piccole sfere rosso/arancio.
+        # FIX: controlla visible e is_instance_valid per evitare crash su
+        # proiettili già queue_free'd.
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
+                        continue
+                if not is_instance_valid(proj) or not proj.visible:
                         continue
                 var ppos: Vector2 = proj.position
                 # Glow esterno arancione
