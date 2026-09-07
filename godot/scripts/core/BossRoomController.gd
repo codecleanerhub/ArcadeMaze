@@ -17,6 +17,7 @@ extends Node2D
 const C = preload("res://scripts/core/GameConstants.gd")
 const WeaponClass = preload("res://scripts/items/Weapon.gd")
 const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
+const Boss = preload("res://scripts/bosses/Boss.gd")
 
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
@@ -390,11 +391,17 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
 
 
 func _spawn_boss_room_weapons() -> void:
+        # FIX (armi non centrate): posizionate al centro schermo in alto.
+        # Prima erano a x=200,500,800 su uno schermo 1024 (vecchio design).
+        # Ora su 1920 wide, le centriamo.
+        var center_x: float = float(C.WINDOW_WIDTH) * 0.5
+        var spacing: float = 200.0
+        var y_pos: float = float(C.UI_HEIGHT) + 120.0
         for i in range(3):
                 var w := WeaponClass.new()
                 w.generate_random()
                 w.ammo = 5
-                var w_pos := Vector2(200.0 + i * 300.0, 200.0)
+                var w_pos := Vector2(center_x + (float(i) - 1.0) * spacing, y_pos)
                 boss_room_weapons.append({"weapon": w, "pos": w_pos, "node": null})
 
 
@@ -619,6 +626,34 @@ func _draw() -> void:
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)
         # Disegna decorazioni ambiente boss room
         _render_boss_room_decorations()
+        # FIX (nome boss in alto): disegna il nome del boss stilizzato
+        # in alto al centro (mirror C++ Game.cpp drawBossBanner).
+        if boss != null:
+                var boss_name: String = Boss.get_boss_name(boss.boss_type)
+                var cx: float = vp_size.x * 0.5
+                var by: float = 35.0
+                var font := get_theme_default_font()
+                # Shadow
+                draw_string(font, Vector2(cx - 250, by + 2), boss_name,
+                        HORIZONTAL_ALIGNMENT_CENTER, 500, 36,
+                        Color(0, 0, 0, 0.8))
+                # Gold text
+                draw_string(font, Vector2(cx - 252, by), boss_name,
+                        HORIZONTAL_ALIGNMENT_CENTER, 500, 36,
+                        Color(1.0, 0.84, 0.0))
+                # HP bar sotto il nome
+                if not boss.is_dead():
+                        var hp_ratio: float = float(boss.health) / float(boss.max_health)
+                        var bar_w: float = 400.0
+                        var bar_h: float = 8.0
+                        var bar_x: float = cx - bar_w * 0.5
+                        var bar_y: float = by + 40.0
+                        draw_rect(Rect2(bar_x - 2, bar_y - 2, bar_w + 4, bar_h + 4),
+                                Color(0, 0, 0, 0.8), true)
+                        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h),
+                                Color(0.3, 0.1, 0.1), true)
+                        draw_rect(Rect2(bar_x, bar_y, bar_w * hp_ratio, bar_h),
+                                Color(0.8, 0.15, 0.1), true)
         # Draw boss room weapons on the floor
         for w_entry in boss_room_weapons:
                 var pos: Vector2 = w_entry["pos"]

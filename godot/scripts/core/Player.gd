@@ -26,8 +26,8 @@ extends CharacterBody2D
 # we don't tick ourselves here so the Game can pause us, slow-mo, etc.
 
 # --- Grid constants (mirror Utils.h) ---------------------------------------
-const WINDOW_WIDTH: int = 1024
-const WINDOW_HEIGHT: int = 1024
+const WINDOW_WIDTH: int = 1920
+const WINDOW_HEIGHT: int = 1080
 const TILE_SIZE: int = 48
 const MAZE_COLS: int = 21
 const MAZE_ROWS: int = 19
