@@ -230,6 +230,11 @@ func _process(delta: float) -> void:
         # the fog drifts (EnvironmentArt.draw_crypt_background is animated).
         if _bg_layer != null:
                 _bg_layer.queue_redraw()
+        # FIX (proiettili nemici non visibili): il _draw di MainGameController
+        # non veniva mai chiamato dopo il primo frame perché mancava
+        # queue_redraw(). Ora viene chiamato ogni frame per disegnare
+        # proiettili nemici, exit door, particles, decals, lightning, ecc.
+        queue_redraw()
 
 
 # Handle pause + ESC via _unhandled_input so they work even when the game
@@ -531,11 +536,20 @@ func _update_playing(delta_ms: float) -> void:
                 enemy_projectiles_node.add_child(p_node)
 
         # (3b) Advance enemy projectiles (move them by their velocity)
+        # FIX (proiettili nemici attraversano i muri): aggiunto wall collision
+        # check. Se il proiettile entra in una cella WALL, viene distrutto.
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
                 var vel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
                 proj.position += vel
+                # Wall collision: se il proiettile è in una cella WALL, distruggilo
+                var pcol: int = int(proj.position.x / C.TILE_SIZE)
+                var prow: int = int((proj.position.y - C.UI_HEIGHT) / C.TILE_SIZE)
+                if pcol >= 0 and pcol < C.MAZE_COLS and prow >= 0 and prow < C.MAZE_ROWS:
+                        if maze.is_wall(pcol, prow):
+                                proj.queue_free()
+                                continue
                 # Remove if out of bounds
                 if proj.position.x < 0 or proj.position.x > C.WINDOW_WIDTH or \
                    proj.position.y < C.UI_HEIGHT or proj.position.y > C.WINDOW_HEIGHT:
