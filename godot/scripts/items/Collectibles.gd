@@ -405,7 +405,7 @@ func _draw_scepter() -> void:
         #   8. Impugnatura: anello oro + 3 strisce cuoio + anello oro
         #   9. Ombra sul pavimento (ellisse scura)
         # (sx, sy) e' il centro del bastone (gemma ~sy-18, impugnatura ~sy+18).
-        var y_off := -bob_offset
+        # FIX: y_off già dichiarato all'inizio della funzione, non ridichiarare
         var sx := 0.0
         var sy := y_off
         var s_pulse := 1.0 + pulse * 0.2  # fattore di pulsazione (>1 = piu' grande)
