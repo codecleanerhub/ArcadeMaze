@@ -148,9 +148,21 @@ func _update_boss(delta_ms: float) -> void:
                 player2.update_player(null, true)
 
         # (2) Boss update
+        # FIX CRASH: boss.update_step si aspetta un Array come arg 4
+        # (projectiles_out), non un Node. Passiamo un array vuoto che
+        # il boss riempirà con i nuovi proiettili, poi li spawniamo
+        # come nodi figli di boss_projectiles_node.
         if boss and not boss.is_dead():
                 var p_pos: Vector2 = player.get_pixel_pos()
-                boss.update_step(p_pos.x, p_pos.y, int(delta_ms), boss_projectiles_node)
+                var new_projectiles: Array = []
+                boss.update_step(p_pos.x, p_pos.y, int(delta_ms), new_projectiles)
+                # Spawn boss projectiles
+                for proj_data in new_projectiles:
+                        var p_node := Node2D.new()
+                        p_node.position = proj_data.get("pos", Vector2.ZERO)
+                        p_node.set_meta("velocity", proj_data.get("dir", Vector2.ZERO) * 6.0)
+                        p_node.set_meta("power", proj_data.get("power", 5))
+                        boss_projectiles_node.add_child(p_node)
 
         # (3) Advance boss projectiles
         _advance_boss_projectiles(delta_ms)

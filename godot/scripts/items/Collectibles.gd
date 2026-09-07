@@ -542,46 +542,87 @@ func _draw_treasure() -> void:
                         tex = load(tex_path) as Texture2D
                         if tex != null:
                                 _treasure_tex_cache[tex_path] = tex
-                        else:
-                            push_warning("[Collectibles] Failed to load treasure PNG: " + tex_path)
-                else:
-                    push_warning("[Collectibles] Treasure PNG not found: " + tex_path)
                 if tex != null:
                         var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
                         return
-        # Fallback: rendering semplice se il PNG non è disponibile
+        # Fallback: rendering procedurale MIGLIORATO (più riconoscibile)
+        # FIX (pallino giallo non riconoscibile): il fallback precedente
+        # era solo un piccolo rettangolo giallo. Ora usa forme distinte per
+        # ogni tipo di tesoro, con colori vivaci e contorni.
+        var y_off2 := -bob_offset
         match treasure_type:
                 TreasureType.TRES_CROWN:
-                        draw_rect(Rect2(-8.0, 0.0 + y_off, 16.0, 4.0), Color(1.0, 0.85, 0.2))
+                        # Corona d'oro con 3 punte + gemme rosse
+                        var gold := Color(1.0, 0.85, 0.2)
+                        var red := Color(0.9, 0.1, 0.1)
+                        draw_rect(Rect2(-10.0, 2.0 + y_off2, 20.0, 6.0), gold)
                         for i in range(3):
-                                var x := -6.0 + float(i) * 6.0
+                                var x := -8.0 + float(i) * 8.0
                                 draw_colored_polygon(PackedVector2Array([
-                                        Vector2(x, 0.0 + y_off),
-                                        Vector2(x + 4.0, 0.0 + y_off),
-                                        Vector2(x + 2.0, -6.0 + y_off)
-                                ]), Color(1.0, 0.85, 0.2))
-                TreasureType.TRES_GOLD:
+                                        Vector2(x, 2.0 + y_off2),
+                                        Vector2(x + 5.0, 2.0 + y_off2),
+                                        Vector2(x + 2.5, -6.0 + y_off2)
+                                ]), gold)
+                        # Gemme rosse sulle punte
                         for i in range(3):
-                                draw_circle(Vector2(0, float(i) * 2.0 + y_off - 4.0), 5.0,
-                                                        Color(1.0, 0.85, 0.2))
+                                var x := -6.0 + float(i) * 8.0
+                                draw_circle(Vector2(x, -4.0 + y_off2), 2.0, red)
+                TreasureType.TRES_GOLD:
+                        # Pila di monete d'oro (3 cerchi)
+                        var gold := Color(1.0, 0.85, 0.2)
+                        var gold_dark := Color(0.8, 0.65, 0.1)
+                        draw_circle(Vector2(0, 4.0 + y_off2), 6.0, gold_dark)
+                        draw_circle(Vector2(-2, 0.0 + y_off2), 6.0, gold)
+                        draw_circle(Vector2(2, -4.0 + y_off2), 5.0, gold)
+                        # Simbolo $ sulle monete
+                        draw_circle(Vector2(0, 0.0 + y_off2), 2.0, gold_dark)
                 TreasureType.TRES_CHEST:
-                        draw_rect(Rect2(-8.0, -4.0 + y_off, 16.0, 10.0), Color(0.6, 0.4, 0.2))
-                        draw_rect(Rect2(-8.0, -6.0 + y_off, 16.0, 4.0), Color(0.45, 0.3, 0.15))
-                        draw_rect(Rect2(-1.0, 0.0 + y_off, 2.0, 4.0), Color(1.0, 0.85, 0.2))
+                        # Forziere di legno con cerniere d'oro
+                        var wood := Color(0.55, 0.35, 0.15)
+                        var wood_dark := Color(0.4, 0.25, 0.1)
+                        var gold := Color(1.0, 0.85, 0.2)
+                        draw_rect(Rect2(-10.0, -2.0 + y_off2, 20.0, 12.0), wood)
+                        draw_rect(Rect2(-10.0, -6.0 + y_off2, 20.0, 5.0), wood_dark)
+                        # Cerniere d'oro
+                        draw_rect(Rect2(-10.0, -2.0 + y_off2, 3.0, 12.0), gold)
+                        draw_rect(Rect2(7.0, -2.0 + y_off2, 3.0, 12.0), gold)
+                        # Lucchetto
+                        draw_rect(Rect2(-2.0, 1.0 + y_off2, 4.0, 5.0), gold)
                 TreasureType.TRES_GEM:
+                        # Gemma blu sfaccettata (diamante)
+                        var gem := Color(0.3, 0.8, 1.0)
+                        var gem_dark := Color(0.15, 0.5, 0.8)
+                        var gem_light := Color(0.6, 0.95, 1.0)
                         draw_colored_polygon(PackedVector2Array([
-                                Vector2(0, -8.0 + y_off),
-                                Vector2(7.0, 0.0 + y_off),
-                                Vector2(0, 8.0 + y_off),
-                                Vector2(-7.0, 0.0 + y_off)
-                        ]), Color(0.3, 0.8, 1.0))
+                                Vector2(0, -10.0 + y_off2),
+                                Vector2(8.0, 0.0 + y_off2),
+                                Vector2(0, 10.0 + y_off2),
+                                Vector2(-8.0, 0.0 + y_off2)
+                        ]), gem)
+                        # Facette interne
+                        draw_line(Vector2(0, -10.0 + y_off2), Vector2(0, 10.0 + y_off2), gem_dark, 1.0)
+                        draw_line(Vector2(-8.0, 0.0 + y_off2), Vector2(8.0, 0.0 + y_off2), gem_dark, 1.0)
+                        # Highlight
+                        draw_circle(Vector2(-3.0, -3.0 + y_off2), 2.0, gem_light)
                 TreasureType.TRES_CUP:
-                        draw_rect(Rect2(-6.0, -6.0 + y_off, 12.0, 4.0), Color(1.0, 0.85, 0.2))
-                        draw_rect(Rect2(-4.0, -2.0 + y_off, 8.0, 4.0), Color(1.0, 0.85, 0.2))
-                        draw_rect(Rect2(-1.5, 2.0 + y_off, 3.0, 6.0), Color(1.0, 0.85, 0.2))
-                        draw_rect(Rect2(-4.0, 8.0 + y_off, 8.0, 2.0), Color(1.0, 0.85, 0.2))
+                        # Calice d'oro con base
+                        var gold := Color(1.0, 0.85, 0.2)
+                        var gold_dark := Color(0.8, 0.65, 0.1)
+                        # Coppa
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8.0, -8.0 + y_off2),
+                                Vector2(8.0, -8.0 + y_off2),
+                                Vector2(6.0, 0.0 + y_off2),
+                                Vector2(-6.0, 0.0 + y_off2)
+                        ]), gold)
+                        # Stelo
+                        draw_rect(Rect2(-2.0, 0.0 + y_off2, 4.0, 6.0), gold_dark)
+                        # Base
+                        draw_rect(Rect2(-6.0, 6.0 + y_off2, 12.0, 4.0), gold)
+                        # Bordo coppa
+                        draw_rect(Rect2(-8.0, -10.0 + y_off2, 16.0, 3.0), gold_dark)
 
 
 func _draw_exit_door() -> void:

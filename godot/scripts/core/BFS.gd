@@ -24,10 +24,13 @@
 class_name BFS
 extends RefCounted
 
-# Maze grid dimensions (mirror Utils.h)
-const TILE_SIZE: int = 48
-const MAZE_COLS: int = 21
-const MAZE_ROWS: int = 19
+# Maze grid dimensions — use GameConstants (FIX: erano hardcoded a 21x19,
+# ma ora il maze è 40x22. I nemici nella parte destra/bassa non trovavano
+# percorso perché il BFS scartava tutte le celle oltre col 21 / row 19).
+const C = preload("res://scripts/core/GameConstants.gd")
+const TILE_SIZE: int = C.TILE_SIZE
+const MAZE_COLS: int = C.MAZE_COLS
+const MAZE_ROWS: int = C.MAZE_ROWS
 
 # 4-connected neighbours. Order matches the C++ dc[]/dr[] arrays
 # (up, right, down, left). Important: keeps BFS deterministic and

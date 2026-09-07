@@ -61,11 +61,11 @@ enum Weapon {
 
 # Constants (must match C++ Utils.h)
 const TILE_SIZE := 48
-const MAZE_COLS := 21
-const MAZE_ROWS := 19
+const MAZE_COLS := 40
+const MAZE_ROWS := 22
 const UI_HEIGHT := 80
-const WINDOW_WIDTH := 1024
-const WINDOW_HEIGHT := 1024
+const WINDOW_WIDTH := 1920
+const WINDOW_HEIGHT := 1080
 
 @export var mb_type: int = Type.MB_GOBLIN_CHIEFTAIN
 @export var level: int = 1

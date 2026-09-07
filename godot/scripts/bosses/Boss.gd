@@ -41,8 +41,8 @@ const BOSS_TYPE_COUNT := 17
 const MAZE_LEVELS_PER_BOSS := 3
 const TOTAL_LEVELS_PER_BOSS := MAZE_LEVELS_PER_BOSS + 1  # 4
 
-const WINDOW_WIDTH := 1024
-const WINDOW_HEIGHT := 1024
+const WINDOW_WIDTH := 1920
+const WINDOW_HEIGHT := 1080
 const UI_HEIGHT := 80
 
 @export var boss_level: int = 4   # 1-based level (4 = first boss level)
