@@ -80,15 +80,15 @@ const CHARACTER_NAME := {
 # Drives flip logic: default-RIGHT -> flipped when lastDx < 0.
 # Verified per-character via VLM/user-feedback in the original game.
 const SPRITE_DEFAULT_FACES_RIGHT := {
-        CharacterType.HERO_M:   true,
-        CharacterType.HERO_F:   false,
+        CharacterType.HERO_M:   false,  # FIX: sprite faces left
+        CharacterType.HERO_F:   true,   # FIX: sprite faces right
         CharacterType.MAGE:     true,
         CharacterType.ORC:      false,
         CharacterType.ELF:      true,
         CharacterType.KNIGHT:   false,
-        CharacterType.GOLEM:    false,
+        CharacterType.GOLEM:    true,   # FIX: sprite faces right
         CharacterType.DRAGON:   true,
-        CharacterType.VAMPIRE:  true,
+        CharacterType.VAMPIRE:  false,  # FIX: sprite faces left
 }
 
 # --- Tunable stats ----------------------------------------------------------
