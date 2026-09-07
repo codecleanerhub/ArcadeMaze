@@ -149,15 +149,21 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 #            SELECT_PLAYER (always mandatory before game)
                 # The "always go to SelectPlayer first" rule matches the user's
                 # explicit requirement and the C++ engine behavior.
+                # FIX (flusso joystick config): la logica corretta è:
+                # 1. Se c'è un joystick collegato E non è configurato → ConfigJoy
+                # 2. Se 2P e un joystick è configurato ma l'altro no → ConfigJoy per entrambi
+                # 3. Se tutti i joystick collegati sono configurati → NON aprire ConfigJoy, vai a SelectPlayer
+                # 4. "Configura joystick" dal menu → apre SEMPRE ConfigJoy (gestito in _activate_current)
                 var need_joy_config: bool = false
-                # FIX: forza la configurazione joystick SOLO se un joystick
-                # è effettivamente collegato. Se l'utente gioca con la
-                # tastiera, non deve fare la configurazione joystick.
                 var joy_pads: Array = Input.get_connected_joypads()
                 if joy_pads.size() > 0 and ConfigManager:
+                        # C'è almeno un joystick collegato: verifica se è configurato
                         need_joy_config = (not ConfigManager.p1_joystick_ready())
-                        if num_players == 2 and (not ConfigManager.p2_joystick_ready()):
-                                need_joy_config = true
+                        # In 2P, se il primo joystick è configurato ma il secondo no,
+                        # o viceversa, configura entrambi
+                        if num_players == 2 and joy_pads.size() >= 2:
+                                if not ConfigManager.p2_joystick_ready():
+                                        need_joy_config = true
                 if need_joy_config:
                         # Force joystick config first; ConfigJoy.gd will route to
                         # SelectPlayer automatically after both players are configured.
@@ -165,8 +171,8 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                         GameManager.config_joy_step = 0
                         GameManager.go_to_config_joy()
                 else:
-                        # Joystick already calibrated -> still force player selection
-                        # (mandatory per user requirement and C++ flow).
+                        # Joystick già configurato (o nessun joystick collegato):
+                        # vai direttamente a SelectPlayer → Intro → Game.
                         GameManager.go_to_select_player()
 
 
