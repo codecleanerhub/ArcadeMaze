@@ -69,7 +69,7 @@ func _physics_process(_delta: float) -> void:
         var delta_ms: float = _delta * 1000.0
         delta_ms = min(delta_ms, 50.0)
 
-        _handle_input()
+        _handle_input(delta_ms)
         _update_boss(delta_ms)
         _update_hud()
 
@@ -77,7 +77,7 @@ func _physics_process(_delta: float) -> void:
 # ============================================================================
 # Input
 # ============================================================================
-func _handle_input() -> void:
+func _handle_input(delta_ms: float = 16.0) -> void:
         # P1 movement (free, no grid snap)
         var p1_dx: int = 0
         var p1_dy: int = 0
