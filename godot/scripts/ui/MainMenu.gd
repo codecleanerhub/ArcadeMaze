@@ -715,28 +715,35 @@ func _apply_fullscreen() -> void:
                                 screen_pos.x + (screen_size.x - 1280) / 2,
                                 screen_pos.y + (screen_size.y - 720) / 2
                         )
-                # Assicurati che il content_scale sia corretto per windowed
+                # FIX (menu shiftato in basso a sinistra): il problema è che
+                # il content_scale del root window mantiene le vecchie
+                # impostazioni del fullscreen. Dobbiamo resettare completamente
+                # il content_scale usando set_deferred (perché non possiamo
+                # modificarlo durante _draw).
                 if get_tree():
-                        get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-                        get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
-                # FIX (menu in basso a sinistra dopo fullscreen off): il
-                # call_deferred non era sufficiente perché il resize della
-                # finestra non era completo entro la fine del frame corrente.
-                # Usiamo una coroutine che aspetta 2 frame prima di riapplicare
-                # gli anchor, garantendo che il viewport abbia la nuova size.
+                        get_tree().root.set_deferred("content_scale_mode",
+                                Window.CONTENT_SCALE_MODE_CANVAS_ITEMS)
+                        get_tree().root.set_deferred("content_scale_aspect",
+                                Window.CONTENT_SCALE_ASPECT_EXPAND)
+                # Ricrea il background TextureRect e riapplica gli anchor
+                # dopo che il resize è completo (3 frame per sicurezza).
                 _refresh_layout_after_resize_async.call_deferred()
 
 
-# Coroutine che aspetta 2 frame e poi riapplica gli anchor.
-# Questo garantisce che DisplayServer.window_set_mode e win.size siano
-# stati processati dal window manager prima di riapplicare il layout.
+# Coroutine che aspetta 3 frame e poi riapplica il layout completo.
 func _refresh_layout_after_resize_async() -> void:
+        await get_tree().process_frame
         await get_tree().process_frame
         await get_tree().process_frame
         var root: Window = get_tree().root
         if root:
                 root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
                 root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+        # Forza il resize del root window per triggerare il ridisegno
+        if get_window():
+                var cur_size := get_window().size
+                get_window().size = Vector2i(cur_size.x + 1, cur_size.y)
+                get_window().size = cur_size
         set_anchors_preset(Control.PRESET_FULL_RECT)
         if _bg != null:
                 _bg.set_anchors_preset(Control.PRESET_FULL_RECT)

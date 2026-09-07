@@ -624,8 +624,10 @@ func _draw() -> void:
                 EnvironmentArt.draw_crypt_background(self, vp_size, _boss_bg_time)
         # Dark overlay per far risaltare il boss
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)
-        # Disegna decorazioni ambiente boss room
-        _render_boss_room_decorations()
+        # FIX (decorazioni procedurali fatte male): rimosse le decorazioni
+        # (colonne, teschi, bare) disegnate proceduralmente che apparivano
+        # male e mal distribuite. Lo sfondo PNG AI è sufficiente.
+        # _render_boss_room_decorations()
         # FIX (nome boss in alto): disegna il nome del boss stilizzato
         # in alto al centro (mirror C++ Game.cpp drawBossBanner).
         if boss != null:
