@@ -328,7 +328,7 @@ func _draw_mine() -> void:
         var aura_pulse: float = sin(anim_time * 5.0) * 0.2 + 1.0
         var aura_r: float = 18.0 * aura_pulse * scale_factor
         draw_circle(Vector2.ZERO, aura_r,
-                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 80.0 / 255.0))
+                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 60.0 / 255.0))
         # --- Scia quando rimbalza ---
         if bouncing:
                 var trail_pos: Vector2 = -velocity
@@ -356,7 +356,7 @@ func _draw_chalice() -> void:
         var scale_factor: float = 2.5
         var aura_r := (18.0 + pulse * 3.0) * scale_factor
         draw_circle(Vector2.ZERO - Vector2(0, bob_offset), aura_r,
-                                Color(1.0, 0.85, 0.2, 0.25))
+                                Color(1.0, 0.85, 0.2, 0.12))
         # Cup body
         var gold := Color(1.0, 0.85, 0.2)
         var gold_dark := Color(0.7, 0.55, 0.1)
@@ -494,14 +494,13 @@ func _draw_speed_boots() -> void:
         # FIX (sprite troppo piccolo): usa sprite AI bonus_speedboots scalato
         # a 48x48 (era 64x64 nativo, troppo piccolo nel tile 48px).
         var y_off := -bob_offset
-        # Glow giallo
-        draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.85, 0.2, 0.2))
+        # Glow giallo ridotto (era 20px, ora 12px, meno invadente)
+        draw_circle(Vector2.ZERO, 12.0, Color(1.0, 0.85, 0.2, 0.15))
         if SpriteManager:
                 var sheet = SpriteManager.get_sheet("bonus_speedboots")
                 if sheet != null and sheet.is_loaded():
                         var at: AtlasTexture = sheet.get_frame_texture("idle", 0)
                         if at != null:
-                                # Scala a 48x48 per visibilità
                                 var size: float = 48.0
                                 draw_texture_rect(at, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                                 return
@@ -515,16 +514,21 @@ func _draw_speed_boots() -> void:
         ]), Color(1.0, 1.0, 1.0, 0.9))
 
 
+# Cache delle texture PNG dei tesori (evita load() ogni frame → lag).
+# Inizializzata lazy al primo _draw_treasure.
+static var _treasure_tex_cache: Dictionary = {}
+
 func _draw_treasure() -> void:
         # FIX (tesori non riconoscibili): usa sprite PNG dedicati invece
         # delle texture procedurali di EnvironmentArt (che erano troppo
         # astratte e non riconoscibili). I PNG sono generati con AI a
         # 1024x1024 e scalati a 48x48 per il display.
+        # FIX (lag): le texture vengono cachate in _treasure_tex_cache per
+        # evitare di chiamare load() ogni frame (causava lag estremo).
         var y_off := -bob_offset
-        # Soft glow dorato
-        draw_circle(Vector2.ZERO, 24.0, Color(1.0, 0.85, 0.3, 0.2))
+        # Soft glow dorato (ridotto per non nascondere il tesoro)
         draw_circle(Vector2.ZERO, 16.0, Color(1.0, 0.85, 0.3, 0.15))
-        # Carica la texture PNG dedicata per questo tipo di tesoro
+        # Carica la texture PNG dedicata per questo tipo di tesoro (cached)
         var tex_path: String = ""
         match treasure_type:
                 TreasureType.TRES_CROWN: tex_path = "res://assets/sprites/treasures/treasure_crown.png"
@@ -532,10 +536,15 @@ func _draw_treasure() -> void:
                 TreasureType.TRES_CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
                 TreasureType.TRES_GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
                 TreasureType.TRES_CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
-        if not tex_path.is_empty() and ResourceLoader.exists(tex_path):
-                var tex: Texture2D = load(tex_path) as Texture2D
+        if not tex_path.is_empty():
+                var tex: Texture2D = null
+                if _treasure_tex_cache.has(tex_path):
+                        tex = _treasure_tex_cache[tex_path]
+                elif ResourceLoader.exists(tex_path):
+                        tex = load(tex_path) as Texture2D
+                        if tex != null:
+                                _treasure_tex_cache[tex_path] = tex
                 if tex != null:
-                        # Disegna la texture 1024x1024 scalata a 48x48 centrata
                         var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
