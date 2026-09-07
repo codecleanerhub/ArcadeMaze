@@ -542,6 +542,10 @@ func _draw_treasure() -> void:
                         tex = load(tex_path) as Texture2D
                         if tex != null:
                                 _treasure_tex_cache[tex_path] = tex
+                        else:
+                            push_warning("[Collectibles] Failed to load treasure PNG: " + tex_path)
+                else:
+                    push_warning("[Collectibles] Treasure PNG not found: " + tex_path)
                 if tex != null:
                         var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)

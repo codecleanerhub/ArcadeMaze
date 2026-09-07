@@ -130,6 +130,7 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 GameManager.num_players = num_players
                 GameManager.game_mode = game_mode
                 GameManager.music_enabled = music
+                GameManager.test_mode_enabled = _test_mode_enabled
                 GameManager.player1_character = p1_char
                 GameManager.player2_character = p2_char
                 GameManager.current_level = 1
@@ -149,7 +150,11 @@ func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 # The "always go to SelectPlayer first" rule matches the user's
                 # explicit requirement and the C++ engine behavior.
                 var need_joy_config: bool = false
-                if ConfigManager:
+                # FIX: forza la configurazione joystick SOLO se un joystick
+                # è effettivamente collegato. Se l'utente gioca con la
+                # tastiera, non deve fare la configurazione joystick.
+                var joy_pads: Array = Input.get_connected_joypads()
+                if joy_pads.size() > 0 and ConfigManager:
                         need_joy_config = (not ConfigManager.p1_joystick_ready())
                         if num_players == 2 and (not ConfigManager.p2_joystick_ready()):
                                 need_joy_config = true
