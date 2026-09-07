@@ -30,6 +30,7 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 var current_level: int = 4
 var is_paused: bool = false
 var test_skip_key_held: bool = false
+var grace_period_ms: int = 1000  # 1s delay before Space can kill boss
 var boss_room_weapons: Array = []  # [{weapon, pos}]
 var boss: Node2D = null
 var died_in_boss: bool = false
@@ -122,13 +123,20 @@ func _handle_input() -> void:
         if Input.is_action_just_pressed("pause"):
                 _toggle_pause()
 
-        # Test mode: Space kills boss instantly
+        # Test mode: Space kills boss instantly (C++ behavior).
+        # FIX (boss skippato subito): il debounce test_skip_key_held veniva
+        # reinizializzato a false ad ogni nuova scena, quindi se l'utente
+        # teneva premuto spazio dal livello precedente, il boss veniva
+        # killato subito. Aggiungiamo un delay di 1s (grace_period_ms)
+        # prima che lo spazio possa killare il boss.
         if GameManager and GameManager.test_mode_enabled:
-                var space_now: bool = Input.is_key_pressed(KEY_SPACE)
-                if space_now and not test_skip_key_held:
-                        if boss:
-                                boss.take_damage(9999)
-                test_skip_key_held = space_now
+                grace_period_ms = maxi(0, grace_period_ms - int(delta_ms))
+                if grace_period_ms == 0:
+                        var space_now: bool = Input.is_key_pressed(KEY_SPACE)
+                        if space_now and not test_skip_key_held:
+                                if boss:
+                                        boss.take_damage(9999)
+                        test_skip_key_held = space_now
 
         # ESC: return to main menu
         if Input.is_key_pressed(KEY_ESCAPE):
