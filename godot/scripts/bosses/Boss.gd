@@ -214,9 +214,9 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                 projectiles_out: Array) -> void:
         anim_time += float(delta_ms) * 0.001
 
-        # Decrement attackingTimer.
-        if attacking_timer_ms > 16:
-                attacking_timer_ms -= 16
+        # Decrement attackingTimer (FIX: usa delta_ms reale, non fisso 16).
+        if attacking_timer_ms > delta_ms:
+                attacking_timer_ms -= delta_ms
         else:
                 attacking_timer_ms = 0
 

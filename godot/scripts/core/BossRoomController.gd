@@ -152,10 +152,10 @@ func _handle_input(delta_ms: float = 16.0) -> void:
 # Boss fight update loop (STATE_BOSS)
 # ============================================================================
 func _update_boss(delta_ms: float) -> void:
-        # (1) Player update (free movement)
-        player.update_player(null, true)
+        # (1) Player update (free movement, FIX: passa delta_ms)
+        player.update_player(null, true, delta_ms)
         if GameManager and GameManager.num_players == 2 and player2.visible:
-                player2.update_player(null, true)
+                player2.update_player(null, true, delta_ms)
 
         # (2) Boss update
         # FIX CRASH: boss.update_step si aspetta un Array come arg 4
@@ -167,18 +167,14 @@ func _update_boss(delta_ms: float) -> void:
                 var new_projectiles: Array = []
                 boss.update_step(p_pos.x, p_pos.y, int(delta_ms), new_projectiles)
                 # Spawn boss projectiles
-                # FIX: Boss._shoot_pattern append oggetti Projectile (Node2D)
-                # non Dictionary. Usiamo le property dirette di Projectile.
+                # FIX: Boss._shoot_pattern append oggetti Projectile (Node2D).
+                # Impostiamo position = pos e visible = true, poi aggiungiamo
+                # come figli di boss_projectiles_node.
                 for proj in new_projectiles:
                         if proj is Projectile:
-                                # Projectile è già un Node2D con pos, dir, power
+                                proj.position = proj.pos
+                                proj.visible = true
                                 boss_projectiles_node.add_child(proj)
-                        elif proj is Dictionary:
-                                var p_node := Node2D.new()
-                                p_node.position = proj.get("pos", Vector2.ZERO)
-                                p_node.set_meta("velocity", proj.get("dir", Vector2.ZERO) * 6.0)
-                                p_node.set_meta("power", proj.get("power", 5))
-                                boss_projectiles_node.add_child(p_node)
 
         # (3) Advance boss projectiles
         _advance_boss_projectiles(delta_ms)

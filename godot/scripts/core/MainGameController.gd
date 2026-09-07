@@ -527,6 +527,7 @@ func _update_playing(delta_ms: float) -> void:
                 # la direzione (unit vector, 1px/frame). Moltiplichiamo per
                 # 6px/frame (come i proiettili del player che sono 8px/frame).
                 p_node.set_meta("velocity", proj_dir * 6.0)
+                p_node.visible = true  # FIX: rendi visibile per il draw loop
                 enemy_projectiles_node.add_child(p_node)
 
         # (3b) Advance enemy projectiles (move them by their velocity)

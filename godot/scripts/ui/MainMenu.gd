@@ -323,21 +323,20 @@ func _build_ui() -> void:
         add_child(_title_label)
 
         # --- Parchment panel ---
-        # Anchored to fill the middle/lower portion of the screen.
-        # anchor_left=0, anchor_right=1, offset_left=120, offset_right=-120
-        # => panel spans from x=120 to x=(width-120), centered horizontally.
-        # offset_top=300 leaves room for the title; offset_bottom=-100 leaves
-        # room for the footer + hint text.
+        # FIX: panel più piccolo e adattivo. Era offset_left=120, offset_right=-120
+        # (panel largo 1800px su schermo 1920). Ora offset_left=400, offset_right=-400
+        # (panel largo 1120px, più proporzionato alle 7 voci di menu).
+        # Altezza ridotta: offset_top=280, offset_bottom=-180 invece di 300/-100.
         _panel = Panel.new()
         _panel.name = "MenuPanel"
         _panel.anchor_left = 0.0
         _panel.anchor_top = 0.0
         _panel.anchor_right = 1.0
         _panel.anchor_bottom = 1.0
-        _panel.offset_left = 120.0
-        _panel.offset_top = 300.0
-        _panel.offset_right = -120.0
-        _panel.offset_bottom = -100.0
+        _panel.offset_left = 400.0
+        _panel.offset_top = 280.0
+        _panel.offset_right = -400.0
+        _panel.offset_bottom = -180.0
         _panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _panel.grow_vertical = Control.GROW_DIRECTION_BOTH
         var stylebox := StyleBoxFlat.new()
