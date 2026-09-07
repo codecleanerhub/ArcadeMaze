@@ -558,18 +558,50 @@ func _update_hud() -> void:
 # Drawing
 # ============================================================================
 var _boss_bg_time: float = 0.0
+var _boss_bg_texture: Texture2D = null
+var _boss_bg_loaded: bool = false
 
 func _process(delta: float) -> void:
         _boss_bg_time += delta
         queue_redraw()
 
+func _load_boss_bg() -> void:
+        if _boss_bg_loaded:
+                return
+        _boss_bg_loaded = true
+        # Mappa boss_type → path PNG background
+        var bg_path: String = ""
+        if boss != null:
+                var bt: int = boss.boss_type
+                match bt:
+                        0: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_golem.png"
+                        1: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_lich.png"
+                        2: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_demon.png"
+                        6: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_dragon.png"
+                        8: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_vampire.png"
+        if not bg_path.is_empty():
+                var img := Image.new()
+                var abs_path: String = ProjectSettings.globalize_path(bg_path)
+                if img.load(abs_path) == OK:
+                        _boss_bg_texture = ImageTexture.create_from_image(img)
+
 func _draw() -> void:
-        # FIX (sfondo boss room troppo povero): usa il background cripta
-        # procedurale di EnvironmentArt (come ConfigJoy e MainGame) con
-        # torce animate, nebbia, colonne e teschi, per un look fantasy
-        # coerente con il resto del gioco.
+        # FIX (sfondo boss room per-tipo): carica un PNG AI dedicato per
+        # ogni tipo di boss (golem=caverna, lich=necropoli, demon=inferno,
+        # dragon=tana drago, vampire=castello gotico). Se non disponibile,
+        # usa il background cripta procedurale.
+        _load_boss_bg()
         var vp_size: Vector2 = get_viewport_rect().size
-        if EnvironmentArt:
+        if _boss_bg_texture != null:
+                # Cover-fit della texture
+                var tex_size: Vector2 = _boss_bg_texture.get_size()
+                var scale_x: float = vp_size.x / tex_size.x
+                var scale_y: float = vp_size.y / tex_size.y
+                var bg_scale: float = maxf(scale_x, scale_y)
+                var draw_size: Vector2 = tex_size * bg_scale
+                var draw_pos: Vector2 = (vp_size - draw_size) * 0.5
+                draw_texture_rect(_boss_bg_texture, Rect2(draw_pos, draw_size), false)
+        elif EnvironmentArt:
                 EnvironmentArt.draw_crypt_background(self, vp_size, _boss_bg_time)
         # Dark overlay per far risaltare il boss
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)
