@@ -308,10 +308,11 @@ func _load_sd_sheet(sprite_id: String) -> Object:
 # ===========================================================================
 func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                   player_pixel_pos: Vector2,
-                                  enemy_projectiles: Array) -> void:
-        # Tick animation timers (16 ms / frame @ 60 FPS).
-        attacking_timer = _tick(attacking_timer)
-        dying_timer = _tick(dying_timer)
+                                  enemy_projectiles: Array,
+                                  delta_ms: float = 16.0) -> void:
+        # Tick animation timers using REAL delta_ms (FIX: era fisso 16ms).
+        attacking_timer = _tick_ms(attacking_timer, delta_ms)
+        dying_timer = _tick_ms(dying_timer, delta_ms)
 
         # --- Electrified state: lightning-bolt visual; enemy frozen but timer
         # still ticks so other timers progress alongside it. ---
@@ -339,8 +340,8 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
         var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
         var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
-        path_update_timer += 16
-        anim_time += 16  # continuous; NEVER reset here (preserves BFS cadence)
+        path_update_timer += int(delta_ms)
+        anim_time += int(delta_ms)
 
         # --- Anti-stuck tracking (line 402-415) ---
         # If the enemy barely moved (<1 px) since last frame, accumulate the
@@ -349,7 +350,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         var dx_pos: float = position.x - last_pos.x
         var dy_pos: float = position.y - last_pos.y
         if dx_pos * dx_pos + dy_pos * dy_pos < 1.0:
-                stuck_timer += 16
+                stuck_timer += int(delta_ms)
         else:
                 stuck_timer = 0
         last_pos = position
@@ -430,7 +431,23 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         # via the "idle" condition above.
 
                 # Stop if the cell ahead is a wall (don't tunnel through).
+                # FIX (nemici attraversano i muri): il check viene fatto solo
+                # quando il nemico è al centro della cella. Ma il movimento
+                # avviene OGNI frame, anche quando non è al centro. Aggiungiamo
+                # un check wall collision anche dopo il movimento.
                 if maze.is_wall(col + dx, row + dy):
+                        dx = 0
+                        dy = 0
+
+        # Wall collision check DOPO il movimento: se il nemico è finito in
+        # una cella WALL, riportalo al centro della cella precedente.
+        var new_col := int(position.x / TILE_SIZE)
+        var new_row := int((position.y - UI_HEIGHT) / TILE_SIZE)
+        if new_col >= 0 and new_col < MAZE_COLS and new_row >= 0 and new_row < MAZE_ROWS:
+                if maze.is_wall(new_col, new_row):
+                        # Ripristina posizione precedente
+                        position.x = col * TILE_SIZE + TILE_SIZE / 2.0
+                        position.y = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
                         dx = 0
                         dy = 0
 
@@ -441,7 +458,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # Disabled while fleeing (chalice active - enemy runs, doesn't shoot).
         if can_shoot(type) and not flee_mode:
                 if shoot_cooldown > 0:
-                        shoot_cooldown -= 16
+                        shoot_cooldown -= int(delta_ms)
                 else:
                         shoot_cooldown = SHOOT_COOLDOWN_MIN_MS \
                                         + (randi() % SHOOT_COOLDOWN_RAND_MS)
@@ -450,9 +467,12 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         var dist: float = sqrt(dxp * dxp + dyp * dyp)
                         if dist > 0.0 and dist < SHOOT_RANGE_PX:
                                 attacking_timer = 400  # attack animation ~400 ms
+                                # FIX: spawn il proiettile con offset 20px verso
+                                # il player per evitare che spawni dentro un muro.
+                                var shoot_dir := Vector2(dxp / dist, dyp / dist)
                                 enemy_projectiles.append({
-                                        "pos": position,
-                                        "dir": Vector2(dxp / dist * 3.0, dyp / dist * 3.0),
+                                        "pos": position + shoot_dir * 20.0,
+                                        "dir": shoot_dir * 3.0,
                                         "power": 1,
                                         "active": true,
                                         "type": 0,  # WeaponType.PISTOL appearance
@@ -997,6 +1017,11 @@ func _on_dust_puff_timeout(puff: GPUParticles2D) -> void:
 # Matches the `if (t > 16) t -= 16; else t = 0;` idiom in Enemy.cpp.
 static func _tick(t: int) -> int:
         return t - 16 if t > 16 else 0
+
+# FIX (nemici a scatti): tick basato su delta_ms reale.
+static func _tick_ms(t: int, delta_ms: float) -> int:
+        var new_t: int = t - int(delta_ms)
+        return new_t if new_t > 0 else 0
 
 
 # Death animation fallback when sprite sheet has no "death" animation.

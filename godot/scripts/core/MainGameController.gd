@@ -509,7 +509,7 @@ func _update_playing(delta_ms: float) -> void:
         for enemy in spawner.enemies:
                 if not enemy.is_death_anim_done():
                         enemy.set_flee_mode(player_invuln)
-                        enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles)
+                        enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles, delta_ms)
 
         # (3) Spawn enemy projectiles as Projectile nodes so they get rendered + collide
         for proj_data in enemy_projectiles:
@@ -985,6 +985,22 @@ func start_level(lvl: int) -> void:
         current_level = lvl
         if GameManager:
                 GameManager.current_level = lvl
+        # FIX (nemici precedenti rimangono): clear tutti i nemici, proiettili,
+        # collectibles e decals del livello precedente prima di generare il nuovo.
+        spawner.clear()
+        for proj in projectiles_node.get_children():
+                proj.queue_free()
+        for proj in enemy_projectiles_node.get_children():
+                proj.queue_free()
+        for item in collectibles_node.get_children():
+                item.queue_free()
+        blood_stains.clear()
+        ash_piles.clear()
+        fire_bursts.clear()
+        particles.clear()
+        lightning_bolts.clear()
+        scepter_active = false
+        scepter_strikes_left = 0
         # Generate maze
         maze.generate(current_level)
         # Reset player position
