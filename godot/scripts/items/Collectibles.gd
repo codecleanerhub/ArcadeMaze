@@ -514,17 +514,15 @@ func _draw_speed_boots() -> void:
 
 # Cache delle texture PNG dei tesori (evita load() ogni frame → lag).
 # Inizializzata lazy al primo _draw_treasure.
+# FIX (PNG non caricati su Windows): usiamo Image.load() + ImageTexture
+# invece di ResourceLoader.load() per bypassare il sistema di import
+# di Godot che richiede .ctex generati dall'editor. Image.load() legge
+# direttamente il file PNG dal disco senza bisogno di .import/.ctex.
 static var _treasure_tex_cache: Dictionary = {}
 
 func _draw_treasure() -> void:
-        # FIX (tesori non riconoscibili): usa sprite PNG dedicati invece
-        # delle texture procedurali di EnvironmentArt (che erano troppo
-        # astratte e non riconoscibili). I PNG sono generati con AI a
-        # 1024x1024 e scalati a 48x48 per il display.
-        # FIX (lag): le texture vengono cachate in _treasure_tex_cache per
-        # evitare di chiamare load() ogni frame (causava lag estremo).
         var y_off := -bob_offset
-        # Glow dorato ridotto (era 16px, ora 10px)
+        # Glow dorato ridotto
         draw_circle(Vector2.ZERO, 10.0, Color(1.0, 0.85, 0.3, 0.10))
         # Carica la texture PNG dedicata per questo tipo di tesoro (cached)
         var tex_path: String = ""
@@ -538,10 +536,17 @@ func _draw_treasure() -> void:
                 var tex: Texture2D = null
                 if _treasure_tex_cache.has(tex_path):
                         tex = _treasure_tex_cache[tex_path]
-                elif ResourceLoader.exists(tex_path):
-                        tex = load(tex_path) as Texture2D
-                        if tex != null:
-                                _treasure_tex_cache[tex_path] = tex
+                else:
+                        # FIX: usa Image.load() invece di ResourceLoader.load()
+                        # per bypassare il sistema di import. Image.load()
+                        # legge direttamente il file PNG dal disco.
+                        var img := Image.new()
+                        # Converti res:// path in path assoluto per Image.load()
+                        var abs_path: String = ProjectSettings.globalize_path(tex_path)
+                        if img.load(abs_path) == OK:
+                                tex = ImageTexture.create_from_image(img)
+                                if tex != null:
+                                        _treasure_tex_cache[tex_path] = tex
                 if tex != null:
                         var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
