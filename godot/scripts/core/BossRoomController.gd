@@ -632,7 +632,7 @@ func _draw() -> void:
                 var boss_name: String = Boss.get_boss_name(boss.boss_type)
                 var cx: float = vp_size.x * 0.5
                 var by: float = 35.0
-                var font := get_theme_default_font()
+                var font: Font = ThemeDB.fallback_font
                 # Shadow
                 draw_string(font, Vector2(cx - 250, by + 2), boss_name,
                         HORIZONTAL_ALIGNMENT_CENTER, 500, 36,
