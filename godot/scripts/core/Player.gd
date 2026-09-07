@@ -84,7 +84,7 @@ const SPRITE_DEFAULT_FACES_RIGHT := {
         CharacterType.HERO_F:   false,
         CharacterType.MAGE:     true,
         CharacterType.ORC:      false,
-        CharacterType.ELF:      false,
+        CharacterType.ELF:      true,
         CharacterType.KNIGHT:   false,
         CharacterType.GOLEM:    false,
         CharacterType.DRAGON:   true,
