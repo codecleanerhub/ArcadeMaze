@@ -319,69 +319,80 @@ func _draw() -> void:
 
 
 func _draw_mine() -> void:
-        # FIX (sprite troppo grande): scale_factor ridotto da 2.5 a 1.5.
+        var y_off := -bob_offset
+        # FIX: usa PNG AI dedicato invece di disegno procedurale
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_mine.png")
+        if tex != null:
+                draw_circle(Vector2.ZERO, 10.0, Color(0.8, 0.2, 0.1, 0.10))
+                var size: float = 40.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale (solo se PNG non disponibile)
         var scale_factor: float = 1.5
         var r := (10.0 + pulse * 1.5) * scale_factor
         var col := Color(0.7, 0.6, 0.3)
         var dark := Color(0.2, 0.2, 0.2)
-        # --- Aura rossa pulsante ---
         var aura_pulse: float = sin(anim_time * 5.0) * 0.2 + 1.0
         var aura_r: float = 14.0 * aura_pulse
         draw_circle(Vector2.ZERO, aura_r,
                 Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 50.0 / 255.0))
-        # --- Scia quando rimbalza ---
-        if bouncing:
-                var trail_pos: Vector2 = -velocity
-                draw_circle(trail_pos, 3.0 * scale_factor,
-                        Color(255.0 / 255.0, 150.0 / 255.0, 50.0 / 255.0, 150.0 / 255.0))
-        # --- Corpo della mina ---
         draw_circle(Vector2.ZERO, r, col)
         draw_circle(Vector2.ZERO, r, dark, false, 1.5)
-        # --- Spikes ---
         for i in range(8):
                 var a := (float(i) / 8.0) * TAU + deg_to_rad(rotation_deg)
                 var tip := Vector2(cos(a), sin(a)) * (r + 4.0 * scale_factor)
                 var base_l := Vector2(cos(a + 0.3), sin(a + 0.3)) * r
                 var base_r := Vector2(cos(a - 0.3), sin(a - 0.3)) * r
                 draw_colored_polygon(PackedVector2Array([tip, base_l, base_r]), dark)
-        # --- LED rosso pulsante ---
         if fmod(anim_time, 1.0) > 0.5:
                 draw_circle(Vector2.ZERO, 2.0 * scale_factor, Color(1.0, 0.2, 0.2))
 
 
 func _draw_chalice() -> void:
-        # FIX (sprite troppo grande): scale_factor ridotto da 2.5 a 1.5.
+        var y_off := -bob_offset
+        # FIX: usa PNG AI dedicato invece di disegno procedurale
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_chalice.png")
+        if tex != null:
+                draw_circle(Vector2.ZERO, 10.0, Color(1.0, 0.85, 0.2, 0.10))
+                var size: float = 40.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale
         var scale_factor: float = 1.5
         var aura_r := (14.0 + pulse * 2.0)
         draw_circle(Vector2.ZERO - Vector2(0, bob_offset), aura_r,
                                 Color(1.0, 0.85, 0.2, 0.10))
-        # Cup body
         var gold := Color(1.0, 0.85, 0.2)
         var gold_dark := Color(0.7, 0.55, 0.1)
-        var y_off := -bob_offset
-        var top := Rect2(-8.0 * scale_factor, -10.0 * scale_factor + y_off,
+        var y_off2 := -bob_offset
+        var top := Rect2(-8.0 * scale_factor, -10.0 * scale_factor + y_off2,
                          16.0 * scale_factor, 4.0 * scale_factor)
-        var body := Rect2(-6.0 * scale_factor, -6.0 * scale_factor + y_off,
+        var body := Rect2(-6.0 * scale_factor, -6.0 * scale_factor + y_off2,
                           12.0 * scale_factor, 10.0 * scale_factor)
-        var base := Rect2(-3.0 * scale_factor, 4.0 * scale_factor + y_off,
+        var base := Rect2(-3.0 * scale_factor, 4.0 * scale_factor + y_off2,
                           6.0 * scale_factor, 4.0 * scale_factor)
         draw_rect(top, gold)
         draw_rect(body, gold)
         draw_rect(base, gold_dark)
-        # Stem
-        draw_rect(Rect2(-1.5 * scale_factor, -2.0 * scale_factor + y_off,
+        draw_rect(Rect2(-1.5 * scale_factor, -2.0 * scale_factor + y_off2,
                         3.0 * scale_factor, 6.0 * scale_factor), gold)
-        # Highlight
-        draw_rect(Rect2(-5.0 * scale_factor, -5.0 * scale_factor + y_off,
+        draw_rect(Rect2(-5.0 * scale_factor, -5.0 * scale_factor + y_off2,
                         2.0 * scale_factor, 4.0 * scale_factor),
                   Color(1.0, 1.0, 0.7))
-        # Outline for visibility
         draw_rect(top, gold_dark, false, 1.5)
         draw_rect(body, gold_dark, false, 1.5)
 
 
 func _draw_scepter() -> void:
-        # Port 1:1 di Game::drawMagicScepter (C++ righe 3308-3478).
+        var y_off := -bob_offset
+        # FIX: usa PNG AI dedicato invece di disegno procedurale
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_scepter.png")
+        if tex != null:
+                draw_circle(Vector2.ZERO, 10.0, Color(0.3, 0.6, 1.0, 0.10))
+                var size: float = 48.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale (codice originale sotto)
         # Bastone di Gandalf con gemma azzurra incastonata in gabbia dorata.
         # Strati (dal basso verso l'alto):
         #   1. Aura magica pulsante (2 cerchi: gem + bianco)
@@ -489,10 +500,15 @@ func _draw_scepter() -> void:
 
 
 func _draw_speed_boots() -> void:
-        # FIX (sprite troppo piccolo): usa sprite AI bonus_speedboots scalato
-        # a 48x48 (era 64x64 nativo, troppo piccolo nel tile 48px).
         var y_off := -bob_offset
-        # Glow giallo ridotto (era 12px, ora 8px)
+        # FIX: usa PNG AI dedicato invece di sprite bonus_speedboots
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_speedboots.png")
+        if tex != null:
+                draw_circle(Vector2.ZERO, 8.0, Color(1.0, 0.85, 0.2, 0.10))
+                var size: float = 40.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback: usa sprite AI bonus_speedboots da SpriteManager
         draw_circle(Vector2.ZERO, 8.0, Color(1.0, 0.85, 0.2, 0.10))
         if SpriteManager:
                 var sheet = SpriteManager.get_sheet("bonus_speedboots")
@@ -502,7 +518,7 @@ func _draw_speed_boots() -> void:
                                 var size: float = 48.0
                                 draw_texture_rect(at, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                                 return
-        # Fallback: Winged boot icon
+        # Fallback 2: procedurale
         draw_rect(Rect2(-6.0, 0.0 + y_off, 10.0, 6.0), Color(0.4, 0.3, 0.2))
         draw_rect(Rect2(-6.0, -6.0 + y_off, 6.0, 8.0), Color(0.4, 0.3, 0.2))
         draw_colored_polygon(PackedVector2Array([
@@ -512,13 +528,23 @@ func _draw_speed_boots() -> void:
         ]), Color(1.0, 1.0, 1.0, 0.9))
 
 
-# Cache delle texture PNG dei tesori (evita load() ogni frame → lag).
-# Inizializzata lazy al primo _draw_treasure.
-# FIX (PNG non caricati su Windows): usiamo Image.load() + ImageTexture
-# invece di ResourceLoader.load() per bypassare il sistema di import
-# di Godot che richiede .ctex generati dall'editor. Image.load() legge
-# direttamente il file PNG dal disco senza bisogno di .import/.ctex.
-static var _treasure_tex_cache: Dictionary = {}
+# Cache delle texture PNG dei collectibles (evita load() ogni frame → lag).
+# Usa Image.load() per bypassare il sistema di import di Godot.
+static var _collectible_tex_cache: Dictionary = {}
+
+# Carica una texture PNG dal disco usando Image.load() (bypassa import).
+# Ritorna null se il file non esiste o non può essere caricato.
+static func _load_png_cached(path: String) -> Texture2D:
+        if _collectible_tex_cache.has(path):
+                return _collectible_tex_cache[path]
+        var img := Image.new()
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if img.load(abs_path) == OK:
+                var tex := ImageTexture.create_from_image(img)
+                if tex != null:
+                        _collectible_tex_cache[path] = tex
+                        return tex
+        return null
 
 func _draw_treasure() -> void:
         var y_off := -bob_offset
@@ -533,20 +559,7 @@ func _draw_treasure() -> void:
                 TreasureType.TRES_GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
                 TreasureType.TRES_CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
         if not tex_path.is_empty():
-                var tex: Texture2D = null
-                if _treasure_tex_cache.has(tex_path):
-                        tex = _treasure_tex_cache[tex_path]
-                else:
-                        # FIX: usa Image.load() invece di ResourceLoader.load()
-                        # per bypassare il sistema di import. Image.load()
-                        # legge direttamente il file PNG dal disco.
-                        var img := Image.new()
-                        # Converti res:// path in path assoluto per Image.load()
-                        var abs_path: String = ProjectSettings.globalize_path(tex_path)
-                        if img.load(abs_path) == OK:
-                                tex = ImageTexture.create_from_image(img)
-                                if tex != null:
-                                        _treasure_tex_cache[tex_path] = tex
+                var tex: Texture2D = _load_png_cached(tex_path)
                 if tex != null:
                         var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)

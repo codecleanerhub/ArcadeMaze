@@ -557,9 +557,23 @@ func _update_hud() -> void:
 # ============================================================================
 # Drawing
 # ============================================================================
+var _boss_bg_time: float = 0.0
+
+func _process(delta: float) -> void:
+        _boss_bg_time += delta
+        queue_redraw()
+
 func _draw() -> void:
-        # Disegna decorazioni ambiente boss room: bare, colonne, ruderi, teschi
-        # (vantaggio Godot: texture procedurali ad alta risoluzione da EnvironmentArt)
+        # FIX (sfondo boss room troppo povero): usa il background cripta
+        # procedurale di EnvironmentArt (come ConfigJoy e MainGame) con
+        # torce animate, nebbia, colonne e teschi, per un look fantasy
+        # coerente con il resto del gioco.
+        var vp_size: Vector2 = get_viewport_rect().size
+        if EnvironmentArt:
+                EnvironmentArt.draw_crypt_background(self, vp_size, _boss_bg_time)
+        # Dark overlay per far risaltare il boss
+        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)
+        # Disegna decorazioni ambiente boss room
         _render_boss_room_decorations()
         # Draw boss room weapons on the floor
         for w_entry in boss_room_weapons:
