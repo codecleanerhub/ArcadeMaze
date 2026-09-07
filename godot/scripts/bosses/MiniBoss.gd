@@ -77,7 +77,7 @@ var pos: Vector2 = Vector2.ZERO:
                 position = v
 
 var size: int = 32
-var speed: int = 2
+var speed: int = 1  # FIX: max 95% player speed (player=2, enemy=1)
 var health: int = 18
 var max_health: int = 18
 var weapon: int = Weapon.MBW_AXE
@@ -249,20 +249,21 @@ static func get_base_health(t: int) -> int:
                 24, 34, 28, 30, 36, 32, 30,                                          # Hybrids
         ]
         if t < 0 or t >= TABLE.size():
-                return 22
+                return 12
         return TABLE[t]
 
 
 static func get_base_speed(t: int) -> int:
+	# FIX: all speeds capped at 1 (95% of player speed 2)
         const TABLE := [
-                2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 1, 1, 2,                  # LOTR/D&D
-                2, 2, 2, 2, 2, 2, 1,                                                 # Narnia
-                1, 2, 2, 1, 1, 2, 2, 2, 2, 1,                                        # Witcher
-                2, 2, 2, 1, 2, 1, 2, 2, 1, 1,                                        # Doom
-                2, 1, 2, 2, 1, 1, 2,                                                 # Hybrids
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                  # LOTR/D&D
+                1, 1, 1, 1, 1, 1, 1,                                                 # Narnia
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                        # Witcher
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                        # Doom
+                1, 1, 1, 1, 1, 1, 1,                                                 # Hybrids
         ]
         if t < 0 or t >= TABLE.size():
-                return 2
+                return 1
         return TABLE[t]
 
 
@@ -279,11 +280,11 @@ static func get_base_size(t: int) -> int:
 func get_attack_damage() -> int:
         match weapon:
                 Weapon.MBW_AXE:       return 18
-                Weapon.MBW_MACE:      return 22
+                Weapon.MBW_MACE:      return 12
                 Weapon.MBW_SWORD:     return 16
                 Weapon.MBW_DAGGER:    return 12
-                Weapon.MBW_CHAIN:     return 20
-                Weapon.MBW_CLUB:      return 25
+                Weapon.MBW_CHAIN:     return 10
+                Weapon.MBW_CLUB:      return 15
                 Weapon.MBW_WHIP:      return 15
                 Weapon.MBW_TENTACLES: return 14
         return 15
