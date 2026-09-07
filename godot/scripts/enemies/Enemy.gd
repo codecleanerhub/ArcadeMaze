@@ -910,16 +910,20 @@ func _draw_sprite_frame() -> void:
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
         # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
-        # NON lo flip orizzontalmente. Per fare un flip H orizzontale,
-        # creiamo una copia dell'AtlasTexture con flip_h = true.
+        # NON lo flip orizzontalmente. Per fare un flip H con
+        # draw_texture_rect, si usa un Rect2 con width negativa (il
+        # dest_rect viene disegnato da destra a sinistra).
+        # NOTA: AtlasTexture in Godot 4.7 NON ha la property flip_h
+        # (esiste solo su Sprite2D/Sprite3D), quindi non si può fare
+        # flipped_at.flip_h = true.
         var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
         if dx < 0:
-                # Crea un AtlasTexture flippato orizzontalmente
-                var flipped_at := AtlasTexture.new()
-                flipped_at.atlas = at.atlas
-                flipped_at.region = at.region
-                flipped_at.flip_h = true
-                draw_texture_rect(flipped_at, dest_rect, false)
+                # Flip H: disegna con dest_rect che parte da destra e
+                # ha width negativa. Il Rect2 diventa:
+                #   Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)
+                # Godot disegna la texture specchiata.
+                var flip_rect: Rect2 = Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)
+                draw_texture_rect(at, flip_rect, false)
         else:
                 draw_texture_rect(at, dest_rect, false)
 
