@@ -319,16 +319,16 @@ func _draw() -> void:
 
 
 func _draw_mine() -> void:
-        # FIX (sprite mina irriconoscibile): ingrandito tutto ×2.5.
-        var scale_factor: float = 2.5
+        # FIX (sprite troppo grande): scale_factor ridotto da 2.5 a 1.5.
+        var scale_factor: float = 1.5
         var r := (10.0 + pulse * 1.5) * scale_factor
         var col := Color(0.7, 0.6, 0.3)
         var dark := Color(0.2, 0.2, 0.2)
         # --- Aura rossa pulsante ---
         var aura_pulse: float = sin(anim_time * 5.0) * 0.2 + 1.0
-        var aura_r: float = 18.0 * aura_pulse * scale_factor
+        var aura_r: float = 14.0 * aura_pulse
         draw_circle(Vector2.ZERO, aura_r,
-                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 60.0 / 255.0))
+                Color(200.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 50.0 / 255.0))
         # --- Scia quando rimbalza ---
         if bouncing:
                 var trail_pos: Vector2 = -velocity
@@ -350,13 +350,11 @@ func _draw_mine() -> void:
 
 
 func _draw_chalice() -> void:
-        # FIX (sprite calice irriconoscibile): ingrandito tutto ×2.5.
-        # Era: top 16x4, body 12x10, base 6x4. Ora: top 40x10, body 30x25,
-        # base 15x10. Più visibile e riconoscibile come calice dorato.
-        var scale_factor: float = 2.5
-        var aura_r := (18.0 + pulse * 3.0) * scale_factor
+        # FIX (sprite troppo grande): scale_factor ridotto da 2.5 a 1.5.
+        var scale_factor: float = 1.5
+        var aura_r := (14.0 + pulse * 2.0)
         draw_circle(Vector2.ZERO - Vector2(0, bob_offset), aura_r,
-                                Color(1.0, 0.85, 0.2, 0.12))
+                                Color(1.0, 0.85, 0.2, 0.10))
         # Cup body
         var gold := Color(1.0, 0.85, 0.2)
         var gold_dark := Color(0.7, 0.55, 0.1)
@@ -494,8 +492,8 @@ func _draw_speed_boots() -> void:
         # FIX (sprite troppo piccolo): usa sprite AI bonus_speedboots scalato
         # a 48x48 (era 64x64 nativo, troppo piccolo nel tile 48px).
         var y_off := -bob_offset
-        # Glow giallo ridotto (era 20px, ora 12px, meno invadente)
-        draw_circle(Vector2.ZERO, 12.0, Color(1.0, 0.85, 0.2, 0.15))
+        # Glow giallo ridotto (era 12px, ora 8px)
+        draw_circle(Vector2.ZERO, 8.0, Color(1.0, 0.85, 0.2, 0.10))
         if SpriteManager:
                 var sheet = SpriteManager.get_sheet("bonus_speedboots")
                 if sheet != null and sheet.is_loaded():
@@ -526,8 +524,8 @@ func _draw_treasure() -> void:
         # FIX (lag): le texture vengono cachate in _treasure_tex_cache per
         # evitare di chiamare load() ogni frame (causava lag estremo).
         var y_off := -bob_offset
-        # Soft glow dorato (ridotto per non nascondere il tesoro)
-        draw_circle(Vector2.ZERO, 16.0, Color(1.0, 0.85, 0.3, 0.15))
+        # Glow dorato ridotto (era 16px, ora 10px)
+        draw_circle(Vector2.ZERO, 10.0, Color(1.0, 0.85, 0.3, 0.10))
         # Carica la texture PNG dedicata per questo tipo di tesoro (cached)
         var tex_path: String = ""
         match treasure_type:

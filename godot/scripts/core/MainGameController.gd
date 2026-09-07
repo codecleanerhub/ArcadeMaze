@@ -35,7 +35,6 @@ var current_level: int = 1
 var is_boss_state: bool = false  # false in MainGame (maze), true in BossRoom
 var is_paused: bool = false
 var test_skip_key_held: bool = false
-var _joy_debug_printed: bool = false  # print joystick config once on first frame
 
 # --- Collectibles (port of C++ Game members) ---
 var exit_door: Dictionary = {
@@ -308,12 +307,7 @@ func _handle_input() -> void:
         var joy_pads: Array = Input.get_connected_joypads()
         if joy_pads.size() > 0:
                 p1_joy_id = joy_pads[0]
-        # DEBUG: stampa i valori configurati una volta sola all'inizio del gioco
-        if not _joy_debug_printed and p1_joy_id >= 0 and ConfigManager:
-                _joy_debug_printed = true
-                print("[MainGame] DEBUG joystick: joy_id=", p1_joy_id,
-                      " joy_jump=", ConfigManager.joy_jump(),
-                      " joy_shoot=", ConfigManager.joy_shoot())
+        # FIX: rimosso print debug joystick (config case-sensitive fixato in f79748f)
         if p1_joy_id >= 0:
                 # Read the configured axes (default 0=X, 1=Y) — same as C++.
                 var axis_x: float = Input.get_joy_axis(p1_joy_id, ConfigManager.joy_axis_x()) if ConfigManager else Input.get_joy_axis(p1_joy_id, 0)
