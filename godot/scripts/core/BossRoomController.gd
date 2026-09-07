@@ -569,16 +569,28 @@ func _load_boss_bg() -> void:
         if _boss_bg_loaded:
                 return
         _boss_bg_loaded = true
-        # Mappa boss_type → path PNG background
+        # Mappa boss_type → path JPG background (17 boss, 17 sfondi diversi)
         var bg_path: String = ""
         if boss != null:
                 var bt: int = boss.boss_type
                 match bt:
-                        0: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_golem.png"
-                        1: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_lich.png"
-                        2: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_demon.png"
-                        6: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_dragon.png"
-                        8: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_vampire.png"
+                        0: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_golem.jpg"
+                        1: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_lich.jpg"
+                        2: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_demon.jpg"
+                        3: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_spider.jpg"
+                        4: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_abomination.jpg"
+                        5: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_kraken.jpg"
+                        6: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_dragon.jpg"
+                        7: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_wraith_lord.jpg"
+                        8: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_vampire.jpg"
+                        9: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_beholder.jpg"
+                        10: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_ghoul_lord.jpg"
+                        11: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_spectral_alpha.jpg"
+                        12: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_cult_herald.jpg"
+                        13: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_colossal_mimic.jpg"
+                        14: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_rat_king.jpg"
+                        15: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_supreme_witch.jpg"
+                        16: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_twilight_knight.jpg"
         if not bg_path.is_empty():
                 var img := Image.new()
                 var abs_path: String = ProjectSettings.globalize_path(bg_path)
