@@ -819,6 +819,12 @@ func _render_floor_decorations(c: int, r: int, px: float, py: float, size: float
 ## Draws a treasure cell: small stone pedestal + colored gem marker that
 ## varies by TreasureType. The C++ version draws full sprite art with
 ## primitives; we render a simpler version that's still distinct per type.
+# Cache static per le texture dei tesori (evita Image.load() ogni frame nel maze).
+# FIX (quadrati bianchi): Image.load() + ImageTexture.create_from_image() ogni
+# frame per ogni cella tesoro causa lag e potenziali quadrati bianchi se
+# l'Image non è pronto. Cachiamo le texture.
+static var _maze_treasure_cache: Dictionary = {}
+
 func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) -> void:
         # FIX (tesori troppo piccoli nel maze): usa PNG AI dedicati
         # invece di texture procedurali EnvironmentArt, e disegna più grande.
@@ -830,16 +836,22 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 C.TreasureType.GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
                 C.TreasureType.CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
         if not tex_path.is_empty():
-                var img := Image.new()
-                var abs_path: String = ProjectSettings.globalize_path(tex_path)
-                if img.load(abs_path) == OK:
-                        var tex := ImageTexture.create_from_image(img)
-                        if tex != null:
-                                var draw_size: float = size * 1.3  # FIX: era 0.8, ora 1.3 (più grande)
-                                draw_texture_rect(tex,
-                                        Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
-                                                draw_size, draw_size), false)
-                                return
+                var tex: Texture2D = null
+                if _maze_treasure_cache.has(tex_path):
+                        tex = _maze_treasure_cache[tex_path]
+                else:
+                        var img := Image.new()
+                        var abs_path: String = ProjectSettings.globalize_path(tex_path)
+                        if img.load(abs_path) == OK:
+                                tex = ImageTexture.create_from_image(img)
+                                if tex != null:
+                                        _maze_treasure_cache[tex_path] = tex
+                if tex != null:
+                        var draw_size: float = size * 1.3
+                        draw_texture_rect(tex,
+                                Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
+                                        draw_size, draw_size), false)
+                        return
         # Fallback: texture procedurali EnvironmentArt
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_treasure_texture(tres_type)

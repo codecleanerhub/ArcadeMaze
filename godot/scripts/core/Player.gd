@@ -85,7 +85,7 @@ const SPRITE_DEFAULT_FACES_RIGHT := {
         CharacterType.MAGE:     true,
         CharacterType.ORC:      false,
         CharacterType.ELF:      true,
-        CharacterType.KNIGHT:   false,
+        CharacterType.KNIGHT:   true,   # FIX: user reports knight faces wrong way
         CharacterType.GOLEM:    true,   # FIX: sprite faces right
         CharacterType.DRAGON:   true,
         CharacterType.VAMPIRE:  false,  # FIX: sprite faces left
