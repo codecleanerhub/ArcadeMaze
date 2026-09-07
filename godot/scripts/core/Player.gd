@@ -322,8 +322,8 @@ func load_character_sprite() -> void:
 
 # Apply a specific frame index from the character sheet to the Sprite2D.
 # The main sheet is 256x64 = 4 frames of 64x64.
-# When a dedicated per-frame sheet exists for the requested state (walk/jump),
-# we use it directly (it's already a 64x64 single-frame texture).
+# FIX: re-apply tint after every texture change (P2 bluish tint was lost
+# when _apply_character_frame set sprite.texture = at).
 func _apply_character_frame(frame_idx: int) -> void:
         if _character_sheet_texture == null or sprite == null:
                 return
@@ -335,6 +335,7 @@ func _apply_character_frame(frame_idx: int) -> void:
         at.atlas = _character_sheet_texture
         at.region = Rect2(idx * fw, 0, fw, fh)
         sprite.texture = at
+        sprite.modulate = tint  # FIX: re-apply tint (P2 bluish)
 
 
 # Apply a dedicated single-frame texture (walk0..3 or jump) directly to the
@@ -343,6 +344,7 @@ func _apply_character_dedicated_texture(tex: Texture2D) -> void:
         if tex == null or sprite == null:
                 return
         sprite.texture = tex
+        sprite.modulate = tint  # FIX: re-apply tint (P2 bluish)
 
 
 var _character_sheet_texture: Texture2D = null
