@@ -820,12 +820,31 @@ func _render_floor_decorations(c: int, r: int, px: float, py: float, size: float
 ## varies by TreasureType. The C++ version draws full sprite art with
 ## primitives; we render a simpler version that's still distinct per type.
 func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) -> void:
-        # Usa le texture procedurali dettagliate da EnvironmentArt
-        # (corona/oro/forziere/gemma/coppa) invece di semplici diamanti
+        # FIX (tesori troppo piccoli nel maze): usa PNG AI dedicati
+        # invece di texture procedurali EnvironmentArt, e disegna più grande.
+        var tex_path: String = ""
+        match tres_type:
+                C.TreasureType.CROWN: tex_path = "res://assets/sprites/treasures/treasure_crown.png"
+                C.TreasureType.GOLD: tex_path = "res://assets/sprites/treasures/treasure_gold.png"
+                C.TreasureType.CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
+                C.TreasureType.GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
+                C.TreasureType.CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
+        if not tex_path.is_empty():
+                var img := Image.new()
+                var abs_path: String = ProjectSettings.globalize_path(tex_path)
+                if img.load(abs_path) == OK:
+                        var tex := ImageTexture.create_from_image(img)
+                        if tex != null:
+                                var draw_size: float = size * 1.3  # FIX: era 0.8, ora 1.3 (più grande)
+                                draw_texture_rect(tex,
+                                        Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
+                                                draw_size, draw_size), false)
+                                return
+        # Fallback: texture procedurali EnvironmentArt
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_treasure_texture(tres_type)
                 if tex:
-                        var draw_size: float = size * 0.8
+                        var draw_size: float = size * 1.3  # FIX: era 0.8
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
@@ -858,7 +877,7 @@ func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) 
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_weapon_pickup_texture(wpn_type)
                 if tex:
-                        var draw_size: float = size * 0.8
+                        var draw_size: float = size * 1.2  # FIX: era 0.8, ora 1.2 (più grande)
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
