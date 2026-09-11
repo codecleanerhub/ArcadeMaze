@@ -31,9 +31,12 @@ func _ready() -> void:
         player_label.text = "PLAYER " + str(player_num)
         _update_step()
         # Preload the AI-generated crypt/ruderi background (same as SelectPlayer).
+        # FIX (regressione): usa Image.load() per bypassare import.
         var bg_path := "res://assets/backgrounds/bg_select_player.png"
-        if ResourceLoader.exists(bg_path):
-                _bg_texture = load(bg_path) as Texture2D
+        var bg_img := Image.new()
+        var bg_abs: String = ProjectSettings.globalize_path(bg_path)
+        if bg_img.load(bg_abs) == OK:
+                _bg_texture = ImageTexture.create_from_image(bg_img)
         # Self-wire: when config finishes, go back to menu.
         config_finished.connect(_on_config_finished)
 

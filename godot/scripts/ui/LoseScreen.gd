@@ -22,9 +22,10 @@ func _ready() -> void:
         mouse_filter = Control.MOUSE_FILTER_STOP
         focus_mode = Control.FOCUS_ALL
         _finished = false
-        var tex := load("res://assets/backgrounds/bg_gameover.jpg")
-        if tex is Texture2D:
-                _bg_texture = tex
+        var _img := Image.new()
+        var _abs := ProjectSettings.globalize_path("res://assets/backgrounds/bg_gameover.jpg")
+        if _img.load(_abs) == OK:
+                _bg_texture = ImageTexture.create_from_image(_img)
         if AudioManager:
                 AudioManager.stop_music()
 

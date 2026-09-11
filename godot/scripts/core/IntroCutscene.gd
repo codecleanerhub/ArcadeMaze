@@ -28,19 +28,13 @@ func _ready() -> void:
         # Carica le 4 immagini intro usando Image.load() (piu' robusto di load())
         for i in range(1, 5):
                 var path := "res://assets/cutscene/intro_" + str(i) + ".png"
-                # Try ResourceLoader first, then Image.load as fallback
+                # FIX (regressione): usa Image.load() per bypassare import.
                 var tex = null
-                if ResourceLoader.exists(path):
-                        tex = load(path)
-                if tex == null:
-                        # Fallback: load raw image and convert to texture
-                        var img := Image.new()
-                        var err := img.load(path)
-                        if err == OK:
-                                tex = ImageTexture.create_from_image(img)
-                                print("[IntroCutscene] Loaded via Image.load: %s" % path)
-                        else:
-                                print("[IntroCutscene] Image.load failed for %s err=%d" % [path, err])
+                var img := Image.new()
+                var abs_path: String = ProjectSettings.globalize_path(path)
+                if img.load(abs_path) == OK:
+                        tex = ImageTexture.create_from_image(img)
+                        print("[IntroCutscene] Loaded: %s" % path)
                 if tex != null:
                         _images.append(tex)
                 else:

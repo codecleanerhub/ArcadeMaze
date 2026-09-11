@@ -120,18 +120,22 @@ func _load_sheet(base_path: String, id: String) -> void:
         var meta_path := base_path + id + "_meta.json"
 
         # --- HD PRIORITY: carica la versione HD 256x256 se disponibile ---
-        # Gli HD sheet sono in res://assets/sprites/hd/<id>_hd_sheet.png
-        # e hanno 4x la risoluzione degli originali 64x64 (256x256 totali).
+        # FIX (regressione): usa Image.load() per bypassare import.
         var hd_png_path := "res://assets/sprites/hd/" + id + "_hd_sheet.png"
         var tex: Texture2D = null
         var is_hd: bool = false
-        if ResourceLoader.exists(hd_png_path):
-                tex = load(hd_png_path) as Texture2D
+        var hd_img := Image.new()
+        var hd_abs: String = ProjectSettings.globalize_path(hd_png_path)
+        if hd_img.load(hd_abs) == OK:
+                tex = ImageTexture.create_from_image(hd_img)
                 if tex != null:
                         is_hd = true
         # Fallback: carica lo sheet originale se l'HD non esiste
         if tex == null:
-                tex = load(png_path) as Texture2D
+                var sd_img := Image.new()
+                var sd_abs: String = ProjectSettings.globalize_path(png_path)
+                if sd_img.load(sd_abs) == OK:
+                        tex = ImageTexture.create_from_image(sd_img)
         if tex == null:
                 return
 

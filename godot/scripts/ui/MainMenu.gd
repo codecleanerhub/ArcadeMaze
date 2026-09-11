@@ -301,9 +301,13 @@ func _build_ui() -> void:
         # STRETCH_KEEP_ASPECT_COVERED riempie il viewport mantenendo l'aspect
         # ratio della texture (cover-fit, no distorsione, ritaglia i bordi).
         _bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-        var tex := load("res://assets/backgrounds/bg_menu.jpg")
-        if tex is Texture:
-                _bg.texture = tex
+        # FIX (regressione): usa Image.load() invece di load() per bypassare
+        # il sistema di import di Godot. load() ritorna null se .godot/ è
+        # stato cancellato e non rigenerato.
+        var menu_img := Image.new()
+        var menu_path: String = ProjectSettings.globalize_path("res://assets/backgrounds/bg_menu.jpg")
+        if menu_img.load(menu_path) == OK:
+                _bg.texture = ImageTexture.create_from_image(menu_img)
         add_child(_bg)
 
         # --- Options submenu background (themed: ancient bronze gears) ---

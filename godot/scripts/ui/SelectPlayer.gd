@@ -66,18 +66,19 @@ func _ready() -> void:
         for i in CHARACTER_COUNT:
                 var path := "res://assets/sprites/" + CHARACTERS[i] + "_sheet.png"
                 var tex = null
-                if ResourceLoader.exists(path):
-                        tex = load(path)
-                if tex == null:
-                        # Fallback: try Image.load
-                        var img := Image.new()
-                        if img.load(path) == OK:
-                                tex = ImageTexture.create_from_image(img)
+                # FIX (regressione): usa Image.load() per bypassare import.
+                var img := Image.new()
+                var abs_path: String = ProjectSettings.globalize_path(path)
+                if img.load(abs_path) == OK:
+                        tex = ImageTexture.create_from_image(img)
                 _char_textures.append(tex)
         # Preload the AI-generated crypt/ruderi background.
+        # FIX (regressione): usa Image.load() per bypassare import.
         var bg_path := "res://assets/backgrounds/bg_select_player.png"
-        if ResourceLoader.exists(bg_path):
-                _bg_texture = load(bg_path) as Texture2D
+        var bg_img := Image.new()
+        var bg_abs: String = ProjectSettings.globalize_path(bg_path)
+        if bg_img.load(bg_abs) == OK:
+                _bg_texture = ImageTexture.create_from_image(bg_img)
         # Self-wire
         player_selected.connect(_on_player_selected)
 
