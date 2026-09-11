@@ -335,7 +335,7 @@ func _draw_mine() -> void:
         var tex := _load_png_cached("res://assets/sprites/collectibles/item_mine.png")
         if tex != null:
                 draw_circle(Vector2.ZERO, 10.0, Color(0.8, 0.2, 0.1, 0.10))
-                var size: float = 96.0
+                var size: float = 64.0
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
         # Fallback procedurale (solo se PNG non disponibile)
@@ -365,7 +365,7 @@ func _draw_chalice() -> void:
         var tex := _load_png_cached("res://assets/sprites/collectibles/item_chalice.png")
         if tex != null:
                 draw_circle(Vector2.ZERO, 10.0, Color(1.0, 0.85, 0.2, 0.10))
-                var size: float = 96.0
+                var size: float = 64.0
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
         # Fallback procedurale
@@ -400,7 +400,7 @@ func _draw_scepter() -> void:
         var tex := _load_png_cached("res://assets/sprites/collectibles/item_scepter.png")
         if tex != null:
                 draw_circle(Vector2.ZERO, 10.0, Color(0.3, 0.6, 1.0, 0.10))
-                var size: float = 96.0
+                var size: float = 64.0
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
         # Fallback procedurale (codice originale sotto)
@@ -516,7 +516,7 @@ func _draw_speed_boots() -> void:
         var tex := _load_png_cached("res://assets/sprites/collectibles/item_speedboots.png")
         if tex != null:
                 draw_circle(Vector2.ZERO, 8.0, Color(1.0, 0.85, 0.2, 0.10))
-                var size: float = 96.0
+                var size: float = 64.0
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
         # Fallback: usa sprite AI bonus_speedboots da SpriteManager
@@ -526,7 +526,7 @@ func _draw_speed_boots() -> void:
                 if sheet != null and sheet.is_loaded():
                         var at: AtlasTexture = sheet.get_frame_texture("idle", 0)
                         if at != null:
-                                var size: float = 96.0
+                                var size: float = 64.0
                                 draw_texture_rect(at, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                                 return
         # Fallback 2: procedurale
@@ -574,7 +574,7 @@ func _draw_treasure() -> void:
         if not tex_path.is_empty():
                 var tex: Texture2D = _load_png_cached(tex_path)
                 if tex != null:
-                        var size: float = 96.0
+                        var size: float = 64.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
                         return
