@@ -1,0 +1,13 @@
+{
+  "name": "KnightAlly",
+  "frame_w": 64,
+  "frame_h": 64,
+  "columns": 4,
+  "rows": 1,
+  "animations": {
+    "idle": {"row": 0, "frames": 4, "frameDuration": 200},
+    "walk": {"row": 0, "frames": 4, "frameDuration": 100},
+    "attack": {"row": 0, "frames": 4, "frameDuration": 90},
+    "death": {"row": 0, "frames": 1, "frameDuration": 120}
+  }
+}

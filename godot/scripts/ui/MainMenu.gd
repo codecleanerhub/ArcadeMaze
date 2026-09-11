@@ -711,6 +711,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
         # Joystick button (confirm + D-pad as buttons)
         elif event is InputEventJoypadButton and event.pressed:
+                # FIX (avvio partita con tasto fuoco configurato): se l'utente
+                # ha configurato JOY_SHOOT in ConfigJoy, quel tasto attiva anche
+                # la voce di menu corrente (come JOY_BUTTON_A). Permette di
+                # avviare la partita con il tasto di fuoco.
+                var configured_shoot: int = -1
+                if ConfigManager and ConfigManager.joy_ready():
+                        configured_shoot = ConfigManager.joy_shoot()
+                if configured_shoot >= 0 and event.button_index == configured_shoot:
+                        _activate_current()
+                        return
                 match event.button_index:
                         JOY_BUTTON_A:
                                 # A button = confirm/activate (mirrors C++ confirm

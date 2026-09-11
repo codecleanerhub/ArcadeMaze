@@ -74,6 +74,12 @@ var scepter_item: Node2D = null
 var mine_item: Node2D = null
 var speed_boots_item: Node2D = null
 var speed_boots2_item: Node2D = null  # P2 only
+# FIX (nuova meccanica): medikit e statua cavaliere
+var medikit_item: Node2D = null
+var knight_statue_item: Node2D = null
+var knight_ally: Node2D = null  # cavaliere alleato evocato
+var medikit_used: bool = false  # 1 medikit per livello
+var knight_statue_spawned: bool = false  # 1 statua per livello
 
 # Timers
 var player_invincible_timer_ms: int = 0
@@ -596,6 +602,9 @@ func _update_playing(delta_ms: float) -> void:
         # (9b) Mine vs enemies collision (FIX: la bomba deve esplodere all'impatto)
         _check_mine_vs_enemies()
 
+        # (9c) KnightAlly update (FIX: nuova meccanica cavaliere alleato)
+        _update_knight_ally(delta_ms)
+
         # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
 
@@ -789,6 +798,17 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break
+        # FIX (nuova meccanica): i nemici attaccano anche il cavaliere alleato
+        # se è attivo e vicino al nemico. Il cavaliere è un "player" bersaglio.
+        if knight_ally != null and is_instance_valid(knight_ally):
+                var ka_pos: Vector2 = knight_ally.get_pixel_pos() if knight_ally.has_method("get_pixel_pos") else Vector2.ZERO
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        if ka_pos.distance_squared_to(enemy.get_pixel_pos()) < 800.0:
+                                if knight_ally.has_method("take_damage"):
+                                        knight_ally.take_damage(1)
+                                break
 
 
 func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
@@ -893,6 +913,14 @@ func _update_collectibles(delta_ms: float) -> void:
         var p2_pos: Vector2 = Vector2.ZERO
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 p2_pos = player2.get_pixel_pos()
+        # FIX (nuova meccanica): attiva la statua cavaliere dopo il delay random
+        if knight_statue_item != null and is_instance_valid(knight_statue_item):
+                if not knight_statue_item.get("active"):
+                        var delay: int = knight_statue_item.get_meta("spawn_delay_ms", 5000)
+                        delay -= int(delta_ms)
+                        knight_statue_item.set_meta("spawn_delay_ms", delay)
+                        if delay <= 0:
+                                knight_statue_item.active = true
         for child in collectibles_node.get_children():
                 if not child is Node2D:
                         continue
@@ -982,6 +1010,38 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if EffectsManager:
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
                                         Color(1.0, 0.84, 0.0))
+                                collectibles_node.add_child(burst)
+                CollectiblesClass.Kind.MEDIKIT:
+                        # FIX (nuova meccanica): rigenera 1 punto vita del player.
+                        # L'effetto è come se fosse stato toccato dal nemico una
+                        # volta in meno (quindi +1 HP, capped a max HP del player).
+                        # Suono: POTION_DRINK (effetto ingoia/declutisce pillola).
+                        if p.lives < 99:  # safety cap
+                                # Player ha lives (3 default), rigenera 1 = +1 vita
+                                p.lives = p.lives + 1
+                        item.active = false
+                        item.queue_free()
+                        medikit_item = null
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.POTION_DRINK)
+                        # Particelle heal (verde/croce)
+                        if EffectsManager:
+                                var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(0.3, 1.0, 0.3))
+                                collectibles_node.add_child(burst)
+                CollectiblesClass.Kind.KNIGHT_STATUE:
+                        # FIX (nuova meccanica): evoca cavaliere alleato.
+                        # Il cavaliere appare accanto al player e combatte.
+                        item.active = false
+                        item.queue_free()
+                        knight_statue_item = null
+                        _spawn_knight_ally(p.get_pixel_pos())
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+                        # Particelle evocazione (blu mistico)
+                        if EffectsManager:
+                                var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(0.4, 0.7, 1.0))
                                 collectibles_node.add_child(burst)
 
 
@@ -1133,6 +1193,14 @@ func _spawn_collectibles() -> void:
         mine_item = null
         speed_boots_item = null
         speed_boots2_item = null
+        # FIX (nuova meccanica): reset medikit + knight_statue
+        medikit_item = null
+        knight_statue_item = null
+        if knight_ally != null and is_instance_valid(knight_ally):
+                knight_ally.queue_free()
+                knight_ally = null
+        medikit_used = false
+        knight_statue_spawned = false
 
         # Find empty cells far from player start (Manhattan distance >= 5)
         var empty_cells: Array = []
@@ -1182,6 +1250,26 @@ func _spawn_collectibles() -> void:
                 speed_boots2_item = _create_collectible(CollectiblesClass.Kind.SPEED_BOOTS, boots_pos)
                 speed_boots2_item.owner_id = 2
                 collectibles_node.add_child(speed_boots2_item)
+
+        # FIX (nuova meccanica): Medikit (1 per livello, posizione casuale)
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var medikit_pos := _cell_to_pixel(cell)
+                medikit_item = _create_collectible(CollectiblesClass.Kind.MEDIKIT, medikit_pos)
+                collectibles_node.add_child(medikit_item)
+
+        # FIX (nuova meccanica): Statua cavaliere (1 per livello, posizione casuale)
+        # La statua respawn in un momento casuale della partita: la rendiamo
+        # visibile solo dopo un delay random (5-15s) impostando active=false
+        # inizialmente e attivandola tramite timer.
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var statue_pos := _cell_to_pixel(cell)
+                knight_statue_item = _create_collectible(CollectiblesClass.Kind.KNIGHT_STATUE, statue_pos)
+                # La statua appare dopo un delay random (5-15s)
+                knight_statue_item.active = false
+                knight_statue_item.set_meta("spawn_delay_ms", randi_range(5000, 15000))
+                collectibles_node.add_child(knight_statue_item)
 
 
 func _cell_to_pixel(cell: Vector2i) -> Vector2:
@@ -1252,6 +1340,40 @@ func _spawn_mini_boss(col: int, row: int) -> void:
         mini_boss_spawned = true
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+
+
+# FIX (nuova meccanica): spawn cavaliere alleato evocato dalla statua.
+# Il cavaliere appare accanto al player con animazione di "materializzazione".
+const KnightAllyClass = preload("res://scripts/entities/KnightAlly.gd")
+
+func _spawn_knight_ally(player_pos: Vector2) -> void:
+        if knight_ally != null and is_instance_valid(knight_ally):
+                return  # già evocato
+        var ka := KnightAllyClass.new()
+        # Stessa energia del player (lives = 3 default)
+        ka.max_health = player.lives if player != null else 3
+        ka.health = ka.max_health
+        # Posizione: accanto al player (offset 48px a destra)
+        var spawn_pos: Vector2 = player_pos + Vector2(48, 0)
+        ka.pos = spawn_pos
+        add_child(ka)
+        knight_ally = ka
+        print("[KnightAlly] Spawned at ", spawn_pos, " health=", ka.health)
+
+
+# FIX (nuova meccanica): update del cavaliere alleato.
+# Chiamato da _update_playing per movimento AI + shooting + check morte.
+func _update_knight_ally(delta_ms: int) -> void:
+        if knight_ally == null or not is_instance_valid(knight_ally):
+                knight_ally = null
+                return
+        var ka2: Node2D = knight_ally
+        if ka2.has_method("update_ally"):
+                ka2.update_ally(maze, player.get_pixel_pos(), spawner.enemies, int(delta_ms))
+        # Se il cavaliere è morto (scomparso), cleanup
+        if ka2.has_method("is_dead") and ka2.is_dead():
+                ka2.queue_free()
+                knight_ally = null
 
 
 # ============================================================================

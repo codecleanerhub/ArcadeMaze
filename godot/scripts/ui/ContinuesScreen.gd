@@ -78,10 +78,12 @@ func _unhandled_input(event: InputEvent) -> void:
                                 _confirm()
         elif event is InputEventJoypadMotion:
                 if event.axis == JOY_AXIS_LEFT_X:
+                        # FIX (inversione si/no): prima LEFT=NO, RIGHT=YES.
+                        # Invertito: LEFT=YES, RIGHT=NO come richiesto dall'utente.
                         if event.axis_value < -0.5:
-                                _choice = false
+                                _choice = true  # LEFT = YES
                         elif event.axis_value > 0.5:
-                                _choice = true
+                                _choice = false  # RIGHT = NO
         elif event is InputEventJoypadButton and event.pressed:
                 if event.button_index == JOY_BUTTON_A:
                         _confirm()

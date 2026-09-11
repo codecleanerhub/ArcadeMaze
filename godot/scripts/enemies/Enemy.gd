@@ -469,27 +469,29 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
 
         # --- Shooting (canShoot types only) ---
         # Disabled while fleeing (chalice active - enemy runs, doesn't shoot).
-        if can_shoot(type) and not flee_mode:
-                if shoot_cooldown > 0:
-                        shoot_cooldown -= int(delta_ms)
-                else:
-                        shoot_cooldown = SHOOT_COOLDOWN_MIN_MS \
-                                        + (randi() % SHOOT_COOLDOWN_RAND_MS)
-                        var dyp: float = player_pixel_pos.y - position.y
-                        var dxp: float = player_pixel_pos.x - position.x
-                        var dist: float = sqrt(dxp * dxp + dyp * dyp)
-                        if dist > 0.0 and dist < SHOOT_RANGE_PX:
-                                attacking_timer = 400  # attack animation ~400 ms
-                                # FIX: spawn il proiettile con offset 20px verso
-                                # il player per evitare che spawni dentro un muro.
-                                var shoot_dir := Vector2(dxp / dist, dyp / dist)
-                                enemy_projectiles.append({
-                                        "pos": position + shoot_dir * 20.0,
-                                        "dir": shoot_dir * 3.0,
-                                        "power": 1,
-                                        "active": true,
-                                        "type": 0,  # WeaponType.PISTOL appearance
-                                })
+        # FIX (disabilita fuoco nemici labirinto): l'utente ha richiesto che
+        # i nemici del labirinto NON sparino. Solo mid-boss e boss possono
+        # sparare. Disabilitato completamente il blocco di shooting.
+        # Il codice originale è mantenuto commentato per eventuale riabilitazione.
+        # if can_shoot(type) and not flee_mode:
+        #         if shoot_cooldown > 0:
+        #                 shoot_cooldown -= int(delta_ms)
+        #         else:
+        #                 shoot_cooldown = SHOOT_COOLDOWN_MIN_MS \
+        #                                 + (randi() % SHOOT_COOLDOWN_RAND_MS)
+        #                 var dyp: float = player_pixel_pos.y - position.y
+        #                 var dxp: float = player_pixel_pos.x - position.x
+        #                 var dist: float = sqrt(dxp * dxp + dyp * dyp)
+        #                 if dist > 0.0 and dist < SHOOT_RANGE_PX:
+        #                         attacking_timer = 400  # attack animation ~400 ms
+        #                         var shoot_dir := Vector2(dxp / dist, dyp / dist)
+        #                         enemy_projectiles.append({
+        #                                 "pos": position + shoot_dir * 20.0,
+        #                                 "dir": shoot_dir * 3.0,
+        #                                 "power": 1,
+        #                                 "active": true,
+        #                                 "type": 0,
+        #                         })
 
         # Trigger redraw so the sprite animation updates each frame.
         queue_redraw()

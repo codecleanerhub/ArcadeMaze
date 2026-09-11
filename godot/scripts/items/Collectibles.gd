@@ -27,6 +27,8 @@ enum Kind {
         TREASURE,        # One of the 5 treasures (crown/gold/chest/gem/cup).
         EXIT_DOOR,       # Appears once all treasures are collected.
         MAGIC_PORTAL,    # Spawns at 50% enemies killed; respawns enemies.
+        MEDIKIT,         # FIX (nuova meccanica): rigenera 1 punto vita del player (1 per livello).
+        KNIGHT_STATUE,   # FIX (nuova meccanica): evoca cavaliere alleato che combatte per il player.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -109,6 +111,12 @@ func _apply_kind_defaults() -> void:
                 Kind.MAGIC_PORTAL:
                         portal_phase = 0
                         portal_phase_timer_ms = 0
+                Kind.MEDIKIT:
+                        pulse = 0.0
+                        bob_offset = 0.0
+                Kind.KNIGHT_STATUE:
+                        pulse = 0.0
+                        bob_offset = 0.0
 
 
 # =========================================================
@@ -138,6 +146,10 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                         _update_door(delta_ms)
                 Kind.MAGIC_PORTAL:
                         _update_portal(delta_ms)
+                Kind.MEDIKIT:
+                        pass  # only anim
+                Kind.KNIGHT_STATUE:
+                        pass  # only anim
 
         # Collision: 16px radius for small items, 24px for the door/portal.
         var coll_radius := 16.0
@@ -307,6 +319,16 @@ func _on_collected(player_id: int) -> void:
                 Kind.MAGIC_PORTAL:
                         # Portal is not collectible.
                         pass
+                Kind.MEDIKIT:
+                        # FIX (nuova meccanica): rigenera 1 punto vita del player.
+                        # La logica effettiva (heal + sound) è in MainGameController.
+                        active = false
+                        collected.emit(self, player_id)
+                Kind.KNIGHT_STATUE:
+                        # FIX (nuova meccanica): evoca cavaliere alleato.
+                        # La logica effettiva (spawn + AI) è in MainGameController.
+                        active = false
+                        collected.emit(self, player_id)
 
 
 # =========================================================
@@ -327,6 +349,8 @@ func _draw() -> void:
                 Kind.TREASURE:     _draw_treasure()
                 Kind.EXIT_DOOR:    _draw_exit_door()
                 Kind.MAGIC_PORTAL: _draw_magic_portal()
+                Kind.MEDIKIT:      _draw_medikit()
+                Kind.KNIGHT_STATUE: _draw_knight_statue()
 
 
 func _draw_mine() -> void:
@@ -895,3 +919,83 @@ static func make_magic_portal(at: Vector2, enemies_count: int) -> Collectibles:
         c.portal_phase_timer_ms = 1000  # 1s open animation
         c.portal_spawn_timer_ms = 0
         return c
+
+
+## Factory: create a medikit at pos.
+static func make_medikit(at: Vector2) -> Collectibles:
+        var c := Collectibles.new()
+        c.kind = Kind.MEDIKIT
+        c.pos = at
+        c.active = true
+        return c
+
+
+## Factory: create a knight statue at pos.
+static func make_knight_statue(at: Vector2) -> Collectibles:
+        var c := Collectibles.new()
+        c.kind = Kind.KNIGHT_STATUE
+        c.pos = at
+        c.active = true
+        return c
+
+
+# FIX (nuova meccanica): disegna il medikit (scatola bianca con croce rossa).
+# Carica il PNG AI dedicato; fallback procedurale se non disponibile.
+func _draw_medikit() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_medikit.png")
+        if tex != null:
+                # Glow bianco/rosso pulsante
+                var glow_alpha: float = 0.15 + pulse * 0.10
+                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.3, 0.3, glow_alpha))
+                var size: float = 64.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale: scatola bianca + croce rossa
+        var s: float = 24.0
+        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s),
+                Color(0.95, 0.95, 0.95, 1.0), true)
+        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s),
+                Color(0.7, 0.7, 0.7, 1.0), false, 1.0)
+        # Croce rossa
+        draw_rect(Rect2(-3.0, -s / 2.0 + 4.0 + y_off, 6.0, s - 8.0),
+                Color(0.85, 0.15, 0.15, 1.0), true)
+        draw_rect(Rect2(-s / 2.0 + 4.0, -3.0 + y_off, s - 8.0, 6.0),
+                Color(0.85, 0.15, 0.15, 1.0), true)
+
+
+# FIX (nuova meccanica): disegna la statua del cavaliere alleato.
+# Carica il PNG AI dedicato; fallback procedurale se non disponibile.
+func _draw_knight_statue() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_knight_statue.png")
+        if tex != null:
+                # Aura mistica blu/ciano pulsante
+                var glow_alpha: float = 0.20 + pulse * 0.15
+                draw_circle(Vector2.ZERO, 20.0, Color(0.4, 0.7, 1.0, glow_alpha))
+                draw_circle(Vector2.ZERO, 14.0, Color(0.6, 0.85, 1.0, glow_alpha * 0.7))
+                var size: float = 64.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale: statua grigia con ali
+        var s2: float = 20.0
+        # Aura
+        draw_circle(Vector2.ZERO, 22.0, Color(0.4, 0.7, 1.0, 0.2 + pulse * 0.15))
+        # Ali
+        draw_polygon(PackedVector2Array([
+                Vector2(-s2 - 4, y_off - 4), Vector2(-s2 - 12, y_off - 12),
+                Vector2(-s2, y_off - 8)
+        ]), Color(0.85, 0.85, 0.95, 0.8))
+        draw_polygon(PackedVector2Array([
+                Vector2(s2 + 4, y_off - 4), Vector2(s2 + 12, y_off - 12),
+                Vector2(s2, y_off - 8)
+        ]), Color(0.85, 0.85, 0.95, 0.8))
+        # Corpo (armatura)
+        draw_rect(Rect2(-s2 / 2.0, y_off - s2 / 2.0, s2, s2),
+                Color(0.7, 0.7, 0.8, 1.0), true)
+        # Elmo
+        draw_circle(Vector2(0, y_off - s2 / 2.0 - 4), 6.0,
+                Color(0.8, 0.8, 0.9, 1.0))
+        # Croce dorata sul petto
+        draw_rect(Rect2(-1.5, y_off - 4, 3.0, 8.0), Color(1.0, 0.85, 0.2, 1.0))
+        draw_rect(Rect2(-4.0, y_off - 1.0, 8.0, 3.0), Color(1.0, 0.85, 0.2, 1.0))
