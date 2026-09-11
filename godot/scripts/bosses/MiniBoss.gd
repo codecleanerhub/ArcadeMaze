@@ -185,9 +185,16 @@ func _ensure_deform_sprite() -> void:
 # Used to avoid the HD "gif scollegata" effect.
 func _load_sd_sheet(sprite_id: String) -> Object:
         var sd_path := "res://assets/sprites/" + sprite_id + "_sheet.png"
-        if not ResourceLoader.exists(sd_path):
+        # FIX (miniboss procedurale): usava load() (ResourceLoader) che ritorna
+        # null se .godot/imported/ è vuoto o non rigenerato. Ora usa
+        # Image.load() + ImageTexture come SpriteManager._load_sheet.
+        var sd_abs: String = ProjectSettings.globalize_path(sd_path)
+        if not FileAccess.file_exists(sd_abs):
                 return null
-        var tex := load(sd_path) as Texture2D
+        var img := Image.new()
+        if img.load(sd_abs) != OK:
+                return null
+        var tex := ImageTexture.create_from_image(img)
         if tex == null:
                 return null
         var sheet := SpriteManager.Sheet.new()

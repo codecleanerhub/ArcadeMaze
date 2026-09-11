@@ -1870,3 +1870,39 @@ func _draw() -> void:
                 if pvel != Vector2.ZERO:
                         draw_circle(ppos - pvel * 2.0, 2.0,
                                 Color(1.0, 0.6, 0.2, 0.3))
+
+        # Magic portal (50% respawn)
+        # FIX (portale invisibile): il portale era gestito in EnemySpawner.magic_portal
+        # ma non veniva mai disegnato. Ora lo renderizziamo qui con un effetto
+        # rotante + glow + anelli concentrici.
+        # Leggiamo dallo stato del portale gestito da EnemySpawner.
+        if spawner != null and spawner.magic_portal.active:
+                var ppos: Vector2 = spawner.magic_portal.pos
+                var prot: float = spawner.magic_portal.rotation
+                var pglow: float = spawner.magic_portal.glow_pulse
+                var pphase: int = spawner.magic_portal.phase
+                # Aura esterna pulsante (viola)
+                var aura_r: float = 40.0 + sin(pglow * 2.0) * 6.0
+                draw_circle(ppos, aura_r, Color(0.5, 0.2, 0.8, 0.2))
+                # Anello esterno rotante (viola)
+                for i in 12:
+                        var a: float = prot + (float(i) / 12.0) * TAU
+                        var p1: Vector2 = ppos + Vector2(cos(a), sin(a)) * 32.0
+                        draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
+                # Anello medio (ciano)
+                for i in 8:
+                        var a2: float = -prot * 1.5 + (float(i) / 8.0) * TAU
+                        var p2: Vector2 = ppos + Vector2(cos(a2), sin(a2)) * 22.0
+                        draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
+                # Nucleo centrale pulsante
+                var core_r: float = 10.0 + sin(pglow * 4.0) * 2.0
+                draw_circle(ppos, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
+                draw_circle(ppos, core_r, Color(0.9, 0.7, 1.0, 0.9))
+                draw_circle(ppos, core_r * 0.5, Color(1.0, 1.0, 1.0, 1.0))
+                # Phase indicator: "OPENING" = cerchio tratteggiato che si chiude
+                if pphase == 0:
+                        var open_progress: float = 1.0 - (float(spawner.magic_portal.phase_timer) / 1500.0)
+                        var open_r: float = 50.0 * (1.0 - open_progress)
+                        if open_r > 1.0:
+                                draw_arc(ppos, open_r, 0.0, TAU, 24,
+                                        Color(1.0, 0.9, 0.4, 0.6), 2.0)

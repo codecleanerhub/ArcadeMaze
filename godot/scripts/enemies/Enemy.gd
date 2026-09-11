@@ -768,13 +768,16 @@ func _draw() -> void:
                 # FIX (barra HP uniforma): prima era 'if health < max_health'
                 # quindi i nemici freschi non mostravano la barra. Ora tutti
                 # i nemici ce l'hanno sempre, in stile arcade.
-                # FIX (barra HP sync): la barra era a -28 (locale) mentre lo
-                # sprite ha bob_y oscillante → sembrava scollegata al cambio
-                # direzione. Spostata a -36 (più in alto, fuori dal corpo)
-                # e larghezza aumentata a 32 per visibilità.
+                # FIX (barra HP sync): applico lo stesso bob_y dello sprite alla
+                # barra HP così oscillano insieme e non sembrano scollegati
+                # al cambio direzione. Prima era fissa a -36, lo sprite
+                # oscillava di ±2px → sembrava che la barra "si spostasse prima".
                 var bar_w: float = 32.0
                 var bar_h: float = 4.0
-                var bar_y: float = -36.0
+                # Calcola bob_y identico allo sprite (vedi _draw_sprite_frame)
+                var is_moving_bar: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
+                var bar_bob_y: float = sin(float(anim_time) * 0.01) * 2.0 if is_moving_bar else 0.0
+                var bar_y: float = -36.0 + bar_bob_y
                 draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
                         Color(0.2, 0.0, 0.0, 0.85), true)
                 var hp_ratio: float = float(health) / float(max_health)
@@ -823,9 +826,12 @@ func _draw() -> void:
         # Health bar above enemy (always visible, anche a HP pieno)
         # FIX (uniforma): prima era 'if health < max_health' → i nemici
         # freschi non mostravano la barra. Ora sempre visibile.
+        # FIX (sync): applica bob_y come nello sprite path.
         var bar_w2: float = 32.0
         var bar_h2: float = 4.0
-        var bar_y2: float = -36.0
+        var is_moving_bar2: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
+        var bar_bob_y2: float = sin(float(anim_time) * 0.01) * 2.0 if is_moving_bar2 else 0.0
+        var bar_y2: float = -36.0 + bar_bob_y2
         draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
                 Color(0.2, 0.0, 0.0, 0.85), true)
         var hp_ratio2: float = float(health) / float(max_health)
