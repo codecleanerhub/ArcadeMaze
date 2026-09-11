@@ -593,6 +593,9 @@ func _update_playing(delta_ms: float) -> void:
         # (9) Collectibles update + collision with player
         _update_collectibles(delta_ms)
 
+        # (9b) Mine vs enemies collision (FIX: la bomba deve esplodere all'impatto)
+        _check_mine_vs_enemies()
+
         # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
 
@@ -716,6 +719,54 @@ func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break
+
+
+# FIX (bomba non esplode all'impatto): controlla collisione tra la mine
+# (quando sta bouncing) e i nemici. Se la mine tocca un nemico, esplode:
+# danno ad area (radius 60px), particelle esplosione, screen shake,
+# sparisce immediatamente invece di rimanere per terra immobile.
+func _check_mine_vs_enemies() -> void:
+        if mine_item == null or not is_instance_valid(mine_item):
+                return
+        # Solo se la mine sta bouncing (è stata attivata dal player)
+        if not mine_item.get("bouncing"):
+                return
+        var mine_pos: Vector2 = mine_item.position
+        var blast_radius: float = 60.0
+        var blast_radius_sq: float = blast_radius * blast_radius
+        var hit_any: bool = false
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                if mine_pos.distance_squared_to(e_pos) < blast_radius_sq:
+                        enemy.take_damage(999)  # instant kill
+                        enemy.start_burning(30)
+                        player.add_score(2000)
+                        hit_any = true
+        # Anche il mini-boss
+        if mini_boss != null and not mini_boss.is_dead():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                if mine_pos.distance_squared_to(mb_pos) < blast_radius_sq:
+                        var mb_max_hp: int = mini_boss.get_max_health()
+                        mini_boss.take_damage(int(mb_max_hp * 0.5))  # 50% HP damage
+                        hit_any = true
+        if hit_any:
+                # Esplosione: particelle + screen shake + suono
+                if EffectsManager:
+                        var burst := EffectsManager.spawn_explosion(mine_pos,
+                                Color(1.0, 0.4, 0.1), 40, 1.0)
+                        collectibles_node.add_child(burst)
+                        EffectsManager.screen_shake(12.0, 0.4)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+                # Disattiva la mine e rimuovila
+                mine_item.set("bouncing", false)
+                mine_item.set("active", false)
+                mine_item.queue_free()
+                mine_item = null
+                # Screen flash breve per l'esplosione
+                screen_flash_timer_ms = 80
 
 
 func _check_melee_collisions(p: CharacterBody2D) -> void:
@@ -873,8 +924,9 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         # FIX (bomba scompare subito): velocità iniziale troppo alta
                         # (randf()*4-2)*50 = fino a 100px/frame → la bomba usciva
                         # dallo schermo in 1-2 frame. Ridotta a *5 (max 10px/frame).
-                        # Durata 30000ms → 5000ms (5s) per vedere l'effetto.
-                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 5, 5000)
+                        # FIX (durata bomba): 5000ms → 10000ms (10 secondi) per
+                        # dare tempo alla bomba di rimbalzare e colpire i nemici.
+                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 5, 10000)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
@@ -1273,7 +1325,7 @@ func _fire_lightning_strike() -> void:
         # FIX (fulmini invisibili): aumentato a 400ms + alpha iniziale 1.0
         # invece di 0.4. Il flash bianco full-screen è l'effetto più visibile
         # del fulmine, deve dominare la scena per almeno 0.4s.
-        screen_flash_timer_ms = 400
+        screen_flash_timer_ms = 120  # FIX: era 400 → flash troppo lungo copriva il fulmine
         # Damage all enemies near any lightning segment
         for enemy in spawner.enemies:
                 if enemy.is_dead():
@@ -1788,11 +1840,11 @@ func _draw() -> void:
         _draw_decals()
 
         # Screen flash
-        # FIX (fulmini invisibili): alpha calcolato su 400ms (era 200ms) e
-        # flash filled (true) invece di outline (false) per essere pienamente
-        # visibile come full-screen white flash.
+        # FIX (fulmini invisibili): flash ridotto a 120ms con alpha max 0.5
+        # invece di 400ms con alpha 1.0. Il flash troppo luminoso copriva
+        # il fulmine rendendolo invisibile.
         if screen_flash_timer_ms > 0:
-                var alpha: float = float(screen_flash_timer_ms) / 400.0
+                var alpha: float = (float(screen_flash_timer_ms) / 120.0) * 0.5
                 draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
                         Color(1, 1, 1, alpha), true)
 

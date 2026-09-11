@@ -255,6 +255,35 @@ func _ready() -> void:
         player2_character = C.CharacterType.HERO_F
 
 
+# FIX (tasto M per musica): toggle on/off globale, funziona in tutte le scene
+# (menu, gameplay, pause, ecc.) perché GameManager è un autoload sempre attivo.
+func _unhandled_input(event: InputEvent) -> void:
+        if event is InputEventKey and event.pressed and not event.is_echo():
+                if event.keycode == KEY_M:
+                        if AudioManager:
+                                var new_state: bool = not AudioManager.music_enabled
+                                AudioManager.set_music_enabled(new_state)
+                                if new_state:
+                                        # Riavvia la musica appropriata in base allo stato
+                                        match current_state:
+                                                C.GameState.MENU:
+                                                        AudioManager.play_menu_music()
+                                                C.GameState.PLAYING:
+                                                        AudioManager.play_level_music(current_level, _is_current_level_boss())
+                                                _:
+                                                        pass
+                                        print("[GameManager] Musica RIATTIVATA (M)")
+                                else:
+                                        print("[GameManager] Musica DISATTIVATA (M)")
+                        get_viewport().set_input_as_handled()
+
+
+# Helper: verifica se il livello corrente è un boss level (per scegliere
+# la musica corretta quando si riattiva con M).
+func _is_current_level_boss() -> bool:
+        return C.is_boss_level(current_level)
+
+
 # ============================================================================
 # DEBUG HELPERS
 # ============================================================================

@@ -939,12 +939,11 @@ func _draw_sprite_frame() -> void:
                 at = active_sheet.get_frame_texture("idle", 0)
                 if at == null:
                         return
-        # Draw centered at enemy size (56x56 ≈ TILE_SIZE*1.17, leggermente
-        # più grande del tile ma non abbastanza da coprire i muri adiacenti).
-        # FIX (sovrapposizione muro): era 84px (64*1.3), copriva i muri
-        # adiacenti. Ridotto a 56px per stare dentro il tile 48px con
-        # un piccolo overflow accettabile (le orecchie/corna dei mostri).
-        var target_size: float = 56.0
+        # Draw centered at enemy size (72x72 ≈ TILE_SIZE*1.5, più visibile).
+        # FIX (nemici piccoli): era 56px (0.88 scale), aumentato a 72px per
+        # renderli più visibili. Il tile è 48px, quindi overflow di 24px
+        # sui lati — accettabile per mostri con corna/orecchie.
+        var target_size: float = 72.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
@@ -978,10 +977,10 @@ func _update_deform_sprite_animation() -> void:
         if _deform_sprite == null:
                 return
         var mode: int = DeformableSprite.AnimMode.IDLE
-        # FIX (sovrapposizione muro): scale 0.88 (64*0.88=56px) per stare
-        # dentro il tile 48px senza coprire i muri adiacenti.
-        # Era 1.3 (83px) → copriva i muri adiacenti.
-        var scale_val: float = 0.88
+        # FIX (nemici piccoli): scale 1.125 (64*1.125=72px) per renderli
+        # più visibili. Era 0.88 (56px), poi 1.3 (83px, copriva muri).
+        # 1.125 = 72px = ottimo compromesso visibilità/sovrapposizione.
+        var scale_val: float = 1.125
         var flipped: bool = dx < 0
         if is_dying():
                 # DeformableSprite has no "death" mode; use IDLE with a fade-out

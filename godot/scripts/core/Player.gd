@@ -1184,14 +1184,15 @@ func _draw_equipped_weapon() -> void:
         if current_weapon.ammo <= 0:
                 return
         # FIX (arma non visibile): prima y=-8 (sotto la testa, coperta dallo
-        # sprite 64x64). Ora y=-4 e l'arma è più a destra (offset +12px)
+        # sprite 64x64). Ora y=-4 e l'arma è più a destra (offset +14px)
         # così sporge dal corpo del player ed è sempre visibile.
-        # Scale factor 1.4 per renderla più visibile.
-        var scale_factor: float = 1.4
+        # FIX (arma piccola): scale_factor aumentato da 1.4 a 2.0 per renderla
+        # più visibile. Offset passato da 14 a 22 per proporzioni.
+        var scale_factor: float = 2.0
         var y: float = -4.0  # weapon height (slightly above body centre)
         var facing_right: bool = last_dx >= 0
         # Offset aggiuntivo per sporgere dal corpo
-        var x_off: float = 12.0 * scale_factor
+        var x_off: float = 22.0
 
         match current_weapon.type:
                 WeaponType.PISTOL:
