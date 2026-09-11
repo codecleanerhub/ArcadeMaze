@@ -870,7 +870,11 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
         var kind_int: int = item.kind
         match kind_int:
                 CollectiblesClass.Kind.MINE:
-                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 50, 30000)
+                        # FIX (bomba scompare subito): velocità iniziale troppo alta
+                        # (randf()*4-2)*50 = fino a 100px/frame → la bomba usciva
+                        # dallo schermo in 1-2 frame. Ridotta a *5 (max 10px/frame).
+                        # Durata 30000ms → 5000ms (5s) per vedere l'effetto.
+                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 5, 5000)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
@@ -1266,7 +1270,10 @@ func _fire_lightning_strike() -> void:
         # port had the draw code (MainGameController.gd:1508) but never set
         # screen_flash_timer_ms > 0. We now set it here so the full-screen
         # white flash plays on every strike, matching the C++ feel.
-        screen_flash_timer_ms = 200
+        # FIX (fulmini invisibili): aumentato a 400ms + alpha iniziale 1.0
+        # invece di 0.4. Il flash bianco full-screen è l'effetto più visibile
+        # del fulmine, deve dominare la scena per almeno 0.4s.
+        screen_flash_timer_ms = 400
         # Damage all enemies near any lightning segment
         for enemy in spawner.enemies:
                 if enemy.is_dead():
@@ -1321,48 +1328,67 @@ func _draw_lightning_bolts() -> void:
         # Detailed 3-strata lightning renderer with halo, flash, 4 lateral
         # branches, 10 radial sparks (2-layer) and an expanding shockwave.
         # Mirrors Game.cpp drawLightning (3582-3747).
+        # FIX (fulmini invisibili): spessori raddoppiati e alpha aumentato.
+        # Prima i line erano 6/3/1.5px con alpha 0.2/0.5/1.0 → quasi invisibili
+        # sul maze scuro. Ora 14/7/3px con alpha 0.4/0.7/1.0 → ben visibili.
         var COL_GEM_BLUE: Color = Color(80.0 / 255.0, 160.0 / 255.0, 220.0 / 255.0)
         var COL_CYAN: Color = Color(120.0 / 255.0, 200.0 / 255.0, 200.0 / 255.0)
         var COL_WHITE: Color = Color(240.0 / 255.0, 240.0 / 255.0, 240.0 / 255.0)
+        # FIX (fulmini invisibili): aggiunto giallo elettrico per contrasto
+        # sul maze scuro. Il giallo è il colore più visibile per saette.
+        var COL_YELLOW: Color = Color(1.0, 0.95, 0.4)
         for bolt in lightning_bolts:
                 var pts: Array = bolt.get("points", [])
                 if pts.size() < 2:
                         continue
                 var life: int = int(bolt.get("life", 0))
                 var max_life: int = int(bolt.get("max_life", 30))
-                var alpha: float = float(life) / float(max_life)
+                # Alpha curve: flash al frame 0 (alpha=1), poi decay lento.
+                # Nei primi 10 frame (166ms) alpha=1.0 per massima visibilità.
+                var alpha_raw: float = float(life) / float(max_life)
+                var alpha: float = 1.0 if alpha_raw > 0.83 else alpha_raw
                 var impact: Vector2 = bolt.get("pos", pts[pts.size() - 1])
                 var lx: float = impact.x
                 var ly: float = impact.y
                 # --- 1. Halo esterno (bagliore grande attorno al punto di impatto) ---
-                draw_circle(impact, 55.0,
-                        Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b, alpha * 0.15))
+                # FIX: raddoppiato il raggio (55→120) per visibilità
+                draw_circle(impact, 120.0,
+                        Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b, alpha * 0.25))
                 # --- 2. Glow medio ---
-                draw_circle(impact, 28.0,
-                        Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.35))
+                draw_circle(impact, 60.0,
+                        Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.45))
                 # --- 3. Glow interno ---
-                draw_circle(impact, 14.0,
-                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.5))
-                # --- 4. Saetta zigzag (3 strati per segmento) ---
-                # Strato 1: glow esterno azzurro (6px)
+                draw_circle(impact, 30.0,
+                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.65))
+                # --- 4. Saetta zigzag (4 strati per segmento) ---
+                # Strato 1: glow esterno azzurro (14px) — FIX: 6→14
                 for i in pts.size() - 1:
                         draw_line(pts[i], pts[i + 1],
                                 Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b,
-                                        alpha * 0.2), 6.0)
-                # Strato 2: glow medio ciano (3px)
+                                        alpha * 0.4), 14.0)
+                # Strato 2: glow medio giallo (8px) — FIX: aggiunto giallo
+                for i in pts.size() - 1:
+                        draw_line(pts[i], pts[i + 1],
+                                Color(COL_YELLOW.r, COL_YELLOW.g, COL_YELLOW.b,
+                                        alpha * 0.5), 8.0)
+                # Strato 3: glow medio ciano (4px) — FIX: 3→4
                 for i in pts.size() - 1:
                         draw_line(pts[i], pts[i + 1],
                                 Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
-                                        alpha * 0.5), 3.0)
-                # Strato 3: nucleo centrale bianco (1.5px)
+                                        alpha * 0.7), 4.0)
+                # Strato 4: nucleo centrale bianco (2px) — FIX: 1.5→2
                 for i in pts.size() - 1:
                         draw_line(pts[i], pts[i + 1],
-                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha), 1.5)
-                # --- 5. Flash centrale al punto di impatto (10px) ---
-                draw_circle(impact, 10.0,
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha), 2.0)
+                # --- 5. Flash centrale al punto di impatto (25px) ---
+                # FIX: 10→25 per renderlo più visibile
+                draw_circle(impact, 25.0,
                         Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha))
+                draw_circle(impact, 12.0,
+                        Color(COL_YELLOW.r, COL_YELLOW.g, COL_YELLOW.b, alpha))
                 # --- 6. Ramificazioni laterali (4 rami, 5 segmenti ciascuno) ---
-                # Ogni ramo: glow ciano 2px + nucleo bianco 1px (Game.cpp 3683-3714)
+                # Ogni ramo: glow ciano 4px + nucleo bianco 2px (Game.cpp 3683-3714)
+                # FIX: spessori raddoppiati (2→4, 1→2) per visibilità
                 var branches: Array = bolt.get("branches", [])
                 for br in branches:
                         if br.size() < 2:
@@ -1370,29 +1396,31 @@ func _draw_lightning_bolts() -> void:
                         for i in br.size() - 1:
                                 draw_line(br[i], br[i + 1],
                                         Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
-                                                alpha * 0.4), 2.0)
+                                                alpha * 0.5), 4.0)
                         for i in br.size() - 1:
                                 draw_line(br[i], br[i + 1],
                                         Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b,
-                                                alpha * 0.8), 1.0)
+                                                alpha * 0.9), 2.0)
                 # --- 7. Scintille radiali (10, 2 strati: glow + nucleo) ---
+                # FIX: raddoppiati i raggi (2.5→5, 1.2→2.5)
                 var sparks: Array = bolt.get("sparks", [])
                 for sp in sparks:
                         var a: float = float(sp.get("angle", 0.0))
                         var r: float = float(sp.get("radius", 10.0))
                         var sx: float = lx + cos(a) * r
                         var sy: float = ly + sin(a) * r
-                        # Glow scintilla (2.5px ciano)
+                        draw_circle(Vector2(sx, sy), 5.0,
+                                Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.6))
                         draw_circle(Vector2(sx, sy), 2.5,
-                                Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.5))
-                        # Nucleo scintilla (1.2px bianco)
-                        draw_circle(Vector2(sx, sy), 1.2,
-                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.9))
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha))
                 # --- 8. Onda d'urto circolare (shockwave che si espande) ---
-                var shock_r: float = (1.0 - alpha) * 50.0
+                # FIX: raggio massimo 50→150 per visibilità
+                var shock_r: float = (1.0 - alpha_raw) * 150.0
                 if shock_r > 0.5:
-                        draw_arc(impact, shock_r, 0.0, TAU, 32,
-                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.4), 1.5)
+                        draw_arc(impact, shock_r, 0.0, TAU, 48,
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.5), 3.0)
+                        draw_arc(impact, shock_r * 0.7, 0.0, TAU, 32,
+                                Color(COL_YELLOW.r, COL_YELLOW.g, COL_YELLOW.b, alpha * 0.4), 2.0)
         # Decay lightning life
         var alive_bolts: Array = []
         for bolt in lightning_bolts:
@@ -1760,10 +1788,13 @@ func _draw() -> void:
         _draw_decals()
 
         # Screen flash
+        # FIX (fulmini invisibili): alpha calcolato su 400ms (era 200ms) e
+        # flash filled (true) invece di outline (false) per essere pienamente
+        # visibile come full-screen white flash.
         if screen_flash_timer_ms > 0:
-                var alpha: float = float(screen_flash_timer_ms) / 200.0
+                var alpha: float = float(screen_flash_timer_ms) / 400.0
                 draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
-                        Color(1, 1, 1, alpha), false)
+                        Color(1, 1, 1, alpha), true)
 
         # Lightning bolts (scepter effect)
         _draw_lightning_bolts()
