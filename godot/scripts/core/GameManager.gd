@@ -115,8 +115,8 @@ signal boss_defeated(boss_index: int)
 ## decide whether to keep the boss state on continue).
 @export var died_in_boss: bool = false
 
-## Music toggle (set from the main menu).
-@export var music_enabled: bool = true
+## Music toggle (set from the main menu). Default OFF (user can enable in Options).
+@export var music_enabled: bool = false
 
 ## True if the player picked up the test-mode shortcut (skip current level).
 @export var test_mode_enabled: bool = false

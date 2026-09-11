@@ -7,17 +7,23 @@
 #
 # Layout (mirror of the SFML build, expressed in 1024x1024 design space):
 #   * Background:   bg_menu.jpg (cover-fit to the window)
+#                   bg_options.png shown when _in_options == true (Options
+#                   submenu with ancient bronze gears / Tomb Raider style)
 #   * Title:        "ARCADE MAZE"  (gold + dark gold shadow)
+#                   becomes "OPTIONS" while the Options submenu is open.
 #   * Ornament:     gold horizontal line + diamond (between title and items)
 #   * Scroll panel: dark parchment-style rounded rectangle (items list)
-#       7 menu items (selected one highlighted in yellow + animated flame):
+#       Main menu (6 items, selected highlighted in yellow + animated flame):
 #           0. NUMBER OF PLAYERS: 1 / 2
 #           1. GAME MODE: STORY / INFINITE
-#           2. MUSIC: ON / OFF
-#           3. TEST MODE: ON / OFF
-#           4. CONFIGURE JOYSTICK
-#           5. START GAME
-#           6. CREDITS
+#           2. TEST MODE: ON / OFF
+#           3. OPTIONS          (opens the Options submenu)
+#           4. START GAME
+#           5. CREDITS
+#       Options submenu (3 items):
+#           0. MUSIC: ON / OFF
+#           1. CONFIGURE JOYSTICK
+#           2. BACK              (returns to main menu)
 #   * Character wheel: 8 characters (HERO_M, HERO_F, MAGE, ORC, ELF, KNIGHT,
 #                      GOLEM, DRAGON, VAMPIRE) shown side-view.
 #   * Footer:        "By" (gold) + "Marled Software" (ivory)
@@ -26,7 +32,8 @@
 #   * Up/Down (or joystick Y axis) = move selection
 #   * Left/Right (or joystick X axis) = change the selected option's value
 #   * Enter / Space (or joystick confirm) = activate item
-#   * ESC                          = quit (handled by parent)
+#   * ESC                          = quit (handled by parent) - or back to main
+#                                     menu if the Options submenu is open.
 #
 # Emitted signals:
 #   * start_requested(num_players:int, mode:int, music:bool, p1_char:int, p2_char:int)
@@ -59,7 +66,7 @@ signal configure_joystick_requested(player: int)
 var _menu_item_index: int = 0
 var _num_players: int = 1
 var _game_mode: int = GameMode.STORY
-var _music_enabled: bool = true  # default ON so music plays at startup
+var _music_enabled: bool = false  # default OFF (user can enable in Options)
 var _test_mode_enabled: bool = false
 var _fullscreen_enabled: bool = true  # BootManager sets fullscreen at startup
 # Character selection (8 characters, matches Player.h:CharacterType).
@@ -67,6 +74,15 @@ var _p1_character: int = 0
 var _p2_character: int = 1
 var _wheel_index: int = 0  # current wheel position (0..7)
 var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
+# --- Options submenu state machine -----------------------------------------
+# When true, the menu shows the Options submenu (MUSIC / CONFIGURE JOYSTICK /
+# BACK) instead of the main menu. The OPTIONS item in the main menu sets this
+# to true; the BACK item (or ESC) sets it back to false.
+var _in_options: bool = false
+const MAIN_MENU_ITEMS: int = 6   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CREDITS
+const OPTIONS_MENU_ITEMS: int = 3  # MUSIC, CONFIGURE JOYSTICK, BACK
+const OPTIONS_MAIN_RETURN_INDEX: int = 3  # main menu index of OPTIONS item
+# ---
 
 # Animation timer (mirrors menuTime in drawMenu()).
 var _menu_time: float = 0.0
@@ -76,6 +92,7 @@ const DEMO_INACTIVITY_SECONDS: float = 30.0
 
 # Child nodes (built in _ready).
 var _bg: TextureRect
+var _options_bg: TextureRect  # Themed background shown when _in_options == true
 var _title_label: Label
 var _footer_by: Label
 var _footer_name: Label
@@ -289,6 +306,26 @@ func _build_ui() -> void:
                 _bg.texture = tex
         add_child(_bg)
 
+        # --- Options submenu background (themed: ancient bronze gears) ---
+        # Loaded via Image.load() as requested by the task. Initially hidden,
+        # shown only while _in_options == true. Placed as a sibling of _bg so we
+        # can simply toggle visibility when entering/leaving the Options submenu.
+        _options_bg = TextureRect.new()
+        _options_bg.name = "OptionsBackground"
+        _options_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _options_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        _options_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+        # Load via Image.load() (returns Error) then wrap in an ImageTexture so
+        # we can fall back gracefully if the file is missing on disk.
+        var opt_img := Image.new()
+        var opt_err: int = opt_img.load("res://assets/backgrounds/bg_options.png")
+        if opt_err == OK:
+                _options_bg.texture = ImageTexture.create_from_image(opt_img)
+        else:
+                push_warning("MainMenu: failed to load bg_options.png (err=%d)" % opt_err)
+        _options_bg.visible = false
+        add_child(_options_bg)
+
         # Dark overlay over the background, below the panel
         var dark := ColorRect.new()
         dark.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -348,8 +385,11 @@ func _build_ui() -> void:
         _panel.add_theme_stylebox_override("panel", stylebox)
         add_child(_panel)
 
-        # --- 7 menu items inside the panel ---
+        # --- 6 menu item labels inside the panel ---
         # VBoxContainer filling the panel with 40px padding on each side.
+        # We create exactly MAIN_MENU_ITEMS labels (6): the main menu uses all 6,
+        # the Options submenu uses the first OPTIONS_MENU_ITEMS (3) and the rest
+        # are hidden via `visible = false` while _in_options == true.
         var items_container := VBoxContainer.new()
         items_container.name = "Items"
         items_container.anchor_left = 0.0
@@ -366,12 +406,13 @@ func _build_ui() -> void:
         items_container.add_theme_constant_override("separation", 22)
         _panel.add_child(items_container)
 
+        # Initial placeholder texts; the real text is set in _update_items_text()
+        # based on whether the main menu or the Options submenu is active.
         var item_texts: Array = [
                 "NUMBER OF PLAYERS:",
                 "GAME MODE:",
-                "MUSIC:",
                 "TEST MODE:",
-                "CONFIGURE JOYSTICK",
+                "OPTIONS",
                 "START GAME",
                 "CREDITS",
         ]
@@ -512,16 +553,61 @@ func _character_name(char_idx: int) -> String:
 # ============================================================================
 
 # Refresh the text of every menu item to reflect the current selection values.
+# Two display modes (simple state machine):
+#   * _in_options == false  -> main menu (6 items: NUMBER OF PLAYERS, GAME
+#                              MODE, TEST MODE, OPTIONS, START GAME, CREDITS)
+#   * _in_options == true   -> Options submenu (3 items: MUSIC, CONFIGURE
+#                              JOYSTICK, BACK). Labels at index 3..5 are
+#                              hidden via `visible = false` so the panel
+#                              visually shrinks while in the submenu.
+# The title text and the visible background are also swapped here so callers
+# only need to invoke `_update_items_text()` after any state change.
 func _update_items_text() -> void:
         if _item_labels.is_empty():
                 return
+        if _in_options:
+                # --- Options submenu (3 items) ---
+                _item_labels[0].text = "MUSIC: %s" % ("ON" if _music_enabled else "OFF")
+                _item_labels[0].visible = true
+                _item_labels[1].text = "CONFIGURE JOYSTICK"
+                _item_labels[1].visible = true
+                _item_labels[2].text = "BACK"
+                _item_labels[2].visible = true
+                # Hide any extra labels (indices 3..N-1) while inside the Options
+                # submenu so the panel only shows the 3 options items.
+                for i in range(OPTIONS_MENU_ITEMS, _item_labels.size()):
+                        _item_labels[i].visible = false
+                # Swap title + background to the themed Options screen.
+                if _title_label:
+                        _title_label.text = "OPTIONS"
+                if _options_bg:
+                        _options_bg.visible = true
+                if _bg:
+                        _bg.visible = false
+                return
+        # --- Main menu (6 items) ---
         _item_labels[0].text = "NUMBER OF PLAYERS: %d" % _num_players
+        _item_labels[0].visible = true
         _item_labels[1].text = "GAME MODE: %s" % ("STORY" if _game_mode == GameMode.STORY else "INFINITE")
-        _item_labels[2].text = "MUSIC: %s" % ("ON" if _music_enabled else "OFF")
-        _item_labels[3].text = "TEST MODE: %s" % ("ON" if _test_mode_enabled else "OFF")
-        _item_labels[4].text = "CONFIGURE JOYSTICK"
-        _item_labels[5].text = "START GAME"
-        _item_labels[6].text = "CREDITS"
+        _item_labels[1].visible = true
+        _item_labels[2].text = "TEST MODE: %s" % ("ON" if _test_mode_enabled else "OFF")
+        _item_labels[2].visible = true
+        _item_labels[3].text = "OPTIONS"
+        _item_labels[3].visible = true
+        _item_labels[4].text = "START GAME"
+        _item_labels[4].visible = true
+        _item_labels[5].text = "CREDITS"
+        _item_labels[5].visible = true
+        # Hide any extra labels beyond MAIN_MENU_ITEMS (defensive; should be none).
+        for i in range(MAIN_MENU_ITEMS, _item_labels.size()):
+                _item_labels[i].visible = false
+        # Restore main-menu title + background.
+        if _title_label:
+                _title_label.text = "ARCADE MAZE"
+        if _options_bg:
+                _options_bg.visible = false
+        if _bg:
+                _bg.visible = true
 
 
 # Updates the visual highlight of the character wheel.
@@ -565,8 +651,13 @@ func _unhandled_input(event: InputEvent) -> void:
                         KEY_ENTER, KEY_SPACE:
                                 _activate_current()
                         KEY_ESCAPE:
-                                # Quit the game from the main menu.
-                                get_tree().quit()
+                                # If the Options submenu is open, ESC goes back to the main
+                                # menu instead of quitting the game.
+                                if _in_options:
+                                        _set_in_options(false)
+                                else:
+                                        # Quit the game from the main menu.
+                                        get_tree().quit()
 
         # FIX #2 (menu navigation broken with joystick):
         # The previous implementation only listened to JOY_AXIS_LEFT_X/Y (the
@@ -636,40 +727,68 @@ func _unhandled_input(event: InputEvent) -> void:
                                 # Start button = also confirm (mirrors C++ behavior)
                                 _activate_current()
                         JOY_BUTTON_BACK:
-                                # Back/Select button = quit (matches ESC)
-                                get_tree().quit()
+                                # Back/Select button = quit (matches ESC) OR go back from
+                                # the Options submenu to the main menu.
+                                if _in_options:
+                                        _set_in_options(false)
+                                else:
+                                        get_tree().quit()
                         JOY_BUTTON_B:
-                                # B button = toggle music on/off as a convenience
-                                _menu_item_index = 2
-                                _update_items_text()
-                                _change_option(1)
+                                # B button = "back" convenience: returns from Options submenu
+                                # to the main menu. If we're already on the main menu, B
+                                # does nothing (so it doesn't accidentally toggle music).
+                                if _in_options:
+                                        _set_in_options(false)
 
 
 # Move the selection cursor up/down by `delta` (-1 or +1), wrapping around.
+# Wraps at MAIN_MENU_ITEMS (6) when in the main menu and at
+# OPTIONS_MENU_ITEMS (3) when inside the Options submenu.
 func _move_selection(delta: int) -> void:
-        _menu_item_index = posmod(_menu_item_index + delta, 7)  # FIX: era 8, rimosso FULLSCREEN
+        var count: int = OPTIONS_MENU_ITEMS if _in_options else MAIN_MENU_ITEMS
+        _menu_item_index = posmod(_menu_item_index + delta, count)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
 
 
 # Change the value of the currently-selected option (Left/Right).
+# Behaviour depends on whether the main menu or the Options submenu is open:
+#   * Options submenu (3 items): only MUSIC (index 0) is toggleable.
+#                                CONFIGURE JOYSTICK and BACK are activated
+#                                via _activate_current() (Enter/A button).
+#   * Main menu (6 items):       NUMBER OF PLAYERS (0) and GAME MODE (1) and
+#                                TEST MODE (2) are toggleable. OPTIONS (3),
+#                                START GAME (4) and CREDITS (5) are activated
+#                                via _activate_current().
 func _change_option(delta: int) -> void:
+        if _in_options:
+                match _menu_item_index:
+                        0:  # MUSIC on/off
+                                _music_enabled = not _music_enabled
+                                if AudioManager:
+                                        AudioManager.set_music_enabled(_music_enabled)
+                                        if _music_enabled:
+                                                AudioManager.play_menu_music()
+                        1, 2:
+                                # CONFIGURE JOYSTICK / BACK are activated via _activate_current(),
+                                # not via Left/Right - ignore.
+                                pass
+                        _:
+                                pass
+                _update_items_text()
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+                return
         match _menu_item_index:
                 0:  # Number of players
                         _num_players = 1 if _num_players == 2 else 2
                         _wheel_step = 0
                 1:  # Game mode
                         _game_mode = GameMode.INFINITE if _game_mode == GameMode.STORY else GameMode.STORY
-                2:  # Music on/off
-                        _music_enabled = not _music_enabled
-                        if AudioManager:
-                                AudioManager.set_music_enabled(_music_enabled)
-                                if _music_enabled:
-                                        AudioManager.play_menu_music()
-                3:  # Test mode on/off
+                2:  # Test mode on/off
                         _test_mode_enabled = not _test_mode_enabled
-                4, 5, 6:
-                        # These items are not toggleable, just activate them.
+                3, 4, 5:
+                        # OPTIONS / START GAME / CREDITS are not toggleable, just activate them.
                         pass
                 _:
                         # Move the character wheel selection
@@ -745,23 +864,60 @@ func _refresh_layout_after_resize_async() -> void:
         queue_redraw()
 
 
+# Helper for the Options submenu state machine. Sets `_in_options` to the
+# requested value, swaps the background + title, resets the cursor, and
+# refreshes the on-screen labels. Centralising the transition here keeps the
+# ESC / JOY_BUTTON_BACK / JOY_BUTTON_B / "BACK" item paths identical.
+# Cursor placement on transition:
+#   * opening Options   -> cursor on MUSIC (index 0)
+#   * closing Options    -> cursor on OPTIONS (index 3) so the player can
+#                           immediately re-open it or move to START GAME.
+func _set_in_options(open_options: bool) -> void:
+        _in_options = open_options
+        _menu_item_index = 0 if open_options else OPTIONS_MAIN_RETURN_INDEX
+        _update_items_text()
+
+
 # Activate the currently-selected menu item (Enter/Space/A button).
+# Behaviour depends on whether the main menu or the Options submenu is open.
 func _activate_current() -> void:
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+        if _in_options:
+                # Options submenu items:
+                #   0 = MUSIC (toggle on/off)
+                #   1 = CONFIGURE JOYSTICK (emit signal; P1 first, P2 if 2 players)
+                #   2 = BACK (return to main menu)
+                match _menu_item_index:
+                        0:
+                                _music_enabled = not _music_enabled
+                                if AudioManager:
+                                        AudioManager.set_music_enabled(_music_enabled)
+                                        if _music_enabled:
+                                                AudioManager.play_menu_music()
+                                _update_items_text()
+                        1:
+                                configure_joystick_requested.emit(1)
+                        2:
+                                _set_in_options(false)
+                        _:
+                                pass
+                return
         match _menu_item_index:
+                3:
+                        # OPTIONS - open the Options submenu.
+                        _set_in_options(true)
                 4:
-                        # CONFIGURE JOYSTICK - P1 first, then P2 (if 2 players)
-                        configure_joystick_requested.emit(1)
-                5:
                         # START GAME - in 2P mode the second player's joystick config
                         # is requested automatically (handled by parent via signal).
                         start_requested.emit(_num_players, _game_mode, _music_enabled,
                                          _p1_character, _p2_character)
-                6:
+                5:
+                        # CREDITS
                         credits_requested.emit()
                 _:
-                        # Toggleable items (0..3) confirm their current value.
+                        # Toggleable items (0..2: NUMBER OF PLAYERS, GAME MODE, TEST MODE)
+                        # confirm their current value.
                         _change_option(1 if _menu_item_index == 0 else 0)
 
 
@@ -771,17 +927,24 @@ func _activate_current() -> void:
 
 # Parent calls this after the CONFIGURE JOYSTICK screen returns, to advance to
 # the next step (P2 in 2P mode, or simply refresh state in 1P mode).
+# Since CONFIGURE JOYSTICK is now reached from the Options submenu, we return
+# to that submenu (cursor on CONFIGURE JOYSTICK, item 1) when done.
 func on_joystick_config_done(player: int) -> void:
         if player == 1 and _num_players == 2:
                 # Need to configure P2 as well.
                 configure_joystick_requested.emit(2)
         else:
-                # Done configuring. Re-arm the cursor on START GAME (item 6).
-                _menu_item_index = 6
+                # Done configuring. Return to the Options submenu, cursor on the
+                # CONFIGURE JOYSTICK item (index 1) so the player can pick BACK.
+                _in_options = true
+                _menu_item_index = 1
                 _update_items_text()
 
 
 # Pre-select an item (used by external scenes to set focus).
+# `idx` is interpreted relative to the current menu mode (main menu or
+# Options submenu) and clamped to the valid range for that mode.
 func select_item(idx: int) -> void:
-        _menu_item_index = clampi(idx, 0, 7)
+        var count: int = OPTIONS_MENU_ITEMS if _in_options else MAIN_MENU_ITEMS
+        _menu_item_index = clampi(idx, 0, count - 1)
         _update_items_text()

@@ -385,12 +385,14 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                 break
 
         # When close enough to cell centre, snap and try to recalc direction.
-        # FIX (teletrasporto): lo snap veniva fatto con threshold `speed` (1px),
-        # il che significa che il nemico deve essere entro 1px dal centro per
-        # snap. Con speed=1 questo avviene raramente, causando posizioni
-        # intermedie strane. Aumentato il threshold a `speed * 2` (2px).
-        if absf(position.x - center_x) < speed * 2.0 \
-                        and absf(position.y - center_y) < speed * 2.0:
+        # FIX (nemici fermi — root cause trovata da test): il threshold era
+        # `speed * 2.0` (2px), ma con speed=1 il nemico si muove di 1px/frame.
+        # Dopo il primo frame (1px), absf(1) < 2 = true → snap riporta a center
+        # → il nemico non avanza mai. Ora usiamo `speed` (1px) come threshold,
+        # identico a Player.gd:485-486. Dopo 1px, absf(1) < 1 = false → no snap
+        # → il nemico continua a muoversi finché non raggiunge la cella successiva.
+        if absf(position.x - center_x) < speed \
+                        and absf(position.y - center_y) < speed:
                 position.x = center_x
                 position.y = center_y
 
