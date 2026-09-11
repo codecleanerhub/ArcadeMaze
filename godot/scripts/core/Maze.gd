@@ -101,10 +101,15 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-        # Accumula il tempo per le animazioni (flicker torce). Ridisegna ogni
-        # frame perche' le torce sono animate (come in Maze::render C++).
+        # Accumula il tempo per le animazioni (flicker torce).
+        # FIX (lag): il maze è statico (le torce sono state rimosse dai muri).
+        # Non c'è bisogno di ridisegnare ogni frame. Chiamiamo queue_redraw
+        # solo quando il maze viene rigenerato (generate()).
         _anim_time += delta
-        queue_redraw()
+        # Solo se il maze è stato modificato (needs_redraw = true)
+        if needs_redraw:
+                queue_redraw()
+                needs_redraw = false
 
 
 func _draw() -> void:
@@ -458,8 +463,10 @@ func generate(lvl: int = 1) -> void:
         wall_color = pal["wall"]
         bg_color = pal["bg"]
 
-        # Crea le PointLight2D per le torce sulle pareti (vantaggio Godot).
-        _spawn_torch_lights()
+        # Crea le PointLight2D per le torce sulle pareti.
+        # FIX (lag): le PointLight2D sono costose su GPU entry-level.
+        # Disabilitate per performance (le torce erano già rimosse dal disegno).
+        # _spawn_torch_lights()
 
         needs_redraw = true
         maze_generated.emit(level)

@@ -154,10 +154,10 @@ func _ready() -> void:
         # Start level music if enabled
         if AudioManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, false)
-        # Aggiungi post-processing vignette (vantaggio Godot)
-        if EffectsManager:
-                var vignette := EffectsManager.create_vignette_rect()
-                add_child(vignette)
+        # Vignette post-processing — DISABILITATO per performance.
+        # if EffectsManager:
+        #         var vignette := EffectsManager.create_vignette_rect()
+        #         add_child(vignette)
 
 
 # Background layer node (CanvasLayer, independent of camera and MainGame scale).

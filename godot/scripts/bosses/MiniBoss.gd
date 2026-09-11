@@ -158,8 +158,9 @@ func _load_sprite() -> void:
         # Apply CharacterArt enhancement shader (strong variant for minibosses)
         # MiniBoss renders via draw_texture_rect on self (CanvasItem), so we
         # apply the material to the node itself rather than a child Sprite2D.
-        if CharacterArt:
-                CharacterArt.apply_enhancement_to_canvas_item(self, true)
+        # Apply CharacterArt enhancement shader — DISABILITATO per performance.
+        # if CharacterArt:
+        #         CharacterArt.apply_enhancement_to_canvas_item(self, true)
 
         # Cache accent color for walk_cycle shader tinting.
         _accent_color = _get_accent_color()
@@ -254,7 +255,7 @@ static func get_base_health(t: int) -> int:
 
 
 static func get_base_speed(t: int) -> int:
-	# FIX: all speeds capped at 1 (95% of player speed 2)
+        # FIX: all speeds capped at 1 (95% of player speed 2)
         const TABLE := [
                 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                  # LOTR/D&D
                 1, 1, 1, 1, 1, 1, 1,                                                 # Narnia

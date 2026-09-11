@@ -240,9 +240,11 @@ func _load_sprite() -> void:
         if SpriteManager:
                 _burn_effect_sheet = SpriteManager.get_sheet("effect_fireaura")
 
-        # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
-        if CharacterArt and sprite:
-                CharacterArt.apply_enhancement(sprite, false)
+        # Apply CharacterArt enhancement shader — DISABILITATO per performance.
+        # Lo shader character_enhanced è costoso su GPU entry-level (NVIDIA 940M)
+        # con 28 nemici × 60fps. I nemici vengono renderizzati senza shader.
+        # if CharacterArt and sprite:
+        #         CharacterArt.apply_enhancement(sprite, false)
 
         # Cache accent color from STATS for walk_cycle shader tinting.
         var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)

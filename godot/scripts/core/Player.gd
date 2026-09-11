@@ -311,9 +311,9 @@ func load_character_sprite() -> void:
                         if sprite:
                                 sprite.scale = Vector2(1.3, 1.3)
                                 sprite.centered = true
-                        # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
-                        if CharacterArt and sprite:
-                                CharacterArt.apply_enhancement(sprite, false)
+                        # Apply CharacterArt enhancement shader — DISABILITATO per performance.
+                        # if CharacterArt and sprite:
+                        #         CharacterArt.apply_enhancement(sprite, false)
                 else:
                         sprite_loaded = false
         else:
