@@ -82,38 +82,42 @@ const SPRITE_ID := {
 # Per-type stats {speed, health, max_health}. Mirrors the if/else chain in
 # Enemy::Enemy() constructor src/Enemy.cpp line 184-213.
 const STATS := {
-        EnemyType.ZOMBIE:          {"speed": 1, "health": 4, "max_health": 4, "color": Color(0.4, 0.5, 0.3), "accent": Color(0.6, 0.7, 0.4)},
-        EnemyType.SKELETON:        {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.8, 0.8, 0.7), "accent": Color(0.5, 0.5, 0.4)},
-        EnemyType.GHOST:           {"speed": 1, "health": 1, "max_health": 1, "color": Color(0.7, 0.8, 0.9, 0.6), "accent": Color(1.0, 1.0, 1.0, 0.5)},
-        EnemyType.BAT:             {"speed": 1, "health": 1, "max_health": 1, "color": Color(0.3, 0.2, 0.4), "accent": Color(0.6, 0.4, 0.7)},
-        EnemyType.SPIDER:         {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.2, 0.1, 0.1), "accent": Color(0.8, 0.2, 0.2)},
-        EnemyType.SLIME:           {"speed": 1, "health": 5, "max_health": 5, "color": Color(0.3, 0.7, 0.3), "accent": Color(0.5, 0.9, 0.5)},
-        EnemyType.DEMON:           {"speed": 1, "health": 5, "max_health": 5, "color": Color(0.6, 0.1, 0.1), "accent": Color(1.0, 0.4, 0.1)},
-        EnemyType.ROBOT:           {"speed": 1, "health": 6, "max_health": 6, "color": Color(0.5, 0.5, 0.6), "accent": Color(0.8, 0.8, 0.9)},
-        EnemyType.GOBLIN:         {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.4, 0.6, 0.2), "accent": Color(0.6, 0.8, 0.3)},
-        EnemyType.ORC:             {"speed": 1, "health": 6, "max_health": 6, "color": Color(0.5, 0.4, 0.2), "accent": Color(0.7, 0.5, 0.3)},
-        EnemyType.WRAITH:         {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.3, 0.2, 0.4, 0.7), "accent": Color(0.6, 0.4, 0.8, 0.8)},
-        EnemyType.GHOUL:           {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.5, 0.4, 0.3), "accent": Color(0.7, 0.5, 0.4)},
-        EnemyType.IMP:             {"speed": 1, "health": 1, "max_health": 1, "color": Color(0.7, 0.2, 0.3), "accent": Color(1.0, 0.5, 0.3)},
-        EnemyType.RAT:             {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.4, 0.3, 0.2), "accent": Color(0.6, 0.5, 0.3)},
-        EnemyType.CULTIST:         {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.3, 0.1, 0.3), "accent": Color(0.6, 0.2, 0.6)},
-        EnemyType.MIMIC:           {"speed": 1, "health": 4, "max_health": 4, "color": Color(0.6, 0.5, 0.2), "accent": Color(0.4, 0.3, 0.1)},
-        EnemyType.WOLF:            {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.3, 0.3, 0.3), "accent": Color(0.6, 0.5, 0.4)},
-        EnemyType.WITCH:           {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.2, 0.1, 0.3), "accent": Color(0.5, 0.2, 0.7)},
-        EnemyType.BONE_GOLEM:      {"speed": 1, "health": 6, "max_health": 6, "color": Color(0.9, 0.9, 0.8), "accent": Color(0.6, 0.6, 0.5)},
-        EnemyType.ASH_SERPENT:     {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.3, 0.3, 0.2), "accent": Color(0.5, 0.5, 0.3)},
-        EnemyType.DAMNED_KNIGHT:   {"speed": 1, "health": 5, "max_health": 5, "color": Color(0.2, 0.2, 0.3), "accent": Color(0.5, 0.3, 0.3)},
-        EnemyType.MAD_WIZARD:      {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.3, 0.2, 0.5), "accent": Color(0.6, 0.4, 0.9)},
-        EnemyType.DEMONIC_CROW:    {"speed": 1, "health": 1, "max_health": 1, "color": Color(0.1, 0.1, 0.1), "accent": Color(0.4, 0.3, 0.3)},
-        EnemyType.TENTACLE:        {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.4, 0.2, 0.4), "accent": Color(0.7, 0.3, 0.7)},
-        EnemyType.GARGOYLE:        {"speed": 1, "health": 5, "max_health": 5, "color": Color(0.4, 0.4, 0.5), "accent": Color(0.6, 0.6, 0.7)},
-        EnemyType.WELL_SPIRIT:     {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.3, 0.5, 0.7, 0.6), "accent": Color(0.5, 0.7, 0.9, 0.7)},
-        EnemyType.CURSED_BOAR:     {"speed": 1, "health": 4, "max_health": 4, "color": Color(0.4, 0.2, 0.2), "accent": Color(0.6, 0.3, 0.3)},
-        EnemyType.PREDATOR_FUNGUS: {"speed": 1, "health": 3, "max_health": 3, "color": Color(0.5, 0.3, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        # FIX (scatti nemici): speed portata a 2 (come player) per evitare
+        # l'effetto "teletrasporto" quando il nemico è lento e il player
+        # si allontana troppo. Con speed=1 e player a 2, il BFS diventava
+        # stale e il nemico sembrava bloccato, poi scattava in avanti.
+        EnemyType.ZOMBIE:          {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.4, 0.5, 0.3), "accent": Color(0.6, 0.7, 0.4)},
+        EnemyType.SKELETON:        {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.8, 0.8, 0.7), "accent": Color(0.5, 0.5, 0.4)},
+        EnemyType.GHOST:           {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.7, 0.8, 0.9, 0.6), "accent": Color(1.0, 1.0, 1.0, 0.5)},
+        EnemyType.BAT:             {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.3, 0.2, 0.4), "accent": Color(0.6, 0.4, 0.7)},
+        EnemyType.SPIDER:         {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.2, 0.1, 0.1), "accent": Color(0.8, 0.2, 0.2)},
+        EnemyType.SLIME:           {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.3, 0.7, 0.3), "accent": Color(0.5, 0.9, 0.5)},
+        EnemyType.DEMON:           {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.6, 0.1, 0.1), "accent": Color(1.0, 0.4, 0.1)},
+        EnemyType.ROBOT:           {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.5, 0.5, 0.6), "accent": Color(0.8, 0.8, 0.9)},
+        EnemyType.GOBLIN:         {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.4, 0.6, 0.2), "accent": Color(0.6, 0.8, 0.3)},
+        EnemyType.ORC:             {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.5, 0.4, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        EnemyType.WRAITH:         {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.2, 0.4, 0.7), "accent": Color(0.6, 0.4, 0.8, 0.8)},
+        EnemyType.GHOUL:           {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.5, 0.4, 0.3), "accent": Color(0.7, 0.5, 0.4)},
+        EnemyType.IMP:             {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.7, 0.2, 0.3), "accent": Color(1.0, 0.5, 0.3)},
+        EnemyType.RAT:             {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.4, 0.3, 0.2), "accent": Color(0.6, 0.5, 0.3)},
+        EnemyType.CULTIST:         {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.1, 0.3), "accent": Color(0.6, 0.2, 0.6)},
+        EnemyType.MIMIC:           {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.6, 0.5, 0.2), "accent": Color(0.4, 0.3, 0.1)},
+        EnemyType.WOLF:            {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.3, 0.3), "accent": Color(0.6, 0.5, 0.4)},
+        EnemyType.WITCH:           {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.2, 0.1, 0.3), "accent": Color(0.5, 0.2, 0.7)},
+        EnemyType.BONE_GOLEM:      {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.9, 0.9, 0.8), "accent": Color(0.6, 0.6, 0.5)},
+        EnemyType.ASH_SERPENT:     {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.3, 0.2), "accent": Color(0.5, 0.5, 0.3)},
+        EnemyType.DAMNED_KNIGHT:   {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.2, 0.2, 0.3), "accent": Color(0.5, 0.3, 0.3)},
+        EnemyType.MAD_WIZARD:      {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.2, 0.5), "accent": Color(0.6, 0.4, 0.9)},
+        EnemyType.DEMONIC_CROW:    {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.1, 0.1, 0.1), "accent": Color(0.4, 0.3, 0.3)},
+        EnemyType.TENTACLE:        {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.4, 0.2, 0.4), "accent": Color(0.7, 0.3, 0.7)},
+        EnemyType.GARGOYLE:        {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.4, 0.4, 0.5), "accent": Color(0.6, 0.6, 0.7)},
+        EnemyType.WELL_SPIRIT:     {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.5, 0.7, 0.6), "accent": Color(0.5, 0.7, 0.9, 0.7)},
+        EnemyType.CURSED_BOAR:     {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.4, 0.2, 0.2), "accent": Color(0.6, 0.3, 0.3)},
+        EnemyType.PREDATOR_FUNGUS: {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.5, 0.3, 0.2), "accent": Color(0.7, 0.5, 0.3)},
 }
 
 # Default fallback if STATS is missing an entry (defensive programming).
-const _DEFAULT_STATS := {"speed": 1, "health": 2, "max_health": 2, "color": Color(0.6, 0.4, 0.3), "accent": Color(0.9, 0.7, 0.5)}
+const _DEFAULT_STATS := {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.6, 0.4, 0.3), "accent": Color(0.9, 0.7, 0.5)}
 
 # --- Anti-stuck + AI constants (mirror src/Enemy.cpp line 358-360) ----------
 const STUCK_THRESHOLD_MS: int = 300        # ridotto da 600 a 300 per anti-stuck più reattivo
@@ -928,8 +932,12 @@ func _draw_sprite_frame() -> void:
                 at = active_sheet.get_frame_texture("idle", 0)
                 if at == null:
                         return
-        # Draw centered at enemy size (84x84 = 64*1.3, matches player scale).
-        var target_size: float = 84.0
+        # Draw centered at enemy size (56x56 ≈ TILE_SIZE*1.17, leggermente
+        # più grande del tile ma non abbastanza da coprire i muri adiacenti).
+        # FIX (sovrapposizione muro): era 84px (64*1.3), copriva i muri
+        # adiacenti. Ridotto a 56px per stare dentro il tile 48px con
+        # un piccolo overflow accettabile (le orecchie/corna dei mostri).
+        var target_size: float = 56.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
@@ -963,9 +971,10 @@ func _update_deform_sprite_animation() -> void:
         if _deform_sprite == null:
                 return
         var mode: int = DeformableSprite.AnimMode.IDLE
-        # FIX (nemici troppo piccoli): scale 1.3 (come il player) per riempire
-        # meglio il tile 48px. 64*1.3=83px.
-        var scale_val: float = 1.3
+        # FIX (sovrapposizione muro): scale 0.88 (64*0.88=56px) per stare
+        # dentro il tile 48px senza coprire i muri adiacenti.
+        # Era 1.3 (83px) → copriva i muri adiacenti.
+        var scale_val: float = 0.88
         var flipped: bool = dx < 0
         if is_dying():
                 # DeformableSprite has no "death" mode; use IDLE with a fade-out

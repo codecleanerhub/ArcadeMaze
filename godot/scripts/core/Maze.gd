@@ -102,14 +102,12 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
         # Accumula il tempo per le animazioni (flicker torce).
-        # FIX (lag): il maze è statico (le torce sono state rimosse dai muri).
-        # Non c'è bisogno di ridisegnare ogni frame. Chiamiamo queue_redraw
-        # solo quando il maze viene rigenerato (generate()).
         _anim_time += delta
-        # Solo se il maze è stato modificato (needs_redraw = true)
-        if needs_redraw:
-                queue_redraw()
-                needs_redraw = false
+        # FIX (luci senza lanterne): ridisegna ogni frame per animare la
+        # fiamma delle torce (flicker sin/cos in _draw_torch). Senza questo,
+        # le PointLight2D si vedono ma le lanterne sono statiche.
+        # Costo: 1 redraw/frame del maze statico (5-6 ms su GPU entry-level).
+        queue_redraw()
 
 
 func _draw() -> void:
@@ -197,10 +195,20 @@ func _render_wall_decorations() -> void:
                                 continue
                         if cell_type != C.CellType.WALL:
                                 continue
-                        # FIX (decorazioni dentro i muri): l'utente ha segnalato
-                        # "teschi dentro i muri resi male e senza senso".
-                        # Disabilitiamo le decorazioni skull/cobweb/torch sui
-                        # muri. I muri ora sono solo pietra nuda, più puliti.
+                        # FIX (luci senza lanterne): l'utente vedeva le PointLight2D
+                        # sui muri senza il disegno della torcia (era commentato).
+                        # Disegnamo la torcia procedurale SOLO dove c'è una
+                        # PointLight2D corrispondente, così le luci sono
+                        # "giustificate" visivamente dalla lanterna.
+                        # Le PointLight2D sono spawnate in _spawn_torch_lights()
+                        # con hash_val in [14, 19) — stessa condizione qui.
+                        var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
+                        var hash_val: int = abs(h) % 100
+                        if hash_val >= 14 and hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
+                                var torch_x: float = px + size * 0.5
+                                var torch_y: float = py + size * 0.35
+                                _draw_torch(torch_x, torch_y, _anim_time)
+                        # Skull/cobweb decorazioni rimangono disabilitate (muri puliti)
                         # var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
                         # var hash_val: int = abs(h) % 100
                         # if hash_val < 8 and c > 2 and c < C.MAZE_COLS - 2 and r > 2 and r < C.MAZE_ROWS - 2:
@@ -212,17 +220,6 @@ func _render_wall_decorations() -> void:
                         #         if cobweb_tex:
                         #                 draw_texture_rect(cobweb_tex,
                         #                         Rect2(px, py, size * 0.8, size * 0.8), false)
-                        # ~5% torce: disegno procedurale con handle + bracket +
-                        # fiamma animata a 3 strati (1:1 con drawTorch del C++).
-                        # Le PointLight2D sono create in _spawn_torch_lights alle
-                        # stesse posizioni (vantaggio Godot: illuminazione reale).
-                        # FIX: anche le torce sui muri sono state disabilitate
-                        # (l'utente vuole muri puliti, niente decorazioni
-                        # "dentro i muri resi male e senza senso").
-                        # elif hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
-                        #         var torch_x: float = px + size * 0.5
-                        #         var torch_y: float = py + size * 0.35
-                        #         _draw_torch(torch_x, torch_y, _anim_time)
 
 
 # Disegna una torcia animata in posizione (x, y_base) dove y_base e' la base

@@ -346,6 +346,22 @@ func take_damage(dmg: int) -> void:
                 health = 0
 
 
+# Ritorna la posizione corrente in pixel (coordinate schermo).
+# FIX (crash scepter lightning): MainGameController._fire_lightning_strike
+# chiama mini_boss.get_pixel_pos() ma MiniBoss non aveva questo metodo,
+# causando "Invalid call. Nonexistent function 'get_pixel_pos'" crash
+# quando il player raccoglie il bastone del fulmine e il mini-boss è
+# presente nel livello. Mirror di Enemy.get_pixel_pos() e Player.get_pixel_pos().
+func get_pixel_pos() -> Vector2:
+        return pos
+
+
+# Ritorna gli HP massimi del mini-boss. Usato da _fire_lightning_strike
+# per calcolare il 35% di danno da infliggere con il fulmine.
+func get_max_health() -> int:
+        return max_health
+
+
 # Start burning state (player invincibility contact). 50 frames = ~0.8s.
 func start_burning(frames: int = 50) -> void:
         if dying_timer_ms > 0 or burning_timer_ms > 0:
