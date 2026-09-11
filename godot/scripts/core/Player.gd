@@ -625,10 +625,17 @@ func add_life() -> void:
 
 # activate_jump(): start a jump if not already jumping.
 # Mirrors Player::activateJump() line 138.
+# FIX (salto + velocità): dopo il salto, il player ottiene speed_boost_timer
+# di 1000ms (1 secondo) per potersi allontanare dai nemici. Questo mirrora
+# il comportamento C++ del "jump over enemy" boost, ma applicato a ogni
+# salto, non solo quando si salta sopra un nemico.
 func activate_jump() -> void:
         if jump_timer == 0:
                 max_jump_time = 40
                 jump_timer = max_jump_time
+                # FIX: speed boost post-jump per sfuggire ai nemici.
+                # 1000ms = 60 frame @ 60fps. effective_speed = speed+1 = 3.
+                speed_boost_timer = 1000
 
 
 func is_jumping() -> bool:
@@ -1176,8 +1183,15 @@ func _draw_character_fallback() -> void:
 func _draw_equipped_weapon() -> void:
         if current_weapon.ammo <= 0:
                 return
-        var y: float = -8.0  # weapon height (above body centre, near the grip)
+        # FIX (arma non visibile): prima y=-8 (sotto la testa, coperta dallo
+        # sprite 64x64). Ora y=-4 e l'arma è più a destra (offset +12px)
+        # così sporge dal corpo del player ed è sempre visibile.
+        # Scale factor 1.4 per renderla più visibile.
+        var scale_factor: float = 1.4
+        var y: float = -4.0  # weapon height (slightly above body centre)
         var facing_right: bool = last_dx >= 0
+        # Offset aggiuntivo per sporgere dal corpo
+        var x_off: float = 12.0 * scale_factor
 
         match current_weapon.type:
                 WeaponType.PISTOL:
@@ -1266,27 +1280,34 @@ func _draw_equipped_weapon() -> void:
 # _wxr(offset, width, facing_right): returns the X coordinate of a weapon
 # rect's left edge, mirrored around the player centre when facing left.
 # `offset` is the right-facing left-edge offset from x=0.
+# FIX (arma non visibile): aggiunto x_off (offset dal corpo del player) per
+# far sporgere l'arma fuori dallo sprite 64x64 ed essere sempre visibile.
 static func _wxr(offset: float, w: float, facing_right: bool) -> float:
         if facing_right:
-                return offset
-        return -offset - w
+                return offset + 14.0  # sporge a destra del corpo
+        return -offset - w - 14.0  # sporge a sinistra del corpo
 
 
 # _wxc(offset, facing_right): returns the X coordinate of a weapon circle
 # centre, mirrored around the player centre when facing left.
+# FIX (arma non visibile): aggiunto offset 14px per far sporgere dal corpo.
 static func _wxc(offset: float, facing_right: bool) -> float:
-        return offset if facing_right else -offset
+        return (offset + 14.0) if facing_right else (-offset - 14.0)
 
 
 # _draw_wpoly(points, color, facing_right): draws a polygon for the equipped
 # weapon, mirroring all X coordinates around the player centre when facing
 # left.
+# FIX (arma non visibile): aggiunto offset 14px come in _wxr/_wxc.
 func _draw_wpoly(points: PackedVector2Array, col: Color, facing_right: bool) -> void:
+        var offset_x: float = 14.0 if facing_right else -14.0
+        var shifted := PackedVector2Array()
+        shifted.resize(points.size())
         if facing_right:
-                draw_colored_polygon(points, col)
+                for i in points.size():
+                        shifted[i] = Vector2(points[i].x + offset_x, points[i].y)
+                draw_colored_polygon(shifted, col)
                 return
-        var mirrored := PackedVector2Array()
-        mirrored.resize(points.size())
         for i in points.size():
-                mirrored[i] = Vector2(-points[i].x, points[i].y)
-        draw_colored_polygon(mirrored, col)
+                shifted[i] = Vector2(-points[i].x + offset_x, points[i].y)
+        draw_colored_polygon(shifted, col)

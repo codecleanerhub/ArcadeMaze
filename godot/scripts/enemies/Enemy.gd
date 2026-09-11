@@ -764,20 +764,26 @@ func _draw() -> void:
                                 var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
                                 var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
                                 draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
-                # Health bar above enemy (only if damaged)
-                if health < max_health and not is_dead():
-                        var bar_w: float = 24.0
-                        var bar_h: float = 3.0
-                        var bar_y: float = -28.0
-                        draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
-                                Color(0.2, 0.0, 0.0, 0.8), true)
-                        var hp_ratio: float = float(health) / float(max_health)
-                        var hp_col: Color = Color(0.86, 0.16, 0.16)  # red < 25%
-                        if hp_ratio > 0.5:
-                                hp_col = Color(0.31, 0.86, 0.31)  # green > 50%
-                        elif hp_ratio > 0.25:
-                                hp_col = Color(0.86, 0.71, 0.16)  # yellow 25-50%
-                        draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h), hp_col, true)
+                # Health bar above enemy (always visible, anche a HP pieno)
+                # FIX (barra HP uniforma): prima era 'if health < max_health'
+                # quindi i nemici freschi non mostravano la barra. Ora tutti
+                # i nemici ce l'hanno sempre, in stile arcade.
+                # FIX (barra HP sync): la barra era a -28 (locale) mentre lo
+                # sprite ha bob_y oscillante → sembrava scollegata al cambio
+                # direzione. Spostata a -36 (più in alto, fuori dal corpo)
+                # e larghezza aumentata a 32 per visibilità.
+                var bar_w: float = 32.0
+                var bar_h: float = 4.0
+                var bar_y: float = -36.0
+                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
+                        Color(0.2, 0.0, 0.0, 0.85), true)
+                var hp_ratio: float = float(health) / float(max_health)
+                var hp_col: Color = Color(0.86, 0.16, 0.16)  # red < 25%
+                if hp_ratio > 0.5:
+                        hp_col = Color(0.31, 0.86, 0.31)  # green > 50%
+                elif hp_ratio > 0.25:
+                        hp_col = Color(0.86, 0.71, 0.16)  # yellow 25-50%
+                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h), hp_col, true)
                 return
 
         # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
@@ -814,20 +820,21 @@ func _draw() -> void:
         # Mirrors Enemy::renderPrimitives() in src/Enemy.cpp line 885-1449.
         _draw_primitive_fallback()
 
-        # Health bar above enemy
-        if health < max_health and not is_dead():
-                var bar_w2: float = 24.0
-                var bar_h2: float = 3.0
-                var bar_y2: float = -22.0
-                draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
-                        Color(0.2, 0.0, 0.0, 0.8), true)
-                var hp_ratio2: float = float(health) / float(max_health)
-                var hp_col2: Color = Color(0.86, 0.16, 0.16)  # red < 25%
-                if hp_ratio2 > 0.5:
-                        hp_col2 = Color(0.31, 0.86, 0.31)  # green > 50%
-                elif hp_ratio2 > 0.25:
-                        hp_col2 = Color(0.86, 0.71, 0.16)  # yellow 25-50%
-                draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2), hp_col2, true)
+        # Health bar above enemy (always visible, anche a HP pieno)
+        # FIX (uniforma): prima era 'if health < max_health' → i nemici
+        # freschi non mostravano la barra. Ora sempre visibile.
+        var bar_w2: float = 32.0
+        var bar_h2: float = 4.0
+        var bar_y2: float = -36.0
+        draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
+                Color(0.2, 0.0, 0.0, 0.85), true)
+        var hp_ratio2: float = float(health) / float(max_health)
+        var hp_col2: Color = Color(0.86, 0.16, 0.16)  # red < 25%
+        if hp_ratio2 > 0.5:
+                hp_col2 = Color(0.31, 0.86, 0.31)  # green > 50%
+        elif hp_ratio2 > 0.25:
+                hp_col2 = Color(0.86, 0.71, 0.16)  # yellow 25-50%
+        draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2), hp_col2, true)
 
         # Flee mode indicator (fear exclamation mark - rendered as yellow triangle)
         if flee_mode:
