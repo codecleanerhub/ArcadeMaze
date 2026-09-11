@@ -518,16 +518,21 @@ func _update_playing(delta_ms: float) -> void:
                 var proj_pos: Vector2 = proj_data.get("pos", Vector2.ZERO)
                 var proj_dir: Vector2 = proj_data.get("dir", Vector2.ZERO)
                 var proj_power: int = int(proj_data.get("power", 1))
+                # FIX: verifica che la posizione di spawn non sia dentro un muro.
+                # Se lo è, sposta il proiettile indietro verso il nemico finché
+                # non trova una cella vuota.
+                var spawn_col: int = int(proj_pos.x / C.TILE_SIZE)
+                var spawn_row: int = int((proj_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+                if spawn_col >= 0 and spawn_col < C.MAZE_COLS and spawn_row >= 0 and spawn_row < C.MAZE_ROWS:
+                        if maze.is_wall(spawn_col, spawn_row):
+                                continue  # skip: proiettile spawnato dentro muro
                 var p_node := Node2D.new()
                 p_node.position = proj_pos
-                p_node.set_meta("pos", proj_pos)  # store original for collision
+                p_node.set_meta("pos", proj_pos)
                 p_node.set_meta("dir", proj_dir)
                 p_node.set_meta("power", proj_power)
-                # FIX (proiettili nemici troppo lenti): la velocity era solo
-                # la direzione (unit vector, 1px/frame). Moltiplichiamo per
-                # 6px/frame (come i proiettili del player che sono 8px/frame).
                 p_node.set_meta("velocity", proj_dir * 6.0)
-                p_node.visible = true  # FIX: rendi visibile per il draw loop
+                p_node.visible = true
                 enemy_projectiles_node.add_child(p_node)
 
         # (3b) Advance enemy projectiles (move them by their velocity)

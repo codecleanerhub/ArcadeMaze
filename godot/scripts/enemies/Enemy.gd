@@ -436,32 +436,28 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         # If not stuck yet, leave dx=dy=0; will force recalc next frame
                         # via the "idle" condition above.
 
-                # Stop if the cell ahead is a wall (don't tunnel through).
-                # FIX (nemici attraversano i muri): il check viene fatto solo
-                # quando il nemico è al centro della cella. Ma il movimento
-                # avviene OGNI frame, anche quando non è al centro. Aggiungiamo
-                # un check wall collision anche dopo il movimento.
+                # Stop if the cell ahead is a wall.
+                # Questo check viene fatto quando il nemico è al centro della cella
+                # e sta per decidere in che direzione muoversi.
                 if maze.is_wall(col + dx, row + dy):
                         dx = 0
                         dy = 0
 
-        # FIX (nemici attraversano muri): controlla SE LA CELLA DESTINATIONE
-        # è un muro PRIMA di muovere, non dopo. Se lo è, ferma il nemico
-        # e forza un BFS recalc al prossimo frame.
-        var dest_x: float = position.x + dx * speed
-        var dest_y: float = position.y + dy * speed
-        var dest_col: int = int(dest_x / TILE_SIZE)
-        var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
-        if dest_col >= 0 and dest_col < MAZE_COLS and dest_row >= 0 and dest_row < MAZE_ROWS:
-                if maze.is_wall(dest_col, dest_row):
-                        # Destinazione è un muro: non muoverti, forza recalc
-                        dx = 0
-                        dy = 0
-                        stuck_timer += int(delta_ms)  # trigger anti-stuck
-                else:
-                        position.x = dest_x
-                        position.y = dest_y
-        else:
+        # FIX (nemici attraversano muri + nemici fermi): il problema è che
+        # il check is_wall(col+dx, row+dy) sopra AZZERA dx/dy a 0 quando la
+        # destinazione è un muro. Poi il blocco sotto controlla dest_col/dest_row
+        # con dx=dy=0 → dest == position → dest_col==col, dest_row==row che è
+        # EMPTY (il nemico è in una cella vuota) → non entra nel ramo wall,
+        # ma position.x += 0*speed = nessun movimento.
+        # Il risultato: i nemici si fermano permanentemente quando la BFS
+        # dà una direzione che porta a un muro.
+        #
+        # FIX: se dx==0 e dy==0 dopo il check wall, salta il movimento e
+        # lascia che il prossimo frame rifaccia BFS con must_recompute=true
+        # (perché dx==0 and dy==0 lo triggera).
+        if dx != 0 or dy != 0:
+                var dest_x: float = position.x + dx * speed
+                var dest_y: float = position.y + dy * speed
                 position.x = dest_x
                 position.y = dest_y
 
