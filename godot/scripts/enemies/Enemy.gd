@@ -385,8 +385,12 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                 break
 
         # When close enough to cell centre, snap and try to recalc direction.
-        if absf(position.x - center_x) < speed \
-                        and absf(position.y - center_y) < speed:
+        # FIX (teletrasporto): lo snap veniva fatto con threshold `speed` (1px),
+        # il che significa che il nemico deve essere entro 1px dal centro per
+        # snap. Con speed=1 questo avviene raramente, causando posizioni
+        # intermedie strane. Aumentato il threshold a `speed * 2` (2px).
+        if absf(position.x - center_x) < speed * 2.0 \
+                        and absf(position.y - center_y) < speed * 2.0:
                 position.x = center_x
                 position.y = center_y
 
@@ -441,20 +445,25 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         dx = 0
                         dy = 0
 
-        # Wall collision check DOPO il movimento: se il nemico è finito in
-        # una cella WALL, riportalo al centro della cella precedente.
-        var new_col := int(position.x / TILE_SIZE)
-        var new_row := int((position.y - UI_HEIGHT) / TILE_SIZE)
-        if new_col >= 0 and new_col < MAZE_COLS and new_row >= 0 and new_row < MAZE_ROWS:
-                if maze.is_wall(new_col, new_row):
-                        # Ripristina posizione precedente
-                        position.x = col * TILE_SIZE + TILE_SIZE / 2.0
-                        position.y = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+        # FIX (nemici attraversano muri): controlla SE LA CELLA DESTINATIONE
+        # è un muro PRIMA di muovere, non dopo. Se lo è, ferma il nemico
+        # e forza un BFS recalc al prossimo frame.
+        var dest_x: float = position.x + dx * speed
+        var dest_y: float = position.y + dy * speed
+        var dest_col: int = int(dest_x / TILE_SIZE)
+        var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
+        if dest_col >= 0 and dest_col < MAZE_COLS and dest_row >= 0 and dest_row < MAZE_ROWS:
+                if maze.is_wall(dest_col, dest_row):
+                        # Destinazione è un muro: non muoverti, forza recalc
                         dx = 0
                         dy = 0
-
-        position.x += dx * speed
-        position.y += dy * speed
+                        stuck_timer += int(delta_ms)  # trigger anti-stuck
+                else:
+                        position.x = dest_x
+                        position.y = dest_y
+        else:
+                position.x = dest_x
+                position.y = dest_y
 
         # --- Shooting (canShoot types only) ---
         # Disabled while fleeing (chalice active - enemy runs, doesn't shoot).

@@ -536,7 +536,12 @@ func _update_playing(delta_ms: float) -> void:
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
+                if not is_instance_valid(proj):
+                        continue
                 var vel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
+                if vel == Vector2.ZERO:
+                        proj.queue_free()
+                        continue
                 proj.position += vel
                 # Wall collision: se il proiettile è in una cella WALL, distruggilo
                 var pcol: int = int(proj.position.x / C.TILE_SIZE)

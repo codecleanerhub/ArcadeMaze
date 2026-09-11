@@ -427,9 +427,9 @@ func _draw() -> void:
         if not deform_loaded:
                 _draw_primitives()
 
-        # HP bar (always drawn on the parent so it stays in screen-space relative
-        # to the boss position).
-        _draw_hp_bar()
+        # FIX: HP bar sopra il boss rimossa — c'è già la barra HP in alto
+        # allo schermo disegnata da BossRoomController._draw().
+        # _draw_hp_bar()
 
 
 func _draw_hp_bar() -> void:

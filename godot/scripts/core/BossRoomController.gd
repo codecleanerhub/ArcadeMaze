@@ -285,9 +285,23 @@ func _check_boss_room_weapon_pickup(p: CharacterBody2D) -> void:
         var to_remove: Array = []
         for w_entry in boss_room_weapons:
                 if p.get_pixel_pos().distance_squared_to(w_entry["pos"]) < 1000.0:
-                        p.collect_weapon(w_entry["weapon"])
-                        if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+                        # FIX CRASH: w_entry["weapon"] è un oggetto Weapon (Node2D),
+                        # non un Dictionary. collect_weapon si aspetta un Dictionary.
+                        # Convertiamo l'oggetto Weapon in Dictionary.
+                        var w_obj = w_entry["weapon"]
+                        var w_dict: Dictionary = {}
+                        if w_obj is Object and w_obj.has_method("get") and w_obj.get("type") != null:
+                                w_dict = {
+                                        "type": w_obj.type,
+                                        "power": w_obj.power,
+                                        "ammo": w_obj.ammo,
+                                }
+                        elif w_obj is Dictionary:
+                                w_dict = w_obj
+                        if not w_dict.is_empty():
+                                p.collect_weapon(w_dict)
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
                         to_remove.append(w_entry)
         for w in to_remove:
                 boss_room_weapons.erase(w)
