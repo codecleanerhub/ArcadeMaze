@@ -537,8 +537,10 @@ static var _collectible_tex_cache: Dictionary = {}
 static func _load_png_cached(path: String) -> Texture2D:
         if _collectible_tex_cache.has(path):
                 return _collectible_tex_cache[path]
-        var img := Image.new()
         var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img := Image.new()
         if img.load(abs_path) == OK:
                 var tex := ImageTexture.create_from_image(img)
                 if tex != null:

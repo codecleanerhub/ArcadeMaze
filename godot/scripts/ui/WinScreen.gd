@@ -23,10 +23,11 @@ func _ready() -> void:
         mouse_filter = Control.MOUSE_FILTER_STOP
         focus_mode = Control.FOCUS_ALL
         _finished = false
-        var _img := Image.new()
         var _abs := ProjectSettings.globalize_path("res://assets/backgrounds/bg_win.jpg")
-        if _img.load(_abs) == OK:
-                _bg_texture = ImageTexture.create_from_image(_img)
+        if FileAccess.file_exists(_abs):
+                var _img := Image.new()
+                if _img.load(_abs) == OK:
+                        _bg_texture = ImageTexture.create_from_image(_img)
         if AudioManager:
                 AudioManager.stop_music()
                 if AudioManager.music_enabled:

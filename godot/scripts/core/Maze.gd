@@ -855,12 +855,13 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 if _maze_treasure_cache.has(tex_path):
                         tex = _maze_treasure_cache[tex_path]
                 else:
-                        var img := Image.new()
                         var abs_path: String = ProjectSettings.globalize_path(tex_path)
-                        if img.load(abs_path) == OK:
-                                tex = ImageTexture.create_from_image(img)
-                                if tex != null:
-                                        _maze_treasure_cache[tex_path] = tex
+                        if FileAccess.file_exists(abs_path):
+                                var img := Image.new()
+                                if img.load(abs_path) == OK:
+                                        tex = ImageTexture.create_from_image(img)
+                                        if tex != null:
+                                                _maze_treasure_cache[tex_path] = tex
                 if tex != null:
                         var draw_size: float = size * 1.3
                         draw_texture_rect(tex,

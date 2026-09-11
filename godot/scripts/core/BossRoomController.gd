@@ -614,10 +614,11 @@ func _load_boss_bg() -> void:
                         15: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_supreme_witch.jpg"
                         16: bg_path = "res://assets/backgrounds/boss_rooms/bg_boss_twilight_knight.jpg"
         if not bg_path.is_empty():
-                var img := Image.new()
                 var abs_path: String = ProjectSettings.globalize_path(bg_path)
-                if img.load(abs_path) == OK:
-                        _boss_bg_texture = ImageTexture.create_from_image(img)
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                _boss_bg_texture = ImageTexture.create_from_image(img)
 
 func _draw() -> void:
         # FIX (sfondo boss room per-tipo): carica un PNG AI dedicato per

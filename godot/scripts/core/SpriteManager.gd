@@ -121,21 +121,26 @@ func _load_sheet(base_path: String, id: String) -> void:
 
         # --- HD PRIORITY: carica la versione HD 256x256 se disponibile ---
         # FIX (regressione): usa Image.load() per bypassare import.
+        # FIX (log noise): FileAccess.file_exists() prima di Image.load() per
+        # silenziare gli ERROR stampati da Godot quando mancano gli HD sheet
+        # (49 sprite su 155 non hanno versione HD; cadono silenziosamente su SD).
         var hd_png_path := "res://assets/sprites/hd/" + id + "_hd_sheet.png"
         var tex: Texture2D = null
         var is_hd: bool = false
-        var hd_img := Image.new()
         var hd_abs: String = ProjectSettings.globalize_path(hd_png_path)
-        if hd_img.load(hd_abs) == OK:
-                tex = ImageTexture.create_from_image(hd_img)
-                if tex != null:
-                        is_hd = true
+        if FileAccess.file_exists(hd_abs):
+                var hd_img := Image.new()
+                if hd_img.load(hd_abs) == OK:
+                        tex = ImageTexture.create_from_image(hd_img)
+                        if tex != null:
+                                is_hd = true
         # Fallback: carica lo sheet originale se l'HD non esiste
         if tex == null:
-                var sd_img := Image.new()
                 var sd_abs: String = ProjectSettings.globalize_path(png_path)
-                if sd_img.load(sd_abs) == OK:
-                        tex = ImageTexture.create_from_image(sd_img)
+                if FileAccess.file_exists(sd_abs):
+                        var sd_img := Image.new()
+                        if sd_img.load(sd_abs) == OK:
+                                tex = ImageTexture.create_from_image(sd_img)
         if tex == null:
                 return
 

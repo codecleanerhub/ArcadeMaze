@@ -35,10 +35,11 @@ func _ready() -> void:
         _choice = true
         _finished = false
         # Load continues background.
-        var _img := Image.new()
         var _abs := ProjectSettings.globalize_path("res://assets/backgrounds/bg_continues.jpg")
-        if _img.load(_abs) == OK:
-                _bg_texture = ImageTexture.create_from_image(_img)
+        if FileAccess.file_exists(_abs):
+                var _img := Image.new()
+                if _img.load(_abs) == OK:
+                        _bg_texture = ImageTexture.create_from_image(_img)
         if AudioManager:
                 AudioManager.stop_music()
 

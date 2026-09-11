@@ -304,10 +304,12 @@ func _build_ui() -> void:
         # FIX (regressione): usa Image.load() invece di load() per bypassare
         # il sistema di import di Godot. load() ritorna null se .godot/ è
         # stato cancellato e non rigenerato.
-        var menu_img := Image.new()
+        # FIX (log noise): file_exists() silenzi l'ERROR di Godot se manca.
         var menu_path: String = ProjectSettings.globalize_path("res://assets/backgrounds/bg_menu.jpg")
-        if menu_img.load(menu_path) == OK:
-                _bg.texture = ImageTexture.create_from_image(menu_img)
+        if FileAccess.file_exists(menu_path):
+                var menu_img := Image.new()
+                if menu_img.load(menu_path) == OK:
+                        _bg.texture = ImageTexture.create_from_image(menu_img)
         add_child(_bg)
 
         # --- Options submenu background (themed: ancient bronze gears) ---
@@ -321,12 +323,15 @@ func _build_ui() -> void:
         _options_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
         # Load via Image.load() (returns Error) then wrap in an ImageTexture so
         # we can fall back gracefully if the file is missing on disk.
-        var opt_img := Image.new()
-        var opt_err: int = opt_img.load("res://assets/backgrounds/bg_options.png")
-        if opt_err == OK:
-                _options_bg.texture = ImageTexture.create_from_image(opt_img)
+        var opt_abs: String = ProjectSettings.globalize_path("res://assets/backgrounds/bg_options.png")
+        if not FileAccess.file_exists(opt_abs):
+                push_warning("MainMenu: bg_options.png not found at %s" % opt_abs)
         else:
-                push_warning("MainMenu: failed to load bg_options.png (err=%d)" % opt_err)
+                var opt_img := Image.new()
+                if opt_img.load(opt_abs) == OK:
+                        _options_bg.texture = ImageTexture.create_from_image(opt_img)
+                else:
+                        push_warning("MainMenu: bg_options.png exists but failed to load")
         _options_bg.visible = false
         add_child(_options_bg)
 

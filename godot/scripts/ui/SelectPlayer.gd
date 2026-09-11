@@ -67,18 +67,21 @@ func _ready() -> void:
                 var path := "res://assets/sprites/" + CHARACTERS[i] + "_sheet.png"
                 var tex = null
                 # FIX (regressione): usa Image.load() per bypassare import.
-                var img := Image.new()
+                # FIX (log noise): file_exists() silenzi l'ERROR se manca.
                 var abs_path: String = ProjectSettings.globalize_path(path)
-                if img.load(abs_path) == OK:
-                        tex = ImageTexture.create_from_image(img)
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                tex = ImageTexture.create_from_image(img)
                 _char_textures.append(tex)
         # Preload the AI-generated crypt/ruderi background.
         # FIX (regressione): usa Image.load() per bypassare import.
         var bg_path := "res://assets/backgrounds/bg_select_player.png"
-        var bg_img := Image.new()
         var bg_abs: String = ProjectSettings.globalize_path(bg_path)
-        if bg_img.load(bg_abs) == OK:
-                _bg_texture = ImageTexture.create_from_image(bg_img)
+        if FileAccess.file_exists(bg_abs):
+                var bg_img := Image.new()
+                if bg_img.load(bg_abs) == OK:
+                        _bg_texture = ImageTexture.create_from_image(bg_img)
         # Self-wire
         player_selected.connect(_on_player_selected)
 

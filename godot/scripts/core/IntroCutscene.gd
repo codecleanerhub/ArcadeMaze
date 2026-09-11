@@ -29,12 +29,14 @@ func _ready() -> void:
         for i in range(1, 5):
                 var path := "res://assets/cutscene/intro_" + str(i) + ".png"
                 # FIX (regressione): usa Image.load() per bypassare import.
+                # FIX (log noise): file_exists() silenzi l'ERROR di Godot se manca.
                 var tex = null
-                var img := Image.new()
                 var abs_path: String = ProjectSettings.globalize_path(path)
-                if img.load(abs_path) == OK:
-                        tex = ImageTexture.create_from_image(img)
-                        print("[IntroCutscene] Loaded: %s" % path)
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                tex = ImageTexture.create_from_image(img)
+                                print("[IntroCutscene] Loaded: %s" % path)
                 if tex != null:
                         _images.append(tex)
                 else:
