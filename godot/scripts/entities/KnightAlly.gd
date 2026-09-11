@@ -1,15 +1,15 @@
 ## KnightAlly.gd - Cavaliere alleato evocato dalla statua.
 ## ============================================================
-## Meccanica: quando il player raccoglie la statua del cavaliere,
-## questo NPC appare e combatte al suo fianco.
+## Meccanica: quando il player raccoglie la statua del cavaliere (icona
+## di pietra), questa si ANIMA: l'oggetto statua viene sostituito dal
+## cavaliere vivo che combatte al fianco del player.
 ##
-## Caratteristiche:
-##   * Stessa energia del player al momento dell'evocazione
-##   * 3 colpi che fanno danno massimo (instant kill)
-##   * Si muove più velocemente del player (speed=3, come con scarpe)
-##   * I nemici lo considerano un player e lo seguono
-##   * Dopo 5 secondi dai 3 colpi (o se muore), scompare con animazione fumo
-##   * Sprite sheet 4-frame walk cycle (knight_ally_sheet.png 256x64)
+## Fasi:
+##   1. STONE       - appare come statua di pietra (1.0s, immobile)
+##   2. TRANSFORMING - la statua prende colore e diventa viva (1.5s)
+##   3. ACTIVE      - cavaliere vivo combatte
+##   4. DISAPPEARING - animazione fumo (1.2s) quando scade/muore
+##   5. DEAD        - rimosso
 extends Node2D
 class_name KnightAlly
 
@@ -21,9 +21,11 @@ var health: int = 3
 var max_health: int = 3
 var speed: int = 3  # più veloce del player (player=2, con boost=3)
 var shots_left: int = 3
-var disappear_timer_ms: int = 0  # >0 = scompare dopo questo tempo
-var smoke_timer_ms: int = 0  # animazione scomparsa fumo
-var spawning_ms: int = 800  # animazione apparizione (0.8s)
+var disappear_timer_ms: int = 0
+var smoke_timer_ms: int = 0
+var spawning_ms: int = 800  # legacy, non usato ma mantenuto per compat
+var transform_ms: int = 1500  # durata transform statua→vivo
+var stone_ms: int = 1000  # durata fase statua di pietra (1s)
 
 # --- Movement ---
 var pos: Vector2 = Vector2.ZERO:
@@ -44,17 +46,20 @@ var target_recalc_timer: int = 0
 # --- Sprite ---
 var _sprite_sheet: Texture2D = null
 var _sprite_loaded: bool = false
+var _statue_texture: Texture2D = null
+var _statue_loaded: bool = false
 
-# --- Projectiles (KnightAlly spara 3 colpi) ---
+# --- Projectiles ---
 var projectiles: Array = []
 
 # --- State ---
-enum State { SPAWNING, ACTIVE, DISAPPEARING, DEAD }
-var state: int = State.SPAWNING
+enum State { STONE, TRANSFORMING, ACTIVE, DISAPPEARING, DEAD }
+var state: int = State.STONE
 
 
 func _ready() -> void:
         _load_sprite()
+        _load_statue_texture()
         health = max_health
 
 
@@ -70,18 +75,41 @@ func _load_sprite() -> void:
                 _sprite_loaded = _sprite_sheet != null
 
 
+# FIX (statua di pietra): carica la texture della statua (grigio/roccia)
+# usata durante la fase STONE e TRANSFORMING.
+func _load_statue_texture() -> void:
+        var path := "res://assets/sprites/collectibles/item_knight_statue.png"
+        var abs_path := ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                _statue_loaded = false
+                return
+        var img := Image.new()
+        if img.load(abs_path) == OK:
+                _statue_texture = ImageTexture.create_from_image(img)
+                _statue_loaded = _statue_texture != null
+
+
 func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int) -> void:
         anim_time += delta_ms
 
-        # Spawning animation
-        if state == State.SPAWNING:
-                spawning_ms -= delta_ms
-                if spawning_ms <= 0:
+        # Fase 1: statua di pietra (1s, immobile)
+        if state == State.STONE:
+                stone_ms -= delta_ms
+                if stone_ms <= 0:
+                        state = State.TRANSFORMING
+                        transform_ms = 1500
+                queue_redraw()
+                return
+
+        # Fase 2: transform (1.5s, statua prende colore e diventa viva)
+        if state == State.TRANSFORMING:
+                transform_ms -= delta_ms
+                if transform_ms <= 0:
                         state = State.ACTIVE
                 queue_redraw()
                 return
 
-        # Disappearing (smoke) animation
+        # Fase 4: disappearing (smoke animation)
         if state == State.DISAPPEARING:
                 smoke_timer_ms -= delta_ms
                 if smoke_timer_ms <= 0:
@@ -99,13 +127,13 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                         _start_disappearing()
                         return
 
-        # Find target enemy (closest alive enemy)
+        # Find target enemy
         target_recalc_timer += delta_ms
         if target_recalc_timer >= 500 or target_enemy == null:
                 target_recalc_timer = 0
                 target_enemy = _find_closest_enemy(enemies)
 
-        # Movement: chase the closest enemy
+        # Movement: chase closest enemy
         if target_enemy != null and is_instance_valid(target_enemy) and not target_enemy.is_dead():
                 var e_pos: Vector2 = target_enemy.get_pixel_pos()
                 var d: Vector2 = e_pos - pos
@@ -129,21 +157,13 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                 pos.y += dy * speed
                         else:
                                 if move_x != 0 and not maze.is_wall(col, row + 1):
-                                        dy = 1
-                                        last_dy = 1
-                                        pos.y += speed
+                                        dy = 1; last_dy = 1; pos.y += speed
                                 elif move_x != 0 and not maze.is_wall(col, row - 1):
-                                        dy = -1
-                                        last_dy = -1
-                                        pos.y -= speed
+                                        dy = -1; last_dy = -1; pos.y -= speed
                                 elif move_y != 0 and not maze.is_wall(col + 1, row):
-                                        dx = 1
-                                        last_dx = 1
-                                        pos.x += speed
+                                        dx = 1; last_dx = 1; pos.x += speed
                                 elif move_y != 0 and not maze.is_wall(col - 1, row):
-                                        dx = -1
-                                        last_dx = -1
-                                        pos.x -= speed
+                                        dx = -1; last_dx = -1; pos.x -= speed
 
         # Shoot at closest enemy in range
         if shoot_cooldown > 0:
@@ -230,7 +250,7 @@ func take_damage(dmg: int) -> void:
 
 func _start_disappearing() -> void:
         state = State.DISAPPEARING
-        smoke_timer_ms = 800
+        smoke_timer_ms = 1200  # 1.2s smoke animation (più lunga)
 
 
 func is_dead() -> bool:
@@ -238,7 +258,7 @@ func is_dead() -> bool:
 
 
 func is_active() -> bool:
-        return state == State.ACTIVE or state == State.SPAWNING
+        return state == State.ACTIVE
 
 
 func get_pixel_pos() -> Vector2:
@@ -246,32 +266,66 @@ func get_pixel_pos() -> Vector2:
 
 
 func _draw() -> void:
-        if state == State.SPAWNING:
-                var t: float = 1.0 - (float(spawning_ms) / 800.0)
-                var scale_val: float = 0.3 + t * 0.7
-                var alpha: float = t
-                _draw_sprite(scale_val, alpha)
-                draw_circle(Vector2.ZERO, 30.0 * (1.0 - t) + 10.0,
-                        Color(0.6, 0.85, 1.0, 0.4 * (1.0 - t)))
+        # Fase 1: statua di pietra immobile
+        if state == State.STONE:
+                _draw_statue(1.0, 1.0, 0.0)  # stone color, no tint
+                # Aura mistica debole
+                var pulse: float = (sin(float(anim_time) * 0.005) + 1.0) * 0.5
+                draw_circle(Vector2.ZERO, 30.0,
+                        Color(0.4, 0.6, 1.0, 0.15 + pulse * 0.1))
                 return
 
-        if state == State.DISAPPEARING:
-                var t2: float = 1.0 - (float(smoke_timer_ms) / 800.0)
-                for i in 8:
-                        var a: float = (float(i) / 8.0) * TAU + anim_time * 0.005
-                        var r: float = 10.0 + t2 * 30.0
+        # Fase 2: transform statua→vivo (1.5s)
+        # Gradualmente la statua di pietra prende i colori del cavaliere vivo
+        if state == State.TRANSFORMING:
+                var t: float = 1.0 - (float(transform_ms) / 1500.0)
+                # Disegna statua con colorazione graduale verso il vivo
+                _draw_statue(1.0 - t * 0.5, 1.0, t)
+                # Aura mistica che cresce
+                draw_circle(Vector2.ZERO, 20.0 + t * 25.0,
+                        Color(0.5, 0.8, 1.0, 0.3 + t * 0.3))
+                # Scintille che emergono dalla statua
+                for i in 6:
+                        var a: float = (float(i) / 6.0) * TAU + float(anim_time) * 0.003
+                        var r: float = 20.0 + t * 15.0
                         var sx: float = cos(a) * r
                         var sy: float = sin(a) * r
-                        draw_circle(Vector2(sx, sy - 10), 6.0 * (1.0 - t2),
-                                Color(0.6, 0.6, 0.65, 0.6 * (1.0 - t2)))
-                _draw_sprite(1.0, 1.0 - t2)
+                        draw_circle(Vector2(sx, sy - 10), 2.0 * t,
+                                Color(1.0, 0.9, 0.4, 0.6 * t))
+                # Quando la transform è completa, disegna anche il cavaliere vivo
+                if t > 0.7:
+                        _draw_sprite(0.7 + (t - 0.7) * 1.5, (t - 0.7) / 0.3)
+                return
+
+        # Fase 4: disappearing (smoke)
+        if state == State.DISAPPEARING:
+                var t2: float = 1.0 - (float(smoke_timer_ms) / 1200.0)
+                # Fumo che si espande (più denso e realistico)
+                for i in 12:
+                        var a: float = (float(i) / 12.0) * TAU + float(anim_time) * 0.004
+                        var r: float = 15.0 + t2 * 40.0
+                        var sx: float = cos(a) * r
+                        var sy: float = sin(a) * r - t2 * 10.0
+                        var sz: float = 8.0 * (1.0 - t2 * 0.5)
+                        # Fumo grigio
+                        draw_circle(Vector2(sx, sy), sz,
+                                Color(0.5, 0.5, 0.55, 0.7 * (1.0 - t2)))
+                        draw_circle(Vector2(sx + 3, sy - 3), sz * 0.6,
+                                Color(0.7, 0.7, 0.75, 0.5 * (1.0 - t2)))
+                # Cavaliere che sfuma
+                _draw_sprite(1.0 - t2 * 0.3, 1.0 - t2)
+                # Aura finale
+                draw_circle(Vector2.ZERO, 25.0 + t2 * 20.0,
+                        Color(0.4, 0.7, 1.0, 0.3 * (1.0 - t2)))
                 return
 
         if state == State.DEAD:
                 return
 
+        # Fase 3: ACTIVE - cavaliere vivo
         _draw_sprite(1.0, 1.0)
 
+        # Proiettili dorati
         for proj in projectiles:
                 if not proj.get("active", false):
                         continue
@@ -281,6 +335,7 @@ func _draw() -> void:
                 draw_circle(local_pos, 3.0, Color(1.0, 0.95, 0.4, 1.0))
                 draw_circle(local_pos, 1.5, Color(1.0, 1.0, 0.8, 1.0))
 
+        # HP bar
         if health < max_health:
                 var bar_w: float = 24.0
                 var bar_h: float = 3.0
@@ -291,6 +346,7 @@ func _draw() -> void:
                 draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
                         Color(1.0, 0.85, 0.2, 1.0), true)
 
+        # Shots indicator (3 dots)
         for i in 3:
                 var dot_x: float = -8.0 + float(i) * 8.0
                 var dot_y: float = -42.0
@@ -298,6 +354,44 @@ func _draw() -> void:
                         draw_circle(Vector2(dot_x, dot_y), 2.0, Color(1.0, 0.9, 0.3, 1.0))
                 else:
                         draw_circle(Vector2(dot_x, dot_y), 1.5, Color(0.3, 0.3, 0.3, 0.5))
+
+
+# FIX (statua di pietra): disegna la statua con texture PNG o fallback.
+# alpha = moltiplicatore alpha, color_t = 0.0 (pietra) → 1.0 (vivo)
+func _draw_statue(alpha_mul: float, alpha: float, color_t: float) -> void:
+        if _statue_loaded and _statue_texture != null:
+                var size: float = 64.0
+                var y_off: float = 0.0
+                # Bob leggero per indicare "sta prendendo vita"
+                if color_t > 0.3:
+                        y_off = sin(float(anim_time) * 0.008) * 1.0 * color_t
+                draw_texture_rect(_statue_texture,
+                        Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false,
+                        Color(1, 1, 1, alpha * alpha_mul))
+                # Tint graduale verso il dorato (cavaliere vivo)
+                if color_t > 0.0:
+                        var tint_col: Color = Color(1.0, 0.85, 0.3, color_t * 0.4)
+                        draw_rect(Rect2(-size / 2.0, -size / 2.0 + y_off, size, size),
+                                tint_col, false, 2.0)
+                return
+        # Fallback: statua procedurale grigia
+        var s: float = 20.0
+        var stone_col: Color = Color(0.66, 0.62, 0.56, alpha * alpha_mul)
+        # Ali di pietra
+        draw_polygon(PackedVector2Array([
+                Vector2(-s - 4, -4), Vector2(-s - 12, -12), Vector2(-s, -8)
+        ]), stone_col)
+        draw_polygon(PackedVector2Array([
+                Vector2(s + 4, -4), Vector2(s + 12, -12), Vector2(s, -8)
+        ]), stone_col)
+        # Corpo
+        draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s), stone_col, true)
+        # Elmo
+        draw_circle(Vector2(0, -s / 2.0 - 4), 6.0, stone_col)
+        # Tint dorato crescente
+        if color_t > 0.0:
+                var gold_tint: Color = Color(0.85, 0.7, 0.3, color_t * 0.5)
+                draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s), gold_tint, true)
 
 
 func _draw_sprite(scale_val: float, alpha: float) -> void:
