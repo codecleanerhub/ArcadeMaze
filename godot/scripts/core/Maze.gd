@@ -359,8 +359,15 @@ func _spawn_torch_lights() -> void:
         _torch_positions.clear()
         if not EffectsManager:
                 return
+        # FIX (performance): limita a massimo 6 PointLight2D per livello.
+        # Prima creava ~44 luci (5% di 880 celle WALL) → lag estremo su
+        # GPU entry-level. 6 luci danno atmosfera sufficiente senza lag.
+        var max_lights: int = 6
+        var light_count: int = 0
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
+                        if light_count >= max_lights:
+                                break
                         if not is_wall(c, r):
                                 continue
                         var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
@@ -377,6 +384,9 @@ func _spawn_torch_lights() -> void:
                                 add_child(light)
                                 _torch_lights.append(light)
                                 _torch_positions.append(Vector2(px, py))
+                                light_count += 1
+                if light_count >= max_lights:
+                        break
 
 
 # ============================================================================
@@ -463,10 +473,8 @@ func generate(lvl: int = 1) -> void:
         wall_color = pal["wall"]
         bg_color = pal["bg"]
 
-        # Crea le PointLight2D per le torce sulle pareti.
-        # FIX (lag): le PointLight2D sono costose su GPU entry-level.
-        # Disabilitate per performance (le torce erano già rimosse dal disegno).
-        # _spawn_torch_lights()
+        # Crea le PointLight2D per le torce sulle pareti (max 6 per performance).
+        _spawn_torch_lights()
 
         needs_redraw = true
         maze_generated.emit(level)

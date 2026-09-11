@@ -311,9 +311,11 @@ func load_character_sprite() -> void:
                         if sprite:
                                 sprite.scale = Vector2(1.3, 1.3)
                                 sprite.centered = true
-                        # Apply CharacterArt enhancement shader — DISABILITATO per performance.
-                        # if CharacterArt and sprite:
-                        #         CharacterArt.apply_enhancement(sprite, false)
+                        # Apply CharacterArt enhancement shader — SOLO per il Player.
+                        # Costo: 1 sprite × 64x64 = ~4K pixel shader ops/frame
+                        # (era 29 sprite × 750K ops con tutti i nemici).
+                        if CharacterArt and sprite:
+                                CharacterArt.apply_enhancement(sprite, false)
                 else:
                         sprite_loaded = false
         else:
