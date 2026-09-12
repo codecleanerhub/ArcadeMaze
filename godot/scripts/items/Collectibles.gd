@@ -985,11 +985,11 @@ func _draw_knight_statue() -> void:
         draw_polygon(PackedVector2Array([
                 Vector2(-s2 - 4, y_off - 4), Vector2(-s2 - 12, y_off - 12),
                 Vector2(-s2, y_off - 8)
-        ]), Color(0.85, 0.85, 0.95, 0.8))
+        ]), PackedColorArray([Color(0.85, 0.85, 0.95, 0.8)]))
         draw_polygon(PackedVector2Array([
                 Vector2(s2 + 4, y_off - 4), Vector2(s2 + 12, y_off - 12),
                 Vector2(s2, y_off - 8)
-        ]), Color(0.85, 0.85, 0.95, 0.8))
+        ]), PackedColorArray([Color(0.85, 0.85, 0.95, 0.8)]))
         # Corpo (armatura)
         draw_rect(Rect2(-s2 / 2.0, y_off - s2 / 2.0, s2, s2),
                 Color(0.7, 0.7, 0.8, 1.0), true)

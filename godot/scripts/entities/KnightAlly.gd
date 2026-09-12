@@ -380,10 +380,10 @@ func _draw_statue(alpha_mul: float, alpha: float, color_t: float) -> void:
         # Ali di pietra
         draw_polygon(PackedVector2Array([
                 Vector2(-s - 4, -4), Vector2(-s - 12, -12), Vector2(-s, -8)
-        ]), stone_col)
+        ]), PackedColorArray([stone_col]))
         draw_polygon(PackedVector2Array([
                 Vector2(s + 4, -4), Vector2(s + 12, -12), Vector2(s, -8)
-        ]), stone_col)
+        ]), PackedColorArray([stone_col]))
         # Corpo
         draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s), stone_col, true)
         # Elmo
@@ -426,10 +426,10 @@ func _draw_procedural(scale_val: float, alpha: float) -> void:
         var wing_col: Color = Color(0.85, 0.85, 0.95, alpha * 0.8)
         draw_polygon(PackedVector2Array([
                 Vector2(-s - 4, -4), Vector2(-s - 12, -12), Vector2(-s, -8)
-        ]), wing_col)
+        ]), PackedColorArray([wing_col]))
         draw_polygon(PackedVector2Array([
                 Vector2(s + 4, -4), Vector2(s + 12, -12), Vector2(s, -8)
-        ]), wing_col)
+        ]), PackedColorArray([wing_col]))
         draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s),
                 Color(0.85, 0.7, 0.3, alpha), true)
         draw_circle(Vector2(0, -s / 2.0 - 4), 6.0,
