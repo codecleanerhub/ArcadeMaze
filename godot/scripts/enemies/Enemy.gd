@@ -944,9 +944,9 @@ func _draw_sprite_frame() -> void:
         var target_size: float = 72.0
         var tw: float = target_size
         var th: float = target_size
+        # FIX (barra HP lag): rimosso bob_y dallo sprite. Ora né lo sprite
+        # né la barra oscillano → sync perfetto, nessun "lag" visivo.
         var bob_y: float = 0.0
-        if is_moving2:
-                bob_y = sin(float(anim_time) * 0.01) * 2.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
@@ -992,9 +992,8 @@ func _update_deform_sprite_animation() -> void:
                 mode = DeformableSprite.AnimMode.IDLE
         # Position: deform sprite is centered on the enemy position (already
         # offset by -32,-32 in _load_sprite). The bob is added here.
+        # FIX (barra HP lag): rimosso bob_y dal deform sprite. Sync perfetto.
         var bob_y: float = 0.0
-        if mode == DeformableSprite.AnimMode.WALK:
-                bob_y = sin(float(anim_time) * 0.01) * 2.0
         # Center the deform sprite on the enemy position.
         # Sprite is 64x64 scaled by scale_val → visual size = 64*scale_val.
         # Offset = -(visual_size)/2 = -32*scale_val.

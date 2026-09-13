@@ -902,7 +902,13 @@ func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) 
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_weapon_pickup_texture(wpn_type)
                 if tex:
-                        var draw_size: float = size * 1.2  # FIX: era 0.8, ora 1.2 (più grande)
+                        # FIX (pistola più piccola): la pistola PNG ha più spazio vuoto
+                        # rispetto a shotgun/rocket/laser. Per uniformare le dimensioni
+                        # visive, usiamo un draw_size maggiore per la pistola.
+                        var size_mult: float = 1.2
+                        if wpn_type == C.WeaponType.WPN_PISTOL:
+                                size_mult = 1.6  # pistola più grande per uniformità
+                        var draw_size: float = size * size_mult
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)

@@ -716,7 +716,9 @@ func _unhandled_input(event: InputEvent) -> void:
                 # la voce di menu corrente (come JOY_BUTTON_A). Permette di
                 # avviare la partita con il tasto di fuoco.
                 var configured_shoot: int = -1
-                if ConfigManager and ConfigManager.joy_ready():
+                # FIX (crash joy_ready): ConfigManager ha p1_joystick_ready(),
+                # non joy_ready(). Usiamo la funzione corretta.
+                if ConfigManager and ConfigManager.p1_joystick_ready():
                         configured_shoot = ConfigManager.joy_shoot()
                 if configured_shoot >= 0 and event.button_index == configured_shoot:
                         _activate_current()
