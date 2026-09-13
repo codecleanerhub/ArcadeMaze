@@ -697,6 +697,7 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                 if not proj.get("active", false):
                         continue
                 var proj_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                var hit_something: bool = false
                 for enemy in spawner.enemies:
                         if enemy.is_dead():
                                 continue
@@ -710,11 +711,26 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
                                                 AudioManager.play_sound(AudioManager.SoundType.BLOOD_SPLAT)
                                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
-                                        # Spawn decals at enemy death position
-                                        # (C++ Game.cpp lines 1664-1667 / 1779-1782).
                                         _spawn_blood_stain(e_pos)
                                         _spawn_fire_burst(e_pos, 1.0)
+                                hit_something = true
                                 break
+                # FIX (mid-boss immune): controlla anche il mini-boss.
+                # Prima i proiettili passavano attraverso il mini-boss senza
+                # fare danno perché non era incluso nel loop degli enemies.
+                if not hit_something and mini_boss != null and is_instance_valid(mini_boss):
+                        if not mini_boss.is_dead():
+                                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                                if proj_pos.distance_squared_to(mb_pos) < 900.0:
+                                        var dmg: int = int(proj.get("power", 1))
+                                        mini_boss.take_damage(dmg)
+                                        proj["active"] = false
+                                        if AudioManager:
+                                                AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                                        if mini_boss.is_dead():
+                                                p.add_score(10000)
+                                                if AudioManager:
+                                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
 
 
 func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
@@ -734,13 +750,34 @@ func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
 # (quando sta bouncing) e i nemici. Se la mine tocca un nemico, esplode:
 # danno ad area (radius 60px), particelle esplosione, screen shake,
 # sparisce immediatamente invece di rimanere per terra immobile.
+# FIX (bomba supera muri): controlla collisione tra la mine (quando bouncing)
+# e i muri del maze. Se la mine sta per entrare in una cella WALL, la ferma
+# e inverte la velocità (rimbalzo elastico).
 func _check_mine_vs_enemies() -> void:
         if mine_item == null or not is_instance_valid(mine_item):
                 return
-        # Solo se la mine sta bouncing (è stata attivata dal player)
         if not mine_item.get("bouncing"):
                 return
-        var mine_pos: Vector2 = mine_item.position
+        # FIX (bomba supera muri): wall collision check
+        var mine_pos2: Vector2 = mine_item.position
+        var mine_vel: Vector2 = mine_item.get("velocity") if mine_item.get("velocity") != null else Vector2.ZERO
+        # Calcola la cella attuale e la cella destinazione
+        var cur_col: int = int(mine_pos2.x / C.TILE_SIZE)
+        var cur_row: int = int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        var next_col: int = int((mine_pos2.x + mine_vel.x) / C.TILE_SIZE)
+        var next_row: int = int((mine_pos2.y + mine_vel.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        # Se la cella destinazione è un muro, inverti la velocità
+        if next_col != cur_col and maze.is_wall(next_col, cur_row):
+                mine_vel.x = -mine_vel.x * 0.7  # damped bounce
+                mine_pos2.x = cur_col * C.TILE_SIZE + C.TILE_SIZE / 2.0
+        if next_row != cur_row and maze.is_wall(cur_col, next_row):
+                mine_vel.y = -mine_vel.y * 0.7
+                mine_pos2.y = cur_row * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT
+        # Aggiorna posizione e velocità della mine
+        mine_item.position = mine_pos2
+        mine_item.set("velocity", mine_vel)
+        mine_item.set("pos", mine_pos2)
+        # Damage check
         var blast_radius: float = 60.0
         var blast_radius_sq: float = blast_radius * blast_radius
         var hit_any: bool = false
@@ -748,33 +785,29 @@ func _check_mine_vs_enemies() -> void:
                 if enemy.is_dead():
                         continue
                 var e_pos: Vector2 = enemy.get_pixel_pos()
-                if mine_pos.distance_squared_to(e_pos) < blast_radius_sq:
-                        enemy.take_damage(999)  # instant kill
+                if mine_pos2.distance_squared_to(e_pos) < blast_radius_sq:
+                        enemy.take_damage(999)
                         enemy.start_burning(30)
                         player.add_score(2000)
                         hit_any = true
-        # Anche il mini-boss
         if mini_boss != null and not mini_boss.is_dead():
                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                if mine_pos.distance_squared_to(mb_pos) < blast_radius_sq:
+                if mine_pos2.distance_squared_to(mb_pos) < blast_radius_sq:
                         var mb_max_hp: int = mini_boss.get_max_health()
-                        mini_boss.take_damage(int(mb_max_hp * 0.5))  # 50% HP damage
+                        mini_boss.take_damage(int(mb_max_hp * 0.5))
                         hit_any = true
         if hit_any:
-                # Esplosione: particelle + screen shake + suono
                 if EffectsManager:
-                        var burst := EffectsManager.spawn_explosion(mine_pos,
+                        var burst := EffectsManager.spawn_explosion(mine_pos2,
                                 Color(1.0, 0.4, 0.1), 40, 1.0)
                         collectibles_node.add_child(burst)
                         EffectsManager.screen_shake(12.0, 0.4)
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
-                # Disattiva la mine e rimuovila
                 mine_item.set("bouncing", false)
                 mine_item.set("active", false)
                 mine_item.queue_free()
                 mine_item = null
-                # Screen flash breve per l'esplosione
                 screen_flash_timer_ms = 80
 
 
@@ -1447,7 +1480,7 @@ func _fire_lightning_strike() -> void:
         # FIX (fulmini invisibili): aumentato a 400ms + alpha iniziale 1.0
         # invece di 0.4. Il flash bianco full-screen è l'effetto più visibile
         # del fulmine, deve dominare la scena per almeno 0.4s.
-        screen_flash_timer_ms = 120  # FIX: era 400 → flash troppo lungo copriva il fulmine
+        screen_flash_timer_ms = 60  # FIX: era 120 → flash ancora troppo lungo, copriva il fulmine
         # Damage all enemies near any lightning segment
         for enemy in spawner.enemies:
                 if enemy.is_dead():
@@ -1966,7 +1999,7 @@ func _draw() -> void:
         # invece di 400ms con alpha 1.0. Il flash troppo luminoso copriva
         # il fulmine rendendolo invisibile.
         if screen_flash_timer_ms > 0:
-                var alpha: float = (float(screen_flash_timer_ms) / 120.0) * 0.5
+                var alpha: float = (float(screen_flash_timer_ms) / 60.0) * 0.3
                 draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
                         Color(1, 1, 1, alpha), true)
 

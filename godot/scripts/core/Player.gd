@@ -1196,22 +1196,25 @@ func _draw_equipped_weapon() -> void:
 
         match current_weapon.type:
                 WeaponType.PISTOL:
+                        # FIX (pistol troppo piccolo): ingrandito del 50% per
+                        # uniformarlo a shotgun/rocket/laser. Prima era 6/11/13/8,
+                        # ora 9/17/20/12.
                         # Grip (2 layers: dark base + lighter mid)
-                        draw_rect(Rect2(_wxr(-3.0, 6.0, facing_right), y + 1, 6, 11),
+                        draw_rect(Rect2(_wxr(-4.5, 9.0, facing_right), y + 1, 9, 17),
                                 Color(0.20, 0.10, 0.05))
-                        draw_rect(Rect2(_wxr(-2.5, 5.0, facing_right), y + 1, 5, 11),
+                        draw_rect(Rect2(_wxr(-3.75, 7.5, facing_right), y + 1, 7.5, 17),
                                 Color(0.33, 0.20, 0.10))
                         # Metal body + slide + gold insert
-                        draw_rect(Rect2(_wxr(-4.0, 13.0, facing_right), y - 7, 13, 9),
+                        draw_rect(Rect2(_wxr(-6.0, 20.0, facing_right), y - 10, 20, 14),
                                 Color(0.27, 0.27, 0.31))
-                        draw_rect(Rect2(_wxr(-4.0, 13.0, facing_right), y - 7, 13, 3),
+                        draw_rect(Rect2(_wxr(-6.0, 20.0, facing_right), y - 10, 20, 5),
                                 Color(0.47, 0.47, 0.51))
-                        draw_rect(Rect2(_wxr(-3.0, 2.0, facing_right), y - 6, 2, 3),
+                        draw_rect(Rect2(_wxr(-4.5, 3.0, facing_right), y - 9, 3, 5),
                                 Color(0.71, 0.55, 0.24))
                         # Barrel + muzzle
-                        draw_rect(Rect2(_wxr(8.0, 8.0, facing_right), y - 5, 8, 5),
+                        draw_rect(Rect2(_wxr(12.0, 12.0, facing_right), y - 8, 12, 8),
                                 Color(0.33, 0.33, 0.37))
-                        draw_circle(Vector2(_wxc(14.5, facing_right), y - 3.5), 1.5,
+                        draw_circle(Vector2(_wxc(22.0, facing_right), y - 5), 2.5,
                                 Color(0.06, 0.06, 0.06))
                 WeaponType.SHOTGUN:
                         # Wooden stock (2 layers: dark base + lighter top)

@@ -340,6 +340,12 @@ func _draw() -> void:
                         # Door stays visible briefly during its open animation.
                         if door_anim_timer_ms > 0:
                                 _draw_exit_door()
+                # FIX (statua invisibile): la statua del cavaliere deve essere
+                # visibile anche durante il delay di spawn (5-15s), altrimenti
+                # il player la raccoglie senza vederla. Disegna un "ghost"
+                # semitrasparente della statua.
+                elif kind == Kind.KNIGHT_STATUE:
+                        _draw_knight_statue_ghost()
                 return
         match kind:
                 Kind.MINE:         _draw_mine()
@@ -999,3 +1005,34 @@ func _draw_knight_statue() -> void:
         # Croce dorata sul petto
         draw_rect(Rect2(-1.5, y_off - 4, 3.0, 8.0), Color(1.0, 0.85, 0.2, 1.0))
         draw_rect(Rect2(-4.0, y_off - 1.0, 8.0, 3.0), Color(1.0, 0.85, 0.2, 1.0))
+
+
+# FIX (statua invisibile): disegna un "ghost" semitrasparente della statua
+# del cavaliere quando è in fase di delay (active=false ma spawn_delay_ms > 0).
+# Il player può così vedere dove apparirà la statua.
+func _draw_knight_statue_ghost() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_knight_statue.png")
+        if tex != null:
+                # Aura mistica pulsante
+                var glow_alpha: float = 0.15 + pulse * 0.15
+                draw_circle(Vector2.ZERO, 22.0, Color(0.4, 0.7, 1.0, glow_alpha))
+                # Statua semitrasparente (ghost)
+                var size: float = 64.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false,
+                        Color(1, 1, 1, 0.4))
+                return
+        # Fallback: statua procedurale semitrasparente
+        var s2: float = 20.0
+        var ghost_col: Color = Color(0.6, 0.55, 0.5, 0.4)
+        draw_circle(Vector2.ZERO, 22.0, Color(0.4, 0.7, 1.0, 0.2 + pulse * 0.15))
+        draw_polygon(PackedVector2Array([
+                Vector2(-s2 - 4, y_off - 4), Vector2(-s2 - 12, y_off - 12),
+                Vector2(-s2, y_off - 8)
+        ]), PackedColorArray([ghost_col]))
+        draw_polygon(PackedVector2Array([
+                Vector2(s2 + 4, y_off - 4), Vector2(s2 + 12, y_off - 12),
+                Vector2(s2, y_off - 8)
+        ]), PackedColorArray([ghost_col]))
+        draw_rect(Rect2(-s2 / 2.0, y_off - s2 / 2.0, s2, s2), ghost_col, true)
+        draw_circle(Vector2(0, y_off - s2 / 2.0 - 4), 6.0, ghost_col)

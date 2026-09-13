@@ -108,15 +108,18 @@ func _ready() -> void:
 # stays false and drawHeart() will use the procedural fallback.
 # ----------------------------------------------------------------------------
 func load_heart_sprite(path: String) -> bool:
-        if not ResourceLoader.exists(path):
+        # FIX (cuoricini invisibili): usava load() (ResourceLoader) che ritorna
+        # null se .godot/imported/ è vuoto. Ora usa Image.load() + ImageTexture.
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
                 _heart_loaded = false
                 _heart_texture = null
                 return false
-        var res := load(path)
-        if res is Texture2D:
-                _heart_texture = res
-                _heart_loaded = true
-                return true
+        var img := Image.new()
+        if img.load(abs_path) == OK:
+                _heart_texture = ImageTexture.create_from_image(img)
+                _heart_loaded = _heart_texture != null
+                return _heart_loaded
         _heart_loaded = false
         _heart_texture = null
         return false
