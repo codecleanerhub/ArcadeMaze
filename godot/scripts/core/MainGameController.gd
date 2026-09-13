@@ -80,6 +80,15 @@ var knight_statue_item: Node2D = null
 var knight_ally: Node2D = null  # cavaliere alleato evocato
 var medikit_used: bool = false  # 1 medikit per livello
 var knight_statue_spawned: bool = false  # 1 statua per livello
+# FIX (nuova meccanica): candelotto di dinamite
+var dynamite_item: Node2D = null
+var dynamite_spawned: bool = false  # 1 dinamite per livello
+# Stato dinamite equipaggiata
+var dynamite_equipped: bool = false
+var dynamite_fuse_timer_ms: int = 0  # timer miccia (7000ms = 7s)
+var dynamite_alert_played: bool = false
+var dynamite_explode_timer_ms: int = 0  # timer esplosione dopo alert (2000ms)
+var dynamite_thrown: Node2D = null  # candelotto lanciato in volo
 
 # Timers
 var player_invincible_timer_ms: int = 0
@@ -364,12 +373,18 @@ func _handle_input() -> void:
                         if not was_jumping and player.is_jumping() and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.JUMP)
                 if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
-                        var ammo_before: int = player.current_weapon.get("ammo", 0)
-                        player.shoot()
-                        var ammo_after: int = player.current_weapon.get("ammo", 0)
-                        if ammo_after < ammo_before and AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.PISTOL)
-                        player.shoot_cooldown = 150
+                        # FIX (dinamite): se il player ha la dinamite equipaggiata,
+                        # il fuoco lancia il candelotto invece di sparare.
+                        if dynamite_equipped:
+                                _throw_dynamite()
+                                player.shoot_cooldown = 300
+                        else:
+                                var ammo_before: int = player.current_weapon.get("ammo", 0)
+                                player.shoot()
+                                var ammo_after: int = player.current_weapon.get("ammo", 0)
+                                if ammo_after < ammo_before and AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.PISTOL)
+                                player.shoot_cooldown = 150
         # FIX: rimossi i debug print ogni 60 frame ora che la config joystick
         # funziona correttamente (joy_jump/joy_shoot vengono caricati dal disco).
 
@@ -390,12 +405,18 @@ func _handle_input() -> void:
 
         # P1 keyboard shoot (also works without joystick — matches C++ fallback)
         if Input.is_action_just_pressed("shoot") and player.shoot_cooldown == 0:
-                var ammo_before: int = player.current_weapon.get("ammo", 0)
-                player.shoot()
-                var ammo_after: int = player.current_weapon.get("ammo", 0)
-                if ammo_after < ammo_before and AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.PISTOL)
-                player.shoot_cooldown = 150
+                # FIX (dinamite): se il player ha la dinamite equipaggiata,
+                # il fuoco lancia il candelotto invece di sparare.
+                if dynamite_equipped:
+                        _throw_dynamite()
+                        player.shoot_cooldown = 300
+                else:
+                        var ammo_before: int = player.current_weapon.get("ammo", 0)
+                        player.shoot()
+                        var ammo_after: int = player.current_weapon.get("ammo", 0)
+                        if ammo_after < ammo_before and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.PISTOL)
+                        player.shoot_cooldown = 150
 
         # P1 keyboard jump (also works without joystick)
         # FIX (spazio fa jump invece di saltare livello in test mode):
@@ -604,6 +625,9 @@ func _update_playing(delta_ms: float) -> void:
 
         # (9c) KnightAlly update (FIX: nuova meccanica cavaliere alleato)
         _update_knight_ally(delta_ms)
+
+        # (9d) Dynamite update (FIX: nuova meccanica dinamite)
+        _update_dynamite(delta_ms)
 
         # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
@@ -1094,6 +1118,14 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
                                         Color(0.4, 0.7, 1.0))
                                 collectibles_node.add_child(burst)
+                CollectiblesClass.Kind.DYNAMITE:
+                        # FIX (nuova meccanica): candelotto di dinamite.
+                        # Animazione accensione miccia (0.8s), poi player equipaggia.
+                        # La miccia brucia per 7s, poi alert + 2s esplosione.
+                        item.active = false
+                        item.queue_free()
+                        dynamite_item = null
+                        _start_dynamite_pickup(p)
 
 
 # ============================================================================
@@ -1252,6 +1284,16 @@ func _spawn_collectibles() -> void:
                 knight_ally = null
         medikit_used = false
         knight_statue_spawned = false
+        # FIX (nuova meccanica): reset dinamite
+        dynamite_item = null
+        dynamite_spawned = false
+        dynamite_equipped = false
+        dynamite_fuse_timer_ms = 0
+        dynamite_alert_played = false
+        dynamite_explode_timer_ms = 0
+        if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
+                dynamite_thrown.queue_free()
+                dynamite_thrown = null
 
         # Find empty cells far from player start (Manhattan distance >= 5)
         var empty_cells: Array = []
@@ -1321,6 +1363,13 @@ func _spawn_collectibles() -> void:
                 knight_statue_item.active = false
                 knight_statue_item.set_meta("spawn_delay_ms", randi_range(5000, 15000))
                 collectibles_node.add_child(knight_statue_item)
+
+        # FIX (nuova meccanica): Dinamite (1 per livello, posizione casuale)
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var dyn_pos := _cell_to_pixel(cell)
+                dynamite_item = _create_collectible(CollectiblesClass.Kind.DYNAMITE, dyn_pos)
+                collectibles_node.add_child(dynamite_item)
 
 
 func _cell_to_pixel(cell: Vector2i) -> Vector2:
@@ -1425,6 +1474,176 @@ func _update_knight_ally(delta_ms: int) -> void:
         if ka2.has_method("is_dead") and ka2.is_dead():
                 ka2.queue_free()
                 knight_ally = null
+
+
+# ============================================================================
+# Dynamite (nuova meccanica): candelotto di dinamite con miccia.
+# Flow:
+#   1. Player raccoglie DYNAMITE → _start_dynamite_pickup
+#      - Animazione accensione miccia (0.8s, scintille)
+#      - Suono accensione (TRAP o MINE_BOUNCE)
+#      - Equip dinamite (dynamite_equipped = true)
+#   2. Player preme fuoco → _throw_dynamite
+#      - Candelotto lanciato nella direzione del player
+#      - Se colpisce nemico/mid-boss → instant kill + esplosione
+#      - Se non colpisce → continua fino a muro/schermo
+#   3. Se player NON preme fuoco entro 7s:
+#      - dynamite_alert_played = true, suono alert (BOSS_HIT o LOSE_LIFE)
+#      - Dopo 2s → _explode_dynamite (esplosione che uccide il player)
+# ============================================================================
+
+# Avvia l'animazione di accensione miccia + equip
+func _start_dynamite_pickup(p: CharacterBody2D) -> void:
+        # Animazione accensione: 0.8s di scintille
+        if EffectsManager:
+                # Particelle scintille alla posizione del player
+                var burst := EffectsManager.spawn_sparks(p.get_pixel_pos(), 12)
+                collectibles_node.add_child(burst)
+                EffectsManager.screen_shake(2.0, 0.2)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.TRAP)
+        # Equip immediato (l'animazione è gestita nel _draw del player)
+        dynamite_equipped = true
+        dynamite_fuse_timer_ms = 7000  # 7 secondi
+        dynamite_alert_played = false
+        dynamite_explode_timer_ms = 0
+        print("[Dynamite] Player equipped dynamite, fuse 7s")
+
+
+# Update della dinamite equipaggiata (chiamato da _update_playing)
+func _update_dynamite(delta_ms: int) -> void:
+        # Aggiorna candelotto lanciato se in volo
+        if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
+                _update_thrown_dynamite(delta_ms)
+                # Sync player rendering state
+                player.set_dynamite_equipped(false, 0, false)
+                return
+        if not dynamite_equipped:
+                # Assicurati che il player non disegni la dinamite
+                player.set_dynamite_equipped(false, 0, false)
+                return
+        # Timer miccia
+        if dynamite_fuse_timer_ms > 0:
+                dynamite_fuse_timer_ms -= int(delta_ms)
+                if dynamite_fuse_timer_ms <= 0 and not dynamite_alert_played:
+                        # Miccia smette di fare scintille, suono alert
+                        dynamite_alert_played = true
+                        dynamite_explode_timer_ms = 2000  # 2s prima dell'esplosione
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+                        print("[Dynamite] ALERT! Fuse done, explode in 2s")
+        elif dynamite_alert_played:
+                # Countdown esplosione
+                dynamite_explode_timer_ms -= int(delta_ms)
+                if dynamite_explode_timer_ms <= 0:
+                        _explode_dynamite(false)  # false = non lanciata, uccide player
+        # Sync player rendering state (per disegnare candelotto + scintille/fumo)
+        player.set_dynamite_equipped(dynamite_equipped, dynamite_fuse_timer_ms, dynamite_alert_played)
+
+
+# Lancia il candelotto di dinamite
+func _throw_dynamite() -> void:
+        if not dynamite_equipped:
+                return
+        var dir: Vector2 = Vector2(player.last_dx, player.last_dy)
+        if dir == Vector2.ZERO:
+                dir = Vector2(1, 0)
+        dir = dir.normalized()
+        # Crea nodo candelotto lanciato
+        var proj := Node2D.new()
+        proj.position = player.get_pixel_pos() + dir * 24.0
+        proj.set_meta("dir", dir * 6.0)  # velocità
+        proj.set_meta("life_ms", 2000)  # max 2s di volo
+        proj.set_meta("active", true)
+        enemy_projectiles_node.add_child(proj)
+        dynamite_thrown = proj
+        dynamite_equipped = false
+        dynamite_fuse_timer_ms = 0
+        dynamite_alert_played = false
+        print("[Dynamite] Thrown!")
+
+
+# Update del candelotto lanciato in volo
+func _update_thrown_dynamite(delta_ms: int) -> void:
+        if dynamite_thrown == null or not is_instance_valid(dynamite_thrown):
+                dynamite_thrown = null
+                return
+        var dt: Node2D = dynamite_thrown
+        var vel: Vector2 = dt.get_meta("dir", Vector2.ZERO)
+        var life: int = dt.get_meta("life_ms", 2000)
+        life -= int(delta_ms)
+        dt.set_meta("life_ms", life)
+        if life <= 0:
+                _explode_dynamite(true, dt.position)
+                dt.queue_free()
+                dynamite_thrown = null
+                return
+        # Muovi
+        dt.position += vel
+        # Wall collision: se colpisce muro, esplode
+        var col: int = int(dt.position.x / C.TILE_SIZE)
+        var row: int = int((dt.position.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if maze.is_wall(col, row):
+                _explode_dynamite(true, dt.position)
+                dt.queue_free()
+                dynamite_thrown = null
+                return
+        # Enemy collision: instant kill
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                if dt.position.distance_squared_to(enemy.get_pixel_pos()) < 600.0:
+                        enemy.take_damage(999)
+                        enemy.start_burning(30)
+                        player.add_score(2000)
+                        _explode_dynamite(true, dt.position)
+                        dt.queue_free()
+                        dynamite_thrown = null
+                        return
+        # Mini-boss collision: instant kill
+        if mini_boss != null and not mini_boss.is_dead():
+                if dt.position.distance_squared_to(mini_boss.get_pixel_pos()) < 900.0:
+                        var mb_max_hp: int = mini_boss.get_max_health()
+                        mini_boss.take_damage(mb_max_hp)  # instant kill
+                        _explode_dynamite(true, dt.position)
+                        dt.queue_free()
+                        dynamite_thrown = null
+                        return
+
+
+# Esplosione dinamite
+# thrown=true: candelotto lanciato, uccide nemici in raggio
+# thrown=false: dinamite in mano al player, uccide il player
+func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
+        var pos: Vector2 = at_pos if thrown else player.get_pixel_pos()
+        # Particelle esplosione
+        if EffectsManager:
+                var burst := EffectsManager.spawn_explosion(pos,
+                        Color(1.0, 0.4, 0.1), 50, 1.2)
+                collectibles_node.add_child(burst)
+                EffectsManager.screen_shake(15.0, 0.5)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        screen_flash_timer_ms = 120
+        if not thrown:
+                # Dinamite in mano: uccide il player
+                player.take_damage()
+                print("[Dynamite] BOOM! Player killed by dynamite")
+        else:
+                # Candelotto lanciato: danno ad area in raggio 80px
+                var blast_sq: float = 80.0 * 80.0
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        if pos.distance_squared_to(enemy.get_pixel_pos()) < blast_sq:
+                                enemy.take_damage(999)
+                                enemy.start_burning(30)
+                                player.add_score(2000)
+        # Cleanup stato
+        dynamite_equipped = false
+        dynamite_fuse_timer_ms = 0
+        dynamite_alert_played = false
+        dynamite_explode_timer_ms = 0
 
 
 # ============================================================================
@@ -2043,6 +2262,36 @@ func _draw() -> void:
                 if pvel != Vector2.ZERO:
                         draw_circle(ppos - pvel * 2.0, 2.0,
                                 Color(1.0, 0.6, 0.2, 0.3))
+
+        # FIX (dinamite lanciata): renderizza il candelotto di dinamite in volo.
+        # Il candelotto è un Node2D in enemy_projectiles_node con meta "dir".
+        # Disegna: corpo rosso + miccia + scintille.
+        if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
+                var dt_pos: Vector2 = dynamite_thrown.position
+                # Glow esplosivo (arancione)
+                draw_circle(dt_pos, 14.0, Color(1.0, 0.4, 0.1, 0.4))
+                # Candelotto (cilindro rosso, inclinato)
+                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
+                        Color(0.7, 0.12, 0.1, 1.0), true)
+                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
+                        Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
+                # Etichetta TNT
+                draw_rect(Rect2(dt_pos.x - 3, dt_pos.y - 4, 6, 4),
+                        Color(0.94, 0.86, 0.7, 1.0), true)
+                # Miccia
+                draw_line(Vector2(dt_pos.x - 1, dt_pos.y - 10),
+                        Vector2(dt_pos.x + 1, dt_pos.y - 14),
+                        Color(0.16, 0.14, 0.12, 1.0), 2)
+                # Scintille (animate)
+                var sp_phase: int = (int(Time.get_ticks_msec()) / 80) % 4
+                for i in 3:
+                        var a3: float = (float(i) / 3.0) * TAU + sp_phase * 1.5
+                        var sx3: float = dt_pos.x + 1 + cos(a3) * 3.0
+                        var sy3: float = dt_pos.y - 14 + sin(a3) * 3.0
+                        draw_circle(Vector2(sx3, sy3), 2.5,
+                                Color(1.0, 0.6, 0.2, 0.6))
+                        draw_circle(Vector2(sx3, sy3), 1.5,
+                                Color(1.0, 0.95, 0.4, 1.0))
 
         # Magic portal (50% respawn)
         # FIX (portale invisibile): il portale era gestito in EnemySpawner.magic_portal

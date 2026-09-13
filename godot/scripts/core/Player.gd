@@ -916,6 +916,84 @@ func _draw() -> void:
         # Mirrors C++ Weapon::renderEquipped() in src/Weapon.cpp line 523-817.
         _draw_equipped_weapon()
 
+        # FIX (dinamite): se il player ha la dinamite equipaggiata, disegna
+        # il candelotto con miccia accesa accanto al player.
+        # Lo stato dynamite_equipped è in MainGameController, ma il player
+        # non vi accede direttamente. Il MainGameController chiama una
+        # funzione del player per abilitare/disabilitare il rendering.
+        if _dynamite_equipped:
+                _draw_dynamite_equipped()
+
+
+# FIX (dinamite): variabile di stato per il rendering della dinamite.
+# Settata dal MainGameController quando il player raccoglie la dinamite.
+var _dynamite_equipped: bool = false
+var _dynamite_fuse_timer_ms: int = 0  # per animazione scintille
+var _dynamite_alert_played: bool = false  # per cambio colore miccia
+
+func set_dynamite_equipped(equipped: bool, fuse_ms: int = 0, alert: bool = false) -> void:
+        _dynamite_equipped = equipped
+        _dynamite_fuse_timer_ms = fuse_ms
+        _dynamite_alert_played = alert
+
+
+# Disegna il candelotto di dinamite equipaggiato con miccia accesa.
+# Scintille animate, miccia che brucia.
+func _draw_dynamite_equipped() -> void:
+        var facing_right: bool = last_dx >= 0
+        var x_sign: float = 1.0 if facing_right else -1.0
+        # Posizione: accanto al player, sporgente
+        var dyn_x: float = 20.0 * x_sign
+        var dyn_y: float = -2.0
+        # === CANDELOTTO (cilindro rosso) ===
+        # Corpo
+        draw_rect(Rect2(dyn_x - 5, dyn_y - 10, 10, 20),
+                Color(0.7, 0.12, 0.1, 1.0), true)
+        draw_rect(Rect2(dyn_x - 5, dyn_y - 10, 10, 20),
+                Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
+        # Highlight
+        draw_rect(Rect2(dyn_x - 4, dyn_y - 8, 2, 16),
+                Color(0.86, 0.24, 0.2, 1.0), true)
+        # Etichetta TNT
+        draw_rect(Rect2(dyn_x - 3, dyn_y - 4, 6, 4),
+                Color(0.94, 0.86, 0.7, 1.0), true)
+        # Cappucciio superiore
+        draw_rect(Rect2(dyn_x - 5, dyn_y - 12, 10, 3),
+                Color(0.55, 0.1, 0.08, 1.0), true)
+        # === MICCIA (esce dal cappuccio superiore) ===
+        var fuse_top_x: float = dyn_x - 1
+        var fuse_top_y: float = dyn_y - 14
+        draw_line(Vector2(dyn_x, dyn_y - 12),
+                Vector2(fuse_top_x, fuse_top_y),
+                Color(0.16, 0.14, 0.12, 1.0), 2)
+        # === SCINTILLE (se miccia accesa, non in alert) ===
+        if not _dynamite_alert_played:
+                # Animazione scintille con anim_time
+                var phase: int = (int(anim_time) / 80) % 4
+                for i in 3:
+                        var a: float = (float(i) / 3.0) * TAU + phase * 1.5
+                        var sx: float = fuse_top_x + cos(a) * 3.0
+                        var sy: float = fuse_top_y + sin(a) * 3.0
+                        # Glow arancione
+                        draw_circle(Vector2(sx, sy), 2.5,
+                                Color(1.0, 0.6, 0.2, 0.6))
+                        # Nucleo giallo
+                        draw_circle(Vector2(sx, sy), 1.5,
+                                Color(1.0, 0.95, 0.4, 1.0))
+                # Scintilla centrale bianca
+                draw_circle(Vector2(fuse_top_x, fuse_top_y), 1.0,
+                        Color(1.0, 1.0, 0.9, 1.0))
+        else:
+                # In fase alert: miccia fumante (grigio, no scintille)
+                draw_circle(Vector2(fuse_top_x, fuse_top_y), 2.0,
+                        Color(0.4, 0.4, 0.4, 0.6))
+                # Fumo che sale
+                for i in 3:
+                        var sy2: float = fuse_top_y - 4 - i * 3
+                        var sx2: float = fuse_top_x + sin(float(anim_time) * 0.005 + i) * 2
+                        draw_circle(Vector2(sx2, sy2), 2.0 - i * 0.3,
+                                Color(0.5, 0.5, 0.5, 0.4 - i * 0.1))
+
 
 func _projectile_color(w_type: int) -> Color:
         match w_type:

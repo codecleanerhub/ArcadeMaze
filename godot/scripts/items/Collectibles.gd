@@ -29,6 +29,7 @@ enum Kind {
         MAGIC_PORTAL,    # Spawns at 50% enemies killed; respawns enemies.
         MEDIKIT,         # FIX (nuova meccanica): rigenera 1 punto vita del player (1 per livello).
         KNIGHT_STATUE,   # FIX (nuova meccanica): evoca cavaliere alleato che combatte per il player.
+        DYNAMITE,        # FIX (nuova meccanica): candelotto di dinamite con miccia (1 per livello).
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -117,6 +118,9 @@ func _apply_kind_defaults() -> void:
                 Kind.KNIGHT_STATUE:
                         pulse = 0.0
                         bob_offset = 0.0
+                Kind.DYNAMITE:
+                        pulse = 0.0
+                        bob_offset = 0.0
 
 
 # =========================================================
@@ -149,6 +153,8 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                 Kind.MEDIKIT:
                         pass  # only anim
                 Kind.KNIGHT_STATUE:
+                        pass  # only anim
+                Kind.DYNAMITE:
                         pass  # only anim
 
         # Collision: 16px radius for small items, 24px for the door/portal.
@@ -329,6 +335,12 @@ func _on_collected(player_id: int) -> void:
                         # La logica effettiva (spawn + AI) è in MainGameController.
                         active = false
                         collected.emit(self, player_id)
+                Kind.DYNAMITE:
+                        # FIX (nuova meccanica): candelotto di dinamite.
+                        # La logica (accensione miccia + equip + timer) è in
+                        # MainGameController. Item scompare subito.
+                        active = false
+                        collected.emit(self, player_id)
 
 
 # =========================================================
@@ -357,6 +369,7 @@ func _draw() -> void:
                 Kind.MAGIC_PORTAL: _draw_magic_portal()
                 Kind.MEDIKIT:      _draw_medikit()
                 Kind.KNIGHT_STATUE: _draw_knight_statue()
+                Kind.DYNAMITE:     _draw_dynamite()
 
 
 func _draw_mine() -> void:
@@ -945,6 +958,15 @@ static func make_knight_statue(at: Vector2) -> Collectibles:
         return c
 
 
+## Factory: create a dynamite at pos.
+static func make_dynamite(at: Vector2) -> Collectibles:
+        var c := Collectibles.new()
+        c.kind = Kind.DYNAMITE
+        c.pos = at
+        c.active = true
+        return c
+
+
 # FIX (nuova meccanica): disegna il medikit (scatola bianca con croce rossa).
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
 func _draw_medikit() -> void:
@@ -1036,3 +1058,30 @@ func _draw_knight_statue_ghost() -> void:
         ]), PackedColorArray([ghost_col]))
         draw_rect(Rect2(-s2 / 2.0, y_off - s2 / 2.0, s2, s2), ghost_col, true)
         draw_circle(Vector2(0, y_off - s2 / 2.0 - 4), 6.0, ghost_col)
+
+
+# FIX (nuova meccanica): disegna il candelotto di dinamite (pavimento).
+# Carica il PNG AI dedicato; fallback procedurale se non disponibile.
+func _draw_dynamite() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_dynamite.png")
+        if tex != null:
+                # Glow rosso pulsante
+                var glow_alpha: float = 0.15 + pulse * 0.10
+                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.3, 0.1, glow_alpha))
+                var size: float = 64.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale: candelotto rosso + miccia
+        var s: float = 24.0
+        # Corpo
+        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s * 1.5),
+                Color(0.7, 0.12, 0.1, 1.0), true)
+        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s * 1.5),
+                Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
+        # Etichetta
+        draw_rect(Rect2(-s / 4.0, y_off, s / 2.0, s / 3.0),
+                Color(0.94, 0.86, 0.7, 1.0), true)
+        # Miccia
+        draw_line(Vector2(0, -s / 2.0 + y_off), Vector2(2, -s / 2.0 - 8 + y_off),
+                Color(0.16, 0.14, 0.12, 1.0), 2)
