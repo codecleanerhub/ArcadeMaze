@@ -1044,6 +1044,24 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
                                         Color(1.0, 0.84, 0.0))
                                 collectibles_node.add_child(burst)
+                        # FIX (tesori counter): quando il player raccoglie un
+                        # collectible TREASURE, trova la cella TREASURE del maze
+                        # più vicina e la rimuove (collect_treasure). Questo
+                        # decrementa maze.get_remaining_treasures() e attiva
+                        # l'exit door quando tutti i tesori sono raccolti.
+                        var p_pos_t: Vector2 = p.get_pixel_pos()
+                        var p_col_t: int = int(p_pos_t.x / C.TILE_SIZE)
+                        var p_row_t: int = int((p_pos_t.y - C.UI_HEIGHT) / C.TILE_SIZE)
+                        # Cerca la cella TREASURE più vicina in raggio 3
+                        var found_treasure: bool = false
+                        for r in range(p_row_t - 3, p_row_t + 4):
+                                for c in range(p_col_t - 3, p_col_t + 4):
+                                        if maze.get_cell_type(c, r) == C.CellType.TREASURE:
+                                                maze.collect_treasure(c, r)
+                                                found_treasure = true
+                                                break
+                                if found_treasure:
+                                        break
                 CollectiblesClass.Kind.MEDIKIT:
                         # FIX (nuova meccanica): rigenera 1 punto vita del player.
                         # L'effetto è come se fosse stato toccato dal nemico una

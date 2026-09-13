@@ -54,7 +54,7 @@ signal heart_clicked()  # currently unused but exposed for future editor hooks
 @export var color_bg:        Color = Color(0.078, 0.078, 0.078)      # 20,20,20
 @export var color_score:     Color = Color(1.000, 1.000, 0.000)      # Yellow
 @export var color_label:     Color = Color.WHITE
-@export var color_energy:     Color = Color(1.000, 0.000, 1.000)     # Magenta
+@export var color_energy:     Color = Color(0.0, 0.9, 0.0)       # FIX (energia invisibile): era Magenta, ora verde (vedi _draw_energy_bar per gradiente)
 @export var color_energy_bg:  Color = Color(0.392, 0.392, 0.392)
 @export var color_energy_border: Color = Color(0.235, 0.235, 0.235)
 @export var color_ammo:       Color = Color(1.000, 1.000, 0.000)
@@ -215,19 +215,18 @@ func _draw_1p() -> void:
         _draw_label("LIVES", 150, 10)
         for i in _p1.lives:
                 _draw_heart(160 + i * 24, 35, 8.0)
-        # ENERGY
+        # ENERGY (gradiente verde→arancione→rosso)
         _draw_label("ENERGY", 280, 10)
-        _draw_bar(280, 30, 100, 18,
-                float(_p1.energy) / float(_p1.max_energy), color_energy)
+        _draw_energy_bar(280, 30, 100, 18,
+                float(_p1.energy) / float(_p1.max_energy))
         # WPN
         _draw_label("WPN", 420, 10)
         _draw_label_colored(_p1.weapon_name, 420, 30, _p1.weapon_color)
-        # AMMO
+        # AMMO (numero colpi invece di barra)
         _draw_label("AMMO", 570, 10)
-        var ammo_ratio: float = float(_p1.weapon_ammo) / float(_AMMO_NORMALISER)
-        _draw_bar(570, 30, 100, 18, ammo_ratio, color_ammo)
-        # TRES
-        _draw_label("TRES", 700, 10)
+        _draw_label_int(_p1.weapon_ammo, 570, 30, color_ammo)
+        # TRES — FIX: label in inglese "Treasures remaining: N"
+        _draw_label("Treasures remaining:", 700, 10)
         _draw_label_int(_remaining_treasures, 700, 30, color_score)
 
 
@@ -240,13 +239,13 @@ func _draw_2p() -> void:
         for i in _p1.lives:
                 _draw_heart(90 + i * 16, 35, 6.0)
         _draw_label("EN", 180, 10)
-        _draw_bar(180, 32, 60, 14,
-                float(_p1.energy) / float(_p1.max_energy), color_energy)
+        _draw_energy_bar(180, 32, 60, 14,
+                float(_p1.energy) / float(_p1.max_energy))
         _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
 
-        # === TREASURES (center) ===
-        _draw_label("TRES", 470, 10)
+        # === TREASURES (center) — FIX: label inglese ===
+        _draw_label("Treasures remaining:", 470, 10)
         _draw_label_int(_remaining_treasures, 470, 30, color_score)
 
         # === PLAYER 2 (right) ===
@@ -256,8 +255,8 @@ func _draw_2p() -> void:
         for i in _p2.lives:
                 _draw_heart(650 + i * 16, 35, 6.0)
         _draw_label("EN", 740, 10)
-        _draw_bar(740, 32, 60, 14,
-                float(_p2.energy) / float(_p2.max_energy), color_energy)
+        _draw_energy_bar(740, 32, 60, 14,
+                float(_p2.energy) / float(_p2.max_energy))
         _draw_label_colored(_p2.weapon_name, 820, 10, _p2.weapon_color)
         _draw_label_int(_p2.weapon_ammo, 820, 30, color_score)
 
@@ -354,3 +353,53 @@ func _draw_bar(x: float, y: float, w: float, h: float,
         var r: float = clampf(ratio, 0.0, 1.0)
         if r > 0.0:
                 draw_rect(Rect2(x, y, w * r, h), fg_color, true)
+
+
+# FIX (energia gradiente): disegna la barra energia con gradiente
+# verde (100%) → arancione (50%) → rosso (0%). Man mano che l'energia
+# scende, il colore cambia per dare feedback visivo immediato.
+func _draw_energy_bar(x: float, y: float, w: float, h: float, ratio: float) -> void:
+        # Background
+        draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
+        draw_rect(Rect2(x, y, w, h), color_energy_border, false, 2.0)
+        var r: float = clampf(ratio, 0.0, 1.0)
+        if r <= 0.0:
+                return
+        # Calcola colore in base al ratio:
+        #   r > 0.5  → verde (0, 0.9, 0) → arancione (1, 0.6, 0)
+        #   r <= 0.5 → arancione (1, 0.6, 0) → rosso (0.9, 0.1, 0)
+        var bar_col: Color
+        if r > 0.5:
+                var t: float = (1.0 - r) * 2.0  # 0 at r=1, 1 at r=0.5
+                bar_col = Color(
+                        t * 1.0,               # R: 0 → 1
+                        0.9 - t * 0.3,         # G: 0.9 → 0.6
+                        0.0                     # B: 0
+                )
+        else:
+                var t2: float = (0.5 - r) * 2.0  # 0 at r=0.5, 1 at r=0
+                bar_col = Color(
+                        1.0,                    # R: 1
+                        0.6 - t2 * 0.5,         # G: 0.6 → 0.1
+                        0.0                     # B: 0
+                )
+        # Foreground con gradiente: disegna a strisce per simulare il gradiente
+        var bar_w: float = w * r
+        var steps: int = int(bar_w)
+        if steps < 1:
+                steps = 1
+        for i in range(steps):
+                var px: float = x + (float(i) / float(steps)) * bar_w
+                var seg_w: float = bar_w / float(steps) + 1.0
+                # Colore interpolato lungo la barra
+                var seg_t: float = float(i) / float(steps)  # 0 a 1 da sx a dx
+                var seg_col: Color
+                if seg_t < 0.5:
+                        # Da verde a arancione
+                        var st: float = seg_t * 2.0
+                        seg_col = Color(st * 1.0, 0.9 - st * 0.3, 0.0)
+                else:
+                        # Da arancione a rosso
+                        var st2: float = (seg_t - 0.5) * 2.0
+                        seg_col = Color(1.0, 0.6 - st2 * 0.5, 0.0)
+                draw_rect(Rect2(px, y, seg_w, h), seg_col, true)

@@ -38,7 +38,10 @@ const CELL_WEAPON: int = 3
 
 # --- Spawning tuning --------------------------------------------------------
 const INITIAL_WAVE_SIZE: int = 5
-const PORTAL_ENEMIES_TO_SPAWN: int = 3
+# FIX (respawn 50% nemici): PORTAL_ENEMIES_TO_SPAWN era 3 (fisso).
+# Ora è 0 perché viene calcolato dinamicamente come 50% di initial_count
+# in trigger_portal_if_needed. Vedi magic_portal.enemies_to_spawn = initial_count / 2.
+const PORTAL_ENEMIES_TO_SPAWN: int = 0
 # Portal phase timers (ms simulated) - mirror Game.cpp line 1979-2140.
 const PORTAL_OPEN_MS: int = 1000     # phase 0: portal opening
 const PORTAL_CLOSE_MS: int = 800     # phase 2: portal closing
@@ -186,6 +189,9 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         magic_portal.rotation = 0.0
         magic_portal.glow_pulse = 0.0
         magic_portal.enemies_to_spawn = PORTAL_ENEMIES_TO_SPAWN
+        # FIX (respawn 50% nemici): spawn 50% dei nemici iniziali, non 3 fissi.
+        # Se initial_count = 10, spawn 5 nemici. Minimo 1 per evitare 0.
+        magic_portal.enemies_to_spawn = maxi(1, initial_count / 2)
         if magic_portal.enemies_to_spawn > initial_count:
                 magic_portal.enemies_to_spawn = initial_count
         magic_portal.spawn_timer = 0
