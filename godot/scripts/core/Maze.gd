@@ -906,7 +906,7 @@ func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) 
                         # rispetto a shotgun/rocket/laser. Per uniformare le dimensioni
                         # visive, usiamo un draw_size maggiore per la pistola.
                         var size_mult: float = 1.2
-                        if wpn_type == C.WeaponType.WPN_PISTOL:
+                        if wpn_type == C.WeaponType.PISTOL:
                                 size_mult = 1.6  # pistola più grande per uniformità
                         var draw_size: float = size * size_mult
                         draw_texture_rect(tex,
