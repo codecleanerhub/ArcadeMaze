@@ -970,14 +970,8 @@ func _update_collectibles(delta_ms: float) -> void:
         var p2_pos: Vector2 = Vector2.ZERO
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 p2_pos = player2.get_pixel_pos()
-        # FIX (nuova meccanica): attiva la statua cavaliere dopo il delay random
-        if knight_statue_item != null and is_instance_valid(knight_statue_item):
-                if not knight_statue_item.get("active"):
-                        var delay: int = knight_statue_item.get_meta("spawn_delay_ms", 5000)
-                        delay -= int(delta_ms)
-                        knight_statue_item.set_meta("spawn_delay_ms", delay)
-                        if delay <= 0:
-                                knight_statue_item.active = true
+        # FIX (statua appare subito): rimosso il delay timer 5-15s.
+        # La statua ora è active=true da subito, come le altre armi.
         for child in collectibles_node.get_children():
                 if not child is Node2D:
                         continue
@@ -1352,16 +1346,13 @@ func _spawn_collectibles() -> void:
                 collectibles_node.add_child(medikit_item)
 
         # FIX (nuova meccanica): Statua cavaliere (1 per livello, posizione casuale)
-        # La statua respawn in un momento casuale della partita: la rendiamo
-        # visibile solo dopo un delay random (5-15s) impostando active=false
-        # inizialmente e attivandola tramite timer.
+        # FIX (statua appare subito): prima active=false con delay 5-15s, ora
+        # active=true da subito come le altre armi (medikit, chalice, ecc.)
         if empty_cells.size() > 0:
                 var cell: Vector2i = empty_cells.pop_back()
                 var statue_pos := _cell_to_pixel(cell)
                 knight_statue_item = _create_collectible(CollectiblesClass.Kind.KNIGHT_STATUE, statue_pos)
-                # La statua appare dopo un delay random (5-15s)
-                knight_statue_item.active = false
-                knight_statue_item.set_meta("spawn_delay_ms", randi_range(5000, 15000))
+                knight_statue_item.active = true
                 collectibles_node.add_child(knight_statue_item)
 
         # FIX (nuova meccanica): Dinamite (1 per livello, posizione casuale)

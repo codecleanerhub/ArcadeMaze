@@ -767,14 +767,18 @@ func _draw() -> void:
                                 var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
                                 draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
                 # Health bar above enemy (always visible, anche a HP pieno)
-                # FIX (barra HP lag): la barra era a Vector2.ZERO locale e seguiva
-                # position, ma con bob_y oscillante sembrava scollegata dal
-                # corpo. Ora la barra è FISSA (senza bob_y) sopra il nemico,
-                # e il nemico oscilla con bob_y. Questo elimina il "lag" visivo.
+                # FIX (barra HP offset): lo sprite PNG ha il corpo del nemico
+                # disegnato fuori centro. Quando il nemico guarda a destra (dx>0),
+                # il corpo appare più a destra; quando flippato (dx<0), più a sinistra.
+                # La barra era centrata su x=0 → sembrava spostata rispetto al corpo.
+                # Ora aggiungo un offset orizzontale alla barra basato su dx per
+                # allinearla al centro visivo del corpo del nemico.
                 var bar_w: float = 32.0
                 var bar_h: float = 4.0
                 var bar_y: float = -36.0  # fissa, senza bob_y
-                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
+                # Offset per compensare asimmetria sprite: +8 quando guarda dx, -8 quando sx
+                var bar_x_off: float = 8.0 if dx > 0 else (-8.0 if dx < 0 else 0.0)
+                draw_rect(Rect2(-bar_w / 2 + bar_x_off, bar_y, bar_w, bar_h),
                         Color(0.2, 0.0, 0.0, 0.85), true)
                 var hp_ratio: float = float(health) / float(max_health)
                 var hp_col: Color = Color(0.86, 0.16, 0.16)  # red < 25%
@@ -782,7 +786,7 @@ func _draw() -> void:
                         hp_col = Color(0.31, 0.86, 0.31)  # green > 50%
                 elif hp_ratio > 0.25:
                         hp_col = Color(0.86, 0.71, 0.16)  # yellow 25-50%
-                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h), hp_col, true)
+                draw_rect(Rect2(-bar_w / 2 + bar_x_off, bar_y, bar_w * hp_ratio, bar_h), hp_col, true)
                 return
 
         # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
@@ -820,11 +824,13 @@ func _draw() -> void:
         _draw_primitive_fallback()
 
         # Health bar above enemy (always visible, anche a HP pieno)
-        # FIX (barra HP lag): barra fissa senza bob_y per sync perfetto.
+        # FIX (barra HP offset): offset orizzontale basato su dx per allineare
+        # la barra al centro visivo del corpo del nemico.
         var bar_w2: float = 32.0
         var bar_h2: float = 4.0
         var bar_y2: float = -36.0  # fissa
-        draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
+        var bar_x_off2: float = 8.0 if dx > 0 else (-8.0 if dx < 0 else 0.0)
+        draw_rect(Rect2(-bar_w2 / 2 + bar_x_off2, bar_y2, bar_w2, bar_h2),
                 Color(0.2, 0.0, 0.0, 0.85), true)
         var hp_ratio2: float = float(health) / float(max_health)
         var hp_col2: Color = Color(0.86, 0.16, 0.16)  # red < 25%
@@ -832,7 +838,7 @@ func _draw() -> void:
                 hp_col2 = Color(0.31, 0.86, 0.31)  # green > 50%
         elif hp_ratio2 > 0.25:
                 hp_col2 = Color(0.86, 0.71, 0.16)  # yellow 25-50%
-        draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2), hp_col2, true)
+        draw_rect(Rect2(-bar_w2 / 2 + bar_x_off2, bar_y2, bar_w2 * hp_ratio2, bar_h2), hp_col2, true)
 
         # Flee mode indicator (fear exclamation mark - rendered as yellow triangle)
         if flee_mode:
