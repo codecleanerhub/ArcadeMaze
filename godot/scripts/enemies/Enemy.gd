@@ -767,19 +767,16 @@ func _draw() -> void:
                                 var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
                                 draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
                 # Health bar above enemy (always visible, anche a HP pieno)
-                # FIX (barra HP offset): lo sprite PNG ha il corpo del nemico
-                # disegnato fuori centro. Quando il nemico guarda a destra (dx>0),
-                # il corpo appare più a destra; quando flippato (dx<0), più a sinistra.
-                # La barra era centrata su x=0 → sembrava spostata rispetto al corpo.
-                # Ora aggiungo un offset orizzontale alla barra basato su dx per
-                # allinearla al centro visivo del corpo del nemico.
-                # FIX (calibrazione): offset aumentato a 12px (era 8) per meglio
-                # seguire il corpo del nemico flippato.
+                # FIX (barra HP offset sinistro): lo sprite flippato (dx<0) ha
+                # il corpo apparentemente più a DESTRA (perché il flip specchia
+                # l'immagine). Quindi la barra deve andare a destra quando dx<0.
+                # Prima avevamo bar_x_off = -12 quando dx<0, ma era sbagliato.
+                # Ora: dx>0 → barra a sinistra (-12), dx<0 → barra a destra (+12).
                 var bar_w: float = 32.0
                 var bar_h: float = 4.0
-                var bar_y: float = -36.0  # fissa, senza bob_y
-                # Offset per compensare asimmetria sprite: +12 quando guarda dx, -12 quando sx
-                var bar_x_off: float = 12.0 if dx > 0 else (-12.0 if dx < 0 else 0.0)
+                var bar_y: float = -36.0
+                # Offset: -12 quando guarda dx (corpo più a sx), +12 quando sx (corpo più a dx)
+                var bar_x_off: float = -12.0 if dx > 0 else (12.0 if dx < 0 else 0.0)
                 draw_rect(Rect2(-bar_w / 2 + bar_x_off, bar_y, bar_w, bar_h),
                         Color(0.2, 0.0, 0.0, 0.85), true)
                 var hp_ratio: float = float(health) / float(max_health)
@@ -826,13 +823,11 @@ func _draw() -> void:
         _draw_primitive_fallback()
 
         # Health bar above enemy (always visible, anche a HP pieno)
-        # FIX (barra HP offset): offset orizzontale basato su dx per allineare
-        # la barra al centro visivo del corpo del nemico.
-        # FIX (calibrazione): offset aumentato a 12px (era 8).
+        # FIX (barra HP offset): offset invertito. dx>0 → -12, dx<0 → +12.
         var bar_w2: float = 32.0
         var bar_h2: float = 4.0
-        var bar_y2: float = -36.0  # fissa
-        var bar_x_off2: float = 12.0 if dx > 0 else (-12.0 if dx < 0 else 0.0)
+        var bar_y2: float = -36.0
+        var bar_x_off2: float = -12.0 if dx > 0 else (12.0 if dx < 0 else 0.0)
         draw_rect(Rect2(-bar_w2 / 2 + bar_x_off2, bar_y2, bar_w2, bar_h2),
                 Color(0.2, 0.0, 0.0, 0.85), true)
         var hp_ratio2: float = float(health) / float(max_health)

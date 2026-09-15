@@ -32,8 +32,8 @@
 extends Control
 
 # --- Layout constants (mirrors Utils.h) -----------------------------------
-const WINDOW_WIDTH: int = 1024
-const WINDOW_HEIGHT: int = 1024
+const WINDOW_WIDTH: int = 1920
+const WINDOW_HEIGHT: int = 1080
 const UI_HEIGHT: int = 80
 
 # --- Public API ------------------------------------------------------------

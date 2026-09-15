@@ -1540,18 +1540,24 @@ func _throw_dynamite() -> void:
         if dir == Vector2.ZERO:
                 dir = Vector2(1, 0)
         dir = dir.normalized()
+        # FIX (dinamite esplode subito): offset aumentato da 24 a 40px per
+        # evitare che il candelotto spawni dentro un muro o troppo vicino
+        # al player. Aggiunto grace_period_ms per non checkare collisioni
+        # nei primi 200ms (lascia che il candelotto si allontani).
+        var spawn_pos: Vector2 = player.get_pixel_pos() + dir * 40.0
         # Crea nodo candelotto lanciato
         var proj := Node2D.new()
-        proj.position = player.get_pixel_pos() + dir * 24.0
-        proj.set_meta("dir", dir * 6.0)  # velocità
+        proj.position = spawn_pos
+        proj.set_meta("dir", dir * 8.0)  # velocità aumentata da 6 a 8
         proj.set_meta("life_ms", 2000)  # max 2s di volo
+        proj.set_meta("grace_ms", 200)  # FIX: 200ms senza collision check
         proj.set_meta("active", true)
         enemy_projectiles_node.add_child(proj)
         dynamite_thrown = proj
         dynamite_equipped = false
         dynamite_fuse_timer_ms = 0
         dynamite_alert_played = false
-        print("[Dynamite] Thrown!")
+        print("[Dynamite] Thrown! pos=", spawn_pos)
 
 
 # Update del candelotto lanciato in volo
@@ -1568,6 +1574,15 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
                 _explode_dynamite(true, dt.position)
                 dt.queue_free()
                 dynamite_thrown = null
+                return
+        # FIX (grace period): riduci il grace_ms, non checkare collisioni
+        # finché grace_ms > 0 (lascia che il candelotto si allontani dal player)
+        var grace: int = dt.get_meta("grace_ms", 0)
+        if grace > 0:
+                grace -= int(delta_ms)
+                dt.set_meta("grace_ms", grace)
+                # Muovi ma non checkare collisioni
+                dt.position += vel
                 return
         # Muovi
         dt.position += vel
