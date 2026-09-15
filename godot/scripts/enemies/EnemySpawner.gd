@@ -24,10 +24,14 @@
 class_name EnemySpawner
 extends Node
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # --- Grid constants (mirror Utils.h) ----------------------------------------
 const TILE_SIZE: int = 48
-const MAZE_COLS: int = 21
-const MAZE_ROWS: int = 19
+# FIX (portale posizione sbagliata): era MAZE_COLS=21, MAZE_ROWS=19 ma il
+# maze vero è 40x22 (C.MAZE_COLS, C.MAZE_ROWS). Usiamo le costanti corrette.
+const MAZE_COLS: int = 40
+const MAZE_ROWS: int = 22
 const UI_HEIGHT: int = 80
 
 # --- Cell type constants (mirror Maze.h CellType) ---------------------------
@@ -197,11 +201,13 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         magic_portal.spawn_timer = 0
         magic_portal.dead_indices.clear()
 
-        # Collect indices of fully-dead enemies (death anim done) so we can
-        # respawn the same types near the portal.
+        # Collect indices of fully-dead enemies so we can respawn them.
+        # FIX (respawn non avviene): prima richiedeva is_death_anim_done()
+        # che spesso non era true al momento del trigger. Ora raccogliamo
+        # tutti i nemici morti (is_dead) indipendentemente dall'anim.
         for i in range(enemies.size()):
                 var e = enemies[i]
-                if e is Enemy and e.is_dead() and e.is_death_anim_done():
+                if e is Enemy and e.is_dead():
                         magic_portal.dead_indices.append(i)
 
         portal_used = true
@@ -309,8 +315,37 @@ func update_portal(maze: Object, dt_ms: int) -> bool:
 # Mirrors Game::spawnEnemyFromPortal() src/Game.cpp line 407-447.
 # ===========================================================================
 func _spawn_enemy_from_portal(maze: Object) -> void:
-        if magic_portal.enemies_to_spawn <= 0 or magic_portal.dead_indices.is_empty():
+        if magic_portal.enemies_to_spawn <= 0:
                 magic_portal.enemies_to_spawn = 0
+                return
+        # FIX (respawn): se non ci sono dead_indices (tutti i nemici ancora
+                # vivi o già respawnati), crea un nuovo Enemy di tipo random.
+        if magic_portal.dead_indices.is_empty():
+                var new_type: int = randi() % 28  # 28 tipi di nemici
+                var pc_new := int(magic_portal.pos.x / TILE_SIZE)
+                var pr_new := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
+                # Cerca cella vuota vicino al portale
+                for radius in range(1, PORTAL_PLACE_MAX_RADIUS + 1):
+                        for dc in range(-radius, radius + 1):
+                                for dr in range(-radius, radius + 1):
+                                        var nc: int = pc_new + dc
+                                        var nr: int = pr_new + dr
+                                        if nc <= 0 or nc >= MAZE_COLS - 1:
+                                                continue
+                                        if nr <= 0 or nr >= MAZE_ROWS - 1:
+                                                continue
+                                        if maze.is_wall(nc, nr):
+                                                continue
+                                        if maze.get_cell_type(nc, nr) != CELL_EMPTY:
+                                                continue
+                                        var new_enemy: Enemy = Enemy.new()
+                                        new_enemy.init(new_type, nc, nr)
+                                        enemies.append(new_enemy)
+                                        if get_parent():
+                                                get_parent().add_child(new_enemy)
+                                        magic_portal.enemies_to_spawn -= 1
+                                        return
+                magic_portal.enemies_to_spawn -= 1
                 return
 
         var idx: int = magic_portal.dead_indices.pop_back()
