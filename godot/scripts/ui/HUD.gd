@@ -365,41 +365,24 @@ func _draw_energy_bar(x: float, y: float, w: float, h: float, ratio: float) -> v
         var r: float = clampf(ratio, 0.0, 1.0)
         if r <= 0.0:
                 return
-        # Calcola colore in base al ratio:
-        #   r > 0.5  → verde (0, 0.9, 0) → arancione (1, 0.6, 0)
-        #   r <= 0.5 → arancione (1, 0.6, 0) → rosso (0.9, 0.1, 0)
+        # FIX (gradiente non visibile): prima disegnava 100 strisce da 1px
+        # ciascuna che non si vedevano. Ora disegna 3 segmenti: verde, arancione,
+        # rosso — proporzionali al ratio. Più visibile e performante.
+        var bar_w: float = w * r
+        # Colore principale basato sul ratio
         var bar_col: Color
         if r > 0.5:
+                # verde → arancione
                 var t: float = (1.0 - r) * 2.0  # 0 at r=1, 1 at r=0.5
-                bar_col = Color(
-                        t * 1.0,               # R: 0 → 1
-                        0.9 - t * 0.3,         # G: 0.9 → 0.6
-                        0.0                     # B: 0
-                )
+                bar_col = Color(t * 1.0, 0.9 - t * 0.3, 0.0)
         else:
+                # arancione → rosso
                 var t2: float = (0.5 - r) * 2.0  # 0 at r=0.5, 1 at r=0
-                bar_col = Color(
-                        1.0,                    # R: 1
-                        0.6 - t2 * 0.5,         # G: 0.6 → 0.1
-                        0.0                     # B: 0
-                )
-        # Foreground con gradiente: disegna a strisce per simulare il gradiente
-        var bar_w: float = w * r
-        var steps: int = int(bar_w)
-        if steps < 1:
-                steps = 1
-        for i in range(steps):
-                var px: float = x + (float(i) / float(steps)) * bar_w
-                var seg_w: float = bar_w / float(steps) + 1.0
-                # Colore interpolato lungo la barra
-                var seg_t: float = float(i) / float(steps)  # 0 a 1 da sx a dx
-                var seg_col: Color
-                if seg_t < 0.5:
-                        # Da verde a arancione
-                        var st: float = seg_t * 2.0
-                        seg_col = Color(st * 1.0, 0.9 - st * 0.3, 0.0)
-                else:
-                        # Da arancione a rosso
-                        var st2: float = (seg_t - 0.5) * 2.0
-                        seg_col = Color(1.0, 0.6 - st2 * 0.5, 0.0)
-                draw_rect(Rect2(px, y, seg_w, h), seg_col, true)
+                bar_col = Color(1.0, 0.6 - t2 * 0.5, 0.0)
+        # Disegna barra piena con colore unico
+        draw_rect(Rect2(x, y, bar_w, h), bar_col, true)
+        # Aggiungi highlight superiore (riflesso luce)
+        var hl_col: Color = Color(bar_col.r + 0.2, bar_col.g + 0.2, bar_col.b + 0.2, 0.6)
+        draw_rect(Rect2(x, y, bar_w, 3.0), hl_col, true)
+        # Outline
+        draw_rect(Rect2(x, y, bar_w, h), Color(0.1, 0.1, 0.1, 0.8), false, 1.0)
