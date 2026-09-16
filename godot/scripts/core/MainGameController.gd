@@ -1218,13 +1218,11 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 if found_treasure:
                                         break
                 CollectiblesClass.Kind.MEDIKIT:
-                        # FIX (nuova meccanica): rigenera 1 punto vita del player.
-                        # L'effetto è come se fosse stato toccato dal nemico una
-                        # volta in meno (quindi +1 HP, capped a max HP del player).
-                        # Suono: POTION_DRINK (effetto ingoia/declutisce pillola).
-                        if p.lives < 99:  # safety cap
-                                # Player ha lives (3 default), rigenera 1 = +1 vita
-                                p.lives = p.lives + 1
+                        # FIX (medikit): aumenta l'ENERGIA del player, non le vite.
+                        # L'energia è la barra che si vede in alto (energy/max_energy).
+                        # +1 energia, capped a max_energy.
+                        if p.energy < p.max_energy:
+                                p.energy = p.energy + 1
                         item.active = false
                         item.queue_free()
                         medikit_item = null
