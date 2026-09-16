@@ -119,12 +119,14 @@ func _process(delta: float) -> void:
                 _joy_confirm_cooldown -= delta
 
         if Input.is_action_just_pressed("move_left"):
-                wheel_target = (wheel_target + 1) % CHARACTER_COUNT
+                # FIX (inversione ruota): era +1, ora -1 (senso inverso)
+                wheel_target = (wheel_target - 1 + CHARACTER_COUNT) % CHARACTER_COUNT
                 _joy_nav_cooldown = 0.3
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
         elif Input.is_action_just_pressed("move_right"):
-                wheel_target = (wheel_target - 1 + CHARACTER_COUNT) % CHARACTER_COUNT
+                # FIX (inversione ruota): era -1, ora +1 (senso inverso)
+                wheel_target = (wheel_target + 1) % CHARACTER_COUNT
                 _joy_nav_cooldown = 0.3
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)

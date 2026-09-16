@@ -87,6 +87,13 @@ func _unhandled_input(event: InputEvent) -> void:
         elif event is InputEventJoypadButton and event.pressed:
                 if event.button_index == JOY_BUTTON_A:
                         _confirm()
+                else:
+                        # FIX (tasto fuoco configurato): se il tasto premuto corrisponde
+                        # al JOY_SHOOT configurato in ConfigManager, conferma.
+                        if ConfigManager and ConfigManager.p1_joystick_ready():
+                                var configured_shoot: int = ConfigManager.joy_shoot()
+                                if configured_shoot >= 0 and event.button_index == configured_shoot:
+                                        _confirm()
 
 
 func _confirm() -> void:
