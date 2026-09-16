@@ -137,6 +137,9 @@ var speed: int = 1
 var health: int = 2
 var max_health: int = 2
 var dx: int = 0
+# FIX (barra HP offset): last_dx mantiene l'ultima direzione orizzontale non-zero,
+# anche quando il nemico è momentaneamente fermo tra due celle.
+var last_dx: int = 1
 var dy: int = 0
 
 # Timers (simulated ms, -16 per frame @ 60 FPS).
@@ -425,6 +428,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                         maze, Vector2i(col, row), player_grid_pos)
                                 if next_step.x >= 0:
                                         dx = next_step.x - col
+					if dx != 0: last_dx = dx
                                         dy = next_step.y - row
                                         path_found = true
                                         stuck_timer = 0
@@ -632,6 +636,7 @@ func _move_greedy(maze: Object, target: Vector2i) -> void:
                 _pick_random_open_dir(maze, col, row)
                 return
         dx = best_dx
+	if dx != 0: last_dx = dx
         dy = best_dy
 
 
@@ -669,6 +674,7 @@ func _flee_greedy(maze: Object, target: Vector2i) -> void:
                 _pick_random_open_dir(maze, col, row)
                 return
         dx = best_dx
+	if dx != 0: last_dx = dx
         dy = best_dy
 
 
@@ -684,6 +690,7 @@ func _pick_random_open_dir(maze: Object, col: int, row: int) -> bool:
                 var nr: int = row + _DR[idx]
                 if not maze.is_wall(nc, nr):
                         dx = _DC[idx]
+		if dx != 0: last_dx = dx
                         dy = _DR[idx]
                         return true
         dx = 0
