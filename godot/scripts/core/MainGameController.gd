@@ -1265,6 +1265,9 @@ func _spawn_collectibles() -> void:
         # Clear previous collectibles
         for child in collectibles_node.get_children():
                 child.queue_free()
+        # FIX (cache stale): pulisce la cache delle texture collectible
+        # all'inizio di ogni livello per forzare il ricaricamento dei PNG.
+        CollectiblesClass.clear_texture_cache()
         chalice_item = null
         scepter_item = null
         mine_item = null

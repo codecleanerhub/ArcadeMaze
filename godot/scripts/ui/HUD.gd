@@ -99,6 +99,12 @@ func _ready() -> void:
         # Use set_deferred to avoid "non-equal opposite anchors" warning.
         set_deferred("size", Vector2(WINDOW_WIDTH, UI_HEIGHT))
         mouse_filter = Control.MOUSE_FILTER_IGNORE
+        # FIX (HUD invisibile): il HUD era figlio di MainGame (Node2D) con
+        # Camera2D attiva. Il camera trasformava la vista e il HUD veniva
+        # spostato fuori schermo. set_as_top_level(true) fa sì che il HUD
+        # ignori la trasformazione del parent e resti fisso in screen space.
+        set_as_top_level(true)
+        position = Vector2.ZERO
         load_heart_sprite("res://assets/sprites/ui_heart.png")
 
 
@@ -185,8 +191,12 @@ func _draw() -> void:
         else:
                 _draw_2p()
         # Boss HP bar (shown during boss fights)
-        if _show_boss_bar and _boss_max_hp > 0:
-                _draw_boss_bar()
+        # FIX (doppia barra boss): disabilitato perché BossRoomController
+        # disegna già la sua barra HP vicino al nome del boss. Prima ce
+        # n'erano due: una grossa (HUD, 16px) e una sottile (BossRoomController, 8px).
+        # Ora solo quella del BossRoomController.
+        # if _show_boss_bar and _boss_max_hp > 0:
+        #         _draw_boss_bar()
 
 
 func _draw_boss_bar() -> void:
@@ -325,9 +335,13 @@ func _draw_label(text: String, x: float, y: float) -> void:
 
 
 func _draw_label_colored(text: String, x: float, y: float, color: Color) -> void:
-        # Approximate the bitmap-font outlined look by drawing 4 black shadows + the
-        # foreground text. (Mirror of drawTextOutlined.)
+        # FIX (font null): get_theme_default_font() può ritornare null se
+        # non c'è un tema assegnato. Usiamo ThemeDB.fallback_font come fallback.
         var font := get_theme_default_font()
+        if font == null:
+                font = ThemeDB.fallback_font
+        if font == null:
+                return  # nessun font disponibile, non disegnare
         var font_size: int = 16
         # 4 shadow copies (offset by ±2 px)
         for off in [Vector2(-2, 0), Vector2(2, 0), Vector2(0, -2), Vector2(0, 2)]:

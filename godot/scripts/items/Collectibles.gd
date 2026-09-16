@@ -586,6 +586,11 @@ func _draw_speed_boots() -> void:
 # Usa Image.load() per bypassare il sistema di import di Godot.
 static var _collectible_tex_cache: Dictionary = {}
 
+# FIX (cache stale): pulisce la cache delle texture collectible. Chiamare
+# all'inizio di ogni livello per forzare il ricaricamento dei PNG.
+static func clear_texture_cache() -> void:
+        _collectible_tex_cache.clear()
+
 # Carica una texture PNG dal disco usando Image.load() (bypassa import).
 # Ritorna null se il file non esiste o non può essere caricato.
 static func _load_png_cached(path: String) -> Texture2D:
