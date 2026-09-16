@@ -23,7 +23,7 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 @onready var projectiles_node: Node2D = $Projectiles
 @onready var enemy_projectiles_node: Node2D = $EnemyProjectiles
 @onready var collectibles_node: Node2D = $Collectibles
-@onready var hud: Control = $HUD
+@onready var hud: Control = $HUDLayer/HUD
 
 # Demo state
 var demo_duration_timer_ms: int = 30000
@@ -40,6 +40,8 @@ var boss: Node2D = null
 
 func _ready() -> void:
         print("[DemoController] Starting demo mode")
+        # FIX (demo mode): setup camera come MainGameController
+        _setup_camera()
         # Random character
         var char_type: int = randi() % 8
         player.set_character(char_type, 1)
@@ -63,6 +65,18 @@ func _ready() -> void:
         if AudioManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, demo_is_boss)
         print("[DemoController] Demo started: level=%d boss=%s char=%d" % [current_level, demo_is_boss, char_type])
+
+
+# FIX (demo mode): setup Camera2D per visualizzare correttamente il maze
+var _game_camera: Camera2D = null
+func _setup_camera() -> void:
+        _game_camera = Camera2D.new()
+        _game_camera.name = "DemoCamera"
+        _game_camera.enabled = true
+        _game_camera.position = Vector2(float(C.WINDOW_WIDTH) * 0.5, float(C.WINDOW_HEIGHT) * 0.5)
+        _game_camera.position_smoothing_enabled = false
+        _game_camera.zoom = Vector2(1.0, 1.0)
+        get_tree().root.add_child(_game_camera)
 
 
 func _physics_process(_delta: float) -> void:

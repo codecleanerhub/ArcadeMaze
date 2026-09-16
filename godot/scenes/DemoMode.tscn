@@ -26,7 +26,10 @@ script = ExtResource("4_spawner")
 
 [node name="Collectibles" type="Node2D" parent="."]
 
-[node name="HUD" type="Control" parent="."]
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="HUD" type="Control" parent="HUDLayer"]
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 80.0

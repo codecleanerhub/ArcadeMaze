@@ -1563,7 +1563,9 @@ func _update_dynamite(delta_ms: int) -> void:
 # Lancia il candelotto di dinamite
 func _throw_dynamite() -> void:
         if not dynamite_equipped:
+                print("[Dynamite] _throw_dynamite called but dynamite_equipped=false!")
                 return
+        print("[Dynamite] Throwing! player pos=", player.get_pixel_pos())
         var dir: Vector2 = Vector2(player.last_dx, player.last_dy)
         if dir == Vector2.ZERO:
                 dir = Vector2(1, 0)
