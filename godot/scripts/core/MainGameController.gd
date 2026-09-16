@@ -470,6 +470,7 @@ func _handle_input() -> void:
                         # FIX (dinamite): se il player ha la dinamite equipaggiata,
                         # il fuoco lancia il candelotto invece di sparare.
                         if dynamite_equipped:
+                                print("[Dynamite] Joy fire pressed, throwing! equipped=", dynamite_equipped, " fuse=", dynamite_fuse_timer_ms)
                                 _throw_dynamite()
                                 player.shoot_cooldown = 300
                         else:

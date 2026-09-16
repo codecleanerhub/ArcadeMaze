@@ -260,16 +260,27 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
                 proj["pos"] = proj["pos"] + proj.get("dir", Vector2.ZERO)
                 var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
                 var hit: bool = false
+                # Check nemici normali
                 for e in enemies:
                         if e == null or not is_instance_valid(e):
                                 continue
-                        if e.is_dead():
+                        if not e.has_method("is_dead") or e.is_dead():
                                 continue
-                        if p_pos.distance_squared_to(e.get_pixel_pos()) < 400.0:
+                        if not e.has_method("get_pixel_pos"):
+                                continue
+                        if p_pos.distance_squared_to(e.get_pixel_pos()) < 600.0:
                                 e.take_damage(int(proj.get("power", 999)))
-                                e.start_burning(30)
+                                if e.has_method("start_burning"):
+                                        e.start_burning(30)
                                 hit = true
                                 break
+                # FIX (cavaliere non danneggia mid-boss): check anche il mini_boss
+                if not hit and mini_boss != null and is_instance_valid(mini_boss):
+                        if mini_boss.has_method("is_dead") and not mini_boss.is_dead():
+                                if mini_boss.has_method("get_pixel_pos"):
+                                        if p_pos.distance_squared_to(mini_boss.get_pixel_pos()) < 900.0:
+                                                mini_boss.take_damage(int(proj.get("power", 999)))
+                                                hit = true
                 if hit:
                         proj["active"] = false
                         continue

@@ -25,7 +25,7 @@ const WINDOW_WIDTH: int = 1920
 const WINDOW_HEIGHT: int = 1080
 const TILE_SIZE: int = 64
 const MAZE_COLS: int = 30
-const MAZE_ROWS: int = 16
+const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 
 # --- EnemyType (mirror Enemy.h enum, 28 types) ------------------------------

@@ -30,7 +30,7 @@ const C = preload("res://scripts/core/GameConstants.gd")
 const TILE_SIZE: int = 64
 # FIX (labirinto troppo stretto): allineato con GameConstants (TILE_SIZE=64)
 const MAZE_COLS: int = 30
-const MAZE_ROWS: int = 16
+const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 
 # --- Cell type constants (mirror Maze.h CellType) ---------------------------
