@@ -1010,8 +1010,10 @@ func _draw_primitives() -> void:
                 _:
                         pass
 
-        # HP bar
-        _draw_hp_bar(1.0)
+        # FIX (barra rossa rimossa): la barra HP non viene più disegnata sopra
+        # il MiniBoss neanche nel path procedurale. Le info vengono mostrate
+        # nell'HUD in alto.
+        # _draw_hp_bar(1.0)
 
 
 # ===========================================================================
