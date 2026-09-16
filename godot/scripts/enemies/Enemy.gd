@@ -745,6 +745,41 @@ func get_type() -> int:
         return type
 
 
+# FIX (HUD last hit enemy): ritorna il nome leggibile del tipo di nemico.
+# Usato dall'HUD per mostrare il nome del nemico colpito.
+func get_enemy_name() -> String:
+        match type:
+                EnemyType.ZOMBIE: return "Zombie"
+                EnemyType.SKELETON: return "Skeleton"
+                EnemyType.GHOST: return "Ghost"
+                EnemyType.BAT: return "Bat"
+                EnemyType.SPIDER: return "Spider"
+                EnemyType.SLIME: return "Slime"
+                EnemyType.DEMON: return "Demon"
+                EnemyType.ROBOT: return "Robot"
+                EnemyType.GOBLIN: return "Goblin"
+                EnemyType.ORC: return "Orc"
+                EnemyType.WRAITH: return "Wraith"
+                EnemyType.GHOUL: return "Ghoul"
+                EnemyType.IMP: return "Imp"
+                EnemyType.RAT: return "Rat"
+                EnemyType.CULTIST: return "Cultist"
+                EnemyType.MIMIC: return "Mimic"
+                EnemyType.WOLF: return "Wolf"
+                EnemyType.WITCH: return "Witch"
+                EnemyType.BONE_GOLEM: return "Bone Golem"
+                EnemyType.ASH_SERPENT: return "Ash Serpent"
+                EnemyType.DAMNED_KNIGHT: return "Damned Knight"
+                EnemyType.MAD_WIZARD: return "Mad Wizard"
+                EnemyType.DEMONIC_CROW: return "Demonic Crow"
+                EnemyType.TENTACLE: return "Tentacle"
+                EnemyType.GARGOYLE: return "Gargoyle"
+                EnemyType.WELL_SPIRIT: return "Well Spirit"
+                EnemyType.CURSED_BOAR: return "Cursed Boar"
+                EnemyType.PREDATOR_FUNGUS: return "Predator Fungus"
+                _: return "Enemy"
+
+
 # ===========================================================================
 # Rendering: _draw() renders the enemy.
 # When a sprite is loaded (AI-generated PNG), we render the correct animation
@@ -775,26 +810,9 @@ func _draw() -> void:
                                 var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
                                 var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
                                 draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
-                # Health bar above enemy (always visible, anche a HP pieno)
-                # FIX (barra HP): la barra è CENTRATA sopra la testa del nemico.
-                # Si muove con il nemico perché è disegnata in locale (Vector2.ZERO).
-                # Bordo bianco per massima visibilità.
-                var bar_w: float = 36.0
-                var bar_h: float = 5.0
-                var bar_y: float = -44.0  # sopra la testa, fissa
-                # Bordo bianco per definizione
-                draw_rect(Rect2(-bar_w / 2 - 1, bar_y - 1, bar_w + 2, bar_h + 2),
-                        Color(1.0, 1.0, 1.0, 0.95), true)
-                # Sfondo nero
-                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
-                        Color(0.1, 0.0, 0.0, 0.95), true)
-                var hp_ratio: float = float(health) / float(max_health)
-                var hp_col: Color = Color(0.86, 0.16, 0.16)  # red < 25%
-                if hp_ratio > 0.5:
-                        hp_col = Color(0.31, 0.86, 0.31)  # green > 50%
-                elif hp_ratio > 0.25:
-                        hp_col = Color(0.86, 0.71, 0.16)  # yellow 25-50%
-                draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h), hp_col, true)
+                # FIX (barra HP rimossa): la barra HP non viene più disegnata
+                # sopra i nemici. Le info del nemico colpito vengono mostrate
+                # nell'HUD in alto (last hit enemy name + energy bar).
                 return
 
         # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
@@ -831,24 +849,8 @@ func _draw() -> void:
         # Mirrors Enemy::renderPrimitives() in src/Enemy.cpp line 885-1449.
         _draw_primitive_fallback()
 
-        # Health bar above enemy (always visible, anche a HP pieno)
-        # FIX (barra HP): barra CENTRATA sopra la testa, fissa. Bordo bianco.
-        var bar_w2: float = 36.0
-        var bar_h2: float = 5.0
-        var bar_y2: float = -44.0  # sopra la testa, fissa
-        # Bordo bianco
-        draw_rect(Rect2(-bar_w2 / 2 - 1, bar_y2 - 1, bar_w2 + 2, bar_h2 + 2),
-                Color(1.0, 1.0, 1.0, 0.95), true)
-        # Sfondo nero
-        draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
-                Color(0.1, 0.0, 0.0, 0.95), true)
-        var hp_ratio2: float = float(health) / float(max_health)
-        var hp_col2: Color = Color(0.86, 0.16, 0.16)  # red < 25%
-        if hp_ratio2 > 0.5:
-                hp_col2 = Color(0.31, 0.86, 0.31)  # green > 50%
-        elif hp_ratio2 > 0.25:
-                hp_col2 = Color(0.86, 0.71, 0.16)  # yellow 25-50%
-        draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2 * hp_ratio2, bar_h2), hp_col2, true)
+        # FIX (barra HP rimossa): la barra HP non viene più disegnata sopra i
+        # nemici. Le info del nemico colpito vengono mostrate nell'HUD in alto.
 
         # Flee mode indicator (fear exclamation mark - rendered as yellow triangle)
         if flee_mode:

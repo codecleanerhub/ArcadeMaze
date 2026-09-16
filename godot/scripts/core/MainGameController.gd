@@ -90,6 +90,12 @@ var dynamite_alert_played: bool = false
 var dynamite_explode_timer_ms: int = 0  # timer esplosione dopo alert (2000ms)
 var dynamite_thrown: Node2D = null  # candelotto lanciato in volo
 
+# FIX (HUD last hit enemy): traccia l'ultimo nemico colpito dal player.
+# L'HUD mostra il nome + barra energia di questo nemico in alto al centro.
+# Quando il nemico muore o dopo 3s senza hit, la barra scompare.
+var last_hit_enemy: Node2D = null
+var last_hit_enemy_timer_ms: int = 0  # timer per nascondere dopo 3s senza hit
+
 # Timers
 var player_invincible_timer_ms: int = 0
 var player2_invincible_timer_ms: int = 0
@@ -629,6 +635,16 @@ func _update_playing(delta_ms: float) -> void:
         # (9d) Dynamite update (FIX: nuova meccanica dinamite)
         _update_dynamite(delta_ms)
 
+        # (9e) Last hit enemy timer (FIX: HUD nemico colpito)
+        if last_hit_enemy_timer_ms > 0:
+                last_hit_enemy_timer_ms -= int(delta_ms)
+                if last_hit_enemy_timer_ms <= 0:
+                        last_hit_enemy = null
+        # Se il nemico è morto o non più valido, cleanup
+        if last_hit_enemy != null and (not is_instance_valid(last_hit_enemy) or last_hit_enemy.is_dead()):
+                last_hit_enemy = null
+                last_hit_enemy_timer_ms = 0
+
         # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
 
@@ -729,6 +745,12 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                         if proj_pos.distance_squared_to(e_pos) < 600.0:
                                 enemy.take_damage(int(proj.get("power", 1)))
                                 proj["active"] = false
+                                # FIX (HUD last hit enemy): traccia il nemico colpito
+                                # SOLO nel labirinto (non boss room). Nella boss room
+                                # la barra HP è gestita dal BossRoomController.
+                                if not is_boss_state:
+                                        last_hit_enemy = enemy
+                                        last_hit_enemy_timer_ms = 3000  # 3s di visibilità
                                 if enemy.is_dead():
                                         p.add_score(5000)
                                         if AudioManager:
@@ -1291,6 +1313,9 @@ func _spawn_collectibles() -> void:
         if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
                 dynamite_thrown.queue_free()
                 dynamite_thrown = null
+        # FIX (HUD last hit enemy): reset al cambio livello
+        last_hit_enemy = null
+        last_hit_enemy_timer_ms = 0
 
         # Find empty cells far from player start (Manhattan distance >= 5)
         var empty_cells: Array = []
@@ -2201,6 +2226,15 @@ func _update_hud() -> void:
                 }
                 hud.set_player2_state(p2_snap)
         hud.set_remaining_treasures(maze.get_remaining_treasures())
+        # FIX (HUD last hit enemy): aggiorna l'HUD con le info del nemico colpito.
+        # Solo nel labirinto (non boss room), e solo se il nemico è vivo.
+        if last_hit_enemy != null and is_instance_valid(last_hit_enemy) and not last_hit_enemy.is_dead():
+                var enemy_name: String = last_hit_enemy.get_enemy_name() if last_hit_enemy.has_method("get_enemy_name") else "Enemy"
+                var enemy_hp: int = last_hit_enemy.health
+                var enemy_max_hp: int = last_hit_enemy.max_health
+                hud.set_last_hit_enemy(enemy_name, enemy_hp, enemy_max_hp)
+        else:
+                hud.set_last_hit_enemy("", 0, 0)
 
 
 # ============================================================================

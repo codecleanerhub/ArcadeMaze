@@ -164,6 +164,19 @@ func set_remaining_treasures(n: int) -> void:
         queue_redraw()
 
 
+# FIX (HUD last hit enemy): stato del nemico colpito dal player.
+# Mostra nome + barra energia in alto al centro dell'HUD.
+var _last_hit_enemy_name: String = ""
+var _last_hit_enemy_hp: int = 0
+var _last_hit_enemy_max_hp: int = 0
+
+func set_last_hit_enemy(name: String, hp: int, max_hp: int) -> void:
+        _last_hit_enemy_name = name
+        _last_hit_enemy_hp = hp
+        _last_hit_enemy_max_hp = max_hp
+        queue_redraw()
+
+
 # Set the boss HP bar (shown during boss fights).
 var _boss_hp: int = 0
 var _boss_max_hp: int = 0
@@ -192,13 +205,51 @@ func _draw() -> void:
                 _draw_1p()
         else:
                 _draw_2p()
+        # FIX (HUD last hit enemy): disegna nome + barra energia del nemico
+        # colpito al centro dell'HUD. Solo se c'è un nemico valido.
+        if _last_hit_enemy_name != "" and _last_hit_enemy_max_hp > 0:
+                _draw_last_hit_enemy()
         # Boss HP bar (shown during boss fights)
         # FIX (doppia barra boss): disabilitato perché BossRoomController
-        # disegna già la sua barra HP vicino al nome del boss. Prima ce
-        # n'erano due: una grossa (HUD, 16px) e una sottile (BossRoomController, 8px).
-        # Ora solo quella del BossRoomController.
+        # disegna già la sua barra HP vicino al nome del boss.
         # if _show_boss_bar and _boss_max_hp > 0:
         #         _draw_boss_bar()
+
+
+# FIX (HUD last hit enemy): disegna nome nemico + barra energia al centro.
+# Usa lo stesso gradiente verde→arancione→rosso della barra player.
+func _draw_last_hit_enemy() -> void:
+        var center_x: float = WINDOW_WIDTH * 0.5
+        var bar_w: float = 200.0
+        var bar_h: float = 8.0
+        var bar_y: float = 30.0
+        var bar_x: float = center_x - bar_w * 0.5
+        # Etichetta "ENEMY" sopra la barra
+        _draw_label_colored("ENEMY", bar_x, bar_y - 14, Color(0.9, 0.5, 0.5))
+        # Nome del nemico
+        _draw_label_colored(_last_hit_enemy_name, bar_x + 50, bar_y - 14, Color(1.0, 0.9, 0.5))
+        # Background barra
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.95), true)
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 1.0)
+        # Calcola ratio e colore (gradiente verde→arancione→rosso)
+        var r: float = float(_last_hit_enemy_hp) / float(_last_hit_enemy_max_hp) if _last_hit_enemy_max_hp > 0 else 0.0
+        r = clampf(r, 0.0, 1.0)
+        if r > 0.0:
+                var bar_col: Color
+                if r > 0.5:
+                        var t: float = (1.0 - r) * 2.0
+                        bar_col = Color(t * 1.0, 0.9 - t * 0.3, 0.0)
+                else:
+                        var t2: float = (0.5 - r) * 2.0
+                        bar_col = Color(1.0, 0.6 - t2 * 0.5, 0.0)
+                # Barra energia
+                draw_rect(Rect2(bar_x, bar_y, bar_w * r, bar_h), bar_col, true)
+                # Highlight superiore
+                var hl_col: Color = Color(bar_col.r + 0.2, bar_col.g + 0.2, bar_col.b + 0.2, 0.6)
+                draw_rect(Rect2(bar_x, bar_y, bar_w * r, 3.0), hl_col, true)
+        # HP numerico (es. "3/5")
+        var hp_text: String = str(_last_hit_enemy_hp) + "/" + str(_last_hit_enemy_max_hp)
+        _draw_label_colored(hp_text, bar_x + bar_w + 8, bar_y - 4, Color(1.0, 0.9, 0.5))
 
 
 func _draw_boss_bar() -> void:
