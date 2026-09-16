@@ -428,7 +428,8 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                         maze, Vector2i(col, row), player_grid_pos)
                                 if next_step.x >= 0:
                                         dx = next_step.x - col
-					if dx != 0: last_dx = dx
+                                        if dx != 0:
+                                                last_dx = dx
                                         dy = next_step.y - row
                                         path_found = true
                                         stuck_timer = 0
@@ -636,7 +637,7 @@ func _move_greedy(maze: Object, target: Vector2i) -> void:
                 _pick_random_open_dir(maze, col, row)
                 return
         dx = best_dx
-	if dx != 0: last_dx = dx
+        if dx != 0: last_dx = dx
         dy = best_dy
 
 
@@ -674,7 +675,7 @@ func _flee_greedy(maze: Object, target: Vector2i) -> void:
                 _pick_random_open_dir(maze, col, row)
                 return
         dx = best_dx
-	if dx != 0: last_dx = dx
+        if dx != 0: last_dx = dx
         dy = best_dy
 
 
@@ -690,7 +691,7 @@ func _pick_random_open_dir(maze: Object, col: int, row: int) -> bool:
                 var nr: int = row + _DR[idx]
                 if not maze.is_wall(nc, nr):
                         dx = _DC[idx]
-		if dx != 0: last_dx = dx
+                if dx != 0: last_dx = dx
                         dy = _DR[idx]
                         return true
         dx = 0
