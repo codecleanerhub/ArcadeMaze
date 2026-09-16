@@ -1077,16 +1077,27 @@ func _draw_dynamite() -> void:
                 var size: float = 64.0
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
-        # Fallback procedurale: candelotto rosso + miccia
-        var s: float = 24.0
-        # Corpo
-        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s * 1.5),
-                Color(0.7, 0.12, 0.1, 1.0), true)
-        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s * 1.5),
+        # FIX (debug): se arriva qui, il PNG non è stato caricato
+        print("[Dynamite] WARNING: PNG not loaded, using procedural fallback")
+        # Fallback procedurale: CILINDRO ORIZZONTALE rosso (non verticale!)
+        # FIX (estintore): prima era s×s*1.5 (verticale). Ora orizzontale.
+        var cyl_w: float = 44.0  # larghezza (orizzontale)
+        var cyl_h: float = 16.0  # altezza
+        # Corpo cilindro rosso
+        draw_rect(Rect2(-cyl_w / 2.0, -cyl_h / 2.0 + y_off, cyl_w, cyl_h),
+                Color(0.78, 0.12, 0.1, 1.0), true)
+        draw_rect(Rect2(-cyl_w / 2.0, -cyl_h / 2.0 + y_off, cyl_w, cyl_h),
                 Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
-        # Etichetta
-        draw_rect(Rect2(-s / 4.0, y_off, s / 2.0, s / 3.0),
+        # Highlight superiore
+        draw_rect(Rect2(-cyl_w / 2.0 + 2, -cyl_h / 2.0 + y_off + 1, cyl_w - 4, 3),
+                Color(0.95, 0.4, 0.3, 1.0), true)
+        # Etichetta TNT (centro)
+        draw_rect(Rect2(-6, -3 + y_off, 12, 6),
                 Color(0.94, 0.86, 0.7, 1.0), true)
-        # Miccia
-        draw_line(Vector2(0, -s / 2.0 + y_off), Vector2(2, -s / 2.0 - 8 + y_off),
+        # Miccia (esce da sinistra, curva in alto)
+        draw_line(Vector2(-cyl_w / 2.0, -2 + y_off),
+                Vector2(-cyl_w / 2.0 - 4, -8 + y_off),
+                Color(0.16, 0.14, 0.12, 1.0), 2)
+        draw_line(Vector2(-cyl_w / 2.0 - 4, -8 + y_off),
+                Vector2(-cyl_w / 2.0 - 6, -14 + y_off),
                 Color(0.16, 0.14, 0.12, 1.0), 2)
