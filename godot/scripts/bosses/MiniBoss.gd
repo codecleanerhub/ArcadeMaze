@@ -60,7 +60,7 @@ enum Weapon {
 }
 
 # Constants (must match C++ Utils.h)
-const TILE_SIZE := 48
+const TILE_SIZE := 64
 const MAZE_COLS := 40
 const MAZE_ROWS := 22
 const UI_HEIGHT := 80

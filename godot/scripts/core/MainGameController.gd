@@ -855,9 +855,12 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                 if not hit_something and mini_boss != null and is_instance_valid(mini_boss):
                         if not mini_boss.is_dead():
                                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                                if proj_pos.distance_squared_to(mb_pos) < 900.0:
+                                var mb_dist_sq: float = proj_pos.distance_squared_to(mb_pos)
+                                if mb_dist_sq < 1200.0:  # FIX: 900→1200 (radius ~35px)
                                         var dmg: int = int(proj.get("power", 1))
+                                        print("[MiniBoss] Hit! dist_sq=", mb_dist_sq, " dmg=", dmg, " hp_before=", mini_boss.health)
                                         mini_boss.take_damage(dmg)
+                                        print("[MiniBoss] hp_after=", mini_boss.health)
                                         proj["active"] = false
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
@@ -1579,7 +1582,10 @@ func _spawn_knight_ally(player_pos: Vector2) -> void:
                 return  # già evocato
         var ka := KnightAllyClass.new()
         # Stessa energia del player (lives = 3 default)
-        ka.max_health = player.lives if player != null else 3
+        # FIX (cavaliere energia 1.5x): energia = lives del player * 1.5
+        # Player ha 3 lives → cavaliere ha 4.5 → arrotondato a 5
+        var base_health: int = player.lives if player != null else 3
+        ka.max_health = int(float(base_health) * 1.5) + 1
         ka.health = ka.max_health
         # Posizione: accanto al player (offset 48px a destra)
         var spawn_pos: Vector2 = player_pos + Vector2(48, 0)

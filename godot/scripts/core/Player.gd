@@ -28,7 +28,7 @@ extends CharacterBody2D
 # --- Grid constants (mirror Utils.h) ---------------------------------------
 const WINDOW_WIDTH: int = 1920
 const WINDOW_HEIGHT: int = 1080
-const TILE_SIZE: int = 48
+const TILE_SIZE: int = 64
 const MAZE_COLS: int = 21
 const MAZE_ROWS: int = 19
 const UI_HEIGHT: int = 80

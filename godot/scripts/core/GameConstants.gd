@@ -32,9 +32,12 @@ class_name GameConstants
 # scuro tra il maze e il bordo dello schermo.
 const WINDOW_WIDTH: int = 1920
 const WINDOW_HEIGHT: int = 1080
-const TILE_SIZE: int = 48
-const MAZE_COLS: int = 40
-const MAZE_ROWS: int = 22
+const TILE_SIZE: int = 64
+# FIX (labirinto troppo stretto): MAZE_COLS/ROWS ridotti per mantenere
+# il maze dentro il viewport 1920x1080 con TILE_SIZE=64.
+# 1920/64=30 colonne, (1080-80)/64=15.6→16 righe.
+const MAZE_COLS: int = 30
+const MAZE_ROWS: int = 16
 const UI_HEIGHT: int = 80
 
 # ============================================================================

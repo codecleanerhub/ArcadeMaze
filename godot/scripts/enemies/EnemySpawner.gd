@@ -27,11 +27,10 @@ extends Node
 const C = preload("res://scripts/core/GameConstants.gd")
 
 # --- Grid constants (mirror Utils.h) ----------------------------------------
-const TILE_SIZE: int = 48
-# FIX (portale posizione sbagliata): era MAZE_COLS=21, MAZE_ROWS=19 ma il
-# maze vero è 40x22 (C.MAZE_COLS, C.MAZE_ROWS). Usiamo le costanti corrette.
-const MAZE_COLS: int = 40
-const MAZE_ROWS: int = 22
+const TILE_SIZE: int = 64
+# FIX (labirinto troppo stretto): allineato con GameConstants (TILE_SIZE=64)
+const MAZE_COLS: int = 30
+const MAZE_ROWS: int = 16
 const UI_HEIGHT: int = 80
 
 # --- Cell type constants (mirror Maze.h CellType) ---------------------------

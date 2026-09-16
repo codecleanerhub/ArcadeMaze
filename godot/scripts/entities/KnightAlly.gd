@@ -13,12 +13,16 @@
 extends Node2D
 class_name KnightAlly
 
-const TILE_SIZE: int = 48
+const TILE_SIZE: int = 64
 const UI_HEIGHT: int = 80
 
 # --- Stats ---
-var health: int = 3
-var max_health: int = 3
+var health: int = 5
+var max_health: int = 5
+# FIX (cavaliere muore subito): cooldown invulnerabilità dopo essere stato colpito.
+# I nemici attaccano ogni frame, quindi senza cooldown il cavaliere muore in
+# 3 frame (0.05s). 1 secondo di invulnerabilità dopo ogni hit.
+var invulnerable_timer_ms: int = 0
 var speed: int = 3  # più veloce del player (player=2, con boost=3)
 var shots_left: int = 3
 var disappear_timer_ms: int = 0
@@ -195,6 +199,12 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                         if shots_left == 0:
                                 disappear_timer_ms = 5000
 
+        # FIX (cavaliere muore subito): decrementa invulnerability timer
+        if invulnerable_timer_ms > 0:
+                invulnerable_timer_ms -= delta_ms
+                if invulnerable_timer_ms < 0:
+                        invulnerable_timer_ms = 0
+
         _update_projectiles(enemies, delta_ms)
         queue_redraw()
 
@@ -273,7 +283,12 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
 func take_damage(dmg: int) -> void:
         if state != State.ACTIVE:
                 return
+        # FIX (cavaliere muore subito): se invulnerabile, ignora il danno
+        if invulnerable_timer_ms > 0:
+                return
         health -= dmg
+        # 1 secondo di invulnerabilità dopo ogni hit
+        invulnerable_timer_ms = 1000
         if health <= 0:
                 _start_disappearing()
 
