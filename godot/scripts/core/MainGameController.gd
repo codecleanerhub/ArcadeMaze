@@ -192,7 +192,7 @@ var _bg_layer: Control = null
 # MainGameController che viene chiamato PRIMA dei figli (Maze, ecc.) →
 # il maze copriva i fulmini.
 var _fg_canvas: CanvasLayer = null
-var _fg_layer: Control = null
+var _fg_drawer: Node2D = null  # OverlayDrawer Node2D che disegna sopra il maze
 # Background animation timer (for crypt torches / fog drift).
 var _bg_anim_time: float = 0.0
 
@@ -218,46 +218,45 @@ func _create_background_layer() -> void:
 # gameplay layer 0) per disegnare fulmini, particelle, proiettili nemici,
 # dinamite lanciata, ecc. SOPRA il maze. Prima erano in _draw() del
 # MainGameController che viene chiamato PRIMA dei figli → il maze copriva tutto.
+const OverlayDrawerClass = preload("res://scripts/core/OverlayDrawer.gd")
+
 func _create_foreground_layer() -> void:
         _fg_canvas = CanvasLayer.new()
         _fg_canvas.layer = 1
-        _fg_layer = Control.new()
-        _fg_layer.name = "ForegroundLayer"
-        _fg_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
-        _fg_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        _fg_layer.draw.connect(_on_fg_layer_draw)
-        _fg_canvas.add_child(_fg_layer)
+        _fg_drawer = OverlayDrawerClass.new()
+        _fg_drawer.name = "ForegroundDrawer"
+        _fg_drawer.z_index = 100
+        _fg_drawer.controller = self
+        _fg_canvas.add_child(_fg_drawer)
         get_tree().root.add_child(_fg_canvas)
 
 
-# Disegna gli overlay (fulmini, particelle, ecc.) SOPRA il maze.
-# Chiamato dal CanvasLayer foreground ad ogni queue_redraw().
-func _on_fg_layer_draw() -> void:
+# Disegna gli overlay SOPRA il maze. Chiamato da OverlayDrawer._draw().
+# Tutte le chiamate draw_* usano 'ci' (il CanvasItem passato) come contesto.
+func _draw_overlay(ci: CanvasItem) -> void:
         # Exit door rendering
         if exit_door.get("active", false):
                 var door_pos: Vector2 = exit_door["pos"]
                 var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
-                draw_circle(door_pos, 30.0, Color(1.0, 0.84, 0.0, 0.3 + 0.3 * glow))
-                draw_circle(door_pos, 20.0, Color(1.0, 0.84, 0.0, 0.5 + 0.3 * glow))
-                draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
+                ci.draw_circle(door_pos, 30.0, Color(1.0, 0.84, 0.0, 0.3 + 0.3 * glow))
+                ci.draw_circle(door_pos, 20.0, Color(1.0, 0.84, 0.0, 0.5 + 0.3 * glow))
+                ci.draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
                         Color(0.5, 0.35, 0.15, 0.9), true)
-                draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
+                ci.draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
                         Color(1.0, 0.84, 0.0, 0.8), false, 2)
         # Particles
         for p in particles:
                 var pos: Vector2 = p.get("pos", Vector2.ZERO)
                 var col: Color = p.get("color", Color.WHITE)
                 var size: float = float(p.get("size", 3))
-                draw_circle(pos, size, col)
-        # Decals
-        _draw_decals()
+                ci.draw_circle(pos, size, col)
         # Screen flash
         if screen_flash_timer_ms > 0:
                 var alpha: float = (float(screen_flash_timer_ms) / 60.0) * 0.3
-                draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
+                ci.draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
                         Color(1, 1, 1, alpha), true)
-        # Lightning bolts (scepter effect) — ORA SOPRA il maze!
-        _draw_lightning_bolts()
+        # Lightning bolts — ORA SOPRA il maze!
+        _draw_lightning_bolts_overlay(ci)
         # Enemy projectiles
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
@@ -265,50 +264,35 @@ func _on_fg_layer_draw() -> void:
                 if not is_instance_valid(proj) or not proj.visible:
                         continue
                 var ppos: Vector2 = proj.position
-                draw_circle(ppos, 6.0, Color(1.0, 0.4, 0.1, 0.4))
-                draw_circle(ppos, 3.0, Color(1.0, 0.2, 0.05, 1.0))
-                var pvel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
-                if pvel != Vector2.ZERO:
-                        draw_circle(ppos - pvel * 2.0, 2.0, Color(1.0, 0.6, 0.2, 0.3))
+                ci.draw_circle(ppos, 6.0, Color(1.0, 0.4, 0.1, 0.4))
+                ci.draw_circle(ppos, 3.0, Color(1.0, 0.2, 0.05, 1.0))
         # Dynamite thrown
         if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
                 var dt_pos: Vector2 = dynamite_thrown.position
-                draw_circle(dt_pos, 14.0, Color(1.0, 0.4, 0.1, 0.4))
-                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
+                ci.draw_circle(dt_pos, 14.0, Color(1.0, 0.4, 0.1, 0.4))
+                ci.draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
                         Color(0.7, 0.12, 0.1, 1.0), true)
-                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
-                        Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
-                draw_rect(Rect2(dt_pos.x - 3, dt_pos.y - 4, 6, 4),
+                ci.draw_rect(Rect2(dt_pos.x - 3, dt_pos.y - 4, 6, 4),
                         Color(0.94, 0.86, 0.7, 1.0), true)
-                draw_line(Vector2(dt_pos.x - 1, dt_pos.y - 10),
-                        Vector2(dt_pos.x + 1, dt_pos.y - 14),
-                        Color(0.16, 0.14, 0.12, 1.0), 2)
-                var sp_phase: int = (int(Time.get_ticks_msec()) / 80) % 4
-                for i in 3:
-                        var a3: float = (float(i) / 3.0) * TAU + sp_phase * 1.5
-                        var sx3: float = dt_pos.x + 1 + cos(a3) * 3.0
-                        var sy3: float = dt_pos.y - 14 + sin(a3) * 3.0
-                        draw_circle(Vector2(sx3, sy3), 2.5, Color(1.0, 0.6, 0.2, 0.6))
-                        draw_circle(Vector2(sx3, sy3), 1.5, Color(1.0, 0.95, 0.4, 1.0))
         # Magic portal
         if spawner != null and spawner.magic_portal.active:
                 var ppos2: Vector2 = spawner.magic_portal.pos
                 var prot2: float = spawner.magic_portal.rotation
                 var pglow2: float = spawner.magic_portal.glow_pulse
                 var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
-                draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
+                ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
                 for i in 12:
                         var a2: float = prot2 + (float(i) / 12.0) * TAU
                         var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
-                        draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
+                        ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
                 for i in 8:
                         var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
                         var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
-                        draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
+                        ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
                 var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
-                draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
-                draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.9))
-                draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 1.0))
+                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
+                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.9))
+                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 1.0))
 
 
 # Setup a Camera2D for the play area. With the design space now at 1920x1080
@@ -356,8 +340,8 @@ func _process(delta: float) -> void:
         if _bg_layer != null:
                 _bg_layer.queue_redraw()
         # FIX (fulmini invisibili): ridisegna anche il foreground layer
-        if _fg_layer != null:
-                _fg_layer.queue_redraw()
+        if _fg_drawer != null:
+                _fg_drawer.queue_redraw()
         queue_redraw()
 
 
@@ -1851,8 +1835,8 @@ func _fire_lightning_strike() -> void:
                 "points": points,
                 "branches": branches,
                 "sparks": sparks,
-                "life": 180,  # FIX: 60→180 (3s @ 60fps) per visibilità prolungata
-                "max_life": 180,
+                "life": 60,  # FIX: 1s @ 60fps (180 causava lag)
+                "max_life": 60,
         })
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
@@ -1916,9 +1900,72 @@ func _generate_lightning_path(start_pos: Vector2, end_pos: Vector2,
 
 
 # ============================================================================
-# Draw lightning bolts (called from _draw)
+# Draw lightning bolts (called from _draw_overlay, SOPRA il maze)
 # ============================================================================
+func _draw_lightning_bolts_overlay(ci: CanvasItem) -> void:
+        var COL_GEM_BLUE: Color = Color(80.0 / 255.0, 160.0 / 255.0, 220.0 / 255.0)
+        var COL_CYAN: Color = Color(120.0 / 255.0, 200.0 / 255.0, 200.0 / 255.0)
+        var COL_WHITE: Color = Color(240.0 / 255.0, 240.0 / 255.0, 240.0 / 255.0)
+        var COL_YELLOW: Color = Color(1.0, 0.95, 0.4)
+        for bolt in lightning_bolts:
+                var pts: Array = bolt.get("points", [])
+                if pts.size() < 2:
+                        continue
+                var life: int = int(bolt.get("life", 0))
+                var max_life: int = int(bolt.get("max_life", 60))
+                var alpha_raw: float = float(life) / float(max_life)
+                var alpha: float = 1.0 if alpha_raw > 0.83 else alpha_raw
+                var impact: Vector2 = bolt.get("pos", pts[pts.size() - 1])
+                # Halo esterno
+                ci.draw_circle(impact, 80.0,
+                        Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b, alpha * 0.25))
+                ci.draw_circle(impact, 40.0,
+                        Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.45))
+                # Saetta zigzag (4 strati)
+                for i in pts.size() - 1:
+                        ci.draw_line(pts[i], pts[i + 1],
+                                Color(COL_GEM_BLUE.r, COL_GEM_BLUE.g, COL_GEM_BLUE.b, alpha * 0.4), 14.0)
+                for i in pts.size() - 1:
+                        ci.draw_line(pts[i], pts[i + 1],
+                                Color(COL_YELLOW.r, COL_YELLOW.g, COL_YELLOW.b, alpha * 0.5), 8.0)
+                for i in pts.size() - 1:
+                        ci.draw_line(pts[i], pts[i + 1],
+                                Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.7), 4.0)
+                for i in pts.size() - 1:
+                        ci.draw_line(pts[i], pts[i + 1],
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha), 2.0)
+                # Flash centrale
+                ci.draw_circle(impact, 25.0, Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha))
+                ci.draw_circle(impact, 12.0, Color(COL_YELLOW.r, COL_YELLOW.g, COL_YELLOW.b, alpha))
+                # Ramificazioni
+                var branches: Array = bolt.get("branches", [])
+                for br in branches:
+                        if br.size() < 2:
+                                continue
+                        for i in br.size() - 1:
+                                ci.draw_line(br[i], br[i + 1],
+                                        Color(COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, alpha * 0.5), 4.0)
+                        for i in br.size() - 1:
+                                ci.draw_line(br[i], br[i + 1],
+                                        Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.9), 2.0)
+                # Shockwave
+                var shock_r: float = (1.0 - alpha_raw) * 100.0
+                if shock_r > 0.5:
+                        ci.draw_arc(impact, shock_r, 0.0, TAU, 32,
+                                Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, alpha * 0.4), 2.0)
+        # Decay lightning life
+        var alive_bolts: Array = []
+        for bolt in lightning_bolts:
+                bolt["life"] = int(bolt.get("life", 0)) - 1
+                if int(bolt.get("life", 0)) > 0:
+                        alive_bolts.append(bolt)
+        lightning_bolts = alive_bolts
+
+
+# OLD: _draw_lightning_bolts uses self.draw_* which fails when called from
+# overlay context. Kept for reference but not called.
 func _draw_lightning_bolts() -> void:
+        pass
         # Detailed 3-strata lightning renderer with halo, flash, 4 lateral
         # branches, 10 radial sparks (2-layer) and an expanding shockwave.
         # Mirrors Game.cpp drawLightning (3582-3747).
