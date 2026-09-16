@@ -778,13 +778,16 @@ func _draw() -> void:
                 # Health bar above enemy (always visible, anche a HP pieno)
                 # FIX (barra HP): la barra è CENTRATA sopra la testa del nemico,
                 # senza offset dinamici. Si muove con il nemico come se fosse
-                # parte del nemico stesso. L'offset Y=-36 la posiziona sopra lo
-                # sprite (72px alto → metà = 36px).
+                # parte del nemico stesso. Bordo bianco per massima visibilità.
                 var bar_w: float = 32.0
                 var bar_h: float = 4.0
-                var bar_y: float = -40.0  # sopra la testa, fissa
+                var bar_y: float = -44.0  # sopra la testa, fissa
+                # Bordo bianco per definizione
+                draw_rect(Rect2(-bar_w / 2 - 1, bar_y - 1, bar_w + 2, bar_h + 2),
+                        Color(1.0, 1.0, 1.0, 0.9), true)
+                # Sfondo nero
                 draw_rect(Rect2(-bar_w / 2, bar_y, bar_w, bar_h),
-                        Color(0.2, 0.0, 0.0, 0.85), true)
+                        Color(0.1, 0.0, 0.0, 0.95), true)
                 var hp_ratio: float = float(health) / float(max_health)
                 var hp_col: Color = Color(0.86, 0.16, 0.16)  # red < 25%
                 if hp_ratio > 0.5:
@@ -830,12 +833,16 @@ func _draw() -> void:
 
         # Health bar above enemy (always visible, anche a HP pieno)
         # FIX (barra HP): barra CENTRATA sopra la testa, senza offset. Si muove
-        # con il nemico come parte del nemico.
+        # con il nemico come parte del nemico. Bordo bianco per visibilità.
         var bar_w2: float = 32.0
         var bar_h2: float = 4.0
-        var bar_y2: float = -40.0  # sopra la testa, fissa
+        var bar_y2: float = -44.0  # sopra la testa, fissa
+        # Bordo bianco
+        draw_rect(Rect2(-bar_w2 / 2 - 1, bar_y2 - 1, bar_w2 + 2, bar_h2 + 2),
+                Color(1.0, 1.0, 1.0, 0.9), true)
+        # Sfondo nero
         draw_rect(Rect2(-bar_w2 / 2, bar_y2, bar_w2, bar_h2),
-                Color(0.2, 0.0, 0.0, 0.85), true)
+                Color(0.1, 0.0, 0.0, 0.95), true)
         var hp_ratio2: float = float(health) / float(max_health)
         var hp_col2: Color = Color(0.86, 0.16, 0.16)  # red < 25%
         if hp_ratio2 > 0.5:
