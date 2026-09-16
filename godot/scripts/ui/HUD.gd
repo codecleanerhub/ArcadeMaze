@@ -219,15 +219,17 @@ func _draw() -> void:
 # FIX (HUD last hit enemy): disegna nome nemico + barra energia al centro.
 # Usa lo stesso gradiente verde→arancione→rosso della barra player.
 func _draw_last_hit_enemy() -> void:
-        var center_x: float = WINDOW_WIDTH * 0.5
-        var bar_w: float = 200.0
+        # FIX (posizionamento): spostato più a destra (center_x = 1100 invece di 960)
+        # per evitare sovrapposizione con "Treasures remaining" a x=700.
+        var center_x: float = 1100.0
+        var bar_w: float = 180.0
         var bar_h: float = 8.0
         var bar_y: float = 30.0
         var bar_x: float = center_x - bar_w * 0.5
         # Etichetta "ENEMY" sopra la barra
-        _draw_label_colored("ENEMY", bar_x, bar_y - 14, Color(0.9, 0.5, 0.5))
-        # Nome del nemico
-        _draw_label_colored(_last_hit_enemy_name, bar_x + 50, bar_y - 14, Color(1.0, 0.9, 0.5))
+        _draw_label_colored("ENEMY:", bar_x, bar_y - 14, Color(0.9, 0.5, 0.5))
+        # Nome del nemico (più spazio: +70 invece di +50)
+        _draw_label_colored(_last_hit_enemy_name, bar_x + 70, bar_y - 14, Color(1.0, 0.9, 0.5))
         # Background barra
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.95), true)
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 1.0)
