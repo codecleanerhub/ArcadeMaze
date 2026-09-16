@@ -1598,6 +1598,7 @@ func _update_knight_ally(delta_ms: int) -> void:
                 return
         var ka2: Node2D = knight_ally
         if ka2.has_method("update_ally"):
+                ka2.mini_boss = mini_boss
                 ka2.update_ally(maze, player.get_pixel_pos(), spawner.enemies, int(delta_ms))
         # Se il cavaliere è morto (scomparso), cleanup
         if ka2.has_method("is_dead") and ka2.is_dead():
@@ -1847,8 +1848,8 @@ func _fire_lightning_strike() -> void:
                 "points": points,
                 "branches": branches,
                 "sparks": sparks,
-                "life": 60,  # FIX: 1s @ 60fps (180 causava lag)
-                "max_life": 60,
+                "life": 25,  # FIX: 0.4s @ 60fps (era 60 = 1s, troppo visibile)
+                "max_life": 25,
         })
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)

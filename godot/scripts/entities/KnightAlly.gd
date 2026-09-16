@@ -89,6 +89,9 @@ func _load_statue_texture() -> void:
                 _statue_loaded = _statue_texture != null
 
 
+# Reference al mini-boss (settabile da MainGameController)
+var mini_boss: Node2D = null
+
 func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int) -> void:
         anim_time += delta_ms
 
@@ -132,41 +135,52 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
         if target_recalc_timer >= 500 or target_enemy == null:
                 target_recalc_timer = 0
                 target_enemy = _find_closest_enemy(enemies)
+                if target_enemy != null:
+                        print("[KnightAlly] Target found: ", target_enemy)
 
-        # FIX (cavaliere non si muove): se non ci sono nemici vivi, segue il player
-        var chase_pos: Vector2 = player_pos
+        # FIX (cavaliere segue player): il problema è che se target_enemy è null
+        # (nessun nemico vivo trovato), il cavaliere segue il player.
+        # Ora: se non ci sono nemici, il cavaliere STA FERMO e aspetta
+        # (non segue il player). Se ci sono nemici, li insegue.
+        var chase_pos: Vector2 = pos  # default: fermo
+        var has_target: bool = false
         if target_enemy != null and is_instance_valid(target_enemy) and not target_enemy.is_dead():
                 chase_pos = target_enemy.get_pixel_pos()
+                has_target = true
 
-        # Movement: chase target (enemy or player)
-        var d: Vector2 = chase_pos - pos
-        var dist: float = d.length()
-        if dist > 8.0:  # non muoversi se già vicino
-                var dir: Vector2 = d / dist
-                var move_x: int = 0
-                var move_y: int = 0
-                if abs(dir.x) > abs(dir.y):
-                        move_x = 1 if dir.x > 0 else -1
+        # Movement: solo se c'è un nemico da inseguire
+        if has_target:
+                var d: Vector2 = chase_pos - pos
+                var dist: float = d.length()
+                if dist > 8.0:  # non muoversi se già vicino
+                        var dir: Vector2 = d / dist
+                        var move_x: int = 0
+                        var move_y: int = 0
+                        if abs(dir.x) > abs(dir.y):
+                                move_x = 1 if dir.x > 0 else -1
+                        else:
+                                move_y = 1 if dir.y > 0 else -1
+                        var col := int(pos.x / TILE_SIZE)
+                        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+                        if not maze.is_wall(col + move_x, row + move_y):
+                                dx = move_x
+                                dy = move_y
+                                last_dx = dx
+                                last_dy = dy
+                                pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
+                        else:
+                                if move_x != 0 and not maze.is_wall(col, row + 1):
+                                        dy = 1; last_dy = 1; pos = Vector2(pos.x, pos.y + speed)
+                                elif move_x != 0 and not maze.is_wall(col, row - 1):
+                                        dy = -1; last_dy = -1; pos = Vector2(pos.x, pos.y - speed)
+                                elif move_y != 0 and not maze.is_wall(col + 1, row):
+                                        dx = 1; last_dx = 1; pos = Vector2(pos.x + speed, pos.y)
+                                elif move_y != 0 and not maze.is_wall(col - 1, row):
+                                        dx = -1; last_dx = -1; pos = Vector2(pos.x - speed, pos.y)
                 else:
-                        move_y = 1 if dir.y > 0 else -1
-                var col := int(pos.x / TILE_SIZE)
-                var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
-                if not maze.is_wall(col + move_x, row + move_y):
-                        dx = move_x
-                        dy = move_y
-                        last_dx = dx
-                        last_dy = dy
-                        # FIX (pos setter): aggiorna esplicitamente position
-                        pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
-                else:
-                        if move_x != 0 and not maze.is_wall(col, row + 1):
-                                dy = 1; last_dy = 1; pos = Vector2(pos.x, pos.y + speed)
-                        elif move_x != 0 and not maze.is_wall(col, row - 1):
-                                dy = -1; last_dy = -1; pos = Vector2(pos.x, pos.y - speed)
-                        elif move_y != 0 and not maze.is_wall(col + 1, row):
-                                dx = 1; last_dx = 1; pos = Vector2(pos.x + speed, pos.y)
-                        elif move_y != 0 and not maze.is_wall(col - 1, row):
-                                dx = -1; last_dx = -1; pos = Vector2(pos.x - speed, pos.y)
+                        # Abbastanza vicino: spara!
+                        dx = 0
+                        dy = 0
 
         # Shoot at closest enemy in range
         if shoot_cooldown > 0:
@@ -188,15 +202,28 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
 func _find_closest_enemy(enemies: Array) -> Node2D:
         var closest: Node2D = null
         var closest_dist: float = 999999.0
+        # Cerca tra i nemici normali
         for e in enemies:
                 if e == null or not is_instance_valid(e):
                         continue
+                if not e.has_method("is_dead"):
+                        continue
                 if e.is_dead():
+                        continue
+                if not e.has_method("get_pixel_pos"):
                         continue
                 var d: float = pos.distance_squared_to(e.get_pixel_pos())
                 if d < closest_dist:
                         closest_dist = d
                         closest = e
+        # Cerca anche il mini-boss
+        if mini_boss != null and is_instance_valid(mini_boss):
+                if mini_boss.has_method("is_dead") and not mini_boss.is_dead():
+                        if mini_boss.has_method("get_pixel_pos"):
+                                var d_mb: float = pos.distance_squared_to(mini_boss.get_pixel_pos())
+                                if d_mb < closest_dist:
+                                        closest_dist = d_mb
+                                        closest = mini_boss
         return closest
 
 
