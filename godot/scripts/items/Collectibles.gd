@@ -190,6 +190,8 @@ func _update_mine(delta_ms: int) -> void:
                 if bounce_timer_ms > delta_ms:
                         bounce_timer_ms -= delta_ms
                 else:
+                        # FIX (bomba esplode): quando finisce di rimbalzare senza
+                        # colpire nessuno, esplode e sparisce dal labirinto.
                         bouncing = false
                         bounce_timer_ms = 0
                         active = false

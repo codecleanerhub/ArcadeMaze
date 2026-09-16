@@ -95,9 +95,12 @@ func _load_statue_texture() -> void:
 
 # Reference al mini-boss (settabile da MainGameController)
 var mini_boss: Node2D = null
+# FIX (proiettili rimbalzo): reference al maze per wall check
+var maze_ref: Node = null
 
 func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int) -> void:
         anim_time += delta_ms
+        maze_ref = maze  # FIX: salva reference per wall check proiettili
 
         # Fase 1: statua di pietra (1s, immobile)
         if state == State.STONE:
@@ -156,7 +159,7 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
         if has_target:
                 var d: Vector2 = chase_pos - pos
                 var dist: float = d.length()
-                if dist > 8.0:  # non muoversi se già vicino
+                if dist > 8.0:
                         var dir: Vector2 = d / dist
                         var move_x: int = 0
                         var move_y: int = 0
@@ -166,38 +169,65 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                 move_y = 1 if dir.y > 0 else -1
                         var col := int(pos.x / TILE_SIZE)
                         var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+                        # FIX (cavaliere attraversa muri): verifica che la cella
+                        # destinazione sia libera PRIMA di muoversi. Se bloccato,
+                        # prova direzioni alternative in ordine: perpendicolare,
+                        # poi diagonale, poi opposta.
+                        var moved: bool = false
+                        # Direzione principale
                         if not maze.is_wall(col + move_x, row + move_y):
                                 dx = move_x
                                 dy = move_y
                                 last_dx = dx
                                 last_dy = dy
                                 pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
-                        else:
-                                if move_x != 0 and not maze.is_wall(col, row + 1):
-                                        dy = 1; last_dy = 1; pos = Vector2(pos.x, pos.y + speed)
-                                elif move_x != 0 and not maze.is_wall(col, row - 1):
-                                        dy = -1; last_dy = -1; pos = Vector2(pos.x, pos.y - speed)
-                                elif move_y != 0 and not maze.is_wall(col + 1, row):
-                                        dx = 1; last_dx = 1; pos = Vector2(pos.x + speed, pos.y)
-                                elif move_y != 0 and not maze.is_wall(col - 1, row):
-                                        dx = -1; last_dx = -1; pos = Vector2(pos.x - speed, pos.y)
-                else:
-                        # Abbastanza vicino: spara!
-                        dx = 0
-                        dy = 0
+                                moved = true
+                        # Direzione perpendicolare 1
+                        if not moved:
+                                var alt_x1: int = move_y  # perpendicolare
+                                var alt_y1: int = move_x
+                                if not maze.is_wall(col + alt_x1, row + alt_y1):
+                                        dx = alt_x1
+                                        dy = alt_y1
+                                        last_dx = dx
+                                        last_dy = dy
+                                        pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
+                                        moved = true
+                        # Direzione perpendicolare 2
+                        if not moved:
+                                var alt_x2: int = -move_y
+                                var alt_y2: int = -move_x
+                                if not maze.is_wall(col + alt_x2, row + alt_y2):
+                                        dx = alt_x2
+                                        dy = alt_y2
+                                        last_dx = dx
+                                        last_dy = dy
+                                        pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
+                                        moved = true
+                        # Se completamente bloccato, fermo
+                        if not moved:
+                                dx = 0
+                                dy = 0
 
-        # Shoot at closest enemy in range
+        # Shoot at closest enemy in range — solo quando è probabile che colpisca
         if shoot_cooldown > 0:
                 shoot_cooldown -= delta_ms
         elif shots_left > 0 and target_enemy != null and is_instance_valid(target_enemy):
-                var e_pos2: Vector2 = target_enemy.get_pixel_pos()
-                var dist2: float = pos.distance_to(e_pos2)
-                if dist2 < 300.0:
-                        _shoot_at(e_pos2)
-                        shoot_cooldown = 800
-                        shots_left -= 1
-                        if shots_left == 0:
-                                disappear_timer_ms = 5000
+                if target_enemy.has_method("get_pixel_pos"):
+                        var e_pos2: Vector2 = target_enemy.get_pixel_pos()
+                        var dist2: float = pos.distance_to(e_pos2)
+                        # FIX (spara solo quando probabile colpire): spara solo se
+                        # il nemico è entro 250px E è allineato (stessa riga o colonna
+                        # entro 32px di tolleranza). Evita di sprecare colpi.
+                        if dist2 < 250.0:
+                                var dx_align: float = abs(e_pos2.x - pos.x)
+                                var dy_align: float = abs(e_pos2.y - pos.y)
+                                if dx_align < 32.0 or dy_align < 32.0:
+                                        _shoot_at(e_pos2)
+                                        shoot_cooldown = 800
+                                        shots_left -= 1
+                                        if shots_left == 0:
+                                                disappear_timer_ms = 5000
 
         # FIX (cavaliere muore subito): decrementa invulnerability timer
         if invulnerable_timer_ms > 0:
@@ -249,6 +279,7 @@ func _shoot_at(target_pos: Vector2) -> void:
                 "power": 999,
                 "active": true,
                 "type": 0,
+                "life_ms": 6000,  # FIX: 6 secondi di vita con rimbalzo
         })
 
 
@@ -257,8 +288,37 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
         for proj in projectiles:
                 if not proj.get("active", false):
                         continue
-                proj["pos"] = proj["pos"] + proj.get("dir", Vector2.ZERO)
+                # FIX (proiettili non attraversano muri): check wall collision
+                # e rimbalzo invece di passare attraverso
                 var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                var p_vel: Vector2 = proj.get("dir", Vector2.ZERO)
+                var new_pos: Vector2 = p_pos + p_vel
+                # Check se la nuova posizione è in un muro
+                var col: int = int(new_pos.x / TILE_SIZE)
+                var row: int = int((new_pos.y - UI_HEIGHT) / TILE_SIZE)
+                if maze_ref != null and maze_ref.is_wall(col, row):
+                        # Rimbalzo: inverte la direzione
+                        # Determina se ha colpito muro orizzontale o verticale
+                        var cur_col: int = int(p_pos.x / TILE_SIZE)
+                        var cur_row: int = int((p_pos.y - UI_HEIGHT) / TILE_SIZE)
+                        if col != cur_col:
+                                p_vel.x = -p_vel.x  # rimbalzo orizzontale
+                        if row != cur_row:
+                                p_vel.y = -p_vel.y  # rimbalzo verticale
+                        new_pos = p_pos + p_vel
+                proj["pos"] = new_pos
+                proj["dir"] = p_vel
+                # FIX (proiettili durata 6s): decrementa life_ms
+                var life: int = proj.get("life_ms", 6000)
+                life -= int(delta_ms)
+                proj["life_ms"] = life
+                if life <= 0:
+                        proj["active"] = false
+                        continue
+                # Out of bounds
+                if new_pos.x < 0 or new_pos.x > 1920 or new_pos.y < UI_HEIGHT or new_pos.y > 1080:
+                        proj["active"] = false
+                        continue
                 var hit: bool = false
                 # Check nemici normali
                 for e in enemies:
@@ -268,23 +328,20 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
                                 continue
                         if not e.has_method("get_pixel_pos"):
                                 continue
-                        if p_pos.distance_squared_to(e.get_pixel_pos()) < 600.0:
+                        if new_pos.distance_squared_to(e.get_pixel_pos()) < 600.0:
                                 e.take_damage(int(proj.get("power", 999)))
                                 if e.has_method("start_burning"):
                                         e.start_burning(30)
                                 hit = true
                                 break
-                # FIX (cavaliere non danneggia mid-boss): check anche il mini_boss
+                # Check mini_boss
                 if not hit and mini_boss != null and is_instance_valid(mini_boss):
                         if mini_boss.has_method("is_dead") and not mini_boss.is_dead():
                                 if mini_boss.has_method("get_pixel_pos"):
-                                        if p_pos.distance_squared_to(mini_boss.get_pixel_pos()) < 900.0:
+                                        if new_pos.distance_squared_to(mini_boss.get_pixel_pos()) < 900.0:
                                                 mini_boss.take_damage(int(proj.get("power", 999)))
                                                 hit = true
                 if hit:
-                        proj["active"] = false
-                        continue
-                if p_pos.x < 0 or p_pos.x > 1920 or p_pos.y < UI_HEIGHT or p_pos.y > 1080:
                         proj["active"] = false
                         continue
                 alive.append(proj)
@@ -423,14 +480,8 @@ func _draw() -> void:
                 draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
                         Color(1.0, 0.85, 0.2, 1.0), true)
 
-        # Shots indicator (3 dots)
-        for i in 3:
-                var dot_x: float = -8.0 + float(i) * 8.0
-                var dot_y: float = -42.0
-                if i < shots_left:
-                        draw_circle(Vector2(dot_x, dot_y), 2.0, Color(1.0, 0.9, 0.3, 1.0))
-                else:
-                        draw_circle(Vector2(dot_x, dot_y), 1.5, Color(0.3, 0.3, 0.3, 0.5))
+        # FIX (rimossi 3 pallini): i pallini indicator dei colpi si muovevano
+        # rispetto allo sprite. Rimossi completamente.
 
 
 # FIX (statua di pietra): disegna la statua con texture PNG o fallback.

@@ -897,6 +897,19 @@ func _check_mine_vs_enemies() -> void:
         if mine_item == null or not is_instance_valid(mine_item):
                 return
         if not mine_item.get("bouncing"):
+                # FIX (bomba esplode quando finisce): se la mine non è più bouncing
+                # ma è ancora nel tree, esplodi e rimuovi.
+                if mine_item.get("active") == false:
+                        var explode_pos: Vector2 = mine_item.position
+                        if EffectsManager:
+                                var burst := EffectsManager.spawn_explosion(explode_pos,
+                                        Color(1.0, 0.4, 0.1), 30, 0.8)
+                                collectibles_node.add_child(burst)
+                                EffectsManager.screen_shake(8.0, 0.3)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+                        mine_item.queue_free()
+                        mine_item = null
                 return
         # FIX (bomba supera muri): wall collision check
         var mine_pos2: Vector2 = mine_item.position
@@ -1146,7 +1159,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
-                        p.set_invincible_timer(15000)  # 15s chalice invincibility
+                        p.set_invincible_timer(25000)  # 25s chalice invincibility (era 15s)
                         p.add_score(15000)
                         item.active = false
                         item.queue_free()
