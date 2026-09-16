@@ -154,6 +154,8 @@ func _ready() -> void:
         # Il MainGame root NON viene scalato; è la camera che "zooma" sul
         # design space.
         _setup_camera()
+        # FIX (fulmini invisibili): crea overlay layer per disegnare SOPRA il maze
+        _create_foreground_layer()
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
         if SpriteManager:
@@ -185,6 +187,12 @@ func _ready() -> void:
 # Drawn behind everything to fill the lateral black bars with thematic fantasy.
 var _bg_canvas: CanvasLayer = null
 var _bg_layer: Control = null
+# FIX (fulmini invisibili): overlay CanvasLayer per disegnare fulmini, particelle,
+# proiettili nemici SOPRA il maze. Prima venivano disegnati in _draw() del
+# MainGameController che viene chiamato PRIMA dei figli (Maze, ecc.) →
+# il maze copriva i fulmini.
+var _fg_canvas: CanvasLayer = null
+var _fg_layer: Control = null
 # Background animation timer (for crypt torches / fog drift).
 var _bg_anim_time: float = 0.0
 
@@ -204,6 +212,103 @@ func _create_background_layer() -> void:
         # make it a child of the MainGame node and potentially affected by
         # any future transforms).
         get_tree().root.add_child(_bg_canvas)
+
+
+# FIX (fulmini invisibili): crea un CanvasLayer con layer = 1 (sopra il
+# gameplay layer 0) per disegnare fulmini, particelle, proiettili nemici,
+# dinamite lanciata, ecc. SOPRA il maze. Prima erano in _draw() del
+# MainGameController che viene chiamato PRIMA dei figli → il maze copriva tutto.
+func _create_foreground_layer() -> void:
+        _fg_canvas = CanvasLayer.new()
+        _fg_canvas.layer = 1
+        _fg_layer = Control.new()
+        _fg_layer.name = "ForegroundLayer"
+        _fg_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _fg_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        _fg_layer.draw.connect(_on_fg_layer_draw)
+        _fg_canvas.add_child(_fg_layer)
+        get_tree().root.add_child(_fg_canvas)
+
+
+# Disegna gli overlay (fulmini, particelle, ecc.) SOPRA il maze.
+# Chiamato dal CanvasLayer foreground ad ogni queue_redraw().
+func _on_fg_layer_draw() -> void:
+        # Exit door rendering
+        if exit_door.get("active", false):
+                var door_pos: Vector2 = exit_door["pos"]
+                var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
+                draw_circle(door_pos, 30.0, Color(1.0, 0.84, 0.0, 0.3 + 0.3 * glow))
+                draw_circle(door_pos, 20.0, Color(1.0, 0.84, 0.0, 0.5 + 0.3 * glow))
+                draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
+                        Color(0.5, 0.35, 0.15, 0.9), true)
+                draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
+                        Color(1.0, 0.84, 0.0, 0.8), false, 2)
+        # Particles
+        for p in particles:
+                var pos: Vector2 = p.get("pos", Vector2.ZERO)
+                var col: Color = p.get("color", Color.WHITE)
+                var size: float = float(p.get("size", 3))
+                draw_circle(pos, size, col)
+        # Decals
+        _draw_decals()
+        # Screen flash
+        if screen_flash_timer_ms > 0:
+                var alpha: float = (float(screen_flash_timer_ms) / 60.0) * 0.3
+                draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
+                        Color(1, 1, 1, alpha), true)
+        # Lightning bolts (scepter effect) — ORA SOPRA il maze!
+        _draw_lightning_bolts()
+        # Enemy projectiles
+        for proj in enemy_projectiles_node.get_children():
+                if not proj is Node2D:
+                        continue
+                if not is_instance_valid(proj) or not proj.visible:
+                        continue
+                var ppos: Vector2 = proj.position
+                draw_circle(ppos, 6.0, Color(1.0, 0.4, 0.1, 0.4))
+                draw_circle(ppos, 3.0, Color(1.0, 0.2, 0.05, 1.0))
+                var pvel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
+                if pvel != Vector2.ZERO:
+                        draw_circle(ppos - pvel * 2.0, 2.0, Color(1.0, 0.6, 0.2, 0.3))
+        # Dynamite thrown
+        if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
+                var dt_pos: Vector2 = dynamite_thrown.position
+                draw_circle(dt_pos, 14.0, Color(1.0, 0.4, 0.1, 0.4))
+                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
+                        Color(0.7, 0.12, 0.1, 1.0), true)
+                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
+                        Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
+                draw_rect(Rect2(dt_pos.x - 3, dt_pos.y - 4, 6, 4),
+                        Color(0.94, 0.86, 0.7, 1.0), true)
+                draw_line(Vector2(dt_pos.x - 1, dt_pos.y - 10),
+                        Vector2(dt_pos.x + 1, dt_pos.y - 14),
+                        Color(0.16, 0.14, 0.12, 1.0), 2)
+                var sp_phase: int = (int(Time.get_ticks_msec()) / 80) % 4
+                for i in 3:
+                        var a3: float = (float(i) / 3.0) * TAU + sp_phase * 1.5
+                        var sx3: float = dt_pos.x + 1 + cos(a3) * 3.0
+                        var sy3: float = dt_pos.y - 14 + sin(a3) * 3.0
+                        draw_circle(Vector2(sx3, sy3), 2.5, Color(1.0, 0.6, 0.2, 0.6))
+                        draw_circle(Vector2(sx3, sy3), 1.5, Color(1.0, 0.95, 0.4, 1.0))
+        # Magic portal
+        if spawner != null and spawner.magic_portal.active:
+                var ppos2: Vector2 = spawner.magic_portal.pos
+                var prot2: float = spawner.magic_portal.rotation
+                var pglow2: float = spawner.magic_portal.glow_pulse
+                var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
+                draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
+                for i in 12:
+                        var a2: float = prot2 + (float(i) / 12.0) * TAU
+                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
+                        draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
+                for i in 8:
+                        var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
+                        var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
+                        draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
+                var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
+                draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
+                draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.9))
+                draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 1.0))
 
 
 # Setup a Camera2D for the play area. With the design space now at 1920x1080
@@ -250,10 +355,9 @@ func _process(delta: float) -> void:
         # the fog drifts (EnvironmentArt.draw_crypt_background is animated).
         if _bg_layer != null:
                 _bg_layer.queue_redraw()
-        # FIX (proiettili nemici non visibili): il _draw di MainGameController
-        # non veniva mai chiamato dopo il primo frame perché mancava
-        # queue_redraw(). Ora viene chiamato ogni frame per disegnare
-        # proiettili nemici, exit door, particles, decals, lightning, ecc.
+        # FIX (fulmini invisibili): ridisegna anche il foreground layer
+        if _fg_layer != null:
+                _fg_layer.queue_redraw()
         queue_redraw()
 
 
@@ -920,6 +1024,12 @@ func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
                 return
         p.invincible_timer = max(0, p.invincible_timer - int(delta_ms))
         if p.invincible_timer <= 0:
+                # FIX (musica calice): ferma la musica epic quando l'effetto
+                # del calice termina (15 secondi)
+                if AudioManager:
+                        AudioManager.stop_epic_music()
+                        if GameManager and GameManager.music_enabled:
+                                AudioManager.play_level_music(current_level, false)
                 return
         var p_pos: Vector2 = p.get_pixel_pos()
         for enemy in spawner.enemies:
@@ -1009,12 +1119,15 @@ func _update_collectibles(delta_ms: float) -> void:
                         continue
                 var item_pos: Vector2 = child.pos
                 # Check P1 collision
-                if p1_pos.distance_squared_to(item_pos) < 400.0:
+                # FIX (salto sopra oggetti): se il player sta saltando, non
+                # raccoglie oggetti (permette di saltare sopra armi/bombe senza
+                # perderle o raccoglierle per errore)
+                if not player.is_jumping() and p1_pos.distance_squared_to(item_pos) < 400.0:
                         _on_collectible_picked_up(child, player, 1)
                         continue
                 # Check P2 collision
                 if GameManager and GameManager.num_players == 2 and player2.visible:
-                        if p2_pos.distance_squared_to(item_pos) < 400.0:
+                        if not player2.is_jumping() and p2_pos.distance_squared_to(item_pos) < 400.0:
                                 _on_collectible_picked_up(child, player2, 2)
 
 
@@ -1477,7 +1590,8 @@ func _spawn_knight_ally(player_pos: Vector2) -> void:
         ka.pos = spawn_pos
         add_child(ka)
         knight_ally = ka
-        print("[KnightAlly] Spawned at ", spawn_pos, " health=", ka.health)
+        ka.update_ally(maze, player_pos, spawner.enemies, 0)
+        print("[KnightAlly] Spawned at ", spawn_pos, " health=", ka.health, " state=", ka.state)
 
 
 # FIX (nuova meccanica): update del cavaliere alleato.
@@ -2254,122 +2368,9 @@ func on_continue_used() -> void:
 
 
 func _draw() -> void:
-        # Exit door rendering
-        if exit_door.get("active", false):
-                var door_pos: Vector2 = exit_door["pos"]
-                var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
-                draw_circle(door_pos, 30.0, Color(1.0, 0.84, 0.0, 0.3 + 0.3 * glow))
-                draw_circle(door_pos, 20.0, Color(1.0, 0.84, 0.0, 0.5 + 0.3 * glow))
-                draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
-                        Color(0.5, 0.35, 0.15, 0.9), true)
-                draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
-                        Color(1.0, 0.84, 0.0, 0.8), false, 2)
-
-        # Particles
-        for p in particles:
-                var pos: Vector2 = p.get("pos", Vector2.ZERO)
-                var col: Color = p.get("color", Color.WHITE)
-                var size: float = float(p.get("size", 3))
-                draw_circle(pos, size, col)
-
-        # Decals: blood stains, ash piles, fire bursts (port of C++
-        # Game::bloodStains / ashPiles / fireBursts).
-        _draw_decals()
-
-        # Screen flash
-        # FIX (fulmini invisibili): flash ridotto a 120ms con alpha max 0.5
-        # invece di 400ms con alpha 1.0. Il flash troppo luminoso copriva
-        # il fulmine rendendolo invisibile.
-        if screen_flash_timer_ms > 0:
-                var alpha: float = (float(screen_flash_timer_ms) / 60.0) * 0.3
-                draw_rect(Rect2(0, 0, C.WINDOW_WIDTH, C.WINDOW_HEIGHT),
-                        Color(1, 1, 1, alpha), true)
-
-        # Lightning bolts (scepter effect)
-        _draw_lightning_bolts()
-
-        # FIX (proiettili nemici non visibili): i proiettili nemici sono Node2D
-        # vuoti senza _draw. Li disegniamo qui come piccole sfere rosso/arancio.
-        # FIX: controlla visible e is_instance_valid per evitare crash su
-        # proiettili già queue_free'd.
-        for proj in enemy_projectiles_node.get_children():
-                if not proj is Node2D:
-                        continue
-                if not is_instance_valid(proj) or not proj.visible:
-                        continue
-                var ppos: Vector2 = proj.position
-                # Glow esterno arancione
-                draw_circle(ppos, 6.0, Color(1.0, 0.4, 0.1, 0.4))
-                # Nucleo rosso brillante
-                draw_circle(ppos, 3.0, Color(1.0, 0.2, 0.05, 1.0))
-                # Scia (pos - velocity*2)
-                var pvel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
-                if pvel != Vector2.ZERO:
-                        draw_circle(ppos - pvel * 2.0, 2.0,
-                                Color(1.0, 0.6, 0.2, 0.3))
-
-        # FIX (dinamite lanciata): renderizza il candelotto di dinamite in volo.
-        # Il candelotto è un Node2D in enemy_projectiles_node con meta "dir".
-        # Disegna: corpo rosso + miccia + scintille.
-        if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
-                var dt_pos: Vector2 = dynamite_thrown.position
-                # Glow esplosivo (arancione)
-                draw_circle(dt_pos, 14.0, Color(1.0, 0.4, 0.1, 0.4))
-                # Candelotto (cilindro rosso, inclinato)
-                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
-                        Color(0.7, 0.12, 0.1, 1.0), true)
-                draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
-                        Color(0.45, 0.06, 0.05, 1.0), false, 1.0)
-                # Etichetta TNT
-                draw_rect(Rect2(dt_pos.x - 3, dt_pos.y - 4, 6, 4),
-                        Color(0.94, 0.86, 0.7, 1.0), true)
-                # Miccia
-                draw_line(Vector2(dt_pos.x - 1, dt_pos.y - 10),
-                        Vector2(dt_pos.x + 1, dt_pos.y - 14),
-                        Color(0.16, 0.14, 0.12, 1.0), 2)
-                # Scintille (animate)
-                var sp_phase: int = (int(Time.get_ticks_msec()) / 80) % 4
-                for i in 3:
-                        var a3: float = (float(i) / 3.0) * TAU + sp_phase * 1.5
-                        var sx3: float = dt_pos.x + 1 + cos(a3) * 3.0
-                        var sy3: float = dt_pos.y - 14 + sin(a3) * 3.0
-                        draw_circle(Vector2(sx3, sy3), 2.5,
-                                Color(1.0, 0.6, 0.2, 0.6))
-                        draw_circle(Vector2(sx3, sy3), 1.5,
-                                Color(1.0, 0.95, 0.4, 1.0))
-
-        # Magic portal (50% respawn)
-        # FIX (portale invisibile): il portale era gestito in EnemySpawner.magic_portal
-        # ma non veniva mai disegnato. Ora lo renderizziamo qui con un effetto
-        # rotante + glow + anelli concentrici.
-        # Leggiamo dallo stato del portale gestito da EnemySpawner.
-        if spawner != null and spawner.magic_portal.active:
-                var ppos: Vector2 = spawner.magic_portal.pos
-                var prot: float = spawner.magic_portal.rotation
-                var pglow: float = spawner.magic_portal.glow_pulse
-                var pphase: int = spawner.magic_portal.phase
-                # Aura esterna pulsante (viola)
-                var aura_r: float = 40.0 + sin(pglow * 2.0) * 6.0
-                draw_circle(ppos, aura_r, Color(0.5, 0.2, 0.8, 0.2))
-                # Anello esterno rotante (viola)
-                for i in 12:
-                        var a: float = prot + (float(i) / 12.0) * TAU
-                        var p1: Vector2 = ppos + Vector2(cos(a), sin(a)) * 32.0
-                        draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
-                # Anello medio (ciano)
-                for i in 8:
-                        var a2: float = -prot * 1.5 + (float(i) / 8.0) * TAU
-                        var p2: Vector2 = ppos + Vector2(cos(a2), sin(a2)) * 22.0
-                        draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
-                # Nucleo centrale pulsante
-                var core_r: float = 10.0 + sin(pglow * 4.0) * 2.0
-                draw_circle(ppos, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
-                draw_circle(ppos, core_r, Color(0.9, 0.7, 1.0, 0.9))
-                draw_circle(ppos, core_r * 0.5, Color(1.0, 1.0, 1.0, 1.0))
-                # Phase indicator: "OPENING" = cerchio tratteggiato che si chiude
-                if pphase == 0:
-                        var open_progress: float = 1.0 - (float(spawner.magic_portal.phase_timer) / 1500.0)
-                        var open_r: float = 50.0 * (1.0 - open_progress)
-                        if open_r > 1.0:
-                                draw_arc(ppos, open_r, 0.0, TAU, 24,
-                                        Color(1.0, 0.9, 0.4, 0.6), 2.0)
+        # FIX (fulmini invisibili): tutti gli overlay (fulmini, particelle,
+        # proiettili nemici, dinamite, portale, ecc.) sono stati spostati
+        # in _on_fg_layer_draw() che viene disegnato SOPRA il maze tramite
+        # un CanvasLayer (layer=1). Prima erano qui in _draw() che viene
+        # chiamato PRIMA dei figli → il maze copriva tutto.
+        pass
