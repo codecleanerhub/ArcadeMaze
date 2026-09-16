@@ -224,12 +224,13 @@ func _draw_last_hit_enemy() -> void:
         var center_x: float = 1100.0
         var bar_w: float = 180.0
         var bar_h: float = 8.0
-        var bar_y: float = 30.0
+        # FIX (margine): bar_y aumentato da 30 a 38 per più spazio tra nome e barra
+        var bar_y: float = 38.0
         var bar_x: float = center_x - bar_w * 0.5
-        # Etichetta "ENEMY" sopra la barra
-        _draw_label_colored("ENEMY:", bar_x, bar_y - 14, Color(0.9, 0.5, 0.5))
+        # Etichetta "ENEMY" sopra la barra (y=10, più in alto)
+        _draw_label_colored("ENEMY:", bar_x, 10.0, Color(0.9, 0.5, 0.5))
         # Nome del nemico (più spazio: +70 invece di +50)
-        _draw_label_colored(_last_hit_enemy_name, bar_x + 70, bar_y - 14, Color(1.0, 0.9, 0.5))
+        _draw_label_colored(_last_hit_enemy_name, bar_x + 70, 10.0, Color(1.0, 0.9, 0.5))
         # Background barra
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.95), true)
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 1.0)

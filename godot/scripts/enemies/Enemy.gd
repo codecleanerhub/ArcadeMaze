@@ -241,6 +241,8 @@ func _load_sprite() -> void:
         if SpriteManager:
                 _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
                 _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
+                if not _sprite_loaded:
+                        print("[Enemy] WARNING: sprite not loaded for type=%d id=%s" % [type, _sprite_id])
 
         # Load effect spritesheet for burning overlay
         _burn_effect_sheet = null

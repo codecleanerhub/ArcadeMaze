@@ -1735,8 +1735,8 @@ func _fire_lightning_strike() -> void:
                 "points": points,
                 "branches": branches,
                 "sparks": sparks,
-                "life": 60,  # frames (1s @ 60fps, was 30 = 0.5s)
-                "max_life": 60,
+                "life": 180,  # FIX: 60→180 (3s @ 60fps) per visibilità prolungata
+                "max_life": 180,
         })
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
