@@ -28,7 +28,7 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 @onready var projectiles_node: Node2D = $Projectiles
 @onready var enemy_projectiles_node: Node2D = $EnemyProjectiles
 @onready var collectibles_node: Node2D = $Collectibles
-@onready var hud: Control = $HUD
+@onready var hud: Control = $HUDLayer/HUD
 
 # --- Game state ---
 var current_level: int = 1

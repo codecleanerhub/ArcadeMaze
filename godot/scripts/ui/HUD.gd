@@ -99,22 +99,13 @@ func _ready() -> void:
         # Use set_deferred to avoid "non-equal opposite anchors" warning.
         set_deferred("size", Vector2(WINDOW_WIDTH, UI_HEIGHT))
         mouse_filter = Control.MOUSE_FILTER_IGNORE
-        # FIX (HUD invisibile root cause): il HUD era figlio di MainGame (Node2D)
-        # con una Camera2D attiva aggiunta al Window root. La Camera2D trasforma
-        # TUTTI i CanvasItem (inclusi i Control) che non sono in un CanvasLayer.
-        # set_as_top_level(true) NON basta — il Control resta influenzato dalla
-        # camera. La soluzione corretta è mettere il HUD in un CanvasLayer con
-        # layer alto (es. 10) che è ignorato dalla Camera2D.
-        var canvas := CanvasLayer.new()
-        canvas.layer = 10  # sopra il gameplay (layer 0) e sotto i popup (layer 20+)
-        canvas.name = "HUDCanvas"
-        # Riparenta il HUD sotto il CanvasLayer
-        var parent_node := get_parent()
-        if parent_node != null:
-                parent_node.remove_child(self)
-        canvas.add_child(self)
-        get_tree().root.add_child(canvas)
-        # Ora il HUD è in un CanvasLayer → non influenzato dalla Camera2D
+        # FIX (HUD invisibile root cause definitiva): il HUD è ora figlio di
+        # HUDLayer (CanvasLayer layer=10) nella scena MainGame.tscn.
+        # I CanvasLayer sono IGNORATI dalla Camera2D → HUD sempre visibile.
+        # Prima il HUD era figlio diretto di MainGame (Node2D) e la Camera2D
+        # lo trasformava. Il riparentamento runtime causava che @onready var hud
+        # in MainGameController perdesse il riferimento → hud = null →
+        # _update_hud ritornava subito senza aggiornare.
         position = Vector2.ZERO
         load_heart_sprite("res://assets/sprites/ui_heart.png")
 
