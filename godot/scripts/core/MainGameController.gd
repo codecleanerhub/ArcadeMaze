@@ -856,12 +856,14 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                         if not mini_boss.is_dead():
                                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
                                 var mb_dist_sq: float = proj_pos.distance_squared_to(mb_pos)
-                                if mb_dist_sq < 1200.0:  # FIX: 900→1200 (radius ~35px)
+                                if mb_dist_sq < 1200.0:  # radius ~35px
                                         var dmg: int = int(proj.get("power", 1))
-                                        print("[MiniBoss] Hit! dist_sq=", mb_dist_sq, " dmg=", dmg, " hp_before=", mini_boss.health)
                                         mini_boss.take_damage(dmg)
-                                        print("[MiniBoss] hp_after=", mini_boss.health)
                                         proj["active"] = false
+                                        # FIX (HUD last hit enemy): traccia MiniBoss
+                                        if not is_boss_state:
+                                                last_hit_enemy = mini_boss
+                                                last_hit_enemy_timer_ms = 3000
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                         if mini_boss.is_dead():
@@ -1697,7 +1699,7 @@ func _throw_dynamite() -> void:
         proj.position = spawn_pos
         proj.set_meta("dir", dir * 8.0)  # velocità aumentata da 6 a 8
         proj.set_meta("life_ms", 2000)  # max 2s di volo
-        proj.set_meta("grace_ms", 200)  # FIX: 200ms senza collision check
+        proj.set_meta("grace_ms", 500)  # FIX: 500ms senza collision check
         proj.set_meta("active", true)
         enemy_projectiles_node.add_child(proj)
         dynamite_thrown = proj

@@ -371,6 +371,11 @@ func get_max_health() -> int:
         return max_health
 
 
+# FIX (HUD last hit enemy): ritorna il nome del mini-boss per l'HUD.
+func get_enemy_name() -> String:
+        return "Mini-Boss (type %d)" % mb_type
+
+
 # Start burning state (player invincibility contact). 50 frames = ~0.8s.
 func start_burning(frames: int = 50) -> void:
         if dying_timer_ms > 0 or burning_timer_ms > 0:
@@ -622,7 +627,9 @@ func _draw_with_sprite() -> void:
                 var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
                 draw_circle(Vector2(0, 0), aura_r,
                         Color(accent.r, accent.g, accent.b, 0.15))
-                _draw_hp_bar(scale_val)
+                # FIX (barra rossa rimossa): la barra HP non viene più disegnata
+                # sopra il MiniBoss. Le info vengono mostrate nell'HUD.
+                # _draw_hp_bar(scale_val)
                 var sh_r := float(size) * 0.4 * scale_val
                 draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
                         Color(0.05, 0.05, 0.05, 0.4))
@@ -692,8 +699,9 @@ func _draw_with_sprite() -> void:
         var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
         draw_circle(Vector2(0, 0), aura_r, Color(accent.r, accent.g, accent.b, 0.15))
 
-        # HP bar (always visible, always red).
-        _draw_hp_bar(scale_val)
+        # FIX (barra rossa rimossa): la barra HP non viene più disegnata sopra
+        # il MiniBoss. Le info del MiniBoss colpito vengono mostrate nell'HUD.
+        # _draw_hp_bar(scale_val)
 
         # Shadow.
         var sh_r := float(size) * 0.4 * scale_val

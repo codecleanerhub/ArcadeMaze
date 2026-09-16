@@ -177,17 +177,13 @@ func _update_mine(delta_ms: int) -> void:
                 velocity.y += 0.2  # gravity (px/frame²)
                 pos += velocity
                 rotation_deg += 6.0
-                # Simple horizontal bounce off the room bounds.
-                if pos.x < 64.0 or pos.x > 1024.0 - 64.0:
+                # FIX (bomba bounds): aggiornati a 1920x1080 (erano 1024)
+                if pos.x < 64.0 or pos.x > 1920.0 - 64.0:
                         velocity.x = -velocity.x
-                # FIX (bomba scompare subito): aggiunto bounce sul pavimento.
-                # Prima la bomba cadeva sotto lo schermo senza fermarsi.
-                # Ora rimbalza sul pavimento (Y = WINDOW_HEIGHT - 64).
-                if pos.y > 1024.0 - 64.0:
-                        pos.y = 1024.0 - 64.0
+                if pos.y > 1080.0 - 64.0:
+                        pos.y = 1080.0 - 64.0
                         velocity.y = -abs(velocity.y) * 0.6  # damped bounce
                         velocity.x *= 0.8  # friction
-                # FIX: anche bounce sul soffitto (UI_HEIGHT + 16)
                 if pos.y < 96.0:
                         pos.y = 96.0
                         velocity.y = abs(velocity.y) * 0.6
