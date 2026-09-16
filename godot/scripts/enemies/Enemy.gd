@@ -691,7 +691,8 @@ func _pick_random_open_dir(maze: Object, col: int, row: int) -> bool:
                 var nr: int = row + _DR[idx]
                 if not maze.is_wall(nc, nr):
                         dx = _DC[idx]
-                if dx != 0: last_dx = dx
+                        if dx != 0:
+                                last_dx = dx
                         dy = _DR[idx]
                         return true
         dx = 0
