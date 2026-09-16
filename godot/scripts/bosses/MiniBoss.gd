@@ -152,11 +152,24 @@ func setup(t: int, lvl: int, start_col: int, start_row: int) -> void:
 func _load_sprite() -> void:
         if SpriteManager == null:
                 sprite_loaded = false
+                print("[MiniBoss] SpriteManager is null!")
+                return
+        # FIX: assicurati che SpriteManager abbia caricato gli sheet
+        if not SpriteManager.has_method("get_sheet"):
+                sprite_loaded = false
                 return
         sprite_sheet = SpriteManager.get_sheet(sprite_id)
+        if sprite_sheet == null:
+                # FIX: forza caricamento se non è in cache
+                print("[MiniBoss] get_sheet returned null for id=", sprite_id, ", trying load_all...")
+                if SpriteManager.has_method("load_all"):
+                        SpriteManager.load_all()
+                        sprite_sheet = SpriteManager.get_sheet(sprite_id)
         sprite_loaded = sprite_sheet != null and sprite_sheet.is_loaded()
         if not sprite_loaded:
                 print("[MiniBoss] WARNING: sprite not loaded for type=%d id=%s" % [mb_type, sprite_id])
+        else:
+                print("[MiniBoss] Sprite loaded OK for type=%d id=%s" % [mb_type, sprite_id])
         # Apply CharacterArt enhancement shader (strong variant for minibosses)
         # MiniBoss renders via draw_texture_rect on self (CanvasItem), so we
         # apply the material to the node itself rather than a child Sprite2D.

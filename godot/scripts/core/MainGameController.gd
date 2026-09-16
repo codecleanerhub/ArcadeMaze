@@ -1564,6 +1564,7 @@ const MiniBossClass = preload("res://scripts/bosses/MiniBoss.gd")
 
 func _spawn_mini_boss(col: int, row: int) -> void:
         if mini_boss_spawned:
+                print("[MiniBoss] Already spawned, skipping!")
                 return
         var mb_type: int = (current_level - 1) % 51  # cycle through 51 types
         var mb := MiniBossClass.new()
@@ -1571,6 +1572,7 @@ func _spawn_mini_boss(col: int, row: int) -> void:
         add_child(mb)
         mini_boss = mb
         mini_boss_spawned = true
+        print("[MiniBoss] Spawned type=", mb_type, " sprite_id=", mb.sprite_id, " sprite_loaded=", mb.sprite_loaded, " at cell (", col, ",", row, ")")
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
 
