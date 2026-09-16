@@ -1104,14 +1104,26 @@ func _update_collectibles(delta_ms: float) -> void:
                 var item_pos: Vector2 = child.pos
                 # Check P1 collision
                 # FIX (salto sopra oggetti): se il player sta saltando, non
-                # raccoglie oggetti (permette di saltare sopra armi/bombe senza
-                # perderle o raccoglierle per errore)
-                if not player.is_jumping() and p1_pos.distance_squared_to(item_pos) < 400.0:
+                # raccoglie armi/bombe per evitare di perderle. MA raccoglie
+                # comunque calice, scettro, medikit, statua, dinamite, tesori
+                # perché sono oggetti importanti che non vanno persi.
+                var can_pickup: bool = true
+                if player.is_jumping():
+                        var kind_val: int = child.get("kind")
+                        # Solo armi/bombe non si raccolgono durante salto
+                        if kind_val == CollectiblesClass.Kind.MINE:
+                                can_pickup = false
+                if can_pickup and p1_pos.distance_squared_to(item_pos) < 400.0:
                         _on_collectible_picked_up(child, player, 1)
                         continue
                 # Check P2 collision
                 if GameManager and GameManager.num_players == 2 and player2.visible:
-                        if not player2.is_jumping() and p2_pos.distance_squared_to(item_pos) < 400.0:
+                        var can_pickup2: bool = true
+                        if player2.is_jumping():
+                                var kind_val2: int = child.get("kind")
+                                if kind_val2 == CollectiblesClass.Kind.MINE:
+                                        can_pickup2 = false
+                        if can_pickup2 and p2_pos.distance_squared_to(item_pos) < 400.0:
                                 _on_collectible_picked_up(child, player2, 2)
 
 

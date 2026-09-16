@@ -505,9 +505,11 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                         add_score(10000)
                         # Particle emission is left to the Game node (it owns particles).
                 elif cell_type == CELL_WEAPON:
-                        var w: Dictionary = maze.collect_weapon(col, row)
-                        collect_weapon(w)
-                        picked_weapon_this_frame = true
+                        # FIX (salto sopra armi): non raccogliere armi durante il salto
+                        if not is_jumping():
+                                var w: Dictionary = maze.collect_weapon(col, row)
+                                collect_weapon(w)
+                                picked_weapon_this_frame = true
 
         # 5) Projectile advance: 8 px/frame, killed by walls (maze mode) or
         # out-of-bounds (always).
