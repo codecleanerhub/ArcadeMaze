@@ -1715,16 +1715,17 @@ func _throw_dynamite() -> void:
         # Crea nodo candelotto lanciato
         var proj := Node2D.new()
         proj.position = spawn_pos
-        proj.set_meta("dir", dir * 8.0)  # velocità aumentata da 6 a 8
-        proj.set_meta("life_ms", 2000)  # max 2s di volo
-        proj.set_meta("grace_ms", 500)  # FIX: 500ms senza collision check
+        proj.set_meta("dir", dir * 10.0)  # FIX: velocità 10px/frame
+        proj.set_meta("life_ms", 3000)  # FIX: 3s di volo
+        proj.set_meta("grace_ms", 1000)  # FIX: 1s senza collision check
         proj.set_meta("active", true)
+        proj.visible = true
         enemy_projectiles_node.add_child(proj)
         dynamite_thrown = proj
         dynamite_equipped = false
         dynamite_fuse_timer_ms = 0
         dynamite_alert_played = false
-        print("[Dynamite] Thrown! pos=", spawn_pos)
+        print("[Dynamite] Thrown! pos=", spawn_pos, " dir=", dir, " vel=", dir * 10.0)
 
 
 # Update del candelotto lanciato in volo
