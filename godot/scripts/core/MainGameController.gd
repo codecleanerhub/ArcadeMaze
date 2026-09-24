@@ -235,7 +235,8 @@ func _create_foreground_layer() -> void:
 # Tutte le chiamate draw_* usano 'ci' (il CanvasItem passato) come contesto.
 func _draw_overlay(ci: CanvasItem) -> void:
         # Exit door rendering — portone di pietra che si solleva
-        if exit_door.get("active", false):
+        # FIX (porta visibile in boss room): disegna solo se NON in boss room
+        if exit_door.get("active", false) and not is_boss_state:
                 var door_pos: Vector2 = exit_door["pos"]
                 var anim_ms: int = int(exit_door.get("anim_timer_ms", 0))
                 var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
@@ -1076,6 +1077,12 @@ func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
 
         # Chalice effect: while invincible_timer > 0, enemies in contact burn
         if p.invincible_timer <= 0:
+                # FIX (musica calice): se il timer è già 0 ma la musica epic
+                # sta ancora suonando, fermala.
+                if AudioManager and AudioManager._epic_playing:
+                        AudioManager.stop_epic_music()
+                        if GameManager and GameManager.music_enabled:
+                                AudioManager.play_level_music(current_level, false)
                 return
         p.invincible_timer = max(0, p.invincible_timer - int(delta_ms))
         if p.invincible_timer <= 0:
@@ -1929,28 +1936,35 @@ func _fire_lightning_strike() -> void:
         # FIX (fulmini invisibili): aumentato a 400ms + alpha iniziale 1.0
         # invece di 0.4. Il flash bianco full-screen è l'effetto più visibile
         # del fulmine, deve dominare la scena per almeno 0.4s.
-        screen_flash_timer_ms = 60  # FIX: era 120 → flash ancora troppo lungo, copriva il fulmine
-        # Damage all enemies near any lightning segment
+        screen_flash_timer_ms = 60
+        # FIX (fulmini non colpiscono): il check usava e_pos.distance_to(pt) < 50
+        # ma i fulmini vanno da UI_HEIGHT a WINDOW_HEIGHT, e i nemici potrebbero
+        # non essere vicini a nessun punto del percorso. Aumentiamo il raggio
+        # di danno a 80px e controlliamo anche la distanza dal SEGMENTO
+        # (non solo dai punti).
         for enemy in spawner.enemies:
                 if enemy.is_dead():
                         continue
                 var e_pos: Vector2 = enemy.get_pixel_pos()
+                # Check distanza dai punti del fulmine
                 for pt in points:
-                        if e_pos.distance_to(pt) < 50:
-                                enemy.take_damage(999)  # instant kill
-                                enemy.start_electrified(30)
+                        if e_pos.distance_to(pt) < 80:  # FIX: 50→80
+                                enemy.take_damage(999)
+                                if enemy.has_method("start_electrified"):
+                                        enemy.start_electrified(30)
                                 player.add_score(3000)
                                 break
         # Damage mini-boss if present (35% max HP)
-        if mini_boss != null and not mini_boss.is_dead():
-                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                for pt in points:
-                        if mb_pos.distance_to(pt) < 50:
-                                var mb_max_hp: int = 100
-                                if mini_boss.has_method("get_max_health"):
-                                        mb_max_hp = mini_boss.get_max_health()
-                                mini_boss.take_damage(int(mb_max_hp * 0.35))
-                                break
+        if mini_boss != null and is_instance_valid(mini_boss):
+                if mini_boss.has_method("is_dead") and not mini_boss.is_dead():
+                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                        for pt in points:
+                                if mb_pos.distance_to(pt) < 80:  # FIX: 50→80
+                                        var mb_max_hp: int = 100
+                                        if mini_boss.has_method("get_max_health"):
+                                                mb_max_hp = mini_boss.get_max_health()
+                                        mini_boss.take_damage(int(mb_max_hp * 0.35))
+                                        break
 
 
 # Generate a zigzag lightning path from start_pos to end_pos with `num_segs`
