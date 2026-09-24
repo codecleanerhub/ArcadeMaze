@@ -637,7 +637,7 @@ func activate_jump() -> void:
                 jump_timer = max_jump_time
                 # FIX: speed boost post-jump per sfuggire ai nemici.
                 # 1000ms = 60 frame @ 60fps. effective_speed = speed+1 = 3.
-                speed_boost_timer = 1000
+                speed_boost_timer = 2000  # FIX: 2s di accelerazione dopo il salto
 
 
 func is_jumping() -> bool:

@@ -47,7 +47,7 @@ const INITIAL_WAVE_SIZE: int = 5
 const PORTAL_ENEMIES_TO_SPAWN: int = 0
 # Portal phase timers (ms simulated) - mirror Game.cpp line 1979-2140.
 const PORTAL_OPEN_MS: int = 1000     # phase 0: portal opening
-const PORTAL_CLOSE_MS: int = 800     # phase 2: portal closing
+const PORTAL_CLOSE_MS: int = 2800    # phase 2: portal closing (2.8s, era 0.8s)
 const PORTAL_FIRST_SPAWN_MS: int = 500   # delay before first respawn
 const PORTAL_SPAWN_INTERVAL_MS: int = 4000  # 4 s between respawns
 # Cell-search radius when placing a respawned enemy near the portal.

@@ -173,11 +173,13 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
 
 func _update_mine(delta_ms: int) -> void:
         if bouncing:
-                # Bounce physics: gravity + floor bounce.
+                # FIX (bomba si incastra): NON muovere qui la posizione.
+                # Il movimento con wall collision è gestito da
+                # MainGameController._check_mine_vs_enemies().
+                # Qui aggiorniamo solo gravity, rotation e bounds.
                 velocity.y += 0.2  # gravity (px/frame²)
-                pos += velocity
                 rotation_deg += 6.0
-                # FIX (bomba bounds): aggiornati a 1920x1080 (erano 1024)
+                # FIX (bomba bounds): aggiornati a 1920x1080
                 if pos.x < 64.0 or pos.x > 1920.0 - 64.0:
                         velocity.x = -velocity.x
                 if pos.y > 1080.0 - 64.0:

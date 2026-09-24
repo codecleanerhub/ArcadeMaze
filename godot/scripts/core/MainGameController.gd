@@ -911,21 +911,25 @@ func _check_mine_vs_enemies() -> void:
                         mine_item.queue_free()
                         mine_item = null
                 return
-        # FIX (bomba supera muri): wall collision check
+        # FIX (bomba supera muri + si incastra): wall collision check migliorato
+        # La bomba viene mossa QUI (non in _update_mine) con wall check.
         var mine_pos2: Vector2 = mine_item.position
         var mine_vel: Vector2 = mine_item.get("velocity") if mine_item.get("velocity") != null else Vector2.ZERO
-        # Calcola la cella attuale e la cella destinazione
+        # Applica il movimento
+        var new_pos: Vector2 = mine_pos2 + mine_vel
+        # Calcola la cella attuale e destinazione
         var cur_col: int = int(mine_pos2.x / C.TILE_SIZE)
         var cur_row: int = int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        var next_col: int = int((mine_pos2.x + mine_vel.x) / C.TILE_SIZE)
-        var next_row: int = int((mine_pos2.y + mine_vel.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        # Se la cella destinazione è un muro, inverti la velocità
+        var next_col: int = int(new_pos.x / C.TILE_SIZE)
+        var next_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        # Se la cella destinazione è un muro, inverti la velocità e non muovere
         if next_col != cur_col and maze.is_wall(next_col, cur_row):
                 mine_vel.x = -mine_vel.x * 0.7  # damped bounce
-                mine_pos2.x = cur_col * C.TILE_SIZE + C.TILE_SIZE / 2.0
+                new_pos.x = mine_pos2.x  # non muovere in X
         if next_row != cur_row and maze.is_wall(cur_col, next_row):
                 mine_vel.y = -mine_vel.y * 0.7
-                mine_pos2.y = cur_row * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT
+                new_pos.y = mine_pos2.y  # non muovere in Y
+        mine_pos2 = new_pos
         # Aggiorna posizione e velocità della mine
         mine_item.position = mine_pos2
         mine_item.set("velocity", mine_vel)
@@ -973,7 +977,7 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                                 if enemy.is_dead():
                                         continue
                                 if p_pos.distance_squared_to(enemy.get_pixel_pos()) < 800.0:
-                                        p.set_jump_speed_boost(1000)
+                                        p.set_jump_speed_boost(2000)  # FIX: 2s acceleration
                                         break
                 return
         for enemy in spawner.enemies:
