@@ -1001,7 +1001,7 @@ func _draw_medikit() -> void:
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
 func _draw_knight_statue() -> void:
         var y_off := -bob_offset
-        var tex := _load_png_cached("res://assets/sprites/collectibles/item_knight_statue.png")
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_unicorn_statue.png")
         if tex != null:
                 # Aura mistica blu/ciano pulsante
                 var glow_alpha: float = 0.20 + pulse * 0.15
@@ -1039,7 +1039,7 @@ func _draw_knight_statue() -> void:
 # Il player può così vedere dove apparirà la statua.
 func _draw_knight_statue_ghost() -> void:
         var y_off := -bob_offset
-        var tex := _load_png_cached("res://assets/sprites/collectibles/item_knight_statue.png")
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_unicorn_statue.png")
         if tex != null:
                 # Aura mistica pulsante
                 var glow_alpha: float = 0.15 + pulse * 0.15

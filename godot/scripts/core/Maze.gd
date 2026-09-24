@@ -602,6 +602,25 @@ func collect_treasure(col: int, row: int) -> void:
                 all_treasures_collected.emit()
 
 
+# FIX (scarpe alate bloccano livello): cerca e rimuove la cella TREASURE
+# più vicina alla posizione data. Usato quando il player raccoglie un
+# collectible TREASURE che non è sopra una cella TREASURE del maze.
+func remove_nearest_treasure(from_col: int, from_row: int) -> void:
+        var best_c: int = -1
+        var best_r: int = -1
+        var best_dist: int = 999999
+        for c in range(C.MAZE_COLS):
+                for r in range(C.MAZE_ROWS):
+                        if _get_cell_type(c, r) == C.CellType.TREASURE:
+                                var d: int = abs(c - from_col) + abs(r - from_row)
+                                if d < best_dist:
+                                        best_dist = d
+                                        best_c = c
+                                        best_r = r
+        if best_c >= 0:
+                collect_treasure(best_c, best_r)
+
+
 ## Collect the weapon at (col, row). Returns the weapon Dictionary and
 ## sets the cell to EMPTY. Emits `weapon_collected`.
 func collect_weapon(col: int, row: int) -> Dictionary:

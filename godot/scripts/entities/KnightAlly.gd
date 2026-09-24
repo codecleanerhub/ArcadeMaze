@@ -68,7 +68,7 @@ func _ready() -> void:
 
 
 func _load_sprite() -> void:
-        var path := "res://assets/sprites/knight_ally_sheet.png"
+        var path := "res://assets/sprites/unicorn_ally_sheet.png"
         var abs_path := ProjectSettings.globalize_path(path)
         if not FileAccess.file_exists(abs_path):
                 _sprite_loaded = false
@@ -79,10 +79,9 @@ func _load_sprite() -> void:
                 _sprite_loaded = _sprite_sheet != null
 
 
-# FIX (statua di pietra): carica la texture della statua (grigio/roccia)
-# usata durante la fase STONE e TRANSFORMING.
+# FIX (statua di pietra): carica la texture della statua (unicorno di pietra)
 func _load_statue_texture() -> void:
-        var path := "res://assets/sprites/collectibles/item_knight_statue.png"
+        var path := "res://assets/sprites/collectibles/item_unicorn_statue.png"
         var abs_path := ProjectSettings.globalize_path(path)
         if not FileAccess.file_exists(abs_path):
                 _statue_loaded = false

@@ -234,16 +234,64 @@ func _create_foreground_layer() -> void:
 # Disegna gli overlay SOPRA il maze. Chiamato da OverlayDrawer._draw().
 # Tutte le chiamate draw_* usano 'ci' (il CanvasItem passato) come contesto.
 func _draw_overlay(ci: CanvasItem) -> void:
-        # Exit door rendering
+        # Exit door rendering — portone di pietra che si solleva
         if exit_door.get("active", false):
                 var door_pos: Vector2 = exit_door["pos"]
+                var anim_ms: int = int(exit_door.get("anim_timer_ms", 0))
                 var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
-                ci.draw_circle(door_pos, 30.0, Color(1.0, 0.84, 0.0, 0.3 + 0.3 * glow))
-                ci.draw_circle(door_pos, 20.0, Color(1.0, 0.84, 0.0, 0.5 + 0.3 * glow))
-                ci.draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
-                        Color(0.5, 0.35, 0.15, 0.9), true)
-                ci.draw_rect(Rect2(door_pos.x - 16, door_pos.y - 24, 32, 48),
-                        Color(1.0, 0.84, 0.0, 0.8), false, 2)
+                # Larghezza porta = 1 cella, altezza = 1.5 celle
+                var door_w: float = float(C.TILE_SIZE)
+                var door_h: float = float(C.TILE_SIZE) * 1.5
+                var door_x: float = door_pos.x - door_w * 0.5
+                var door_y_base: float = door_pos.y - door_h * 0.5
+                # Animazione: il portone si solleva in alto (800ms)
+                var open_ratio: float = 1.0
+                if anim_ms > 0:
+                        open_ratio = 1.0 - (float(anim_ms) / 800.0)
+                        open_ratio = clampf(open_ratio, 0.0, 1.0)
+                var lift: float = open_ratio * door_h * 0.7  # si solleva del 70%
+                # --- Scala di pietra (dietro il portone, visibile quando aperto) ---
+                if open_ratio > 0.1:
+                        var stair_w: float = door_w * 0.7
+                        var stair_x: float = door_pos.x - stair_w * 0.5
+                        var stair_y: float = door_y_base + door_h * 0.2
+                        # Gradini della scala (5 gradini che scendono)
+                        for i in 5:
+                                var step_w: float = stair_w - float(i) * 4.0
+                                var step_h: float = 4.0
+                                var step_x: float = door_pos.x - step_w * 0.5
+                                var step_y: float = stair_y + float(i) * (step_h + 2.0)
+                                ci.draw_rect(Rect2(step_x, step_y, step_w, step_h),
+                                        Color(0.35, 0.30, 0.22, 0.9 * open_ratio), true)
+                                ci.draw_rect(Rect2(step_x, step_y, step_w, step_h),
+                                        Color(0.15, 0.10, 0.05, 0.8 * open_ratio), false, 1.0)
+                        # Buio sotto le scale (effetto profondità)
+                        ci.draw_rect(Rect2(stair_x, stair_y + 30, stair_w, door_h * 0.5),
+                                Color(0.02, 0.01, 0.0, 0.9 * open_ratio), true)
+                # --- Portone di pietra ---
+                var door_y: float = door_y_base - lift
+                # Glow dorato intorno
+                ci.draw_circle(door_pos, door_w * 0.6, Color(1.0, 0.84, 0.0, 0.15 + 0.15 * glow))
+                # Corpo del portone (pietra scura)
+                ci.draw_rect(Rect2(door_x, door_y, door_w, door_h),
+                        Color(0.42, 0.35, 0.25, 1.0), true)
+                # Texture pietra (righe orizzontali)
+                for i in 4:
+                        var ry: float = door_y + 8.0 + float(i) * (door_h * 0.25)
+                        ci.draw_line(Vector2(door_x + 4, ry), Vector2(door_x + door_w - 4, ry),
+                                Color(0.25, 0.20, 0.12, 0.6), 1.0)
+                # Bordo dorato del portone
+                ci.draw_rect(Rect2(door_x, door_y, door_w, door_h),
+                        Color(0.7, 0.55, 0.15, 0.9), false, 3.0)
+                # Cornice superiore (arco)
+                ci.draw_rect(Rect2(door_x - 4, door_y - 4, door_w + 8, 8),
+                        Color(0.5, 0.40, 0.18, 0.95), true)
+                # Simbolo centrale (croce/chiave dorata)
+                if open_ratio < 0.5:
+                        ci.draw_rect(Rect2(door_pos.x - 3, door_y + door_h * 0.3, 6, door_h * 0.4),
+                                Color(0.8, 0.65, 0.15, 1.0), true)
+                        ci.draw_rect(Rect2(door_pos.x - 8, door_y + door_h * 0.45, 16, 6),
+                                Color(0.8, 0.65, 0.15, 1.0), true)
         # Particles
         for p in particles:
                 var pos: Vector2 = p.get("pos", Vector2.ZERO)
@@ -1217,23 +1265,13 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(1.0, 0.84, 0.0))
                                 collectibles_node.add_child(burst)
                         # FIX (tesori counter): quando il player raccoglie un
-                        # collectible TREASURE, trova la cella TREASURE del maze
-                        # più vicina e la rimuove (collect_treasure). Questo
-                        # decrementa maze.get_remaining_treasures() e attiva
-                        # l'exit door quando tutti i tesori sono raccolti.
+                        # collectible TREASURE, rimuovi la cella TREASURE del maze
+                        # più vicina. Usa remove_nearest_treasure che cerca in
+                        # TUTTO il maze, non solo in raggio 5.
                         var p_pos_t: Vector2 = p.get_pixel_pos()
                         var p_col_t: int = int(p_pos_t.x / C.TILE_SIZE)
                         var p_row_t: int = int((p_pos_t.y - C.UI_HEIGHT) / C.TILE_SIZE)
-                        # Cerca la cella TREASURE più vicina in raggio 3
-                        var found_treasure: bool = false
-                        for r in range(p_row_t - 3, p_row_t + 4):
-                                for c in range(p_col_t - 3, p_col_t + 4):
-                                        if maze.get_cell_type(c, r) == C.CellType.TREASURE:
-                                                maze.collect_treasure(c, r)
-                                                found_treasure = true
-                                                break
-                                if found_treasure:
-                                        break
+                        maze.remove_nearest_treasure(p_col_t, p_row_t)
                 CollectiblesClass.Kind.MEDIKIT:
                         # FIX (medikit): aumenta l'ENERGIA del player, non le vite.
                         # L'energia è la barra che si vede in alto (energy/max_energy).
