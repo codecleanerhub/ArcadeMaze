@@ -515,14 +515,17 @@ func _handle_input() -> void:
                         player.activate_jump()
                         if not was_jumping and player.is_jumping() and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn) and player.shoot_cooldown == 0:
+                if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn):
                         # FIX (dinamite): se il player ha la dinamite equipaggiata,
                         # il fuoco lancia il candelotto invece di sparare.
+                        # FIX (dinamite non lanciata): rimosso il check shoot_cooldown==0
+                        # perché dopo il pickup, shoot_cooldown potrebbe essere > 0
+                        # e bloccare il lancio. La dinamite ha il suo cooldown separato.
                         if dynamite_equipped:
-                                print("[Dynamite] Joy fire pressed, throwing! equipped=", dynamite_equipped, " fuse=", dynamite_fuse_timer_ms)
+                                print("[Dynamite] Joy fire pressed, throwing!")
                                 _throw_dynamite()
                                 player.shoot_cooldown = 300
-                        else:
+                        elif player.shoot_cooldown == 0:
                                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                                 player.shoot()
                                 var ammo_after: int = player.current_weapon.get("ammo", 0)
@@ -548,13 +551,11 @@ func _handle_input() -> void:
         player.set_direction(p1_dx, p1_dy)
 
         # P1 keyboard shoot (also works without joystick — matches C++ fallback)
-        if Input.is_action_just_pressed("shoot") and player.shoot_cooldown == 0:
-                # FIX (dinamite): se il player ha la dinamite equipaggiata,
-                # il fuoco lancia il candelotto invece di sparare.
+        if Input.is_action_just_pressed("shoot"):
                 if dynamite_equipped:
                         _throw_dynamite()
                         player.shoot_cooldown = 300
-                else:
+                elif player.shoot_cooldown == 0:
                         var ammo_before: int = player.current_weapon.get("ammo", 0)
                         player.shoot()
                         var ammo_after: int = player.current_weapon.get("ammo", 0)

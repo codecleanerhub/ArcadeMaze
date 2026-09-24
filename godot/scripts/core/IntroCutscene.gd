@@ -127,8 +127,8 @@ func draw_overlay(ci: CanvasItem) -> void:
         # Niente più indicatore 1/4, 2/4, ecc.
         var panel_x: float = 30.0
         var panel_y: float = 30.0
-        var panel_w: float = vp_size.x * 0.42  # FIX: metà larghezza (era 0.55)
-        var panel_h: float = vp_size.y * 0.22  # FIX: poco meno di metà altezza (era 0.35)
+        var panel_w: float = vp_size.x * 0.38  # FIX: -10% (era 0.42)
+        var panel_h: float = vp_size.y * 0.13  # FIX: -40% (era 0.22)
         # Sfondo pietra scuro
         ci.draw_rect(Rect2(panel_x, panel_y, panel_w, panel_h),
                 Color(0.12, 0.08, 0.04, 0.88), true)

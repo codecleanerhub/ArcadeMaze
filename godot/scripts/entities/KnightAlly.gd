@@ -154,6 +154,13 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                 chase_pos = target_enemy.get_pixel_pos()
                 has_target = true
 
+        # FIX (unicorno bloccato senza nemici): se non ci sono nemici,
+        # l'unicorno deve scomparire dopo 5 secondi, non rimanere bloccato.
+        if not has_target:
+                # Nessun nemico: avvia countdown scomparsa
+                if disappear_timer_ms <= 0:
+                        disappear_timer_ms = 5000
+                        print("[KnightAlly] No enemies found, disappear in 5s")
         # Movement: solo se c'è un nemico da inseguire
         if has_target:
                 var d: Vector2 = chase_pos - pos
