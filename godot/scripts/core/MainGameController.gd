@@ -122,6 +122,20 @@ var fire_bursts: Array = []   # [{pos, life, max_life, scale, anim_time}]
 #   - effect_fireburst: 6x4 frame 64x64 (anchor 32,40)
 var _ashpile_sheet: Variant = null
 var _fireburst_sheet: Variant = null
+# FIX (porta PNG): texture del portone di pietra
+var _exit_door_tex: Texture2D = null
+
+func _load_exit_door_texture() -> Texture2D:
+        if _exit_door_tex != null:
+                return _exit_door_tex
+        var path := "res://assets/sprites/exit_door.png"
+        var abs_path := ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img := Image.new()
+        if img.load(abs_path) == OK:
+                _exit_door_tex = ImageTexture.create_from_image(img)
+        return _exit_door_tex
 
 # Frame delta in ms (for timer decrements matching C++ @ 60 FPS)
 const FRAME_MS: float = 1000.0 / 60.0
@@ -234,15 +248,15 @@ func _create_foreground_layer() -> void:
 # Disegna gli overlay SOPRA il maze. Chiamato da OverlayDrawer._draw().
 # Tutte le chiamate draw_* usano 'ci' (il CanvasItem passato) come contesto.
 func _draw_overlay(ci: CanvasItem) -> void:
-        # Exit door rendering — portone di pietra che si solleva
-        # FIX (porta visibile in boss room): disegna solo se NON in boss room
+        # Exit door rendering — PNG portone di pietra che si solleva
         if exit_door.get("active", false) and not is_boss_state:
                 var door_pos: Vector2 = exit_door["pos"]
                 var anim_ms: int = int(exit_door.get("anim_timer_ms", 0))
                 var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
-                # Larghezza porta = 1 cella, altezza = 1.5 celle
-                var door_w: float = float(C.TILE_SIZE)
-                var door_h: float = float(C.TILE_SIZE) * 1.5
+                # PNG della porta (64x96, scala 2x = 128x192)
+                var door_tex: Texture2D = _load_exit_door_texture()
+                var door_w: float = float(C.TILE_SIZE) * 1.5
+                var door_h: float = float(C.TILE_SIZE) * 2.0
                 var door_x: float = door_pos.x - door_w * 0.5
                 var door_y_base: float = door_pos.y - door_h * 0.5
                 # Animazione: il portone si solleva in alto (800ms)
@@ -250,49 +264,13 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 if anim_ms > 0:
                         open_ratio = 1.0 - (float(anim_ms) / 800.0)
                         open_ratio = clampf(open_ratio, 0.0, 1.0)
-                var lift: float = open_ratio * door_h * 0.7  # si solleva del 70%
-                # --- Scala di pietra (dietro il portone, visibile quando aperto) ---
-                if open_ratio > 0.1:
-                        var stair_w: float = door_w * 0.7
-                        var stair_x: float = door_pos.x - stair_w * 0.5
-                        var stair_y: float = door_y_base + door_h * 0.2
-                        # Gradini della scala (5 gradini che scendono)
-                        for i in 5:
-                                var step_w: float = stair_w - float(i) * 4.0
-                                var step_h: float = 4.0
-                                var step_x: float = door_pos.x - step_w * 0.5
-                                var step_y: float = stair_y + float(i) * (step_h + 2.0)
-                                ci.draw_rect(Rect2(step_x, step_y, step_w, step_h),
-                                        Color(0.35, 0.30, 0.22, 0.9 * open_ratio), true)
-                                ci.draw_rect(Rect2(step_x, step_y, step_w, step_h),
-                                        Color(0.15, 0.10, 0.05, 0.8 * open_ratio), false, 1.0)
-                        # Buio sotto le scale (effetto profondità)
-                        ci.draw_rect(Rect2(stair_x, stair_y + 30, stair_w, door_h * 0.5),
-                                Color(0.02, 0.01, 0.0, 0.9 * open_ratio), true)
-                # --- Portone di pietra ---
-                var door_y: float = door_y_base - lift
-                # Glow dorato intorno
-                ci.draw_circle(door_pos, door_w * 0.6, Color(1.0, 0.84, 0.0, 0.15 + 0.15 * glow))
-                # Corpo del portone (pietra scura)
-                ci.draw_rect(Rect2(door_x, door_y, door_w, door_h),
-                        Color(0.42, 0.35, 0.25, 1.0), true)
-                # Texture pietra (righe orizzontali)
-                for i in 4:
-                        var ry: float = door_y + 8.0 + float(i) * (door_h * 0.25)
-                        ci.draw_line(Vector2(door_x + 4, ry), Vector2(door_x + door_w - 4, ry),
-                                Color(0.25, 0.20, 0.12, 0.6), 1.0)
-                # Bordo dorato del portone
-                ci.draw_rect(Rect2(door_x, door_y, door_w, door_h),
-                        Color(0.7, 0.55, 0.15, 0.9), false, 3.0)
-                # Cornice superiore (arco)
-                ci.draw_rect(Rect2(door_x - 4, door_y - 4, door_w + 8, 8),
-                        Color(0.5, 0.40, 0.18, 0.95), true)
-                # Simbolo centrale (croce/chiave dorata)
-                if open_ratio < 0.5:
-                        ci.draw_rect(Rect2(door_pos.x - 3, door_y + door_h * 0.3, 6, door_h * 0.4),
-                                Color(0.8, 0.65, 0.15, 1.0), true)
-                        ci.draw_rect(Rect2(door_pos.x - 8, door_y + door_h * 0.45, 16, 6),
-                                Color(0.8, 0.65, 0.15, 1.0), true)
+                var lift: float = open_ratio * door_h * 0.5
+                # Glow dorato
+                ci.draw_circle(door_pos, door_w * 0.7, Color(1.0, 0.84, 0.0, 0.1 + 0.1 * glow))
+                # Disegna PNG della porta (con lift)
+                if door_tex != null:
+                        ci.draw_texture_rect(door_tex,
+                                Rect2(door_x, door_y_base - lift, door_w, door_h), false)
         # Particles
         for p in particles:
                 var pos: Vector2 = p.get("pos", Vector2.ZERO)
