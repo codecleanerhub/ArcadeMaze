@@ -114,7 +114,7 @@ func _process(delta: float) -> void:
 # Custom draw: stile geroglifici scolpiti su pietra
 # Chiamato da TextOverlay._draw() che è SOPRA l'immagine.
 func draw_overlay(ci: CanvasItem) -> void:
-        var font := ci.get_theme_default_font()
+        var font: Font = ci.get_theme_default_font()
         if font == null:
                 font = ThemeDB.fallback_font
         if font == null:
