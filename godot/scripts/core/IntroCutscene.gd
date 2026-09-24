@@ -122,11 +122,13 @@ func draw_overlay(ci: CanvasItem) -> void:
 
         var vp_size: Vector2 = ci.get_viewport_rect().size
 
-        # --- Pannello di pietra per il testo (sotto, semi-trasparente) ---
-        var panel_y: float = vp_size.y * 0.72
-        var panel_h: float = vp_size.y * 0.25
-        var panel_x: float = vp_size.x * 0.08
-        var panel_w: float = vp_size.x * 0.84
+        # FIX (scritte in alto a sinistra): pannello ridotto, posizionato
+        # in alto a sinistra invece che in basso al centro.
+        # Niente più indicatore 1/4, 2/4, ecc.
+        var panel_x: float = 30.0
+        var panel_y: float = 30.0
+        var panel_w: float = vp_size.x * 0.55
+        var panel_h: float = vp_size.y * 0.35
         # Sfondo pietra scuro
         ci.draw_rect(Rect2(panel_x, panel_y, panel_w, panel_h),
                 Color(0.12, 0.08, 0.04, 0.88), true)
@@ -139,37 +141,24 @@ func draw_overlay(ci: CanvasItem) -> void:
 
         # --- Testo caption (scolpito su pietra) ---
         var caption_text: String = CAPTIONS[_current_frame] if _current_frame < CAPTIONS.size() else ""
-        var font_size: int = 24
-        var text_y: float = panel_y + 25
+        var font_size: int = 20
+        var text_x: float = panel_x + 20
+        var text_y: float = panel_y + 15
         var lines: PackedStringArray = caption_text.split("\n")
         for line_idx in lines.size():
                 var line: String = lines[line_idx]
-                var line_w: float = font.get_string_size(line, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x
-                var line_x: float = (vp_size.x - line_w) * 0.5
-                var ly: float = text_y + float(line_idx) * (font_size + 8) + font_size
+                var ly: float = text_y + float(line_idx) * (font_size + 6) + font_size
                 # Ombra profonda (effetto incisione)
                 for off in [Vector2(-2, 2), Vector2(2, 2), Vector2(0, 3)]:
-                        ci.draw_string(font, Vector2(line_x + off.x, ly + off.y), line,
+                        ci.draw_string(font, Vector2(text_x + off.x, ly + off.y), line,
                                 HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, STONE_DARK)
                 # Outline pietra
                 for off in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
-                        ci.draw_string(font, Vector2(line_x + off.x, ly + off.y), line,
+                        ci.draw_string(font, Vector2(text_x + off.x, ly + off.y), line,
                                 HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, STONE_COLOR)
                 # Fill dorato (testo principale)
-                ci.draw_string(font, Vector2(line_x, ly), line,
+                ci.draw_string(font, Vector2(text_x, ly), line,
                         HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, GOLD_COLOR)
-
-        # --- Progress indicator (in alto a sinistra, scolpito) ---
-        var prog_text: String = str(_current_frame + 1) + " / 4"
-        var prog_size: int = 22
-        var prog_y: float = 35.0
-        ci.draw_rect(Rect2(15, 15, 90, 35), Color(0.12, 0.08, 0.04, 0.88), true)
-        ci.draw_rect(Rect2(15, 15, 90, 35), Color(0.6, 0.5, 0.2, 0.7), false, 2.0)
-        for off in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
-                ci.draw_string(font, Vector2(28 + off.x, prog_y + off.y), prog_text,
-                        HORIZONTAL_ALIGNMENT_LEFT, -1, prog_size, STONE_COLOR)
-        ci.draw_string(font, Vector2(28, prog_y), prog_text,
-                HORIZONTAL_ALIGNMENT_LEFT, -1, prog_size, GOLD_COLOR)
 
         # --- Skip hint (in basso a destra, pulsante) ---
         var skip_alpha: float = 0.5 + sin(_frame_timer * 3.0) * 0.3
