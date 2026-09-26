@@ -477,6 +477,11 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
                 # Spawn particles? (delegated to Game for performance.)
 
         position = pos
+        # FIX (animazione miniboss congelata): senza queue_redraw() il _draw()
+        # viene chiamato una sola volta (al primo frame) e l'animazione resta
+        # bloccata su frame=0 idle. Mirror di Enemy.gd:504 (che chiama
+        # queue_redraw() alla fine di update_enemy).
+        queue_redraw()
 
 
 # ============================================================

@@ -319,7 +319,13 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
                 ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
                 ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.9))
-                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 1.0))
+                # FIX (pallino procedurale accanto al miniboss): il core bianco
+                # solido alpha=1.0 appariva come un "pallino" alieno accanto
+                # al miniboss (che viene spawnato 1-4 celle più in là dal
+                # portale). Ridotto alpha da 1.0 a 0.5: il nucleo rimane
+                # visibile come parte del portale ma non è più un cerchio
+                # bianco opaco che spicca.
+                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
 
 
 # Setup a Camera2D for the play area. With the design space now at 1920x1080
@@ -660,6 +666,27 @@ func _update_playing(delta_ms: float) -> void:
                 if not enemy.is_death_anim_done():
                         enemy.set_flee_mode(player_invuln)
                         enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles, delta_ms)
+
+        # FIX (scatti): separazione nemici-nemici per evitare stacking.
+        # Quando due nemici sono entro 32px si spingono di 1px per frame.
+        # Previene il "pop" divergente quando le BFS divergono su due nemici
+        # stackati sulla stessa cella, causa di scatti improvvisi.
+        var n_enemies: int = spawner.enemies.size()
+        for i in range(n_enemies):
+                var e1 = spawner.enemies[i]
+                if not (e1 is Enemy) or e1.is_death_anim_done() or e1.is_dying():
+                        continue
+                for j in range(i + 1, n_enemies):
+                        var e2 = spawner.enemies[j]
+                        if not (e2 is Enemy) or e2.is_death_anim_done() or e2.is_dying():
+                                continue
+                        var diff: Vector2 = e1.position - e2.position
+                        var dist_sq: float = diff.length_squared()
+                        if dist_sq < 1024.0 and dist_sq > 0.01:  # 32px radius
+                                var dist: float = sqrt(dist_sq)
+                                var push: Vector2 = (diff / dist) * 1.0
+                                e1.position += push
+                                e2.position -= push
 
         # (3) Spawn enemy projectiles as Projectile nodes so they get rendered + collide
         for proj_data in enemy_projectiles:
@@ -1736,15 +1763,42 @@ func _throw_dynamite() -> void:
         # al player. Aggiunto grace_period_ms per non checkare collisioni
         # nei primi 200ms (lascia che il candelotto si allontani).
         var spawn_pos: Vector2 = player.get_pixel_pos() + dir * 40.0
+        # FIX (dinamite spawn dentro muro): se spawn_pos è in una cella WALL,
+        # retrocedi verso il player finché non trova una cella vuota.
+        var sp_col: int = int(spawn_pos.x / C.TILE_SIZE)
+        var sp_row: int = int((spawn_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if sp_col >= 0 and sp_col < C.MAZE_COLS and sp_row >= 0 and sp_row < C.MAZE_ROWS:
+                if maze.is_wall(sp_col, sp_row):
+                        for i in range(32, 7, -8):
+                                var tp: Vector2 = player.get_pixel_pos() + dir * float(i)
+                                var tc: int = int(tp.x / C.TILE_SIZE)
+                                var tr: int = int((tp.y - C.UI_HEIGHT) / C.TILE_SIZE)
+                                if tc >= 0 and tc < C.MAZE_COLS and tr >= 0 and tr < C.MAZE_ROWS:
+                                        if not maze.is_wall(tc, tr):
+                                                spawn_pos = tp
+                                                break
         # Crea nodo candelotto lanciato
         var proj := Node2D.new()
         proj.position = spawn_pos
-        proj.set_meta("dir", dir * 10.0)  # FIX: velocità 10px/frame
-        proj.set_meta("life_ms", 3000)  # FIX: 3s di volo
-        proj.set_meta("grace_ms", 1000)  # FIX: 1s senza collision check
+        # FIX (root cause + speed + lifetime):
+        #  - speed 18 px/frame ≈ 1080 px/s (più veloce, come richiesto)
+        #  - life_ms 10000 = 10 secondi di volo (richiesta utente)
+        #  - homing_ms 250 = ricalcola BFS ogni 250ms verso il nemico più vicino
+        proj.set_meta("dir", dir * 18.0)
+        proj.set_meta("life_ms", 10000)
+        proj.set_meta("grace_ms", 200)  # 200ms senza collision check (lascia allontanare)
+        proj.set_meta("homing_ms", 0)  # ricalcola subito al primo frame
         proj.set_meta("active", true)
         proj.visible = true
-        enemy_projectiles_node.add_child(proj)
+        # FIX (root cause): il candelotto era aggiunto a enemy_projectiles_node,
+        # ma il loop (3b) a riga ~696 fa queue_free() su ogni figlio con meta
+        # "velocity" == Vector2.ZERO. Il candelotto usa meta "dir" (non
+        # "velocity"), quindi velocity default = ZERO → distrutto al primo
+        # frame, PRIMA che _update_thrown_dynamite possa muoverlo.
+        # Soluzione: aggiungerlo a collectibles_node, che è un contenitore
+        # sicuro (in _update_collectibles i nodi senza metodo update_step
+        # vengono semplicemente saltati con `continue`).
+        collectibles_node.add_child(proj)
         dynamite_thrown = proj
         dynamite_equipped = false
         dynamite_fuse_timer_ms = 0
@@ -1752,14 +1806,20 @@ func _throw_dynamite() -> void:
         print("[Dynamite] Thrown! pos=", spawn_pos, " dir=", dir, " vel=", dir * 10.0)
 
 
-# Update del candelotto lanciato in volo
+# Update del candelotto lanciato in volo.
+# Comportamento richiesto dall'utente:
+#   1. si muove VELOCE (~1080 px/s a 60 FPS)
+#   2. RIMBALZA sui muri del labirinto (non esplode al primo impatto)
+#   3. SEGUE IL LABIRINTO verso il nemico più vicino (BFS homing ogni 250ms)
+#   4. dura 10 SECONDI, poi esplode se non ha colpito nulla
+#   5. se tocca un nemico/mini-boss, kill istantaneo + esplosione
 func _update_thrown_dynamite(delta_ms: int) -> void:
         if dynamite_thrown == null or not is_instance_valid(dynamite_thrown):
                 dynamite_thrown = null
                 return
         var dt: Node2D = dynamite_thrown
         var vel: Vector2 = dt.get_meta("dir", Vector2.ZERO)
-        var life: int = dt.get_meta("life_ms", 2000)
+        var life: int = dt.get_meta("life_ms", 10000)
         life -= int(delta_ms)
         dt.set_meta("life_ms", life)
         if life <= 0:
@@ -1767,24 +1827,65 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
                 dt.queue_free()
                 dynamite_thrown = null
                 return
-        # FIX (grace period): riduci il grace_ms, non checkare collisioni
-        # finché grace_ms > 0 (lascia che il candelotto si allontani dal player)
+        # Grace period: nessun check collisioni nemici (lascia allontanare dal player)
         var grace: int = dt.get_meta("grace_ms", 0)
         if grace > 0:
                 grace -= int(delta_ms)
                 dt.set_meta("grace_ms", grace)
-                # Muovi ma non checkare collisioni
-                dt.position += vel
-                return
-        # Muovi
-        dt.position += vel
-        # Wall collision: se colpisce muro, esplode
-        var col: int = int(dt.position.x / C.TILE_SIZE)
-        var row: int = int((dt.position.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        if maze.is_wall(col, row):
-                _explode_dynamite(true, dt.position)
-                dt.queue_free()
-                dynamite_thrown = null
+        # BFS homing: ogni 250ms ricalcola la direzione verso il nemico più
+        # vicino (incluso mini-boss). Il candelotto "segue il labirinto".
+        var homing_timer: int = dt.get_meta("homing_ms", 0)
+        homing_timer -= int(delta_ms)
+        if homing_timer <= 0:
+                var dt_cell := Vector2i(int(dt.position.x / C.TILE_SIZE),
+                                int((dt.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                var best_enemy: Node2D = null
+                var best_dist: float = INF
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        var e_pos: Vector2 = enemy.get_pixel_pos()
+                        var d: float = dt.position.distance_squared_to(e_pos)
+                        if d < best_dist:
+                                best_dist = d
+                                best_enemy = enemy
+                if mini_boss != null and not mini_boss.is_dead():
+                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                        var d_mb: float = dt.position.distance_squared_to(mb_pos)
+                        if d_mb < best_dist:
+                                best_dist = d_mb
+                                best_enemy = mini_boss
+                if best_enemy != null:
+                        var bpos: Vector2 = best_enemy.get_pixel_pos()
+                        var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
+                                        int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                        var next_dir: Vector2i = BFS.find_path_dir(maze, dt_cell, target_cell)
+                        if next_dir != Vector2i.ZERO:
+                                var speed: float = vel.length()
+                                if speed < 0.001:
+                                        speed = 18.0
+                                vel = Vector2(next_dir) * speed
+                                dt.set_meta("dir", vel)
+                homing_timer = 250
+        dt.set_meta("homing_ms", homing_timer)
+        # Rimbalzo: muovi; se la nuova posizione è in un muro, inverte l'asse
+        # di impatto e resta fermo questo frame. NON esplode sul muro.
+        var new_pos: Vector2 = dt.position + vel
+        var new_col: int = int(new_pos.x / C.TILE_SIZE)
+        var new_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if new_col >= 0 and new_col < C.MAZE_COLS and new_row >= 0 and new_row < C.MAZE_ROWS:
+                if maze.is_wall(new_col, new_row):
+                        var cur_col: int = int(dt.position.x / C.TILE_SIZE)
+                        var cur_row: int = int((dt.position.y - C.UI_HEIGHT) / C.TILE_SIZE)
+                        if new_col != cur_col:
+                                vel.x = -vel.x
+                        if new_row != cur_row:
+                                vel.y = -vel.y
+                        dt.set_meta("dir", vel)
+                        new_pos = dt.position  # resta fermo questo frame
+        dt.position = new_pos
+        # Skip collisioni nemici durante grace period
+        if grace > 0:
                 return
         # Enemy collision: instant kill
         for enemy in spawner.enemies:

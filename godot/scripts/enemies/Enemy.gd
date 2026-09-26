@@ -120,7 +120,11 @@ const STATS := {
 const _DEFAULT_STATS := {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.6, 0.4, 0.3), "accent": Color(0.9, 0.7, 0.5)}
 
 # --- Anti-stuck + AI constants (mirror src/Enemy.cpp line 358-360) ----------
-const STUCK_THRESHOLD_MS: int = 300        # ridotto da 600 a 300 per anti-stuck più reattivo
+# FIX (scatti): STUCK_THRESHOLD_MS ridotto da 300 a 100ms per recovery
+# più veloce quando il nemico si blocca vicino a un muro. Prima il
+# nemico restava fermo 300ms (18 frame a 60 FPS) prima che scattasse
+# il fallback random dir, dando la sensazione di "incastrarsi nel muro".
+const STUCK_THRESHOLD_MS: int = 100        # ridotto da 300 a 100 per anti-stuck più reattivo
 const PATH_RECALC_INTERVAL_MS: int = 200   # normal BFS recalc cadence
 const SHOOT_RANGE_PX: float = 500.0
 const SHOOT_COOLDOWN_MIN_MS: int = 1000
@@ -366,42 +370,26 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 stuck_timer = 0
         last_pos = position
 
-        # FIX (nemici si bloccano nel maze): se il nemico è bloccato da più
-        # di 1 secondo (1000ms), teletrasportalo al centro della cella più
-        # vicina per sbloccarlo. Questo previene il caso in cui il nemico è
-        # lontano dal centro cella e l'anti-stuck non scatta mai.
-        if stuck_timer > 1000:
+        # FIX (scatti): rimuoviamo il teleport di 1000ms (causa scatti
+        # improvvisi). Ora, se il nemico è bloccato da più di 500ms, lo
+        # snap al centro della cella CORRENTE (no teleport tra celle) e
+        # forza BFS recalc. Questo previene il salto improvviso alla cella
+        # vuota più vicina che creava il movimento a scatti percepito.
+        if stuck_timer > 500:
                 stuck_timer = 0
-                var snap_col: int = int(position.x / TILE_SIZE)
-                var snap_row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
-                snap_col = clampi(snap_col, 1, MAZE_COLS - 2)
-                snap_row = clampi(snap_row, 1, MAZE_ROWS - 2)
-                # Trova la cella vuota più vicina
-                for radius in range(0, 5):
-                        for dc in range(-radius, radius + 1):
-                                for dr in range(-radius, radius + 1):
-                                        var nc: int = snap_col + dc
-                                        var nr: int = snap_row + dr
-                                        if nc > 0 and nc < MAZE_COLS - 1 and nr > 0 and nr < MAZE_ROWS - 1:
-                                                if not maze.is_wall(nc, nr):
-                                                        position.x = nc * TILE_SIZE + TILE_SIZE / 2.0
-                                                        position.y = nr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
-                                                        last_pos = position
-                                                        break
-                                if last_pos == position:
-                                        break
-                        if last_pos == position:
-                                break
+                path_update_timer = PATH_RECALC_INTERVAL_MS  # trigger must_recompute
+                position.x = col * TILE_SIZE + TILE_SIZE / 2.0
+                position.y = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                last_pos = position
 
         # When close enough to cell centre, snap and try to recalc direction.
-        # FIX (nemici fermi — root cause trovata da test): il threshold era
-        # `speed * 2.0` (2px), ma con speed=1 il nemico si muove di 1px/frame.
-        # Dopo il primo frame (1px), absf(1) < 2 = true → snap riporta a center
-        # → il nemico non avanza mai. Ora usiamo `speed` (1px) come threshold,
-        # identico a Player.gd:485-486. Dopo 1px, absf(1) < 1 = false → no snap
-        # → il nemico continua a muoversi finché non raggiunge la cella successiva.
-        if absf(position.x - center_x) < speed \
-                        and absf(position.y - center_y) < speed:
+        # FIX (scatti): snap threshold scalato per step_size, così lo snap
+        # scatta sempre anche a 120 FPS (step=2.0) o 30 FPS (step=0.5).
+        # Prima era `speed` fisso (1 o 2), falliva quando FPS != 60.
+        var step_size: float = float(speed) * (delta_ms / 16.6667)
+        var snap_threshold: float = max(float(speed), step_size)
+        if absf(position.x - center_x) < snap_threshold \
+                        and absf(position.y - center_y) < snap_threshold:
                 position.x = center_x
                 position.y = center_y
 
@@ -425,22 +413,36 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                         path_found = true
                                         stuck_timer = 0
                         else:
-                                # Chase: BFS shortest path (all enemy types use BFS).
-                                var next_step: Vector2i = BFS.find_path(
-                                        maze, Vector2i(col, row), player_grid_pos)
-                                if next_step.x >= 0:
-                                        dx = next_step.x - col
-                                        if dx != 0:
-                                                last_dx = dx
-                                        dy = next_step.y - row
+                                # FIX (scatti): se la direzione corrente è ancora
+                                # valida (non muro avanti) e non siamo in stato
+                                # stuck, mantienila SENZA ricalcolare BFS. Questo
+                                # riduce drasticamente i pivot istantanei quando
+                                # il player oscilla tra due celle: il nemico
+                                # continua dritto invece di "zigzagare" a ogni
+                                # centro cella.
+                                var current_valid: bool = (dx != 0 or dy != 0) \
+                                                and not maze.is_wall(col + dx, row + dy)
+                                if current_valid and stuck_timer == 0 \
+                                                and not flee_changed:
                                         path_found = true
-                                        stuck_timer = 0
-                                # Fallback 1: BFS failed (rare, player unreachable) -> greedy.
-                                if not path_found:
-                                        _move_greedy(maze, player_grid_pos)
-                                        if dx != 0 or dy != 0:
+                                else:
+                                        # Chase: BFS shortest path
+                                        # (all enemy types use BFS).
+                                        var next_step: Vector2i = BFS.find_path(
+                                                maze, Vector2i(col, row), player_grid_pos)
+                                        if next_step.x >= 0:
+                                                dx = next_step.x - col
+                                                if dx != 0:
+                                                        last_dx = dx
+                                                dy = next_step.y - row
                                                 path_found = true
                                                 stuck_timer = 0
+                                        # Fallback 1: BFS failed (rare, player unreachable) -> greedy.
+                                        if not path_found:
+                                                _move_greedy(maze, player_grid_pos)
+                                                if dx != 0 or dy != 0:
+                                                        path_found = true
+                                                        stuck_timer = 0
                         # Fallback 2: still no direction. Only break out if stuck.
                         if not path_found and stuck_timer > STUCK_THRESHOLD_MS:
                                 _pick_random_open_dir(maze, col, row)
@@ -456,21 +458,15 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         dx = 0
                         dy = 0
 
-        # FIX (nemici attraversano muri + nemici fermi): il problema è che
-        # il check is_wall(col+dx, row+dy) sopra AZZERA dx/dy a 0 quando la
-        # destinazione è un muro. Poi il blocco sotto controlla dest_col/dest_row
-        # con dx=dy=0 → dest == position → dest_col==col, dest_row==row che è
-        # EMPTY (il nemico è in una cella vuota) → non entra nel ramo wall,
-        # ma position.x += 0*speed = nessun movimento.
-        # Il risultato: i nemici si fermano permanentemente quando la BFS
-        # dà una direzione che porta a un muro.
-        #
-        # FIX: se dx==0 e dy==0 dopo il check wall, salta il movimento e
-        # lascia che il prossimo frame rifaccia BFS con must_recompute=true
-        # (perché dx==0 and dy==0 lo triggera).
+        # FIX (scatti): movimento scalato per delta_ms per frame-rate
+        # independence. A 60 FPS step = speed (come prima). A 30 FPS step = speed/2.
+        # A 120 FPS step = speed*2. Velocità in px/s costante a speed*60.
+        # Prima era fisso `position.x + dx * speed` (no delta) che a FPS
+        # diversi da 60 dava velocità incoerenti e scatti.
         if dx != 0 or dy != 0:
-                var dest_x: float = position.x + dx * speed
-                var dest_y: float = position.y + dy * speed
+                var step_now: float = step_size
+                var dest_x: float = position.x + dx * step_now
+                var dest_y: float = position.y + dy * step_now
                 position.x = dest_x
                 position.y = dest_y
 
