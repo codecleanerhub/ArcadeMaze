@@ -296,11 +296,25 @@ func _draw_overlay(ci: CanvasItem) -> void:
         # Dynamite thrown
         if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
                 var dt_pos: Vector2 = dynamite_thrown.position
+                # FIX (traiettoria parabolica): leggi vel e vy per calcolare
+                # l'angolo totale della velocità e ruotare il candelotto
+                # secondo la traiettoria (effetto visivo realistico).
+                var dt_vel: Vector2 = dynamite_thrown.get_meta("dir", Vector2.ZERO)
+                var dt_vy: float = dynamite_thrown.get_meta("vy", 0.0)
+                var dt_total_vel: Vector2 = dt_vel + Vector2(0, dt_vy)
+                var dt_angle: float = dt_total_vel.angle()
+                # Glow circle (NON ruota — aura radiale simmetrica)
                 ci.draw_circle(dt_pos, 14.0, Color(1.0, 0.4, 0.1, 0.4))
-                ci.draw_rect(Rect2(dt_pos.x - 5, dt_pos.y - 10, 10, 20),
+                # Candelotto ruotato: draw_set_transform sposta l'origine a
+                # dt_pos e ruota di dt_angle. I Rect2 diventano relativi a (0,0).
+                ci.draw_set_transform(dt_pos, dt_angle, Vector2.ONE)
+                ci.draw_rect(Rect2(-5, -10, 10, 20),
                         Color(0.7, 0.12, 0.1, 1.0), true)
-                ci.draw_rect(Rect2(dt_pos.x - 3, dt_pos.y - 4, 6, 4),
+                ci.draw_rect(Rect2(-3, -4, 6, 4),
                         Color(0.94, 0.86, 0.7, 1.0), true)
+                # Reset del transform per non influenzare i draw successivi
+                # (magic portal, etc.)
+                ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
         # Magic portal
         if spawner != null and spawner.magic_portal.active:
                 var ppos2: Vector2 = spawner.magic_portal.pos
@@ -317,14 +331,18 @@ func _draw_overlay(ci: CanvasItem) -> void:
                         var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
                         ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
                 var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
-                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.3))
-                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.9))
-                # FIX (pallino procedurale accanto al miniboss): il core bianco
-                # solido alpha=1.0 appariva come un "pallino" alieno accanto
-                # al miniboss (che viene spawnato 1-4 celle più in là dal
-                # portale). Ridotto alpha da 1.0 a 0.5: il nucleo rimane
-                # visibile come parte del portale ma non è più un cerchio
-                # bianco opaco che spicca.
+                # FIX (pallino procedurale accanto al miniboss, 2° tentativo):
+                # il fix precedente aveva ridotto solo l'alpha del cerchietto
+                # bianco più piccolo (riga 328, alpha 1.0 -> 0.5), MA il
+                # PALLINO VERO era il disco LAVANDA qui sotto (alpha 0.9,
+                # raggio 10px, quasi solido). Ridotto alpha da 0.9 a 0.25:
+                # rimane un nucleo viola tenue che pulsa con glow_pulse,
+                # ma non è più un cerchio solido che appare come "pallino
+                # alieno" accanto al miniboss spawnato 1-4 celle più in là.
+                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
+                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
+                # FIX: pallino centrale bianco alpha 0.5 (era 1.0 nel commit
+                # 424b038, confermato invariato).
                 ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
 
 
@@ -1158,6 +1176,22 @@ func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
                 if p_pos.distance_squared_to(mb_pos) < 1200.0:
                         mini_boss.start_burning(50)
+                        # FIX (calice non sottrae energia al miniboss): la
+                        # funzione start_burning() in MiniBoss.gd imposta SOLO
+                        # burning_timer_ms e burned_flag per l'animazione, MA
+                        # NON riduce gli HP. Per i nemici normali il danno
+                        # finale viene dato in _update_invincible_burn riga
+                        # 1111-1127 (enemy.take_damage(999) quando
+                        # burning_timer scade). Per il miniboss quel loop NON
+                        # viene eseguito (itera solo spawner.enemies), quindi
+                        # il miniboss si brucia visualmente ma non perde mai
+                        # energia. Ora infliggiamo il danno qui direttamente:
+                        # 35% degli HP massimi del miniboss (mirror del
+                        # scepter lightning che fa 35% dei max HP).
+                        var mb_dmg: int = int(mini_boss.get_max_health() * 0.35)
+                        if mb_dmg < 1:
+                                mb_dmg = 1
+                        mini_boss.take_damage(mb_dmg)
                         p.add_score(2000)
 
 
@@ -1835,6 +1869,14 @@ func _throw_dynamite() -> void:
         # dopo 10s. Il bouncing + BFS homing appartengono alla MINE (bomb),
         # NON alla dinamite.
         proj.set_meta("dir", dir * 18.0)
+        # FIX (traiettoria parabolica): aggiunge componente verticale
+        # separata (vy) che accumula gravità. Inizia a -5 px/frame (kick
+        # verso l'alto) per creare l'arco classico da proiettile: il
+        # candelotto sale poi ricade.
+        proj.set_meta("vy", -5.0)
+        # Gravità 0.4 px/frame² — bilanciata per dare tempo al
+        # candelotto di raggiungere nemici lontani prima di cadere a terra.
+        proj.set_meta("gravity", 0.4)
         proj.set_meta("life_ms", 10000)
         proj.set_meta("grace_ms", 200)
         proj.set_meta("active", true)
@@ -1868,6 +1910,11 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
                 return
         var dt: Node2D = dynamite_thrown
         var vel: Vector2 = dt.get_meta("dir", Vector2.ZERO)
+        # FIX (traiettoria parabolica): leggi vy (componente verticale
+        # accumulata) e gravity. vel resta costante (movimento di lancio),
+        # vy evolve nel tempo per creare l'arco.
+        var vy: float = dt.get_meta("vy", 0.0)
+        var gravity: float = dt.get_meta("gravity", 0.4)
         var life: int = dt.get_meta("life_ms", 10000)
         life -= int(delta_ms)
         dt.set_meta("life_ms", life)
@@ -1884,8 +1931,14 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
         if grace > 0:
                 grace -= int(delta_ms)
                 dt.set_meta("grace_ms", grace)
-        # Movimento dritto (nessun rimbalzo, nessun homing)
-        var new_pos: Vector2 = dt.position + vel
+        # FIX (traiettoria parabolica): mantieni vel costante (componente
+        # orizzontale/di lancio), aggiungi gravità alla componente
+        # verticale SEPARATA (vy). total_vel compone le due: vel (costante)
+        # + Vector2(0, vy) (gravità accumulata). Risultato: parabola.
+        vy += gravity
+        dt.set_meta("vy", vy)
+        var total_vel: Vector2 = vel + Vector2(0, vy)
+        var new_pos: Vector2 = dt.position + total_vel
         # Collisione con MURO: esplode al primo impatto
         var new_col: int = int(new_pos.x / C.TILE_SIZE)
         var new_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
@@ -1903,6 +1956,11 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
                 dynamite_thrown = null
                 return
         dt.position = new_pos
+        # FIX (rotazione realistica): il candelotto ruota secondo l'angolo
+        # della velocità totale, seguendo la traiettoria parabolica.
+        # L'effetto visivo viene applicato in _draw_overlay con
+        # draw_set_transform (vedi riga ~296).
+        dt.rotation = total_vel.angle()
         # Collisione con NEMICO: esplode (instant kill per ogni nemico nel raggio)
         for enemy in spawner.enemies:
                 if enemy.is_dead():

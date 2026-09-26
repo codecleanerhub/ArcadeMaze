@@ -231,8 +231,13 @@ func _find_mini_boss_cell(maze: Object, portal_pos: Vector2,
                                                   player_pos: Vector2) -> Vector2i:
         var portal_c := int(portal_pos.x / TILE_SIZE)
         var portal_r := int((portal_pos.y - UI_HEIGHT) / TILE_SIZE)
-        # Try cells in expanding rings around the portal.
-        for radius in range(1, 5):
+        # FIX (pallino procedurale accanto al miniboss, 2° tentativo): spawn
+        # radius aumentato da 1-4 a 4-8 (256-512px dal centro portal). Così
+        # il miniboss appare sufficientemente lontano dal nucleo del portal
+        # da non essere percepito come "pallino accanto al miniboss". Anche
+        # se il disco lavanda del portal rimane visibile, la distanza fa sì
+        # che venga percepito come portale separato e non come pallino attaccato.
+        for radius in range(4, 9):
                 for dc in range(-radius, radius + 1):
                         for dr in range(-radius, radius + 1):
                                 var nc: int = portal_c + dc
