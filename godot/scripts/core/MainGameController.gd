@@ -71,7 +71,7 @@ var initial_enemy_count: int = 0
 # Items spawned per level
 var chalice_item: Node2D = null
 var scepter_item: Node2D = null
-var mine_item: Node2D = null
+var mine_item: Collectibles = null
 var speed_boots_item: Node2D = null
 var speed_boots2_item: Node2D = null  # P2 only
 # FIX (nuova meccanica): medikit e statua cavaliere
@@ -946,15 +946,17 @@ func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
 # danno ad area (radius 60px), particelle esplosione, screen shake,
 # sparisce immediatamente invece di rimanere per terra immobile.
 # FIX (bomba supera muri): controlla collisione tra la mine (quando bouncing)
-# e i muri del maze. Se la mine sta per entrare in una cella WALL, la ferma
-# e inverte la velocità (rimbalzo elastico).
+# e i muri del maze. Se la mine sta per entrare in una cella WALL, inverte
+# la velocità (rimbalzo elastico arcade, NON damped).
+# FIX (bomba homing): ogni 250ms ricalcola la direzione verso il nemico più
+# vicino (incluso mini-boss) usando BFS. La bomba "segue il labirinto".
 func _check_mine_vs_enemies() -> void:
         if mine_item == null or not is_instance_valid(mine_item):
                 return
-        if not mine_item.get("bouncing"):
+        if not mine_item.bouncing:
                 # FIX (bomba esplode quando finisce): se la mine non è più bouncing
                 # ma è ancora nel tree, esplodi e rimuovi.
-                if mine_item.get("active") == false:
+                if not mine_item.active:
                         var explode_pos: Vector2 = mine_item.position
                         if EffectsManager:
                                 var burst := EffectsManager.spawn_explosion(explode_pos,
@@ -966,29 +968,72 @@ func _check_mine_vs_enemies() -> void:
                         mine_item.queue_free()
                         mine_item = null
                 return
-        # FIX (bomba supera muri + si incastra): wall collision check migliorato
-        # La bomba viene mossa QUI (non in _update_mine) con wall check.
         var mine_pos2: Vector2 = mine_item.position
-        var mine_vel: Vector2 = mine_item.get("velocity") if mine_item.get("velocity") != null else Vector2.ZERO
-        # Applica il movimento
+        var mine_vel: Vector2 = mine_item.velocity
+        # FIX (bomba homing): ogni 250ms ricalcola la direzione verso il nemico
+        # più vicino usando BFS. La bomba "segue il labirinto" attivamente
+        # invece di muoversi solo in linea retta.
+        var homing_timer: int = mine_item.homing_ms
+        homing_timer -= 16
+        if homing_timer <= 0:
+                var mine_cell := Vector2i(int(mine_pos2.x / C.TILE_SIZE),
+                                int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                var best_enemy: Node2D = null
+                var best_dist: float = INF
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        var e_pos: Vector2 = enemy.get_pixel_pos()
+                        var d: float = mine_pos2.distance_squared_to(e_pos)
+                        if d < best_dist:
+                                best_dist = d
+                                best_enemy = enemy
+                if mini_boss != null and not mini_boss.is_dead():
+                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                        var d_mb: float = mine_pos2.distance_squared_to(mb_pos)
+                        if d_mb < best_dist:
+                                best_dist = d_mb
+                                best_enemy = mini_boss
+                if best_enemy != null:
+                        var bpos: Vector2 = best_enemy.get_pixel_pos()
+                        var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
+                                        int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                        var next_dir: Vector2i = BFS.find_path_dir(maze, mine_cell, target_cell)
+                        if next_dir != Vector2i.ZERO:
+                                var speed: float = mine_vel.length()
+                                if speed < 0.001:
+                                        speed = 8.0
+                                mine_vel = Vector2(next_dir) * speed
+                homing_timer = 250
+        mine_item.homing_ms = homing_timer
+        # FIX (bomba arcade bouncing): muovi; se la nuova posizione è in un
+        # muro, inverte l'asse di impatto e NON damped (rimbalzo elastico
+        # puro, velocità costante).
         var new_pos: Vector2 = mine_pos2 + mine_vel
-        # Calcola la cella attuale e destinazione
         var cur_col: int = int(mine_pos2.x / C.TILE_SIZE)
         var cur_row: int = int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE)
         var next_col: int = int(new_pos.x / C.TILE_SIZE)
         var next_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        # Se la cella destinazione è un muro, inverti la velocità e non muovere
-        if next_col != cur_col and maze.is_wall(next_col, cur_row):
-                mine_vel.x = -mine_vel.x * 0.7  # damped bounce
-                new_pos.x = mine_pos2.x  # non muovere in X
-        if next_row != cur_row and maze.is_wall(cur_col, next_row):
-                mine_vel.y = -mine_vel.y * 0.7
-                new_pos.y = mine_pos2.y  # non muovere in Y
+        if next_col >= 0 and next_col < C.MAZE_COLS and next_row >= 0 and next_row < C.MAZE_ROWS:
+                if next_col != cur_col and maze.is_wall(next_col, cur_row):
+                        mine_vel.x = -mine_vel.x  # rimbalzo elastico (no damping)
+                        new_pos.x = mine_pos2.x
+                if next_row != cur_row and maze.is_wall(cur_col, next_row):
+                        mine_vel.y = -mine_vel.y  # rimbalzo elastico (no damping)
+                        new_pos.y = mine_pos2.y
+        else:
+                # Out of bounds: rimbalza sui bordi schermo
+                if new_pos.x < 64.0 or new_pos.x > C.WINDOW_WIDTH - 64.0:
+                        mine_vel.x = -mine_vel.x
+                        new_pos.x = mine_pos2.x
+                if new_pos.y < C.UI_HEIGHT + 32.0 or new_pos.y > C.WINDOW_HEIGHT - 64.0:
+                        mine_vel.y = -mine_vel.y
+                        new_pos.y = mine_pos2.y
         mine_pos2 = new_pos
         # Aggiorna posizione e velocità della mine
         mine_item.position = mine_pos2
-        mine_item.set("velocity", mine_vel)
-        mine_item.set("pos", mine_pos2)
+        mine_item.velocity = mine_vel
+        mine_item.pos = mine_pos2
         # Damage check
         var blast_radius: float = 60.0
         var blast_radius_sq: float = blast_radius * blast_radius
@@ -1016,8 +1061,8 @@ func _check_mine_vs_enemies() -> void:
                         EffectsManager.screen_shake(12.0, 0.4)
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
-                mine_item.set("bouncing", false)
-                mine_item.set("active", false)
+                mine_item.bouncing = false
+                mine_item.active = false
                 mine_item.queue_free()
                 mine_item = null
                 screen_flash_timer_ms = 80
@@ -1780,14 +1825,18 @@ func _throw_dynamite() -> void:
         # Crea nodo candelotto lanciato
         var proj := Node2D.new()
         proj.position = spawn_pos
-        # FIX (root cause + speed + lifetime):
-        #  - speed 18 px/frame ≈ 1080 px/s (più veloce, come richiesto)
-        #  - life_ms 10000 = 10 secondi di volo (richiesta utente)
-        #  - homing_ms 250 = ricalcola BFS ogni 250ms verso il nemico più vicino
+        # FIX (root cause + comportamento dinamite corretto):
+        #  - speed 18 px/frame ≈ 1080 px/s
+        #  - life_ms 10000 = 10 secondi (richiesta utente)
+        #  - grace_ms 200ms: il candelotto non esplode al contatto col player
+        #    per i primi 200ms (lascia che si allontani)
+        # Il candelotto NON rimbalza e NON fa homing: si muove dritto e
+        # esplode al PRIMO contatto (muro, nemico, mini-boss, player) oppure
+        # dopo 10s. Il bouncing + BFS homing appartengono alla MINE (bomb),
+        # NON alla dinamite.
         proj.set_meta("dir", dir * 18.0)
         proj.set_meta("life_ms", 10000)
-        proj.set_meta("grace_ms", 200)  # 200ms senza collision check (lascia allontanare)
-        proj.set_meta("homing_ms", 0)  # ricalcola subito al primo frame
+        proj.set_meta("grace_ms", 200)
         proj.set_meta("active", true)
         proj.visible = true
         # FIX (root cause): il candelotto era aggiunto a enemy_projectiles_node,
@@ -1803,16 +1852,16 @@ func _throw_dynamite() -> void:
         dynamite_equipped = false
         dynamite_fuse_timer_ms = 0
         dynamite_alert_played = false
-        print("[Dynamite] Thrown! pos=", spawn_pos, " dir=", dir, " vel=", dir * 10.0)
+        print("[Dynamite] Thrown! pos=", spawn_pos, " dir=", dir, " vel=", dir * 18.0)
 
 
 # Update del candelotto lanciato in volo.
-# Comportamento richiesto dall'utente:
-#   1. si muove VELOCE (~1080 px/s a 60 FPS)
-#   2. RIMBALZA sui muri del labirinto (non esplode al primo impatto)
-#   3. SEGUE IL LABIRINTO verso il nemico più vicino (BFS homing ogni 250ms)
-#   4. dura 10 SECONDI, poi esplode se non ha colpito nulla
-#   5. se tocca un nemico/mini-boss, kill istantaneo + esplosione
+# Comportamento richiesto dall'utente (CHIARIMENTO: dinamite != bomba):
+#   1. si muove dritto nella direzione di lancio (NESSUN rimbalzo)
+#   2. NESSUN BFS homing (l'homing appartiene alla bomba/MINE, non alla dinamite)
+#   3. esplode al PRIMO contatto con qualsiasi cosa: muro, nemico, mini-boss
+#      o player (richiesta utente esplicita: "Qualsiasi")
+#   4. se non colpisce nulla, esplode dopo 10 secondi
 func _update_thrown_dynamite(delta_ms: int) -> void:
         if dynamite_thrown == null or not is_instance_valid(dynamite_thrown):
                 dynamite_thrown = null
@@ -1822,72 +1871,39 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
         var life: int = dt.get_meta("life_ms", 10000)
         life -= int(delta_ms)
         dt.set_meta("life_ms", life)
+        # Timeout: 10 secondi scaduti → esplode
         if life <= 0:
                 _explode_dynamite(true, dt.position)
                 dt.queue_free()
                 dynamite_thrown = null
                 return
-        # Grace period: nessun check collisioni nemici (lascia allontanare dal player)
+        # Grace period: nei primi 200ms NON checkare collisioni col player
+        # (lascia che il candelotto si allontani). Le altre collisioni
+        # (muro, nemico, mini-boss) restano attive subito.
         var grace: int = dt.get_meta("grace_ms", 0)
         if grace > 0:
                 grace -= int(delta_ms)
                 dt.set_meta("grace_ms", grace)
-        # BFS homing: ogni 250ms ricalcola la direzione verso il nemico più
-        # vicino (incluso mini-boss). Il candelotto "segue il labirinto".
-        var homing_timer: int = dt.get_meta("homing_ms", 0)
-        homing_timer -= int(delta_ms)
-        if homing_timer <= 0:
-                var dt_cell := Vector2i(int(dt.position.x / C.TILE_SIZE),
-                                int((dt.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                var best_enemy: Node2D = null
-                var best_dist: float = INF
-                for enemy in spawner.enemies:
-                        if enemy.is_dead():
-                                continue
-                        var e_pos: Vector2 = enemy.get_pixel_pos()
-                        var d: float = dt.position.distance_squared_to(e_pos)
-                        if d < best_dist:
-                                best_dist = d
-                                best_enemy = enemy
-                if mini_boss != null and not mini_boss.is_dead():
-                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                        var d_mb: float = dt.position.distance_squared_to(mb_pos)
-                        if d_mb < best_dist:
-                                best_dist = d_mb
-                                best_enemy = mini_boss
-                if best_enemy != null:
-                        var bpos: Vector2 = best_enemy.get_pixel_pos()
-                        var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
-                                        int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                        var next_dir: Vector2i = BFS.find_path_dir(maze, dt_cell, target_cell)
-                        if next_dir != Vector2i.ZERO:
-                                var speed: float = vel.length()
-                                if speed < 0.001:
-                                        speed = 18.0
-                                vel = Vector2(next_dir) * speed
-                                dt.set_meta("dir", vel)
-                homing_timer = 250
-        dt.set_meta("homing_ms", homing_timer)
-        # Rimbalzo: muovi; se la nuova posizione è in un muro, inverte l'asse
-        # di impatto e resta fermo questo frame. NON esplode sul muro.
+        # Movimento dritto (nessun rimbalzo, nessun homing)
         var new_pos: Vector2 = dt.position + vel
+        # Collisione con MURO: esplode al primo impatto
         var new_col: int = int(new_pos.x / C.TILE_SIZE)
         var new_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
         if new_col >= 0 and new_col < C.MAZE_COLS and new_row >= 0 and new_row < C.MAZE_ROWS:
                 if maze.is_wall(new_col, new_row):
-                        var cur_col: int = int(dt.position.x / C.TILE_SIZE)
-                        var cur_row: int = int((dt.position.y - C.UI_HEIGHT) / C.TILE_SIZE)
-                        if new_col != cur_col:
-                                vel.x = -vel.x
-                        if new_row != cur_row:
-                                vel.y = -vel.y
-                        dt.set_meta("dir", vel)
-                        new_pos = dt.position  # resta fermo questo frame
-        dt.position = new_pos
-        # Skip collisioni nemici durante grace period
-        if grace > 0:
+                        _explode_dynamite(true, new_pos)
+                        dt.queue_free()
+                        dynamite_thrown = null
+                        return
+        # Out of bounds: esplode
+        if new_pos.x < 0 or new_pos.x > C.WINDOW_WIDTH \
+                        or new_pos.y < C.UI_HEIGHT or new_pos.y > C.WINDOW_HEIGHT:
+                _explode_dynamite(true, new_pos)
+                dt.queue_free()
+                dynamite_thrown = null
                 return
-        # Enemy collision: instant kill
+        dt.position = new_pos
+        # Collisione con NEMICO: esplode (instant kill per ogni nemico nel raggio)
         for enemy in spawner.enemies:
                 if enemy.is_dead():
                         continue
@@ -1908,6 +1924,23 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
                         dt.queue_free()
                         dynamite_thrown = null
                         return
+        # Collisione con il PLAYER: esplode (richiesta utente "Qualsiasi").
+        # Skip durante grace period (lascia che il candelotto si allontani
+        # dal player che lo ha lanciato, altrimenti esploderebbe subito).
+        if grace <= 0:
+                if not player.is_invulnerable() and not player.is_jumping():
+                        if dt.position.distance_squared_to(player.get_pixel_pos()) < 500.0:
+                                _explode_dynamite(true, dt.position)
+                                dt.queue_free()
+                                dynamite_thrown = null
+                                return
+                if GameManager and GameManager.num_players == 2 and player2.visible:
+                        if not player2.is_invulnerable() and not player2.is_jumping():
+                                if dt.position.distance_squared_to(player2.get_pixel_pos()) < 500.0:
+                                        _explode_dynamite(true, dt.position)
+                                        dt.queue_free()
+                                        dynamite_thrown = null
+                                        return
 
 
 # Esplosione dinamite

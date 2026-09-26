@@ -57,6 +57,7 @@ var rotation_deg: float = 0.0
 var bouncing: bool = false
 var velocity: Vector2 = Vector2.ZERO
 var bounce_timer_ms: int = 0
+var homing_ms: int = 0  # FIX (bomba homing): timer per BFS homing verso nemico più vicino
 var in_boss_room: bool = false
 
 # --- SCEPTER-specific ---
@@ -173,27 +174,17 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
 
 func _update_mine(delta_ms: int) -> void:
         if bouncing:
-                # FIX (bomba si incastra): NON muovere qui la posizione.
-                # Il movimento con wall collision è gestito da
-                # MainGameController._check_mine_vs_enemies().
-                # Qui aggiorniamo solo gravity, rotation e bounds.
-                velocity.y += 0.2  # gravity (px/frame²)
-                rotation_deg += 6.0
-                # FIX (bomba bounds): aggiornati a 1920x1080
-                if pos.x < 64.0 or pos.x > 1920.0 - 64.0:
-                        velocity.x = -velocity.x
-                if pos.y > 1080.0 - 64.0:
-                        pos.y = 1080.0 - 64.0
-                        velocity.y = -abs(velocity.y) * 0.6  # damped bounce
-                        velocity.x *= 0.8  # friction
-                if pos.y < 96.0:
-                        pos.y = 96.0
-                        velocity.y = abs(velocity.y) * 0.6
+                # FIX (bomba arcade): rimossa la gravità e la friction sul
+                # pavimento. Movimento arcade puro tipo Bomberman: velocità
+                # costante, rimbalza sui muri del maze (wall check gestito in
+                # MainGameController._check_mine_vs_enemies).
+                rotation_deg += 8.0  # rotazione più veloce (era 6.0)
                 if bounce_timer_ms > delta_ms:
                         bounce_timer_ms -= delta_ms
                 else:
-                        # FIX (bomba esplode): quando finisce di rimbalzare senza
-                        # colpire nessuno, esplode e sparisce dal labirinto.
+                        # FIX (bomba esplode quando finisce): quando finisce di
+                        # rimbalzare senza colpire nessuno, esplode e sparisce
+                        # dal labirinto.
                         bouncing = false
                         bounce_timer_ms = 0
                         active = false
@@ -257,10 +248,11 @@ func _update_portal(delta_ms: int) -> void:
 # =========================================================
 
 # --- MINE ---
-func start_bounce(initial_vel: Vector2, duration_ms: int = 1500) -> void:
+func start_bounce(initial_vel: Vector2, duration_ms: int = 10000) -> void:
         bouncing = true
         velocity = initial_vel
         bounce_timer_ms = duration_ms
+        homing_ms = 0  # ricalcola subito il path BFS al primo frame
 
 # --- CHALICE ---
 func consume_chalice() -> int:
@@ -299,13 +291,16 @@ func start_open_animation() -> void:
 func _on_collected(player_id: int) -> void:
         match kind:
                 Kind.MINE:
-                        # Mine activates on touch: starts bouncing in a random direction
-                        # at moderate speed. The Game's collision logic detects enemy
-                        # hits during the bounce; after bounce_timer expires the mine
+                        # Mine activates on touch: starts bouncing in a random
+                        # direction at FAST speed (8 px/frame ≈ 480 px/s).
+                        # The Game's collision logic detects enemy hits during
+                        # the bounce; after bounce_timer expires (10s) the mine
                         # deactivates.
+                        # FIX (bomba): speed 4 -> 8 (veloce, richiesta utente)
+                        # FIX (bomba): durata 1500ms -> 10000ms (10s, richiesta utente)
                         if not bouncing:
                                 var ang := randf() * TAU
-                                start_bounce(Vector2(cos(ang), sin(ang)) * 4.0, 1500)
+                                start_bounce(Vector2(cos(ang), sin(ang)) * 8.0, 10000)
                 Kind.CHALICE:
                         active = false
                         collected.emit(self, player_id)
