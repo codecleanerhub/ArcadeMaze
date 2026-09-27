@@ -638,8 +638,15 @@ func _draw() -> void:
                 draw_texture_rect(_boss_bg_texture, Rect2(draw_pos, draw_size), false)
         elif EnvironmentArt:
                 EnvironmentArt.draw_crypt_background(self, vp_size, _boss_bg_time)
-        # Dark overlay per far risaltare il boss
-        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)
+        # Dark overlay per far risaltare il boss.
+        # FIX (rettoangolo trasparente copre HUD in alto): l'overlay nero
+        # 0.25 su TUTTA la viewport copriva la zona 0..UI_HEIGHT dove c'è
+        # la HUD (info player + nome boss + barra HP boss). L'utente vedeva
+        # un "rettoangolo trasparente" che oscurava le informazioni in alto.
+        # Ora l'overlay parte da UI_HEIGHT (80px) verso il basso, lasciando
+        # la zona HUD completamente libera e nitida.
+        draw_rect(Rect2(0, C.UI_HEIGHT, vp_size.x, vp_size.y - C.UI_HEIGHT),
+                Color(0, 0, 0, 0.25), true)
         # FIX (decorazioni procedurali fatte male): rimosse le decorazioni
         # (colonne, teschi, bare) disegnate proceduralmente che apparivano
         # male e mal distribuite. Lo sfondo PNG AI è sufficiente.
