@@ -1027,25 +1027,22 @@ func _draw_sprite_frame() -> void:
                 if at == null:
                         return
         # Draw centered at enemy size (72x72 ≈ TILE_SIZE*1.5, più visibile).
-        # FIX (nemici decentrati/sovrappongono muro): target_size ridotto a 56px
-        # (meno di TILE_SIZE=64) e offset verticale per centrare lo sprite.
-        # Gli sprite PNG dei mostri spesso hanno il mostro NON centrato nel
-        # frame (testa in alto, piedi in basso). Con draw_pos y = -th*0.5
-        # l'origine è al centro del frame, ma il mostro appare shiftato in
-        # basso. Aggiungiamo y_offset = +4 per spostare lo sprite in alto,
-        # così il mostro appare centrato verticalmente nella cella.
-        # Inoltre target_size 56 lascia un margine di 4px per lato, evitando
-        # overflow nel muro adiacente.
-        var target_size: float = 56.0
+        # FIX (nemici piccoli e decentrati): target_size aumentato a 64 (come
+        # TILE_SIZE) per renderli grandi quanto il player (che usa scale 1.3 =
+        # 83px). Con 64px il nemico occupa esattamente una cella, centrato.
+        # Per centrare perfettamente: draw_pos = (-tw/2, -th/2) — origine al
+        # centro dello sprite, allineato con position (centro cella).
+        # Rimosso y_center_offset che shiftava lo sprite in basso.
+        var target_size: float = 64.0
         var tw: float = target_size
         var th: float = target_size
         # FIX (barra HP lag): rimosso bob_y dallo sprite. Ora né lo sprite
         # né la barra oscillano → sync perfetto, nessun "lag" visivo.
         var bob_y: float = 0.0
-        # FIX (centratura verticale): offset per centrare il mostro nella cella.
-        # Gli sprite hanno il mostro shiftato in basso, quindi spostiamo in alto.
-        var y_center_offset: float = -4.0
-        var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + y_center_offset)
+        # FIX (centratura perfetta): draw_pos centrato su (0,0) senza offset.
+        # Lo sprite PNG riempie tutto il frame 64x64, quindi -tw/2, -th/2
+        # centra perfettamente lo sprite sulla position del nemico.
+        var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
         # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
