@@ -115,7 +115,11 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         var noise_macro := FastNoiseLite.new()
         noise_macro.noise_type = FastNoiseLite.TYPE_CELLULAR
         noise_macro.frequency = 0.04
-        noise_macro.cellular_distance = FastNoiseLite.DISTANCE_EUCLIDEAN
+        # FIX (errore Godot 4.7): cellular_distance richiede un valore di
+        # tipo enum FastNoiseLite.CellularDistance, non un int diretto.
+        # FastNoiseLite.DISTANCE_EUCLIDEAN è un int ma Godot 4.7 vuole
+        # l'enum esplicita: FastNoiseLite.CellularDistance.DISTANCE_EUCLIDEAN
+        noise_macro.cellular_distance = FastNoiseLite.CellularDistance.DISTANCE_EUCLIDEAN
         noise_macro.cellular_jitter = 0.8
         noise_macro.seed = 2000 + pal_idx * 23
         var noise_fracture := FastNoiseLite.new()
