@@ -1027,18 +1027,25 @@ func _draw_sprite_frame() -> void:
                 if at == null:
                         return
         # Draw centered at enemy size (72x72 ≈ TILE_SIZE*1.5, più visibile).
-        # FIX (nemici shiftati/sovrappongono muro): target_size ridotto da 72
-        # a 60 (meno di TILE_SIZE=64) per evitare che lo sprite overflow nel
-        # muro adiacente. Con 72px il nemico overflow di 4px per lato nel muro.
-        # Con 60px c'è un margine di 2px per lato — il nemico sta centrato
-        # nella cella senza toccare i muri.
-        var target_size: float = 60.0
+        # FIX (nemici decentrati/sovrappongono muro): target_size ridotto a 56px
+        # (meno di TILE_SIZE=64) e offset verticale per centrare lo sprite.
+        # Gli sprite PNG dei mostri spesso hanno il mostro NON centrato nel
+        # frame (testa in alto, piedi in basso). Con draw_pos y = -th*0.5
+        # l'origine è al centro del frame, ma il mostro appare shiftato in
+        # basso. Aggiungiamo y_offset = +4 per spostare lo sprite in alto,
+        # così il mostro appare centrato verticalmente nella cella.
+        # Inoltre target_size 56 lascia un margine di 4px per lato, evitando
+        # overflow nel muro adiacente.
+        var target_size: float = 56.0
         var tw: float = target_size
         var th: float = target_size
         # FIX (barra HP lag): rimosso bob_y dallo sprite. Ora né lo sprite
         # né la barra oscillano → sync perfetto, nessun "lag" visivo.
         var bob_y: float = 0.0
-        var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
+        # FIX (centratura verticale): offset per centrare il mostro nella cella.
+        # Gli sprite hanno il mostro shiftato in basso, quindi spostiamo in alto.
+        var y_center_offset: float = -4.0
+        var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + y_center_offset)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
         # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,

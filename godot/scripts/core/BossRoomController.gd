@@ -404,10 +404,13 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         # che setta current_weapon = PISTOL con ammo=15. MA se per qualche
         # motivo current_weapon è null o ammo=0 (es. stato corrotto), lo
         # resetta qui. Inoltre dai al player un'arma potenziata per il boss.
-        if player.current_weapon == null or player.current_weapon.is_empty():
+        # FIX (rinforzo check): controlla anche ammo == 0 (non solo null/empty)
+        if player.current_weapon == null or player.current_weapon.is_empty() \
+                        or player.current_weapon.get("ammo", 0) <= 0:
                 player.current_weapon = {"type": 0, "power": 2, "ammo": 30}
-        elif player.current_weapon.get("ammo", 0) <= 0:
-                player.current_weapon["ammo"] = 30
+        else:
+                # Arma valida: potenzialala per il boss
+                player.current_weapon["ammo"] = maxi(player.current_weapon.get("ammo", 0), 30)
                 player.current_weapon["power"] = 2
 
         # Spawn the boss-room mine (1 per fight). Mirrors C++ Game.cpp
@@ -668,15 +671,18 @@ func _draw() -> void:
         if boss != null:
                 var boss_name: String = Boss.get_boss_name(boss.boss_type)
                 var cx: float = vp_size.x * 0.5
-                var by: float = 90.0  # FIX: sotto UI_HEIGHT (80) per non essere coperto dalla HUD CanvasLayer
+                # FIX (nome boss tagliato): by aumentato da 90 a 110 per evitare
+                # che il font size 28 venga coperto dalla HUD (0-80). Con font 28
+                # il testo occupa y=82 a y=110, tutto sotto la HUD.
+                var by: float = 110.0
                 var font: Font = ThemeDB.fallback_font
                 # Shadow
                 draw_string(font, Vector2(cx - 250, by + 2), boss_name,
-                        HORIZONTAL_ALIGNMENT_CENTER, 500, 36,
-                        Color(0, 0, 0, 0.8))
+                        HORIZONTAL_ALIGNMENT_CENTER, 500, 28,
+                        Color(0, 0, 0, 0.9))
                 # Gold text
                 draw_string(font, Vector2(cx - 252, by), boss_name,
-                        HORIZONTAL_ALIGNMENT_CENTER, 500, 36,
+                        HORIZONTAL_ALIGNMENT_CENTER, 500, 28,
                         Color(1.0, 0.84, 0.0))
                 # HP bar sotto il nome
                 if not boss.is_dead():

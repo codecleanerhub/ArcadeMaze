@@ -542,13 +542,13 @@ func _draw() -> void:
         if state == State.DEAD:
                 return
 
-        # Fase 3: ACTIVE - statua con tint dorata + bob movimento
+        # Fase 3: ACTIVE - statua con aura celeste chiara + bob movimento
         # FIX (effetto movimento): bob verticale quando si muove
         _draw_statue_unified(1.0, 1.0, 1.0, move_bob, true)
-        # Aura dorata pulsante quando attivo
+        # FIX (NO aura dorata): sostituita con aura celeste chiara appena visibile
         var aura_pulse: float = (sin(float(anim_time) * 0.008) + 1.0) * 0.5
-        draw_circle(Vector2.ZERO, 28.0,
-                Color(1.0, 0.85, 0.3, 0.1 + aura_pulse * 0.1))
+        draw_circle(Vector2.ZERO, 32.0,
+                Color(0.6, 0.8, 1.0, 0.06 + aura_pulse * 0.04))
 
         # FIX (pallino procedurale MOBILE accanto al miniboss, 3° tentativo):
         # i proiettili dorati del KnightAlly erano percepiti come "pallino
@@ -597,9 +597,9 @@ func _draw_cloud_effect(intensity: float, alpha_mul: float) -> void:
 # FIX (unicorno unificato): disegna la statua texture con effetti procedurali.
 # alpha_mul = moltiplicatore alpha (per fade in/out)
 # alpha = alpha finale della texture
-# color_t = 0.0 (pietra grigia) → 1.0 (dorato vivo)
+# color_t = 0.0 (pietra grigia) → 1.0 (vivo)
 # bob_y = offset verticale per effetto movimento
-# golden_glow = true per aggiungere glow dorato attorno alla statua
+# golden_glow = true per aggiungere aura celeste chiara (NON gialla)
 func _draw_statue_unified(alpha_mul: float, alpha: float, color_t: float,
                 bob_y: float, golden_glow: bool) -> void:
         if _statue_loaded and _statue_texture != null:
@@ -609,17 +609,16 @@ func _draw_statue_unified(alpha_mul: float, alpha: float, color_t: float,
                 draw_texture_rect(_statue_texture,
                         Rect2(draw_pos, Vector2(size, size)), false,
                         Color(1, 1, 1, alpha * alpha_mul))
-                # Tint dorato crescente (pietra → vivo)
-                if color_t > 0.0:
-                        # Overlay dorato semi-trasparente
-                        var tint_alpha: float = color_t * 0.35
-                        draw_rect(Rect2(draw_pos, Vector2(size, size)),
-                                Color(1.0, 0.85, 0.3, tint_alpha), true)
-                # Glow dorato attorno (quando attivo)
-                if golden_glow and color_t > 0.5:
-                        var glow_pulse: float = (sin(float(anim_time) * 0.01) + 1.0) * 0.5
-                        draw_circle(Vector2.ZERO, size * 0.55 + glow_pulse * 2.0,
-                                Color(1.0, 0.85, 0.3, 0.15 * color_t))
+                # FIX (NO quadrato giallo): rimosso il draw_rect dorato che
+                # copriva tutto lo sprite con un rettangolo giallo opaco.
+                # L'utente vedeva "tutto giallo dentro un quadrato giallo".
+                # Ora usiamo solo un'aura celeste chiara appena visibile.
+                # Aura celeste chiara trasparente (appena visibile)
+                if golden_glow and color_t > 0.3:
+                        var aura_pulse: float = (sin(float(anim_time) * 0.008) + 1.0) * 0.5
+                        # Celeste chiaro (0.6, 0.8, 1.0) con alpha molto basso (0.08-0.15)
+                        draw_circle(Vector2.ZERO, size * 0.55 + aura_pulse * 2.0,
+                                Color(0.6, 0.8, 1.0, 0.08 + aura_pulse * 0.04))
                 return
         # Fallback: statua procedurale grigia
         _draw_procedural_unified(alpha_mul, alpha, color_t, bob_y)
