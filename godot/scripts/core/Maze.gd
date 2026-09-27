@@ -82,6 +82,80 @@ const _PALETTES: Array = [
         {"wall": Color(0.176, 0.333, 0.333), "bg": Color(0.059, 0.110, 0.118)},  # 7 teal abyss
 ]
 
+# ============================================================================
+# PROCEDURAL ROCKY WALL TEXTURE CACHE
+# ============================================================================
+# Cache static: 8 texture rocciose (una per palette). Generate una tantum
+# via FastNoiseLite (Simplex Smooth fine + Cellular macro-blocchi + Perlin
+# Ridged per fratture) e tinteggiate con wall_color del livello.
+# Sostituisce le 5 draw_rect sovrapposte (sintomo "rettangoli sfumati") con
+# una singola draw_texture_rect_region + highlight/ombra per effetto 3D.
+static var _rock_texture_cache: Dictionary = {}  # key=pal_idx -> ImageTexture
+
+# Variabile di istanza: texture corrente per il livello (riferimento alla cache).
+var _rock_tex: Texture2D = null
+
+
+# Genera una texture rocciosa procedurale 128x128 via FastNoiseLite.
+# Composta da 3 strati di rumore:
+#   1. Simplex Smooth (frequency=0.18) -> granaglia fine superficiale
+#   2. Cellular (frequency=0.04, jitter=0.8) -> macro-blocchi rocciosi
+#   3. Perlin Ridged frattale (3 ottave, frequency=0.08) -> venature/crepacci
+# Tinteggiata con base_color (wall_color del livello) per mantenere la
+# varietà di colore per livello. Aggiunge linee di "fuga" tra mattoni ogni
+# 32px (con offset alternato come un muro a mattoni) per stile dungeon.
+static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageTexture:
+        if _rock_texture_cache.has(pal_idx):
+                return _rock_texture_cache[pal_idx]
+        const TEX_SIZE: int = 128
+        var noise_fine := FastNoiseLite.new()
+        noise_fine.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+        noise_fine.frequency = 0.18
+        noise_fine.seed = 1000 + pal_idx * 17
+        var noise_macro := FastNoiseLite.new()
+        noise_macro.noise_type = FastNoiseLite.TYPE_CELLULAR
+        noise_macro.frequency = 0.04
+        noise_macro.cellular_distance = FastNoiseLite.DISTANCE_EUCLIDEAN
+        noise_macro.cellular_jitter = 0.8
+        noise_macro.seed = 2000 + pal_idx * 23
+        var noise_fracture := FastNoiseLite.new()
+        noise_fracture.noise_type = FastNoiseLite.TYPE_PERLIN
+        noise_fracture.frequency = 0.08
+        noise_fracture.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+        noise_fracture.fractal_octaves = 3
+        noise_fracture.seed = 3000 + pal_idx * 31
+        var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+        for y in range(TEX_SIZE):
+                for x in range(TEX_SIZE):
+                        var n_fine: float = noise_fine.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+                        var n_macro: float = noise_macro.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+                        var n_fract: float = noise_fracture.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
+                        var shade: float = n_macro * 0.6 + n_fine * 0.4
+                        if n_fract < 0.35:
+                                shade -= (0.35 - n_fract) * 0.8
+                        shade = clampf(shade, 0.0, 1.0)
+                        var t: float = 0.55 + shade * 0.65
+                        var r: float = clampf(base_color.r * t, 0.0, 1.0)
+                        var g: float = clampf(base_color.g * t, 0.0, 1.0)
+                        var b: float = clampf(base_color.b * t, 0.0, 1.0)
+                        img.set_pixel(x, y, Color(r, g, b, 1.0))
+        # Linee di "fuga" tra mattoni: ogni 32px riga scura + colonne a offset
+        # alternato (16/48/80px) come un muro di mattoni sfalsato.
+        for y in range(0, TEX_SIZE, 32):
+                for x in range(TEX_SIZE):
+                        var c: Color = img.get_pixel(x, y)
+                        img.set_pixel(x, y, c.darkened(0.35))
+        for y in range(TEX_SIZE):
+                var x_off: int = (int(y / 32) % 2) * 16
+                var x_start: int = x_off % 32
+                for x in range(x_start, TEX_SIZE, 32):
+                        var c: Color = img.get_pixel(x, y)
+                        img.set_pixel(x, y, c.darkened(0.30))
+        var tex := ImageTexture.create_from_image(img)
+        _rock_texture_cache[pal_idx] = tex
+        return tex
+
+
 # Per-cell placement constants (from Maze.cpp).
 const _NUM_EXTRA_OPENINGS: int = 15
 const _TREASURES_PER_LEVEL: int = 8
@@ -469,6 +543,10 @@ func generate(lvl: int = 1) -> void:
         var pal: Dictionary = _PALETTES[pal_idx]
         wall_color = pal["wall"]
         bg_color = pal["bg"]
+        # FIX (muri rocciosi procedurali): rigenera/aggiorna la cached rock
+        # texture per il livello corrente. Costo una tantum (~5ms) per palette
+        # mai usata; riutilizzo dalla cache se la palette è già stata vista.
+        _rock_tex = _generate_rock_texture(pal_idx, wall_color)
 
         # Crea le PointLight2D per le torce sulle pareti (max 6 per performance).
         _spawn_torch_lights()
@@ -748,48 +826,35 @@ func _render_cell(c: int, r: int) -> void:
                         _render_floor_decorations(c, r, px, py, size)
 
 
-## Draws a WALL cell as a 5-band vertical gradient, mirroring the C++
-## "rocky dungeon" effect: bright top (torch-lit) -> dark bottom (shadow).
-## Inoltre aggiunge micro-decorazioni: crepe sottili (~10% delle celle muro)
-## e muschio verde raro (~3%) alla base del muro, 1:1 con Maze.cpp righe
-## 422-445.
+## Draws a WALL cell as a rocky procedural texture, mirroring the C++
+## "rocky dungeon" effect: 3 strati di rumore FastNoiseLite (Simplex Smooth
+## fine + Cellular macro-blocchi + Perlin Ridged per venature) tinteggiati
+## con wall_color del livello. Aggiunge highlight in alto-sinistra e ombra
+## in basso-destra per effetto 3D, outline scuro per continuita' tra muri
+## adiacenti, crepe sottili (~10%) e muschio raro (~3%) come da C++ righe
+## 422-445. La texture e' cached static per palette (8 max, mai rigenerata
+## per lo stesso livello).
 func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> void:
-        # Band 5 - deepest shadow at the bottom, covers the full cell.
-        var col_bottom := Color(
-                maxf(wall_color.r - 55.0 / 255.0, 0.0),
-                maxf(wall_color.g - 50.0 / 255.0, 0.0),
-                maxf(wall_color.b - 45.0 / 255.0, 0.0),
-        )
-        draw_rect(Rect2(px, py, size, size), col_bottom, true)
-        # Band 4 - mid shadow on the lower 75%.
-        var col_low := Color(
-                maxf(wall_color.r - 25.0 / 255.0, 0.0),
-                maxf(wall_color.g - 22.0 / 255.0, 0.0),
-                maxf(wall_color.b - 20.0 / 255.0, 0.0),
-        )
-        draw_rect(Rect2(px, py + size * 0.25, size, size * 0.75), col_low, true)
-        # Band 3 - base tone on the upper 55%.
-        var col_mid := Color(
-                maxf(wall_color.r - 5.0 / 255.0, 0.0),
-                maxf(wall_color.g - 5.0 / 255.0, 0.0),
-                maxf(wall_color.b - 5.0 / 255.0, 0.0),
-        )
-        draw_rect(Rect2(px, py, size, size * 0.55), col_mid, true)
-        # Band 2 - mid-light on the upper 30%.
-        var col_light := Color(
-                minf(wall_color.r + 22.0 / 255.0, 1.0),
-                minf(wall_color.g + 22.0 / 255.0, 1.0),
-                minf(wall_color.b + 22.0 / 255.0, 1.0),
-        )
-        draw_rect(Rect2(px, py, size, size * 0.30), col_light, true)
-        # Band 1 - brightest highlight on the top band.
-        var col_top := Color(
-                minf(wall_color.r + 50.0 / 255.0, 1.0),
-                minf(wall_color.g + 50.0 / 255.0, 1.0),
-                minf(wall_color.b + 50.0 / 255.0, 1.0),
-        )
-        draw_rect(Rect2(px, py, size, size * 0.12), col_top, true)
-        # Dark outline so adjacent walls read as one mass.
+        # FIX (muri rocciosi procedurali): sostituisce le 5 draw_rect sovrapposte
+        # (sintomo "rettangoli sfumati") con una draw_texture_rect_region che
+        # blitta una porzione 64x64 della texture cached 128x128. La porzione
+        # è selezionata deterministicamente per cella -> niente tiling visibile.
+        if _rock_tex != null:
+                var h: int = abs((c * 73856093) ^ (r * 19349663) ^ (level * 83492791))
+                var ox: float = float((h % 3) * 32)
+                var oy: float = float(((h / 3) % 3) * 32)
+                var src_rect := Rect2(ox, oy, float(C.TILE_SIZE), float(C.TILE_SIZE))
+                var dst_rect := Rect2(px, py, size, size)
+                draw_texture_rect_region(_rock_tex, dst_rect, src_rect, Color.WHITE, false, false)
+        else:
+                draw_rect(Rect2(px, py, size, size), wall_color, true)
+        # --- Highlight in alto-sinistra (luce proveniente da nord-ovest) ---
+        draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
+        draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
+        # --- Ombra in basso-destra (profondita') ---
+        draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
+        draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
+        # --- Outline scuro perimetrale (mantiene continuita' tra muri adiacenti) ---
         draw_rect(Rect2(px, py, size, size), Color(0.04, 0.04, 0.04), false, 1.0)
         # --- Crepa rara (~10% delle celle muro, cellHash > 0.90) ---
         # Sottile rettangolo 1.2x6 ruotato nero semi-trasparente, 1:1 con C++.

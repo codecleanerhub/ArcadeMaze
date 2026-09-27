@@ -467,8 +467,70 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 var step_now: float = step_size
                 var dest_x: float = position.x + dx * step_now
                 var dest_y: float = position.y + dy * step_now
-                position.x = dest_x
-                position.y = dest_y
+                # FIX (tunneling attraverso muri): prima di applicare il
+                # movimento, verifica che la cella DESTINAZIONE non sia un
+                # muro. Se lo è, il nemico NON si muove in quel frame e
+                # forza un ricalcolo BFS al prossimo centro cella. Questo
+                # previene il caso in cui il nemico, a causa di uno step
+                # troppo grande (alto FPS o speed alta), "salta" il check
+                # is_wall(col+dx, row+dy) fatto al centro cella e si ritrova
+                # dentro un muro — causando tunneling e fuoriuscita dal
+                # labirinto.
+                var dest_col: int = int(dest_x / TILE_SIZE)
+                var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
+                if dest_col > 0 and dest_col < MAZE_COLS - 1 \
+                                and dest_row > 0 and dest_row < MAZE_ROWS - 1:
+                        if maze.is_wall(dest_col, dest_row):
+                                # Destinazione è muro: NON muovere, forza
+                                # ricalcolo direzione al prossimo frame.
+                                dx = 0
+                                dy = 0
+                                path_update_timer = PATH_RECALC_INTERVAL_MS
+                                stuck_timer = STUCK_THRESHOLD_MS + 1
+                        else:
+                                position.x = dest_x
+                                position.y = dest_y
+                else:
+                        # FIX (nemico fuori labirinto): se la destinazione è
+                        # fuori dai bounds del labirinto, riporta il nemico
+                        # al centro della cella corrente e forza ricalcolo.
+                        position.x = col * TILE_SIZE + TILE_SIZE / 2.0
+                        position.y = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                        dx = 0
+                        dy = 0
+                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                        stuck_timer = STUCK_THRESHOLD_MS + 1
+        # FIX (safety clamp): se nonostante i check precedenti il nemico è
+        # finito in un muro, riportalo al centro della cella più vicina
+        # vuota. Questo è un fallback che previene "nemico scomparso dal
+        # labirinto" in caso di race condition o glitch.
+        var cur_col_after: int = int(position.x / TILE_SIZE)
+        var cur_row_after: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
+        if cur_col_after > 0 and cur_col_after < MAZE_COLS - 1 \
+                        and cur_row_after > 0 and cur_row_after < MAZE_ROWS - 1:
+                if maze.is_wall(cur_col_after, cur_row_after):
+                        # Cerca cella vuota nelle vicinanze (radius 1-3)
+                        for snap_radius in range(1, 4):
+                                var found_safe: bool = false
+                                for sdc in range(-snap_radius, snap_radius + 1):
+                                        for sdr in range(-snap_radius, snap_radius + 1):
+                                                var nnc: int = cur_col_after + sdc
+                                                var nnr: int = cur_row_after + sdr
+                                                if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                                and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                        if not maze.is_wall(nnc, nnr):
+                                                                position.x = nnc * TILE_SIZE + TILE_SIZE / 2.0
+                                                                position.y = nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                                                                last_pos = position
+                                                                dx = 0
+                                                                dy = 0
+                                                                path_update_timer = PATH_RECALC_INTERVAL_MS
+                                                                found_safe = true
+                                                                break
+                                        if found_safe:
+                                                break
+                                if found_safe:
+                                        break
 
         # --- Shooting (canShoot types only) ---
         # Disabled while fleeing (chalice active - enemy runs, doesn't shoot).

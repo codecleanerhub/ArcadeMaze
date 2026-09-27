@@ -248,7 +248,8 @@ func _update_portal(delta_ms: int) -> void:
 # =========================================================
 
 # --- MINE ---
-func start_bounce(initial_vel: Vector2, duration_ms: int = 10000) -> void:
+# FIX (bomba a ricerca): durata 10000ms -> 7000ms (7s come richiesto da utente)
+func start_bounce(initial_vel: Vector2, duration_ms: int = 7000) -> void:
         bouncing = true
         velocity = initial_vel
         bounce_timer_ms = duration_ms
@@ -294,13 +295,16 @@ func _on_collected(player_id: int) -> void:
                         # Mine activates on touch: starts bouncing in a random
                         # direction at FAST speed (8 px/frame ≈ 480 px/s).
                         # The Game's collision logic detects enemy hits during
-                        # the bounce; after bounce_timer expires (10s) the mine
+                        # the bounce; after bounce_timer expires (7s) the mine
                         # deactivates.
-                        # FIX (bomba): speed 4 -> 8 (veloce, richiesta utente)
-                        # FIX (bomba): durata 1500ms -> 10000ms (10s, richiesta utente)
+                        # FIX (bomba a ricerca): speed 4 -> 8 (veloce, richiesta utente)
+                        # FIX (bomba a ricerca): durata 1500ms -> 7000ms (7s, richiesta utente)
+                        # FIX (bomba a ricerca): la direzione viene continuamente
+                        # aggiornata dal BFS homing in _check_mine_vs_enemies
+                        # per seguire il labirinto fino al nemico più vicino.
                         if not bouncing:
                                 var ang := randf() * TAU
-                                start_bounce(Vector2(cos(ang), sin(ang)) * 8.0, 10000)
+                                start_bounce(Vector2(cos(ang), sin(ang)) * 8.0, 7000)
                 Kind.CHALICE:
                         active = false
                         collected.emit(self, player_id)

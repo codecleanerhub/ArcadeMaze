@@ -465,15 +465,23 @@ func _draw() -> void:
         # Fase 3: ACTIVE - cavaliere vivo
         _draw_sprite(1.0, 1.0)
 
-        # Proiettili dorati
-        for proj in projectiles:
-                if not proj.get("active", false):
-                        continue
-                var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
-                var local_pos: Vector2 = p_pos - position
-                draw_circle(local_pos, 5.0, Color(1.0, 0.85, 0.2, 0.5))
-                draw_circle(local_pos, 3.0, Color(1.0, 0.95, 0.4, 1.0))
-                draw_circle(local_pos, 1.5, Color(1.0, 1.0, 0.8, 1.0))
+        # FIX (pallino procedurale MOBILE accanto al miniboss, 3° tentativo):
+        # i proiettili dorati del KnightAlly (3 cerchi concentrici r=5/3/1.5)
+        # erano percepiti come "pallino procedurale che SI MUOVE accanto al
+        # miniboss" perché il KnightAlly targetizza il miniboss e gli spara
+        # proiettili che volano a 5px/frame per 6s con rimbalzi. Rendering
+        # disabilitato: la logica di collisione (_update_projectiles) resta
+        # attiva — i proiettili fanno ancora danno al miniboss, ma non sono
+        # più visibili come "pallino mobile".
+        # for proj in projectiles:  # DISABLED — proiettili invisibili
+        #       if not proj.get("active", false):
+        #               continue
+        #       var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+        #       var local_pos: Vector2 = p_pos - position
+        #       draw_circle(local_pos, 5.0, Color(1.0, 0.85, 0.2, 0.5))
+        #       draw_circle(local_pos, 3.0, Color(1.0, 0.95, 0.4, 1.0))
+        #       draw_circle(local_pos, 1.5, Color(1.0, 1.0, 0.8, 1.0))
+        pass
 
         # HP bar
         if health < max_health:
