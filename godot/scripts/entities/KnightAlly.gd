@@ -15,6 +15,8 @@ class_name KnightAlly
 
 const TILE_SIZE: int = 64
 const UI_HEIGHT: int = 80
+const MAZE_COLS: int = 40
+const MAZE_ROWS: int = 22
 
 # --- Stats ---
 var health: int = 5
@@ -259,6 +261,37 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                         dx = 0
                         dy = 0
 
+                # FIX (unicorno attraversa muri): safety clamp finale. Se nonostante
+                # i check precedenti l'unicorno è finito in una cella WALL, riportalo
+                # al centro della cella corrente. Questo previene tunneling in
+                # caso di race condition o glitch.
+                var final_col: int = int(pos.x / TILE_SIZE)
+                var final_row: int = int((pos.y - UI_HEIGHT) / TILE_SIZE)
+                if final_col > 0 and final_col < MAZE_COLS - 1 \
+                                and final_row > 0 and final_row < MAZE_ROWS - 1:
+                        if maze.is_wall(final_col, final_row):
+                                # Snap al centro della cella vuota più vicina
+                                for snap_radius in range(1, 4):
+                                        var found_safe: bool = false
+                                        for sdc in range(-snap_radius, snap_radius + 1):
+                                                for sdr in range(-snap_radius, snap_radius + 1):
+                                                        var nnc: int = final_col + sdc
+                                                        var nnr: int = final_row + sdr
+                                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                                if not maze.is_wall(nnc, nnr):
+                                                                        pos = Vector2(
+                                                                                nnc * TILE_SIZE + TILE_SIZE / 2.0,
+                                                                                nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
+                                                                        current_dir = Vector2i.ZERO
+                                                                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                                                                        found_safe = true
+                                                                        break
+                                                if found_safe:
+                                                        break
+                                        if found_safe:
+                                                break
+
         # Shoot at closest enemy in range — solo quando è probabile che colpisca
         if shoot_cooldown > 0:
                 shoot_cooldown -= delta_ms
@@ -323,10 +356,13 @@ func _shoot_at(target_pos: Vector2) -> void:
         if dist < 0.001:
                 return
         var dir: Vector2 = d / dist
+        # FIX (danno 50% HP): il colpo dell'unicorno toglie il 50% dell'energia
+        # a qualsiasi nemico. Se il nemico ha meno del 50% HP, viene ucciso.
+        # power=-1 significa "50% di max_health" (gestito in _update_projectiles).
         projectiles.append({
                 "pos": pos + dir * 20.0,
                 "dir": dir * 5.0,
-                "power": 999,
+                "power": -1,  # FIX: -1 = danno 50% max_health (speciale)
                 "active": true,
                 "type": 0,
                 "life_ms": 6000,  # FIX: 6 secondi di vita con rimbalzo
@@ -379,7 +415,24 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
                         if not e.has_method("get_pixel_pos"):
                                 continue
                         if new_pos.distance_squared_to(e.get_pixel_pos()) < 600.0:
-                                e.take_damage(int(proj.get("power", 999)))
+                                # FIX (danno 50% HP): calcola danno come 50% di max_health.
+                                # Se il nemico ha HP <= 50%, viene ucciso (take_damage 999).
+                                # Altrimenti take_damage(50% max_health).
+                                var dmg: int = 999  # default: kill
+                                var raw_power: int = int(proj.get("power", 999))
+                                if raw_power == -1:
+                                        # power=-1 = danno speciale 50% max_health
+                                        if e.has_method("get_max_health"):
+                                                var max_hp: int = e.get_max_health()
+                                                var fifty_pct: int = int(max_hp * 0.5)
+                                                if e.health <= fifty_pct:
+                                                        dmg = 999  # kill: HP <= 50%
+                                                else:
+                                                        dmg = fifty_pct  # sopravvive con 50% HP
+                                        # else: nemico senza get_max_health, usa 999 default
+                                else:
+                                        dmg = raw_power
+                                e.take_damage(dmg)
                                 if e.has_method("start_burning"):
                                         e.start_burning(30)
                                 hit = true
@@ -389,7 +442,20 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
                         if mini_boss.has_method("is_dead") and not mini_boss.is_dead():
                                 if mini_boss.has_method("get_pixel_pos"):
                                         if new_pos.distance_squared_to(mini_boss.get_pixel_pos()) < 900.0:
-                                                mini_boss.take_damage(int(proj.get("power", 999)))
+                                                # FIX (danno 50% HP): stesso calcolo per mini_boss
+                                                var dmg: int = 999
+                                                var raw_power: int = int(proj.get("power", 999))
+                                                if raw_power == -1:
+                                                        if mini_boss.has_method("get_max_health"):
+                                                                var max_hp: int = mini_boss.get_max_health()
+                                                                var fifty_pct: int = int(max_hp * 0.5)
+                                                                if mini_boss.health <= fifty_pct:
+                                                                        dmg = 999
+                                                                else:
+                                                                        dmg = fifty_pct
+                                                else:
+                                                        dmg = raw_power
+                                                mini_boss.take_damage(dmg)
                                                 hit = true
                 if hit:
                         proj["active"] = false
@@ -429,75 +495,45 @@ func get_pixel_pos() -> Vector2:
 
 
 func _draw() -> void:
+        # FIX (unicorno unificato): usa SEMPRE _statue_texture per tutte le
+        # fasi, applicando effetti procedurali (tint dorata, bob, nube) per
+        # differenziare visivamente. Questo evita il "cambio palese di PNG"
+        # tra statua e forma attiva.
+        var is_moving: bool = (dx != 0 or dy != 0)
+        var move_bob: float = 0.0
+        if is_moving and state == State.ACTIVE:
+                move_bob = sin(float(anim_time) * 0.015) * 2.0
+
         # Fase 1: statua di pietra immobile
         if state == State.STONE:
-                _draw_statue(1.0, 1.0, 0.0)  # stone color, no tint
+                _draw_statue_unified(1.0, 1.0, 0.0, 0.0, false)
                 # Aura mistica debole
                 var pulse: float = (sin(float(anim_time) * 0.005) + 1.0) * 0.5
                 draw_circle(Vector2.ZERO, 30.0,
                         Color(0.4, 0.6, 1.0, 0.15 + pulse * 0.1))
                 return
 
-        # Fase 2: transform statua→vivo (1.5s)
-        # Effetto: sgretolamento pietra + fumo + cavaliere che emerge
+        # Fase 2: transform statua→vivo (1.5s) — effetto NUDE
+        # FIX (nube su transform): nube densa + statua che prende colore
         if state == State.TRANSFORMING:
                 var t: float = 1.0 - (float(transform_ms) / 1500.0)
-                # Disegna statua che si sgretola (fade out + scale down)
-                _draw_statue(1.0 - t * 0.3, 1.0 - t * 0.5, t)
+                # Statua con tint dorata crescente + bob leggero
+                _draw_statue_unified(1.0 - t * 0.2, 1.0, t, move_bob, true)
+                # NUDE densa attorno alla statua
+                _draw_cloud_effect(t, 0.7)
                 # Aura mistica che cresce
                 draw_circle(Vector2.ZERO, 20.0 + t * 25.0,
                         Color(0.5, 0.8, 1.0, 0.3 + t * 0.3))
-                # FIX (sgretolamento pietra): frammenti di pietra che volano via
-                for i in 10:
-                        var a: float = (float(i) / 10.0) * TAU + float(anim_time) * 0.002
-                        var r: float = 15.0 + t * 35.0
-                        var sx: float = cos(a) * r
-                        var sy: float = sin(a) * r - t * 10.0  # cadono verso il basso
-                        var frag_size: float = 3.0 * (1.0 - t) + 1.0
-                        draw_rect(Rect2(sx - frag_size / 2, sy - frag_size / 2,
-                                frag_size, frag_size),
-                                Color(0.5, 0.45, 0.4, 0.8 * (1.0 - t * 0.5)))
-                # FIX (fumo): particelle di fumo grigio che salgono
-                for i in 8:
-                        var a2: float = (float(i) / 8.0) * TAU + float(anim_time) * 0.003
-                        var r2: float = 10.0 + t * 20.0
-                        var sx2: float = cos(a2) * r2
-                        var sy2: float = sin(a2) * r2 - t * 15.0  # fumo sale
-                        draw_circle(Vector2(sx2, sy2), 4.0 * t + 2.0,
-                                Color(0.6, 0.6, 0.65, 0.4 * t))
-                        draw_circle(Vector2(sx2 + 2, sy2 - 2), 2.5 * t + 1.0,
-                                Color(0.75, 0.75, 0.8, 0.3 * t))
-                # Scintille dorate che emergono
-                for i in 6:
-                        var a3: float = (float(i) / 6.0) * TAU + float(anim_time) * 0.004
-                        var r3: float = 20.0 + t * 15.0
-                        var sx3: float = cos(a3) * r3
-                        var sy3: float = sin(a3) * r3
-                        draw_circle(Vector2(sx3, sy3 - 10), 2.5 * t,
-                                Color(1.0, 0.9, 0.4, 0.7 * t))
-                # Quando la transform è completa, disegna anche il cavaliere vivo
-                if t > 0.5:
-                        var alpha: float = (t - 0.5) / 0.5  # 0→1 da metà transform
-                        _draw_sprite(0.5 + alpha * 0.5, alpha)
                 return
 
-        # Fase 4: disappearing (smoke)
+        # Fase 4: disappearing (smoke) — effetto NUDE
+        # FIX (nube su disappear): nube densa + statua che sfuma
         if state == State.DISAPPEARING:
                 var t2: float = 1.0 - (float(smoke_timer_ms) / 1200.0)
-                # Fumo che si espande (più denso e realistico)
-                for i in 12:
-                        var a: float = (float(i) / 12.0) * TAU + float(anim_time) * 0.004
-                        var r: float = 15.0 + t2 * 40.0
-                        var sx: float = cos(a) * r
-                        var sy: float = sin(a) * r - t2 * 10.0
-                        var sz: float = 8.0 * (1.0 - t2 * 0.5)
-                        # Fumo grigio
-                        draw_circle(Vector2(sx, sy), sz,
-                                Color(0.5, 0.5, 0.55, 0.7 * (1.0 - t2)))
-                        draw_circle(Vector2(sx + 3, sy - 3), sz * 0.6,
-                                Color(0.7, 0.7, 0.75, 0.5 * (1.0 - t2)))
-                # Cavaliere che sfuma
-                _draw_sprite(1.0 - t2 * 0.3, 1.0 - t2)
+                # Statua che sfuma
+                _draw_statue_unified(1.0 - t2 * 0.3, 1.0 - t2, 1.0, 0.0, false)
+                # NUDE densa che si espande
+                _draw_cloud_effect(t2, 0.8)
                 # Aura finale
                 draw_circle(Vector2.ZERO, 25.0 + t2 * 20.0,
                         Color(0.4, 0.7, 1.0, 0.3 * (1.0 - t2)))
@@ -506,25 +542,19 @@ func _draw() -> void:
         if state == State.DEAD:
                 return
 
-        # Fase 3: ACTIVE - cavaliere vivo
-        _draw_sprite(1.0, 1.0)
+        # Fase 3: ACTIVE - statua con tint dorata + bob movimento
+        # FIX (effetto movimento): bob verticale quando si muove
+        _draw_statue_unified(1.0, 1.0, 1.0, move_bob, true)
+        # Aura dorata pulsante quando attivo
+        var aura_pulse: float = (sin(float(anim_time) * 0.008) + 1.0) * 0.5
+        draw_circle(Vector2.ZERO, 28.0,
+                Color(1.0, 0.85, 0.3, 0.1 + aura_pulse * 0.1))
 
         # FIX (pallino procedurale MOBILE accanto al miniboss, 3° tentativo):
-        # i proiettili dorati del KnightAlly (3 cerchi concentrici r=5/3/1.5)
-        # erano percepiti come "pallino procedurale che SI MUOVE accanto al
-        # miniboss" perché il KnightAlly targetizza il miniboss e gli spara
-        # proiettili che volano a 5px/frame per 6s con rimbalzi. Rendering
-        # disabilitato: la logica di collisione (_update_projectiles) resta
-        # attiva — i proiettili fanno ancora danno al miniboss, ma non sono
-        # più visibili come "pallino mobile".
-        # for proj in projectiles:  # DISABLED — proiettili invisibili
-        #       if not proj.get("active", false):
-        #               continue
-        #       var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
-        #       var local_pos: Vector2 = p_pos - position
-        #       draw_circle(local_pos, 5.0, Color(1.0, 0.85, 0.2, 0.5))
-        #       draw_circle(local_pos, 3.0, Color(1.0, 0.95, 0.4, 1.0))
-        #       draw_circle(local_pos, 1.5, Color(1.0, 1.0, 0.8, 1.0))
+        # i proiettili dorati del KnightAlly erano percepiti come "pallino
+        # procedurale che SI MUOVE accanto al miniboss". Rendering disabilitato:
+        # la logica di collisione (_update_projectiles) resta attiva — i
+        # proiettili fanno ancora danno al miniboss, ma non sono più visibili.
         pass
 
         # HP bar
@@ -537,6 +567,83 @@ func _draw() -> void:
                 var hp_ratio: float = float(health) / float(max_health)
                 draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
                         Color(1.0, 0.85, 0.2, 1.0), true)
+
+
+# FIX (effetto nube): disegna nube densa attorno all'unicorno per transform
+# e disappear. intensity 0..1 (0 = nube leggera, 1 = nube densa).
+func _draw_cloud_effect(intensity: float, alpha_mul: float) -> void:
+        # Nube principale: 14 particelle grigio-bianche che si espandono
+        for i in 14:
+                var a: float = (float(i) / 14.0) * TAU + float(anim_time) * 0.003
+                var r: float = 12.0 + intensity * 30.0
+                var sx: float = cos(a) * r
+                var sy: float = sin(a) * r - intensity * 8.0  # sale verso l'alto
+                var sz: float = 6.0 + intensity * 4.0
+                # Nube bianco-grigia densa
+                draw_circle(Vector2(sx, sy), sz,
+                        Color(0.85, 0.85, 0.9, 0.6 * alpha_mul * (1.0 - intensity * 0.3)))
+                draw_circle(Vector2(sx + 2, sy - 2), sz * 0.5,
+                        Color(0.95, 0.95, 1.0, 0.4 * alpha_mul))
+        # Nube interna più densa
+        for i in 8:
+                var a2: float = (float(i) / 8.0) * TAU + float(anim_time) * 0.005
+                var r2: float = 8.0 + intensity * 15.0
+                var sx2: float = cos(a2) * r2
+                var sy2: float = sin(a2) * r2 - intensity * 4.0
+                draw_circle(Vector2(sx2, sy2), 4.0 + intensity * 2.0,
+                        Color(0.9, 0.9, 0.95, 0.7 * alpha_mul * (1.0 - intensity * 0.2)))
+
+
+# FIX (unicorno unificato): disegna la statua texture con effetti procedurali.
+# alpha_mul = moltiplicatore alpha (per fade in/out)
+# alpha = alpha finale della texture
+# color_t = 0.0 (pietra grigia) → 1.0 (dorato vivo)
+# bob_y = offset verticale per effetto movimento
+# golden_glow = true per aggiungere glow dorato attorno alla statua
+func _draw_statue_unified(alpha_mul: float, alpha: float, color_t: float,
+                bob_y: float, golden_glow: bool) -> void:
+        if _statue_loaded and _statue_texture != null:
+                var size: float = 60.0  # FIX: 60px (meno di TILE_SIZE=64) per non overflow muro
+                var draw_pos: Vector2 = Vector2(-size / 2.0, -size / 2.0 + bob_y)
+                # Texture con alpha
+                draw_texture_rect(_statue_texture,
+                        Rect2(draw_pos, Vector2(size, size)), false,
+                        Color(1, 1, 1, alpha * alpha_mul))
+                # Tint dorato crescente (pietra → vivo)
+                if color_t > 0.0:
+                        # Overlay dorato semi-trasparente
+                        var tint_alpha: float = color_t * 0.35
+                        draw_rect(Rect2(draw_pos, Vector2(size, size)),
+                                Color(1.0, 0.85, 0.3, tint_alpha), true)
+                # Glow dorato attorno (quando attivo)
+                if golden_glow and color_t > 0.5:
+                        var glow_pulse: float = (sin(float(anim_time) * 0.01) + 1.0) * 0.5
+                        draw_circle(Vector2.ZERO, size * 0.55 + glow_pulse * 2.0,
+                                Color(1.0, 0.85, 0.3, 0.15 * color_t))
+                return
+        # Fallback: statua procedurale grigia
+        _draw_procedural_unified(alpha_mul, alpha, color_t, bob_y)
+
+
+# FIX (fallback procedurale unificato)
+func _draw_procedural_unified(alpha_mul: float, alpha: float, color_t: float,
+                bob_y: float) -> void:
+        var s: float = 20.0
+        var stone_col: Color = Color(0.66, 0.62, 0.56, alpha * alpha_mul)
+        var gold_col: Color = Color(0.85, 0.7, 0.3, alpha * alpha_mul)
+        var body_col: Color = stone_col.lerp(gold_col, color_t)
+        var y_off: float = bob_y
+        # Ali
+        draw_polygon(PackedVector2Array([
+                Vector2(-s - 4, -4 + y_off), Vector2(-s - 12, -12 + y_off), Vector2(-s, -8 + y_off)
+        ]), PackedColorArray([body_col]))
+        draw_polygon(PackedVector2Array([
+                Vector2(s + 4, -4 + y_off), Vector2(s + 12, -12 + y_off), Vector2(s, -8 + y_off)
+        ]), PackedColorArray([body_col]))
+        # Corpo
+        draw_rect(Rect2(-s / 2.0, -s / 2.0 + y_off, s, s), body_col, true)
+        # Elmo
+        draw_circle(Vector2(0, -s / 2.0 - 4 + y_off), 6.0, body_col)
 
         # FIX (rimossi 3 pallini): i pallini indicator dei colpi si muovevano
         # rispetto allo sprite. Rimossi completamente.
