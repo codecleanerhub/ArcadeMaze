@@ -26,7 +26,7 @@ const Projectile = preload("res://scripts/items/Projectile.gd")
 @onready var boss_node: Node2D = $Boss
 @onready var boss_projectiles_node: Node2D = $BossProjectiles
 @onready var boss_room_weapons_node: Node2D = $BossRoomWeapons
-@onready var hud: Control = $HUD
+@onready var hud: Control = $HUDLayer/HUD
 
 # --- Game state ---
 var current_level: int = 4
