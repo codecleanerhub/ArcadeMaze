@@ -1027,10 +1027,12 @@ func _draw_sprite_frame() -> void:
                 if at == null:
                         return
         # Draw centered at enemy size (72x72 ≈ TILE_SIZE*1.5, più visibile).
-        # FIX (nemici piccoli): era 56px (0.88 scale), aumentato a 72px per
-        # renderli più visibili. Il tile è 48px, quindi overflow di 24px
-        # sui lati — accettabile per mostri con corna/orecchie.
-        var target_size: float = 72.0
+        # FIX (nemici shiftati/sovrappongono muro): target_size ridotto da 72
+        # a 60 (meno di TILE_SIZE=64) per evitare che lo sprite overflow nel
+        # muro adiacente. Con 72px il nemico overflow di 4px per lato nel muro.
+        # Con 60px c'è un margine di 2px per lato — il nemico sta centrato
+        # nella cella senza toccare i muri.
+        var target_size: float = 60.0
         var tw: float = target_size
         var th: float = target_size
         # FIX (barra HP lag): rimosso bob_y dallo sprite. Ora né lo sprite

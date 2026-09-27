@@ -398,6 +398,18 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
                 child.queue_free()
         _spawn_boss_room_weapons()
 
+        # FIX (player non spara in boss room): assicurati che il player abbia
+        # un'arma valida con ammo prima della boss fight. Il player nel BossRoom
+        # è un nuovo nodo (creato dalla scena), e il suo _ready() chiama reset()
+        # che setta current_weapon = PISTOL con ammo=15. MA se per qualche
+        # motivo current_weapon è null o ammo=0 (es. stato corrotto), lo
+        # resetta qui. Inoltre dai al player un'arma potenziata per il boss.
+        if player.current_weapon == null or player.current_weapon.is_empty():
+                player.current_weapon = {"type": 0, "power": 2, "ammo": 30}
+        elif player.current_weapon.get("ammo", 0) <= 0:
+                player.current_weapon["ammo"] = 30
+                player.current_weapon["power"] = 2
+
         # Spawn the boss-room mine (1 per fight). Mirrors C++ Game.cpp
         # 2728-2843: a single bouncing mine at a random position in the
         # boss room; when collected by either player it starts bouncing
@@ -656,7 +668,7 @@ func _draw() -> void:
         if boss != null:
                 var boss_name: String = Boss.get_boss_name(boss.boss_type)
                 var cx: float = vp_size.x * 0.5
-                var by: float = 35.0
+                var by: float = 90.0  # FIX: sotto UI_HEIGHT (80) per non essere coperto dalla HUD CanvasLayer
                 var font: Font = ThemeDB.fallback_font
                 # Shadow
                 draw_string(font, Vector2(cx - 250, by + 2), boss_name,
@@ -672,7 +684,7 @@ func _draw() -> void:
                         var bar_w: float = 400.0
                         var bar_h: float = 8.0
                         var bar_x: float = cx - bar_w * 0.5
-                        var bar_y: float = by + 40.0
+                        var bar_y: float = by + 40.0  # = 130, sotto la HUD
                         draw_rect(Rect2(bar_x - 2, bar_y - 2, bar_w + 4, bar_h + 4),
                                 Color(0, 0, 0, 0.8), true)
                         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h),
