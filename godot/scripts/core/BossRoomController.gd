@@ -93,13 +93,18 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                 p1_dx = 1
         player.set_direction(p1_dx, p1_dy)
 
+        # FIX (player non spara/salta in boss room): usa is_action_pressed
+        # invece di is_action_just_pressed per maggiore robustezza.
+        # is_action_just_pressed può fallire in _physics_process se l'input
+        # viene processato tra i frame. is_action_pressed rileva il tasto
+        # tenuto premuto, con shoot_cooldown a limitare la cadenza.
         # P1 shoot
-        if Input.is_action_just_pressed("shoot") and player.shoot_cooldown == 0:
+        if Input.is_action_pressed("shoot") and player.shoot_cooldown == 0:
                 player.shoot()
                 player.shoot_cooldown = 150
 
         # P1 jump
-        if Input.is_action_just_pressed("jump"):
+        if Input.is_action_pressed("jump"):
                 player.activate_jump()
 
         # P2

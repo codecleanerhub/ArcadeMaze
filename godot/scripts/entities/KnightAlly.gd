@@ -220,20 +220,26 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                 var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
                                 or (current_dir.x == 0 and current_dir.y == 0) \
                                 or (stuck_timer > STUCK_THRESHOLD_MS)
-                if must_recompute:
+                if must_recompute and maze != null:
                         path_update_timer = 0
                         var target_col: int = int(chase_pos.x / TILE_SIZE)
                         var target_row: int = int((chase_pos.y - UI_HEIGHT) / TILE_SIZE)
-                        var next_step: Vector2i = BFS.find_path(
-                                maze, Vector2i(col, row),
-                                Vector2i(target_col, target_row))
-                        if next_step.x >= 0:
-                                current_dir = Vector2i(
-                                        next_step.x - col, next_step.y - row)
-                                stuck_timer = 0
-                        else:
-                                # Nessun path (nemico irraggiungibile) — idle
+                        var start_cell: Vector2i = Vector2i(col, row)
+                        var target_cell: Vector2i = Vector2i(target_col, target_row)
+                        # FIX: se start == target, il nemico è già sulla cella del target
+                        if start_cell == target_cell:
                                 current_dir = Vector2i.ZERO
+                        else:
+                                var next_step: Vector2i = BFS.find_path(
+                                        maze, start_cell, target_cell)
+                                # BFS ritorna (-1, -1) se nessun path
+                                if next_step.x >= 0 and next_step.y >= 0:
+                                        current_dir = Vector2i(
+                                                next_step.x - col, next_step.y - row)
+                                        stuck_timer = 0
+                                else:
+                                        # Nessun path (nemico irraggiungibile) — idle
+                                        current_dir = Vector2i.ZERO
 
                 # Safety: se la cella avanti è diventata muro, reset
                 if current_dir.x != 0 or current_dir.y != 0:

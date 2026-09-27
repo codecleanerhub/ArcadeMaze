@@ -465,25 +465,35 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # FIX (scatti): movimento scalato per delta_ms per frame-rate
         # independence. A 60 FPS step = speed (come prima). A 30 FPS step = speed/2.
         # A 120 FPS step = speed*2. Velocità in px/s costante a speed*60.
-        # Prima era fisso `position.x + dx * speed` (no delta) che a FPS
-        # diversi da 60 dava velocità incoerenti e scatti.
+        # FIX (tunneling + decentramento): movimento STRETTAMENTE cardinale.
+        # Solo UN asse alla volta (mai diagonale). Se dx != 0, dy = 0 e
+        # viceversa. Questo previene il tunneling attraverso gli angoli dei muri.
+        # Inoltre, snap al centro cella PRIMA di muoversi: se il nemico è
+        # decentrato, prima si allinea al centro poi si muove.
         if dx != 0 or dy != 0:
+                # Forza movimento cardinale: un solo asse
+                var move_dx: int = dx
+                var move_dy: int = dy
+                if dx != 0 and dy != 0:
+                        # Priorità: mantieni l'asse dominante (last_dx o quello
+                        # con valore maggiore). Disabilita l'altro.
+                        if abs(dx) >= abs(dy):
+                                move_dy = 0
+                        else:
+                                move_dx = 0
+
                 var step_now: float = step_size
-                var dest_x: float = position.x + dx * step_now
-                var dest_y: float = position.y + dy * step_now
-                # FIX (tunneling attraverso muri): prima di applicare il
-                # movimento, verifica che la cella DESTINAZIONE non sia un
-                # muro. Se lo è, il nemico NON si muove in quel frame e
-                # forza un ricalcolo BFS al prossimo centro cella. Questo
-                # previene il caso in cui il nemico, a causa di uno step
-                # troppo grande (alto FPS o speed alta), "salta" il check
-                # is_wall(col+dx, row+dy) fatto al centro cella e si ritrova
-                # dentro un muro — causando tunneling e fuoriuscita dal
-                # labirinto.
+                var dest_x: float = position.x + move_dx * step_now
+                var dest_y: float = position.y + move_dy * step_now
+                # FIX (tunneling attraverso muri): check is_wall sulla cella
+                # destinazione PRIMA di muovere. Se muro, NON muovere + forza
+                # ricalcolo BFS.
                 var dest_col: int = int(dest_x / TILE_SIZE)
                 var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
-                if dest_col > 0 and dest_col < MAZE_COLS - 1 \
-                                and dest_row > 0 and dest_row < MAZE_ROWS - 1:
+                var cur_col: int = int(position.x / TILE_SIZE)
+                var cur_row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
+                # Check solo se cambiamo cella
+                if dest_col != cur_col or dest_row != cur_row:
                         if maze.is_wall(dest_col, dest_row):
                                 # Destinazione è muro: NON muovere, forza
                                 # ricalcolo direzione al prossimo frame.
@@ -495,15 +505,9 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                 position.x = dest_x
                                 position.y = dest_y
                 else:
-                        # FIX (nemico fuori labirinto): se la destinazione è
-                        # fuori dai bounds del labirinto, riporta il nemico
-                        # al centro della cella corrente e forza ricalcolo.
-                        position.x = col * TILE_SIZE + TILE_SIZE / 2.0
-                        position.y = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
-                        dx = 0
-                        dy = 0
-                        path_update_timer = PATH_RECALC_INTERVAL_MS
-                        stuck_timer = STUCK_THRESHOLD_MS + 1
+                        # Movimento dentro la stessa cella: OK
+                        position.x = dest_x
+                        position.y = dest_y
         # FIX (safety clamp graduale): se nonostante i check precedenti il
         # nemico è finito in un muro, riportalo VERSO il centro della cella
         # più vicina vuota usando move_toward (NO teleport istantaneo).
