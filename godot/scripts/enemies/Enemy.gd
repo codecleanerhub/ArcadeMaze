@@ -383,96 +383,84 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 last_pos = position
 
         # When close enough to cell centre, snap and try to recalc direction.
-        # FIX (scatti al cambio direzione): snap GRADUALE invece di
-        # istantaneo. Prima era `position.x = center_x; position.y = center_y`
-        # che causava uno scatto visibile quando il nemico era leggermente
-        # fuori centro. Ora usa move_toward per avvicinarsi al centro in modo
-        # fluido, mantenendo la direzione precedente se ancora valida.
-        # Questo elimina il "lag + accelerazione" percepito dall'utente.
+        # FIX (nemici bloccati): separare il calcolo BFS dallo snap al centro.
+        # Prima il calcolo BFS era GATING su at_center=true — se il nemico NON
+        # era perfettamente al centro cella, non calcolava mai la direzione e
+        # restava immobile. Ora il calcolo BFS avviene SEMPRE (basato su timer),
+        # e lo snap è solo per allineamento. Mirror del fix KnightAlly commit 24fdc29.
         var step_size: float = float(speed) * (delta_ms / 16.6667)
         var snap_threshold: float = max(float(speed), step_size)
-        var at_center: bool = false
+        # Snap graduale al centro cella (opzionale, non gating)
         if absf(position.x - center_x) < snap_threshold \
                         and absf(position.y - center_y) < snap_threshold:
-                # Snap graduale: avvicinati al centro ma non scattare
                 position.x = move_toward(position.x, center_x, step_size * 0.5)
                 position.y = move_toward(position.y, center_y, step_size * 0.5)
-                # Considera "al centro" solo se davvero vicino (< 1px)
-                if absf(position.x - center_x) < 1.0 \
-                                and absf(position.y - center_y) < 1.0:
-                        position.x = center_x
-                        position.y = center_y
-                        at_center = true
 
-                # Force path recompute on: timer expiry, idle, stuck, or flee flip.
-                # FIX (scatti): esegui il ricalcolo direzione SOLO quando
-                # veramente al centro cella (at_center=true). Prima veniva
-                # eseguito anche quando il nemico era solo "vicino" al centro,
-                # causando cambi di direzione prematuri e scatti.
-                if at_center:
-                        var flee_changed: bool = flee_mode != prev_flee_mode
-                        var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
-                                        or (dx == 0 and dy == 0) \
-                                        or (stuck_timer > STUCK_THRESHOLD_MS) \
-                                        or flee_changed
-                        prev_flee_mode = flee_mode
+        # Force path recompute on: timer expiry, idle, stuck, or flee flip.
+        # SEMPRE eseguito, non gating su at_center.
+        var flee_changed: bool = flee_mode != prev_flee_mode
+        var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
+                        or (dx == 0 and dy == 0) \
+                        or (stuck_timer > STUCK_THRESHOLD_MS) \
+                        or flee_changed
+        prev_flee_mode = flee_mode
 
-                        if must_recompute:
-                                path_update_timer = 0
-                                var path_found: bool = false
+        if must_recompute:
+                path_update_timer = 0
+                var path_found: bool = false
 
-                                if flee_mode:
-                                        # Flee: maximise distance from player. Greedy is fine here
-                                        # (no need for shortest path - just get away).
-                                        _flee_greedy(maze, player_grid_pos)
+                if flee_mode:
+                        # Flee: maximise distance from player. Greedy is fine here
+                        # (no need for shortest path - just get away).
+                        _flee_greedy(maze, player_grid_pos)
+                        if dx != 0 or dy != 0:
+                                path_found = true
+                                stuck_timer = 0
+                else:
+                        # FIX (scatti): se la direzione corrente è ancora
+                        # valida (non muro avanti) e non siamo in stato
+                        # stuck, mantienila SENZA ricalcolare BFS. Questo
+                        # riduce drasticamente i pivot istantanei quando
+                        # il player oscilla tra due celle: il nemico
+                        # continua dritto invece di "zigzagare" a ogni
+                        # centro cella.
+                        var current_valid: bool = (dx != 0 or dy != 0) \
+                                        and not maze.is_wall(col + dx, row + dy)
+                        if current_valid and stuck_timer == 0 \
+                                        and not flee_changed:
+                                path_found = true
+                        else:
+                                # Chase: BFS shortest path
+                                # (all enemy types use BFS).
+                                var next_step: Vector2i = BFS.find_path(
+                                        maze, Vector2i(col, row), player_grid_pos)
+                                if next_step.x >= 0:
+                                        dx = next_step.x - col
+                                        if dx != 0:
+                                                last_dx = dx
+                                        dy = next_step.y - row
+                                        path_found = true
+                                        stuck_timer = 0
+                                # Fallback 1: BFS failed (rare, player unreachable) -> greedy.
+                                if not path_found:
+                                        _move_greedy(maze, player_grid_pos)
                                         if dx != 0 or dy != 0:
                                                 path_found = true
                                                 stuck_timer = 0
-                                else:
-                                        # FIX (scatti): se la direzione corrente è ancora
-                                        # valida (non muro avanti) e non siamo in stato
-                                        # stuck, mantienila SENZA ricalcolare BFS. Questo
-                                        # riduce drasticamente i pivot istantanei quando
-                                        # il player oscilla tra due celle: il nemico
-                                        # continua dritto invece di "zigzagare" a ogni
-                                        # centro cella.
-                                        var current_valid: bool = (dx != 0 or dy != 0) \
-                                                        and not maze.is_wall(col + dx, row + dy)
-                                        if current_valid and stuck_timer == 0 \
-                                                        and not flee_changed:
-                                                path_found = true
-                                        else:
-                                                # Chase: BFS shortest path
-                                                # (all enemy types use BFS).
-                                                var next_step: Vector2i = BFS.find_path(
-                                                        maze, Vector2i(col, row), player_grid_pos)
-                                                if next_step.x >= 0:
-                                                        dx = next_step.x - col
-                                                        if dx != 0:
-                                                                last_dx = dx
-                                                        dy = next_step.y - row
-                                                        path_found = true
-                                                        stuck_timer = 0
-                                                # Fallback 1: BFS failed (rare, player unreachable) -> greedy.
-                                                if not path_found:
-                                                        _move_greedy(maze, player_grid_pos)
-                                                        if dx != 0 or dy != 0:
-                                                                path_found = true
-                                                                stuck_timer = 0
-                                # Fallback 2: still no direction. Only break out if stuck.
-                                if not path_found and stuck_timer > STUCK_THRESHOLD_MS:
-                                        _pick_random_open_dir(maze, col, row)
-                                        if dx != 0 or dy != 0:
-                                                stuck_timer = 0
-                                # If not stuck yet, leave dx=dy=0; will force recalc next frame
-                                # via the "idle" condition above.
+                # Fallback 2: still no direction. Only break out if stuck.
+                if not path_found and stuck_timer > STUCK_THRESHOLD_MS:
+                        _pick_random_open_dir(maze, col, row)
+                        if dx != 0 or dy != 0:
+                                stuck_timer = 0
+                # If not stuck yet, leave dx=dy=0; will force recalc next frame
+                # via the "idle" condition above.
 
-                        # Stop if the cell ahead is a wall.
-                        # Questo check viene fatto quando il nemico è al centro della cella
-                        # e sta per decidere in che direzione muoversi.
-                        if maze.is_wall(col + dx, row + dy):
-                                dx = 0
-                                dy = 0
+        # Stop if the cell ahead is a wall.
+        # Questo check viene fatto quando il nemico è al centro della cella
+        # e sta per decidere in che direzione muoversi.
+        if maze.is_wall(col + dx, row + dy):
+                dx = 0
+                dy = 0
 
         # FIX (scatti): movimento scalato per delta_ms per frame-rate
         # independence. A 60 FPS step = speed (come prima). A 30 FPS step = speed/2.

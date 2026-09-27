@@ -87,7 +87,12 @@ var _current_music_track: int = -1
 var _epic_playing: bool = false
 
 # Master switch (mirrors Game::musicEnabled).
-var music_enabled: bool = true
+# FIX (musica parte al boot anche se in off): default music_enabled = false
+# per allinearsi con GameManager.music_enabled (default false). Prima era
+# true di default, e al boot la musica partiva anche se l'utente l'aveva
+# disattivata nella sessione precedente. Ora parte solo quando il GameManager
+# chiama set_music_enabled(true) dopo aver letto la configurazione salvata.
+var music_enabled: bool = false
 
 
 # ============================================================================

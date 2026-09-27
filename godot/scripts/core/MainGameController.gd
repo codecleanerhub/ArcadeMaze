@@ -1589,46 +1589,53 @@ func _spawn_collectibles() -> void:
         # Shuffle and pick cells for each collectible
         empty_cells.shuffle()
 
+        # FIX (oggetti troppo vicini): traccia le celle già usate e prendi solo
+        # celle a distanza minima (Manhattan >= 3) da quelle già usate. Questo
+        # previene sovrapposizioni come "bomba sopra l'oro".
+        var used_cells: Array = []
+        const MIN_DIST_BETWEEN_ITEMS: int = 3
+
         # Mine (item index 0)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        var cell: Vector2i = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var mine_pos := _cell_to_pixel(cell)
                 mine_item = _create_collectible(CollectiblesClass.Kind.MINE, mine_pos)
                 collectibles_node.add_child(mine_item)
 
         # Chalice (invincibility)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var chalice_pos := _cell_to_pixel(cell)
                 chalice_item = _create_collectible(CollectiblesClass.Kind.CHALICE, chalice_pos)
                 collectibles_node.add_child(chalice_item)
 
         # Scepter (lightning)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var scepter_pos := _cell_to_pixel(cell)
                 scepter_item = _create_collectible(CollectiblesClass.Kind.SCEPTER, scepter_pos)
                 collectibles_node.add_child(scepter_item)
 
         # Speed boots (P1)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var boots_pos := _cell_to_pixel(cell)
                 speed_boots_item = _create_collectible(CollectiblesClass.Kind.SPEED_BOOTS, boots_pos)
                 speed_boots_item.owner_id = 1
                 collectibles_node.add_child(speed_boots_item)
 
         # Speed boots (P2, if 2 players)
-        if GameManager and GameManager.num_players == 2 and empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
-                var boots_pos := _cell_to_pixel(cell)
-                speed_boots2_item = _create_collectible(CollectiblesClass.Kind.SPEED_BOOTS, boots_pos)
-                speed_boots2_item.owner_id = 2
-                collectibles_node.add_child(speed_boots2_item)
+        if GameManager and GameManager.num_players == 2:
+                cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+                if cell.x >= 0:
+                        var boots_pos := _cell_to_pixel(cell)
+                        speed_boots2_item = _create_collectible(CollectiblesClass.Kind.SPEED_BOOTS, boots_pos)
+                        speed_boots2_item.owner_id = 2
+                        collectibles_node.add_child(speed_boots2_item)
 
         # FIX (nuova meccanica): Medikit (1 per livello, posizione casuale)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var medikit_pos := _cell_to_pixel(cell)
                 medikit_item = _create_collectible(CollectiblesClass.Kind.MEDIKIT, medikit_pos)
                 collectibles_node.add_child(medikit_item)
@@ -1636,19 +1643,45 @@ func _spawn_collectibles() -> void:
         # FIX (nuova meccanica): Statua cavaliere (1 per livello, posizione casuale)
         # FIX (statua appare subito): prima active=false con delay 5-15s, ora
         # active=true da subito come le altre armi (medikit, chalice, ecc.)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var statue_pos := _cell_to_pixel(cell)
                 knight_statue_item = _create_collectible(CollectiblesClass.Kind.KNIGHT_STATUE, statue_pos)
                 knight_statue_item.active = true
                 collectibles_node.add_child(knight_statue_item)
 
         # FIX (nuova meccanica): Dinamite (1 per livello, posizione casuale)
-        if empty_cells.size() > 0:
-                var cell: Vector2i = empty_cells.pop_back()
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
                 var dyn_pos := _cell_to_pixel(cell)
                 dynamite_item = _create_collectible(CollectiblesClass.Kind.DYNAMITE, dyn_pos)
                 collectibles_node.add_child(dynamite_item)
+
+
+# FIX (oggetti troppo vicini): estrae una cella dalla lista `cells` che sia
+# a distanza Manhattan >= min_dist da tutte le celle in `used`. Rimuove la
+# cella estratta da `cells` e la aggiunge a `used`. Ritorna Vector2i(-1, -1)
+# se nessuna cella rispetta il vincolo (caso raro: labirinto piccolo).
+func _pop_cell_far_enough(cells: Array, used: Array, min_dist: int) -> Vector2i:
+        var i: int = 0
+        while i < cells.size():
+                var candidate: Vector2i = cells[i]
+                var ok: bool = true
+                for u in used:
+                        if abs(u.x - candidate.x) + abs(u.y - candidate.y) < min_dist:
+                                ok = false
+                                break
+                if ok:
+                        cells.remove_at(i)
+                        used.append(candidate)
+                        return candidate
+                i += 1
+        # Fallback: se nessuna cella rispetta il vincolo, prendi la prima disponibile
+        if cells.size() > 0:
+                var fallback: Vector2i = cells.pop_back()
+                used.append(fallback)
+                return fallback
+        return Vector2i(-1, -1)
 
 
 func _cell_to_pixel(cell: Vector2i) -> Vector2:

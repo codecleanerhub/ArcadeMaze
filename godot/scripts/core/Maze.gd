@@ -132,29 +132,34 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         noise_fracture.fractal_octaves = 3
         noise_fracture.seed = 3000 + pal_idx * 31
         var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
-        # FIX (muro poroso roccia grotta scavata, non mattoni): aumentato
-        # il contrasto del rumore per dare un effetto più "grezzo" e roccioso,
-        # con crepacci profondi e venature irregolari invece di un pattern
-        # uniforme. La composizione shade ora è: macro domina (0.55) + fine
-        # dettaglia (0.30) + fracture dà profondità (0.15). Soglia fracture
-        # più alta (0.45 invece di 0.35) per crepacci più visibili.
+        # FIX (muri ancora più rocciosi/porosi): aumentato ancora il contrasto
+        # e aggiunto più variazione. La composizione ora dà più peso al rumore
+        # fine (granaglia) e fracture (crepacci) per un effetto più "grezzo"
+        # e roccioso, meno uniforme. Mapping più ampio per ombre profonde e
+        # highlight brillanti.
         for y in range(TEX_SIZE):
                 for x in range(TEX_SIZE):
                         var n_fine: float = noise_fine.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
                         var n_macro: float = noise_macro.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
                         var n_fract: float = noise_fracture.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
-                        # Macro domina per blocchi rocciosi, fine dettaglia
-                        var shade: float = n_macro * 0.55 + n_fine * 0.30 + n_fract * 0.15
-                        # Crepacci profondi: dove fracture è basso, scurisce molto
-                        if n_fract < 0.45:
-                                shade -= (0.45 - n_fract) * 1.2
-                        # Highlight: dove macro è alto e fine è alto, schiarisci
-                        if n_macro > 0.65 and n_fine > 0.6:
-                                shade += (n_macro - 0.65) * 0.5
+                        # Macro domina per blocchi rocciosi, fine dettaglia,
+                        # fracture dà profondità (crepacci).
+                        # Peso maggiore a fine+fracture per effetto più poroso.
+                        var shade: float = n_macro * 0.40 + n_fine * 0.35 + n_fract * 0.25
+                        # Crepacci profondi: dove fracture è basso, scurisce MOLTO
+                        if n_fract < 0.40:
+                                shade -= (0.40 - n_fract) * 1.6
+                        # Highlight forte: dove macro è alto e fine è alto, schiarisci
+                        if n_macro > 0.60 and n_fine > 0.55:
+                                shade += (n_macro - 0.60) * 0.7
+                        # Porosità: piccoli "buchi" neri dove fine è molto basso
+                        if n_fine < 0.20:
+                                shade -= (0.20 - n_fine) * 1.2
                         shade = clampf(shade, 0.0, 1.0)
-                        # Mapping più ampio per contrasto maggiore: 0.40x (ombra
-                        # profonda) -> 1.30x (highlight roccia illuminata)
-                        var t: float = 0.40 + shade * 0.90
+                        # Mapping molto ampio: 0.25x (ombra quasi nera) -> 1.45x
+                        # (highlight roccia molto illuminata). Effetto roccia
+                        # porosa grotta scavata, non più mattoni uniformi.
+                        var t: float = 0.25 + shade * 1.20
                         var r: float = clampf(base_color.r * t, 0.0, 1.0)
                         var g: float = clampf(base_color.g * t, 0.0, 1.0)
                         var b: float = clampf(base_color.b * t, 0.0, 1.0)
