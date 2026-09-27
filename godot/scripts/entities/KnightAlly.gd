@@ -173,9 +173,15 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                         print("[KnightAlly] No enemies found, disappear in 5s")
         # Movement: solo se c'è un nemico da inseguire.
         # FIX (AI unicorno aggira muri): usa BFS pathfinding come Enemy.gd.
-        # Ricalcola il path ogni 200ms o quando stuck/idle. Snap al centro
-        # cella per stabilità del movimento grid-aligned. Anti-tunneling
+        # Ricalcola il path ogni 200ms o quando stuck/idle. Anti-tunneling
         # wall check PRIMA di applicare il movimento.
+        # FIX (unicorno immobile): prima il calcolo direzione BFS era GATING
+        # sullo snap al centro cella — se l'unicorno NON era perfettamente al
+        # centro (es. posizione di spawn), non calcolava mai la direzione e
+        # restava immobile per sempre. Ora il calcolo BFS avviene SEMPRE
+        # (basato su timer), e il movimento è sempre applicato verso la
+        # direzione calcolata. Lo snap al centro è opzionale (migliora
+        # allineamento ma non blocca il movimento).
         if has_target:
                 var col := int(pos.x / TILE_SIZE)
                 var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
@@ -202,32 +208,33 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                 var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
                 var snap_threshold: float = max(float(speed), step_size)
 
-                # Snap al centro cella quando abbastanza vicino -> poi BFS recalc
+                # Snap graduale al centro cella (opzionale, non gating)
                 if absf(pos.x - center_x) < snap_threshold \
                                 and absf(pos.y - center_y) < snap_threshold:
                         pos = Vector2(center_x, center_y)
-                        path_update_timer += delta_ms
 
-                        # Force recalc on: timer expiry, idle, stuck
-                        var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
-                                        or (current_dir.x == 0 and current_dir.y == 0) \
-                                        or (stuck_timer > STUCK_THRESHOLD_MS)
-                        if must_recompute:
-                                path_update_timer = 0
-                                var target_col: int = int(chase_pos.x / TILE_SIZE)
-                                var target_row: int = int((chase_pos.y - UI_HEIGHT) / TILE_SIZE)
-                                var next_step: Vector2i = BFS.find_path(
-                                        maze, Vector2i(col, row),
-                                        Vector2i(target_col, target_row))
-                                if next_step.x >= 0:
-                                        current_dir = Vector2i(
-                                                next_step.x - col, next_step.y - row)
-                                        stuck_timer = 0
-                                else:
-                                        # Nessun path (nemico irraggiungibile) — idle
-                                        current_dir = Vector2i.ZERO
+                # Force recalc on: timer expiry, idle, stuck (SEMPRE, non gating)
+                path_update_timer += delta_ms
+                var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
+                                or (current_dir.x == 0 and current_dir.y == 0) \
+                                or (stuck_timer > STUCK_THRESHOLD_MS)
+                if must_recompute:
+                        path_update_timer = 0
+                        var target_col: int = int(chase_pos.x / TILE_SIZE)
+                        var target_row: int = int((chase_pos.y - UI_HEIGHT) / TILE_SIZE)
+                        var next_step: Vector2i = BFS.find_path(
+                                maze, Vector2i(col, row),
+                                Vector2i(target_col, target_row))
+                        if next_step.x >= 0:
+                                current_dir = Vector2i(
+                                        next_step.x - col, next_step.y - row)
+                                stuck_timer = 0
+                        else:
+                                # Nessun path (nemico irraggiungibile) — idle
+                                current_dir = Vector2i.ZERO
 
-                        # Safety: se la cella avanti è diventata muro, reset
+                # Safety: se la cella avanti è diventata muro, reset
+                if current_dir.x != 0 or current_dir.y != 0:
                         if maze.is_wall(col + current_dir.x, row + current_dir.y):
                                 current_dir = Vector2i.ZERO
 
