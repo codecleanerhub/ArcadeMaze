@@ -465,6 +465,37 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
                 var dist := mv.length()
                 if dist > 0.5:
                         pos += (mv / dist) * float(speed)
+                # FIX (miniboss PNG finisce nel muro): clamp di sicurezza per
+                # evitare che il miniboss si sovrapponga ai muri. Se la posizione
+                # corrente cade in una cella WALL, riporta il miniboss al centro
+                # della cella corrente (cella vuota più vicina). Mirror del
+                # safety clamp di Enemy.gd riga 503-533.
+                var clamp_col: int = int(pos.x / TILE_SIZE)
+                var clamp_row: int = int((pos.y - UI_HEIGHT) / TILE_SIZE)
+                if clamp_col > 0 and clamp_col < MAZE_COLS - 1 \
+                                and clamp_row > 0 and clamp_row < MAZE_ROWS - 1:
+                        if maze.is_wall(clamp_col, clamp_row):
+                                # Il miniboss è finito in un muro. Cerca la cella
+                                # vuota più vicina (radius 1-3) e snap al centro.
+                                for snap_radius in range(1, 4):
+                                        var found_safe: bool = false
+                                        for sdc in range(-snap_radius, snap_radius + 1):
+                                                for sdr in range(-snap_radius, snap_radius + 1):
+                                                        var nnc: int = clamp_col + sdc
+                                                        var nnr: int = clamp_row + sdr
+                                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                                if not maze.is_wall(nnc, nnr):
+                                                                        pos = Vector2(
+                                                                                nnc * TILE_SIZE + TILE_SIZE / 2.0,
+                                                                                nnr * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
+                                                                        target_pos = pos
+                                                                        found_safe = true
+                                                                        break
+                                                if found_safe:
+                                                        break
+                                        if found_safe:
+                                                break
 
         # Meele attack.
         var atk_d := player_pixel_pos - pos
@@ -712,19 +743,28 @@ func _draw_with_sprite() -> void:
                 else:
                         draw_texture_rect(at, dest_rect, false)
 
-        # Aura (accent color per type).
-        var accent := _get_accent_color()
-        var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
-        draw_circle(Vector2(0, 0), aura_r, Color(accent.r, accent.g, accent.b, 0.15))
+        # FIX (pallino procedurale accanto al miniboss, 4° tentativo — root
+        # cause definitiva): l'utente vedeva un "pallino che si muove con il
+        # miniboss" perché l'aura (draw_circle r=22-30 alpha 0.15 con accent
+        # color) veniva disegnata SOPRA lo sprite PNG, creando un alone
+        # colorato che sembrava un secondo miniboss procedurale. Lo stesso
+        # per la shadow (draw_circle scura ai piedi). Quando lo sprite PNG
+        # è caricato, questi effetti procedurali sono RIDONDANTI e causano
+        # confusione visiva. Rimossi completamente — lo sprite PNG ha già
+        # la sua ombra integrata. Vengono mantenuti solo in _draw_primitives
+        # (fallback quando sprite non disponibile).
+        # var accent := _get_accent_color()
+        # var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
+        # draw_circle(Vector2(0, 0), aura_r, Color(accent.r, accent.g, accent.b, 0.15))
 
         # FIX (barra rossa rimossa): la barra HP non viene più disegnata sopra
         # il MiniBoss. Le info del MiniBoss colpito vengono mostrate nell'HUD.
         # _draw_hp_bar(scale_val)
 
-        # Shadow.
-        var sh_r := float(size) * 0.4 * scale_val
-        draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
-                                Color(0.05, 0.05, 0.05, 0.4))
+        # FIX (pallino procedurale): shadow rimossa — ridondante con sprite PNG
+        # var sh_r := float(size) * 0.4 * scale_val
+        # draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
+        #                       Color(0.05, 0.05, 0.05, 0.4))
 
 
 # Spawn a dust puff at the miniboss's feet (called every Nth frame while walking).

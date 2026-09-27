@@ -47,6 +47,16 @@ var shoot_cooldown: int = 0
 var target_enemy: Node2D = null
 var target_recalc_timer: int = 0
 
+# --- Pathfinding (BFS) — FIX AI unicorno aggira muri ---
+# Mirror di Enemy.gd: BFS.find_path ogni PATH_RECALC_INTERVAL_MS,
+# snap al centro cella, anti-stuck tracking, anti-tunneling.
+var path_update_timer: int = 0       # ms accumulator per BFS recalc
+var stuck_timer: int = 0             # anti-stuck detection (<1px mov -> accumula)
+var last_pos: Vector2 = Vector2.ZERO  # per stuck detection
+var current_dir: Vector2i = Vector2i.ZERO  # direzione BFS cached tra recalc
+const PATH_RECALC_INTERVAL_MS: int = 200  # mirror Enemy.gd
+const STUCK_THRESHOLD_MS: int = 100       # mirror Enemy.gd
+
 # --- Sprite ---
 var _sprite_sheet: Texture2D = null
 var _sprite_loaded: bool = false
@@ -161,59 +171,86 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                 if disappear_timer_ms <= 0:
                         disappear_timer_ms = 5000
                         print("[KnightAlly] No enemies found, disappear in 5s")
-        # Movement: solo se c'è un nemico da inseguire
+        # Movement: solo se c'è un nemico da inseguire.
+        # FIX (AI unicorno aggira muri): usa BFS pathfinding come Enemy.gd.
+        # Ricalcola il path ogni 200ms o quando stuck/idle. Snap al centro
+        # cella per stabilità del movimento grid-aligned. Anti-tunneling
+        # wall check PRIMA di applicare il movimento.
         if has_target:
-                var d: Vector2 = chase_pos - pos
-                var dist: float = d.length()
-                if dist > 8.0:
-                        var dir: Vector2 = d / dist
-                        var move_x: int = 0
-                        var move_y: int = 0
-                        if abs(dir.x) > abs(dir.y):
-                                move_x = 1 if dir.x > 0 else -1
+                var col := int(pos.x / TILE_SIZE)
+                var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+                var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
+                var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+
+                # Anti-stuck tracking (mirror Enemy.gd riga 365-371)
+                var dx_pos: float = pos.x - last_pos.x
+                var dy_pos: float = pos.y - last_pos.y
+                if dx_pos * dx_pos + dy_pos * dy_pos < 1.0:
+                        stuck_timer += delta_ms
+                else:
+                        stuck_timer = 0
+                last_pos = pos
+
+                # Force snap + recalc se stuck > 500ms (mirror Enemy.gd riga 378)
+                if stuck_timer > 500:
+                        stuck_timer = 0
+                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                        pos = Vector2(center_x, center_y)
+                        last_pos = pos
+
+                # Step size frame-rate independent (mirror Enemy.gd riga 389)
+                var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
+                var snap_threshold: float = max(float(speed), step_size)
+
+                # Snap al centro cella quando abbastanza vicino -> poi BFS recalc
+                if absf(pos.x - center_x) < snap_threshold \
+                                and absf(pos.y - center_y) < snap_threshold:
+                        pos = Vector2(center_x, center_y)
+                        path_update_timer += delta_ms
+
+                        # Force recalc on: timer expiry, idle, stuck
+                        var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
+                                        or (current_dir.x == 0 and current_dir.y == 0) \
+                                        or (stuck_timer > STUCK_THRESHOLD_MS)
+                        if must_recompute:
+                                path_update_timer = 0
+                                var target_col: int = int(chase_pos.x / TILE_SIZE)
+                                var target_row: int = int((chase_pos.y - UI_HEIGHT) / TILE_SIZE)
+                                var next_step: Vector2i = BFS.find_path(
+                                        maze, Vector2i(col, row),
+                                        Vector2i(target_col, target_row))
+                                if next_step.x >= 0:
+                                        current_dir = Vector2i(
+                                                next_step.x - col, next_step.y - row)
+                                        stuck_timer = 0
+                                else:
+                                        # Nessun path (nemico irraggiungibile) — idle
+                                        current_dir = Vector2i.ZERO
+
+                        # Safety: se la cella avanti è diventata muro, reset
+                        if maze.is_wall(col + current_dir.x, row + current_dir.y):
+                                current_dir = Vector2i.ZERO
+
+                # Applica movimento (anti-tunneling wall check, mirror Enemy.gd)
+                if current_dir.x != 0 or current_dir.y != 0:
+                        var dest_x: float = pos.x + current_dir.x * step_size
+                        var dest_y: float = pos.y + current_dir.y * step_size
+                        var dest_col: int = int(dest_x / TILE_SIZE)
+                        var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
+                        if not maze.is_wall(dest_col, dest_row):
+                                dx = current_dir.x
+                                dy = current_dir.y
+                                if dx != 0:
+                                        last_dx = dx
+                                pos = Vector2(dest_x, dest_y)
                         else:
-                                move_y = 1 if dir.y > 0 else -1
-                        var col := int(pos.x / TILE_SIZE)
-                        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
-                        # FIX (cavaliere attraversa muri): verifica che la cella
-                        # destinazione sia libera PRIMA di muoversi. Se bloccato,
-                        # prova direzioni alternative in ordine: perpendicolare,
-                        # poi diagonale, poi opposta.
-                        var moved: bool = false
-                        # Direzione principale
-                        if not maze.is_wall(col + move_x, row + move_y):
-                                dx = move_x
-                                dy = move_y
-                                last_dx = dx
-                                last_dy = dy
-                                pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
-                                moved = true
-                        # Direzione perpendicolare 1
-                        if not moved:
-                                var alt_x1: int = move_y  # perpendicolare
-                                var alt_y1: int = move_x
-                                if not maze.is_wall(col + alt_x1, row + alt_y1):
-                                        dx = alt_x1
-                                        dy = alt_y1
-                                        last_dx = dx
-                                        last_dy = dy
-                                        pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
-                                        moved = true
-                        # Direzione perpendicolare 2
-                        if not moved:
-                                var alt_x2: int = -move_y
-                                var alt_y2: int = -move_x
-                                if not maze.is_wall(col + alt_x2, row + alt_y2):
-                                        dx = alt_x2
-                                        dy = alt_y2
-                                        last_dx = dx
-                                        last_dy = dy
-                                        pos = Vector2(pos.x + dx * speed, pos.y + dy * speed)
-                                        moved = true
-                        # Se completamente bloccato, fermo
-                        if not moved:
-                                dx = 0
-                                dy = 0
+                                # Destinazione muro: NON muovere, forza recalc
+                                current_dir = Vector2i.ZERO
+                                path_update_timer = PATH_RECALC_INTERVAL_MS
+                                stuck_timer = STUCK_THRESHOLD_MS + 1
+                else:
+                        dx = 0
+                        dy = 0
 
         # Shoot at closest enemy in range — solo quando è probabile che colpisca
         if shoot_cooldown > 0:

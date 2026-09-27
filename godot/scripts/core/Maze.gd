@@ -132,32 +132,37 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         noise_fracture.fractal_octaves = 3
         noise_fracture.seed = 3000 + pal_idx * 31
         var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+        # FIX (muro poroso roccia grotta scavata, non mattoni): aumentato
+        # il contrasto del rumore per dare un effetto più "grezzo" e roccioso,
+        # con crepacci profondi e venature irregolari invece di un pattern
+        # uniforme. La composizione shade ora è: macro domina (0.55) + fine
+        # dettaglia (0.30) + fracture dà profondità (0.15). Soglia fracture
+        # più alta (0.45 invece di 0.35) per crepacci più visibili.
         for y in range(TEX_SIZE):
                 for x in range(TEX_SIZE):
                         var n_fine: float = noise_fine.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
                         var n_macro: float = noise_macro.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
                         var n_fract: float = noise_fracture.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
-                        var shade: float = n_macro * 0.6 + n_fine * 0.4
-                        if n_fract < 0.35:
-                                shade -= (0.35 - n_fract) * 0.8
+                        # Macro domina per blocchi rocciosi, fine dettaglia
+                        var shade: float = n_macro * 0.55 + n_fine * 0.30 + n_fract * 0.15
+                        # Crepacci profondi: dove fracture è basso, scurisce molto
+                        if n_fract < 0.45:
+                                shade -= (0.45 - n_fract) * 1.2
+                        # Highlight: dove macro è alto e fine è alto, schiarisci
+                        if n_macro > 0.65 and n_fine > 0.6:
+                                shade += (n_macro - 0.65) * 0.5
                         shade = clampf(shade, 0.0, 1.0)
-                        var t: float = 0.55 + shade * 0.65
+                        # Mapping più ampio per contrasto maggiore: 0.40x (ombra
+                        # profonda) -> 1.30x (highlight roccia illuminata)
+                        var t: float = 0.40 + shade * 0.90
                         var r: float = clampf(base_color.r * t, 0.0, 1.0)
                         var g: float = clampf(base_color.g * t, 0.0, 1.0)
                         var b: float = clampf(base_color.b * t, 0.0, 1.0)
                         img.set_pixel(x, y, Color(r, g, b, 1.0))
-        # Linee di "fuga" tra mattoni: ogni 32px riga scura + colonne a offset
-        # alternato (16/48/80px) come un muro di mattoni sfalsato.
-        for y in range(0, TEX_SIZE, 32):
-                for x in range(TEX_SIZE):
-                        var c: Color = img.get_pixel(x, y)
-                        img.set_pixel(x, y, c.darkened(0.35))
-        for y in range(TEX_SIZE):
-                var x_off: int = (int(y / 32) % 2) * 16
-                var x_start: int = x_off % 32
-                for x in range(x_start, TEX_SIZE, 32):
-                        var c: Color = img.get_pixel(x, y)
-                        img.set_pixel(x, y, c.darkened(0.30))
+        # FIX (roccia grotta scavata, non mattoni): rimosse le linee di fuga
+        # tra mattoni (ogni 32px con offset alternato) che davano l'effetto
+        # "muro di mattoni". La texture ora è puramente roccia irregolare con
+        # crepacci naturali generati dal rumore Perlin Ridged.
         var tex := ImageTexture.create_from_image(img)
         _rock_texture_cache[pal_idx] = tex
         return tex
