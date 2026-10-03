@@ -1074,15 +1074,17 @@ func _draw_sprite_frame() -> void:
         # nemico SD hanno content center Y = 27.5 (stesso offset).
         # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
         # l'impressione di decentramento.
-        # FIX (nemici decentrati): target_size = 83 per match con player.
-        # Y_OFFSET = -6 per spostare i nemici SOPRA di 6px. Il VLM conferma
-        # che i nemici appaiono 4-8px sotto il centro cella, mentre il player
-        # appare centrato. L'offset negativo li allinea visivamente al player.
-        var target_size: float = 83.0
+        # FIX (nemici decentrati e più piccoli): target_size = 96 (più grande
+        # del player 83px) per compensare il fatto che lo sprite del nemico
+        # ha il mostro che occupa solo 60-70% del frame, mentre il player
+        # occupa 85-90%. Con 96px il nemico visivamente pareggia il player.
+        # Y_OFFSET = -10 per spostare i nemici SOPRA di 10px (il VLM conferma
+        # che appaiono 8-10px sotto il centro cella).
+        var target_size: float = 96.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        const Y_OFFSET: float = -6.0
+        const Y_OFFSET: float = -10.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
