@@ -1068,16 +1068,17 @@ func _draw_sprite_frame() -> void:
         # invece di ResourceLoader.load(), quindi la SD sheet viene caricata
         # correttamente e il mostro appare centrato nel frame (non shiftato
         # in basso come nella HD sheet).
-        var target_size: float = 84.0
+        # FIX (nemici decentrati): target_size = 83 per match ESATTO con
+        # player (64 * 1.3 = 83.2px). Il player usa Sprite2D scale 1.3.
+        # Y_OFFSET = 0 perché l'analisi PNG conferma che sia player che
+        # nemico SD hanno content center Y = 27.5 (stesso offset).
+        # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
+        # l'impressione di decentramento.
+        var target_size: float = 83.0
         var tw: float = target_size
         var th: float = target_size
-        # FIX (barra HP lag): rimosso bob_y dallo sprite. Ora né lo sprite
-        # né la barra oscillano → sync perfetto, nessun "lag" visivo.
         var bob_y: float = 0.0
-        # FIX (centratura verticale): Y_OFFSET per allineare il content-top
-        # del nemico SD con quello del player. L'analisi PNG mostra che il
-        # mostro SD è leggermente shiftato in basso rispetto al player.
-        const Y_OFFSET: float = -2.0
+        const Y_OFFSET: float = 0.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
