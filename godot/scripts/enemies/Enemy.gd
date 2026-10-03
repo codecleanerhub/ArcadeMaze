@@ -1074,16 +1074,14 @@ func _draw_sprite_frame() -> void:
         # nemico SD hanno content center Y = 27.5 (stesso offset).
         # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
         # l'impressione di decentramento.
-        # FIX (nemici centrati e grandi come player): target_size = 80 (meno
-        # di TILE_SIZE=64*1.3=83px per evitare overflow nel muro adiacente).
-        # Y_OFFSET = -12 per spostare i nemici SOPRA di 12px (VLM conferma
-        # 4-6px sotto il centro con Y_OFFSET=-10, serve più offset).
-        # Con target_size 96 c'era overflow di 2-3px nel muro. Con 80 no.
+        # FIX (nemici centrati): target_size = 80 (no overflow muro, dimensione OK).
+        # Y_OFFSET = -16 per spostare i nemici SOPRA di 16px. VLM conferma
+        # 4-8px sotto con Y_OFFSET=-12. Serve più offset per centrare.
         var target_size: float = 80.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        const Y_OFFSET: float = -12.0
+        const Y_OFFSET: float = -16.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
