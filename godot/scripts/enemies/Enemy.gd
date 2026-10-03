@@ -415,11 +415,50 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # per evitare il "salto" visibile.
         var step_size: float = float(speed) * (delta_ms / 16.6667)
         var snap_threshold: float = max(float(speed), step_size)
-        # Snap graduale al centro cella (opzionale, non gating)
-        if absf(position.x - center_x) < snap_threshold \
-                        and absf(position.y - center_y) < snap_threshold:
-                position.x = move_toward(position.x, center_x, step_size * 0.5)
-                position.y = move_toward(position.y, center_y, step_size * 0.5)
+        # FIX (nemici disallineati + no melee + no hit proiettili):
+        # Allinea SEMPRE l'asse perpendicolare alla direzione di movimento
+        # al centro della cella. Questo previene il bug per cui il nemico
+        # entra in una colonna/riga da una cella laterale e poi si muove
+        # verticalmente/orizzontalmente restando decentrato di ~21px
+        # sull'asse perpendicolare (perché non ha mai completato lo snap
+        # al centro della cella prima di cambiare direzione).
+        #   - Se si muove verticalmente (dx==0, dy!=0): snap X al centro.
+        #   - Se si muove orizzontalmente (dx!=0, dy==0): snap Y al centro.
+        #   - Se è fermo (dx==0, dy==0): snap entrambi gli assi al centro.
+        # Senza questo, il nemico resta decentrato rispetto alla traiettoria
+        # dei proiettili cardinali del player (che viaggiano a y=player.y-12)
+        # e viene mancato; inoltre resta appena fuori dalla soglia di
+        # collisione melee (sqrt(800)=28.3px).
+        if dx == 0 and dy == 0:
+                # Fermo: snap entrambi gli assi al centro cella.
+                if absf(position.x - center_x) > 0.5 \
+                                or absf(position.y - center_y) > 0.5:
+                        var snap_speed: float = max(step_size * 0.6, 1.0)
+                        if absf(position.x - center_x) > snap_threshold \
+                                        or absf(position.y - center_y) > snap_threshold:
+                                snap_speed = max(step_size * 1.2, 2.0)
+                        position.x = move_toward(position.x, center_x, snap_speed)
+                        position.y = move_toward(position.y, center_y, snap_speed)
+                elif absf(position.x - center_x) < snap_threshold \
+                                and absf(position.y - center_y) < snap_threshold:
+                        position.x = move_toward(position.x, center_x, step_size * 0.5)
+                        position.y = move_toward(position.y, center_y, step_size * 0.5)
+        elif dx == 0 and dy != 0:
+                # Movimento verticale: snap X al centro cella (allinea
+                # l'asse perpendicolare alla direzione di movimento).
+                if absf(position.x - center_x) > 0.5:
+                        var snap_speed_x: float = max(step_size * 0.6, 1.0)
+                        if absf(position.x - center_x) > snap_threshold:
+                                snap_speed_x = max(step_size * 1.2, 2.0)
+                        position.x = move_toward(position.x, center_x, snap_speed_x)
+        elif dx != 0 and dy == 0:
+                # Movimento orizzontale: snap Y al centro cella (allinea
+                # l'asse perpendicolare alla direzione di movimento).
+                if absf(position.y - center_y) > 0.5:
+                        var snap_speed_y: float = max(step_size * 0.6, 1.0)
+                        if absf(position.y - center_y) > snap_threshold:
+                                snap_speed_y = max(step_size * 1.2, 2.0)
+                        position.y = move_toward(position.y, center_y, snap_speed_y)
 
         # Force path recompute on: timer expiry, idle, stuck, or flee flip.
         # SEMPRE eseguito, non gating su at_center.
@@ -483,9 +522,28 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # Stop if the cell ahead is a wall.
         # Questo check viene fatto quando il nemico è al centro della cella
         # e sta per decidere in che direzione muoversi.
-        if maze.is_wall(col + dx, row + dy):
+        # FIX: usa clamping degli indici per evitare index out of range su
+        # is_wall (che ritorna true per out-of-grid, ma esplicitiamo per
+        # sicurezza e coerenza).
+        var _check_col: int = clampi(col + dx, 0, MAZE_COLS - 1)
+        var _check_row: int = clampi(row + dy, 0, MAZE_ROWS - 1)
+        if maze.is_wall(_check_col, _check_row):
                 dx = 0
                 dy = 0
+        # FIX (nemici disallineati + no melee + no hit proiettili): se dopo
+        # il check il nemico non ha direzione (dx==0, dy==0) — tipicamente
+        # perché è entrato nella cella del player (BFS ritorna -1,-1 perché
+        # start==target) e il wall check precedente ha azzerato la direzione —
+        # il nemico PRIMA si allinea al centro della cella corrente, POI
+        # eventualmente si muove. Senza questo snap, il nemico resta ~30px
+        # fuori dal centro della cella del player, appena fuori dalla soglia
+        # di collisione melee (sqrt(800)=28.3px) e i proiettili cardinali del
+        # player lo mancano perché il nemico è decentrato rispetto alla
+        # traiettoria orizzontale/verticale del proiettile.
+        if dx == 0 and dy == 0:
+                var _align_speed: float = max(step_size, 1.5)
+                position.x = move_toward(position.x, center_x, _align_speed)
+                position.y = move_toward(position.y, center_y, _align_speed)
 
         # FIX (scatti): movimento scalato per delta_ms per frame-rate
         # independence. A 60 FPS step = speed (come prima). A 30 FPS step = speed/2.
@@ -515,38 +573,66 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 # ricalcolo BFS. Verifica anche i BORDI: se il movimento porta
                 # il nemico oltre il centro della cella adiacente (che è muro),
                 # blocca prima di attraversare.
+                # FIX (attraversamento muri - root cause): il check precedente
+                # funzionava SOLO se dest_col != cur_col (cioè solo quando
+                # si attraversa il confine di cella). Ma se il nemico è già
+                # parzialmente dentro la cella-muro (per via di uno step che
+                # scavalca il confine in un frame solo), il check non scatta.
+                # Aggiungiamo un check ROBUSTO: verifichiamo sia la cella di
+                # dest_x/dest_y SIA la cella intermedia tra cur e dest. Se
+                # una qualunque di queste è un muro, blocchiamo il movimento.
                 var dest_col: int = int(dest_x / TILE_SIZE)
                 var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
                 var cur_col: int = int(position.x / TILE_SIZE)
                 var cur_row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
-                # Check solo se cambiamo cella
+                # Clamp dest_col/dest_row ai bounds del maze (out-of-grid =
+                # muro). Senza questo, int() può dare indici negativi o oltre
+                # MAZE_COLS-1, e is_wall ritorna true (perché out-of-grid è
+                # trattato come muro), ma esplicitiamo per chiarezza.
+                dest_col = clampi(dest_col, 0, MAZE_COLS - 1)
+                dest_row = clampi(dest_row, 0, MAZE_ROWS - 1)
+                var _blocked_by_wall: bool = false
                 if dest_col != cur_col or dest_row != cur_row:
+                        # Cambiamo cella: verifica che la destinazione NON sia
+                        # muro. Se lo è, blocchiamo il movimento (no tunneling).
                         if maze.is_wall(dest_col, dest_row):
-                                # Destinazione è muro: NON muovere, forza
-                                # ricalcolo direzione al prossimo frame.
-                                # FIX: snap al centro della cella corrente
-                                # per evitare che il nemico resti decentrato.
-                                position.x = cur_col * TILE_SIZE + TILE_SIZE / 2.0
-                                position.y = cur_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
-                                dx = 0
-                                dy = 0
-                                path_update_timer = PATH_RECALC_INTERVAL_MS
-                                stuck_timer = STUCK_THRESHOLD_MS + 1
+                                _blocked_by_wall = true
                         else:
                                 position.x = dest_x
                                 position.y = dest_y
                 else:
-                        # Movimento dentro la stessa cella: OK
-                        position.x = dest_x
-                        position.y = dest_y
-        # FIX (safety clamp graduale): se nonostante i check precedenti il
-        # nemico è finito in un muro, riportalo VERSO il centro della cella
-        # più vicina vuota usando move_toward (NO teleport istantaneo).
-        # Questo è un fallback che previene "nemico scomparso dal labirinto"
-        # in caso di race condition o glitch, senza causare lo "scatto di
-        # recupero + accelerazione" percepito dall'utente.
+                        # Movimento dentro la stessa cella: OK, ma verifichiamo
+                        # anche che la cella corrente non sia un muro (safety).
+                        if maze.is_wall(cur_col, cur_row):
+                                _blocked_by_wall = true
+                        else:
+                                position.x = dest_x
+                                position.y = dest_y
+                if _blocked_by_wall:
+                        # Destinazione è muro: NON muovere, snap immediato al
+                        # centro della cella corrente (no scatto visivo perché
+                        # la cella corrente è già aperta e lo snap è piccolo),
+                        # forza ricalcolo direzione al prossimo frame.
+                        position.x = cur_col * TILE_SIZE + TILE_SIZE / 2.0
+                        position.y = cur_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                        dx = 0
+                        dy = 0
+                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                        stuck_timer = STUCK_THRESHOLD_MS + 1
+        # FIX (safety clamp - previene attraversamento muri): se nonostante
+        # i check precedenti il nemico è finito in un muro, lo snap al
+        # centro della cella vuota più vicina è IMMEDIATO (no move_toward
+        # graduale). Prima era graduale, il che significava che il nemico
+        # restava visibilmente "nel muro" per 10+ frame mentre migrate verso
+        # la cella sicura → percepito dal giocatore come "il nemico
+        # attraversa i muri". Ora teletrasporta al centro della cella
+        # sicura più vicina (1 frame, invisibile perché il movimento è
+        # della lunghezza di una cella ma avviene in 1 frame solo).
         var cur_col_after: int = int(position.x / TILE_SIZE)
         var cur_row_after: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
+        # Clamp ai bounds del maze per evitare index out of range.
+        cur_col_after = clampi(cur_col_after, 0, MAZE_COLS - 1)
+        cur_row_after = clampi(cur_row_after, 0, MAZE_ROWS - 1)
         if cur_col_after > 0 and cur_col_after < MAZE_COLS - 1 \
                         and cur_row_after > 0 and cur_row_after < MAZE_ROWS - 1:
                 if maze.is_wall(cur_col_after, cur_row_after):
@@ -560,22 +646,43 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                                 if nnc > 0 and nnc < MAZE_COLS - 1 \
                                                                 and nnr > 0 and nnr < MAZE_ROWS - 1:
                                                         if not maze.is_wall(nnc, nnr):
-                                                                # Snap GRADUALE verso la cella sicura
-                                                                # (no teleport, evita scatto)
+                                                                # Snap IMMEDIATO al centro
+                                                                # della cella sicura.
+                                                                # (Teleport di 1 cella
+                                                                # in 1 frame, non
+                                                                # percepibile come
+                                                                # "attraversamento muro".)
                                                                 var safe_x: float = nnc * TILE_SIZE + TILE_SIZE / 2.0
                                                                 var safe_y: float = nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
-                                                                var recovery_speed: float = max(step_size * 2.0, 4.0)
-                                                                position.x = move_toward(position.x, safe_x, recovery_speed)
-                                                                position.y = move_toward(position.y, safe_y, recovery_speed)
+                                                                position.x = safe_x
+                                                                position.y = safe_y
                                                                 last_pos = position
                                                                 dx = 0
                                                                 dy = 0
                                                                 path_update_timer = PATH_RECALC_INTERVAL_MS
+                                                                stuck_timer = 0
                                                                 found_safe = true
                                                                 break
                                         if found_safe:
                                                 break
                                 if found_safe:
+                                        break
+        else:
+                # Nemico fuori dai bounds del maze (border cells). Snap al
+                # centro della prima cella interna valida.
+                var _found_border_safe: bool = false
+                for _r_col in range(1, MAZE_COLS - 1):
+                        if _found_border_safe:
+                                break
+                        for _r_row in range(1, MAZE_ROWS - 1):
+                                if not maze.is_wall(_r_col, _r_row):
+                                        position.x = _r_col * TILE_SIZE + TILE_SIZE / 2.0
+                                        position.y = _r_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                                        last_pos = position
+                                        dx = 0
+                                        dy = 0
+                                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                                        _found_border_safe = true
                                         break
 
         # --- Shooting (canShoot types only) ---
@@ -1061,32 +1168,27 @@ func _draw_sprite_frame() -> void:
                 at = active_sheet.get_frame_texture("idle", 0)
                 if at == null:
                         return
-        # Draw centered at enemy size (72x72 ≈ TILE_SIZE*1.5, più visibile).
-        # FIX (nemici decentrati e più bassi del player): target_size = 84
-        # per match esatto con player (64 * 1.3 = 83.2 px). Con 80px il
-        # nemico era 4% più piccolo visivamente.
-        # FIX (caricamento SD robusto): ora _load_sd_sheet usa Image.load()
-        # invece di ResourceLoader.load(), quindi la SD sheet viene caricata
-        # correttamente e il mostro appare centrato nel frame (non shiftato
-        # in basso come nella HD sheet).
-        # FIX (nemici decentrati): target_size = 83 per match ESATTO con
-        # player (64 * 1.3 = 83.2px). Il player usa Sprite2D scale 1.3.
-        # Y_OFFSET = 0 perché l'analisi PNG conferma che sia player che
-        # nemico SD hanno content center Y = 27.5 (stesso offset).
-        # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
-        # l'impressione di decentramento.
-        # FIX (nemici centrati - calcolo matematico, non tentativi):
-        # Analisi quantitativa PNG: content_top_y del player = 0, content_top_y
-        # modale dei nemici = 0 (15/28 nemici). Formula:
-        #   Y_OFFSET = -1.6 + player_ct*1.3 - enemy_ct*1.25
-        # Con player_ct=0, enemy_ct=0: Y_OFFSET = -1.6
-        # Arrotondato a -2 per sicurezza. Questo allinea il content-top del
-        # nemico a quello del player matematicamente.
-        var target_size: float = 80.0
+        # Draw centered. FIX (allineamento nemico/player, fix definitivo):
+        # Il player usa Sprite2D scale 1.3 (64x64 → 83.2x83.2, centered=true,
+        # offset=(0,0) quando non salta). Per allineare PERFETTAMENTE il
+        # nemico al player (stessa altezza visiva, stesso centro), usiamo:
+        #   - target_size = 64 * 1.3 = 83.2 (identica scala del player)
+        #   - Y_OFFSET = 0 (centered, nessun hack di offset verticale)
+        # Gli hack precedenti (Y_OFFSET = -2, -6, -8, -12, -16, -24) tentavano
+        # di compensare il fatto che il nemico veniva disegnato con scala
+        # diversa (1.25 invece di 1.3) e quindi appariva "più basso". Con la
+        # stessa scala 1.3 e Y_OFFSET=0, il nemico è centrato esattamente
+        # come il player. Eventuali piccoli scarti di content position
+        # (alcuni mostri hanno content y=0..60 invece di 0..56) sono
+        # trascurabili (1-2px) e non causano i problemi di collisione
+        # descritti dal giocatore (che erano in realtà dovuti al nemico
+        # che si fermava ~30px fuori dal centro cella, fixato nello
+        # update_enemy).
+        var target_size: float = 64.0 * 1.3  # = 83.2, identica al player scale 1.3
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        const Y_OFFSET: float = -2.0
+        const Y_OFFSET: float = 0.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
