@@ -1074,14 +1074,15 @@ func _draw_sprite_frame() -> void:
         # nemico SD hanno content center Y = 27.5 (stesso offset).
         # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
         # l'impressione di decentramento.
-        # FIX (nemici centrati): target_size = 80 (no overflow muro, dimensione OK).
-        # Y_OFFSET = -16 per spostare i nemici SOPRA di 16px. VLM conferma
-        # 4-8px sotto con Y_OFFSET=-12. Serve più offset per centrare.
+        # FIX (nemici centrati): target_size = 80 (no overflow muro).
+        # Y_OFFSET = -24 (DRASTICO) per testare se l'offset viene applicato.
+        # VLM non vede differenza tra -12 e -16, quindi o non viene applicato
+        # o serve molto più offset. Provo -24 per diagnosticare.
         var target_size: float = 80.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        const Y_OFFSET: float = -16.0
+        const Y_OFFSET: float = -24.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
