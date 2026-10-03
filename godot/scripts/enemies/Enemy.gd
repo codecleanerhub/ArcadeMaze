@@ -410,54 +410,43 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 last_pos = position
 
         # When close enough to cell centre, snap and try to recalc direction.
-        # FIX (scatti al cambio direzione): snap FLUIDO con move_toward invece
-        # di assegnazione diretta. Lo snap avviene gradualmente in più frame
-        # per evitare il "salto" visibile.
         var step_size: float = float(speed) * (delta_ms / 16.6667)
         var snap_threshold: float = max(float(speed), step_size)
-        # FIX (nemici disallineati + no melee + no hit proiettili):
+        # FIX (nemici disallineati + no melee + no hit proiettili + attraverso muri al cambio direzione):
         # Allinea SEMPRE l'asse perpendicolare alla direzione di movimento
-        # al centro della cella. Questo previene il bug per cui il nemico
-        # entra in una colonna/riga da una cella laterale e poi si muove
-        # verticalmente/orizzontalmente restando decentrato di ~21px
-        # sull'asse perpendicolare (perché non ha mai completato lo snap
-        # al centro della cella prima di cambiare direzione).
+        # al centro della cella.
         #   - Se si muove verticalmente (dx==0, dy!=0): snap X al centro.
-        #   - Se si muove orizzontalmente (dx!=0, dy==0): snap Y al centro.
-        #   - Se è fermo (dx==0, dy==0): snap entrambi gli assi al centro.
-        # Senza questo, il nemico resta decentrato rispetto alla traiettoria
-        # dei proiettili cardinali del player (che viaggiano a y=player.y-12)
-        # e viene mancato; inoltre resta appena fuori dalla soglia di
-        # collisione melee (sqrt(800)=28.3px).
+        #   - Si muove orizzontalmente (dx!=0, dy==0): snap Y al centro.
+        #   - Se è fermo (dx==0, dy==0): snap IMMEDIATO entrambi gli assi.
+        # FIX (attraversamento muri al cambio direzione): quando il nemico
+        # è fermo (ha appena colpito un muro, dx/dy azzerati dal wall check)
+        # e BFS sta per dare una nuova direzione, lo snap al centro deve
+        # essere IMMEDIATO (non graduale). Prima era graduale (1.2-2.4px/frame),
+        # il che significava che il nemico restava decentrato ~30px per 12+
+        # frame mentre BFS gli dava una nuova direzione → il nemico iniziava
+        # a muoversi nella nuova direzione mentre era ancora decentrato →
+        # lo sprite si sovrapponeva visibilmente al muro adiacente per
+        # tutto il tempo dello snap graduale. Ora teleporta al centro in
+        # 1 frame: il salto è massimo 32px (mezza cella) e avviene solo
+        # quando il nemico si ferma (raro), quindi non è percepito come
+        # "scatto" continuo.
         if dx == 0 and dy == 0:
-                # Fermo: snap entrambi gli assi al centro cella.
+                # Fermo: snap IMMEDIATO al centro cella entrambi gli assi.
                 if absf(position.x - center_x) > 0.5 \
                                 or absf(position.y - center_y) > 0.5:
-                        var snap_speed: float = max(step_size * 0.6, 1.0)
-                        if absf(position.x - center_x) > snap_threshold \
-                                        or absf(position.y - center_y) > snap_threshold:
-                                snap_speed = max(step_size * 1.2, 2.0)
-                        position.x = move_toward(position.x, center_x, snap_speed)
-                        position.y = move_toward(position.y, center_y, snap_speed)
-                elif absf(position.x - center_x) < snap_threshold \
-                                and absf(position.y - center_y) < snap_threshold:
-                        position.x = move_toward(position.x, center_x, step_size * 0.5)
-                        position.y = move_toward(position.y, center_y, step_size * 0.5)
+                        position.x = center_x
+                        position.y = center_y
         elif dx == 0 and dy != 0:
-                # Movimento verticale: snap X al centro cella (allinea
-                # l'asse perpendicolare alla direzione di movimento).
+                # Movimento verticale: snap X al centro cella MOLTO VELOCE
+                # (8x la velocità normale, min 8px/frame). Riduce il tempo
+                # di decentramento a 2-4 frame invece di 12+.
                 if absf(position.x - center_x) > 0.5:
-                        var snap_speed_x: float = max(step_size * 0.6, 1.0)
-                        if absf(position.x - center_x) > snap_threshold:
-                                snap_speed_x = max(step_size * 1.2, 2.0)
+                        var snap_speed_x: float = max(step_size * 8.0, 8.0)
                         position.x = move_toward(position.x, center_x, snap_speed_x)
         elif dx != 0 and dy == 0:
-                # Movimento orizzontale: snap Y al centro cella (allinea
-                # l'asse perpendicolare alla direzione di movimento).
+                # Movimento orizzontale: snap Y al centro cella MOLTO VELOCE.
                 if absf(position.y - center_y) > 0.5:
-                        var snap_speed_y: float = max(step_size * 0.6, 1.0)
-                        if absf(position.y - center_y) > snap_threshold:
-                                snap_speed_y = max(step_size * 1.2, 2.0)
+                        var snap_speed_y: float = max(step_size * 8.0, 8.0)
                         position.y = move_toward(position.y, center_y, snap_speed_y)
 
         # Force path recompute on: timer expiry, idle, stuck, or flee flip.
@@ -1184,7 +1173,21 @@ func _draw_sprite_frame() -> void:
         # descritti dal giocatore (che erano in realtà dovuti al nemico
         # che si fermava ~30px fuori dal centro cella, fixato nello
         # update_enemy).
-        var target_size: float = 64.0 * 1.3  # = 83.2, identica al player scale 1.3
+        # FIX (attraversamento muri visivo al cambio direzione):
+        # Lo sprite del nemico era 64*1.3=83px wide, ma la cella è 64px.
+        # Quindi lo sprite estendeva 9.6px in ogni cella adiacente → quando
+        # il nemico era al centro cella, lo sprite overlapava le celle
+        # adiacenti (spesso muri). Al cambio direzione vicino a un muro,
+        # questo overlap era particolarmente visibile → percepito come
+        # "attraversamento muro".
+        # FIX: target_size = 64 (identica alla cella). Lo sprite sta
+        # ESATTAMENTE dentro la cella quando il nemico è al centro. Il
+        # content dei mostri (massimo 59px di larghezza per monster_019)
+        # sta dentro i 64px dello sprite con 2.5px di margine per lato.
+        # Quando il nemico è al centro cella: ZERO overlap con muri.
+        # Quando è decentrato (transizione): overlap = offset, ridotto a
+        # 2-4 frame dallo snap veloce (8px/frame).
+        var target_size: float = 64.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
