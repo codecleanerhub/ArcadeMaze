@@ -26,7 +26,7 @@ var max_health: int = 5
 # 3 frame (0.05s). 1 secondo di invulnerabilità dopo ogni hit.
 var invulnerable_timer_ms: int = 0
 var speed: int = 3  # più veloce del player (player=2, con boost=3)
-var shots_left: int = 999  # FIX (unicorno sparisce troppo presto): era 3, ora illimitato
+var shots_left: int = 3  # FIX: 3 colpi totali, uno alla volta
 var disappear_timer_ms: int = 0
 var smoke_timer_ms: int = 0
 var spawning_ms: int = 800  # legacy, non usato ma mantenuto per compat
@@ -298,20 +298,29 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                         if found_safe:
                                                 break
 
-        # Shoot at closest enemy in range — solo quando è probabile che colpisca
+        # Shoot at closest enemy in range — UN colpo alla volta, solo con linea di vista.
+        # FIX (richiesta utente): l'unicorno ha 3 colpi totali.
+        # - Sparare UN colpo alla volta (non tutti insieme)
+        # - Se il primo colpo va a segno → si ferma (non spara più)
+        # - Se il primo colpo manca → spara il secondo, ecc.
+        # - I colpi NON devono attraversare i muri
+        # - Sparare SOLO quando c'è linea di vista libera (no muri tra unicorno e target)
         if shoot_cooldown > 0:
                 shoot_cooldown -= delta_ms
         elif shots_left > 0 and target_enemy != null and is_instance_valid(target_enemy):
-                if target_enemy.has_method("get_pixel_pos"):
+                # FIX: non sparare se c'è già un proiettile in volo (un colpo alla volta)
+                var has_active_projectile: bool = false
+                for p in projectiles:
+                        if p.get("active", false):
+                                has_active_projectile = true
+                                break
+                if not has_active_projectile and target_enemy.has_method("get_pixel_pos"):
                         var e_pos2: Vector2 = target_enemy.get_pixel_pos()
                         var dist2: float = pos.distance_to(e_pos2)
-                        # FIX (spara solo quando probabile colpire): spara solo se
-                        # il nemico è entro 250px E è allineato (stessa riga o colonna
-                        # entro 32px di tolleranza). Evita di sprecare colpi.
+                        # FIX: spara solo se il nemico è entro 250px
                         if dist2 < 250.0:
-                                var dx_align: float = abs(e_pos2.x - pos.x)
-                                var dy_align: float = abs(e_pos2.y - pos.y)
-                                if dx_align < 32.0 or dy_align < 32.0:
+                                # FIX: spara solo se c'è linea di vista libera (no muri)
+                                if _has_line_of_sight(pos, e_pos2):
                                         _shoot_at(e_pos2)
                                         shoot_cooldown = 800
                                         shots_left -= 1
@@ -356,6 +365,43 @@ func _find_closest_enemy(enemies: Array) -> Node2D:
         return closest
 
 
+# FIX (linea di vista): verifica se ci sono muri tra from_pos e to_pos.
+# Usa raycasting lungo la griglia: controlla ogni cella attraversata dalla
+# linea retta tra i due punti. Se una cella è WALL, ritorna false.
+# Implementazione: Bresenham-like, controlla le celle lungo l'asse
+# dominante e perpendicolare.
+func _has_line_of_sight(from_pos: Vector2, to_pos: Vector2) -> bool:
+        if maze_ref == null:
+                return true  # se non c'è maze, permetti (fallback)
+        var from_col: int = int(from_pos.x / TILE_SIZE)
+        var from_row: int = int((from_pos.y - UI_HEIGHT) / TILE_SIZE)
+        var to_col: int = int(to_pos.x / TILE_SIZE)
+        var to_row: int = int((to_pos.y - UI_HEIGHT) / TILE_SIZE)
+        # Bresenham line algorithm per attraversare le celle
+        var dx: int = abs(to_col - from_col)
+        var dy: int = abs(to_row - from_row)
+        var sx: int = 1 if from_col < to_col else -1
+        var sy: int = 1 if from_row < to_row else -1
+        var err: int = dx - dy
+        var cx: int = from_col
+        var cy: int = from_row
+        while true:
+                # Salta la cella di partenza (l'unicorno è lì)
+                if cx != from_col or cy != from_row:
+                        if maze_ref.is_wall(cx, cy):
+                                return false  # muro blocca la linea di vista
+                if cx == to_col and cy == to_row:
+                        break
+                var e2: int = 2 * err
+                if e2 > -dy:
+                        err -= dy
+                        cx += sx
+                if e2 < dx:
+                        err += dx
+                        cy += sy
+        return true  # nessun muro attraversato
+
+
 func _shoot_at(target_pos: Vector2) -> void:
         var d: Vector2 = target_pos - pos
         var dist: float = d.length()
@@ -380,24 +426,18 @@ func _update_projectiles(enemies: Array, delta_ms: int) -> void:
         for proj in projectiles:
                 if not proj.get("active", false):
                         continue
-                # FIX (proiettili non attraversano muri): check wall collision
-                # e rimbalzo invece di passare attraverso
+                # FIX (proiettili non attraversano muri): se il proiettile sta
+                # per entrare in una cella WALL, DISATTIVALO (no rimbalzo).
+                # L'utente vuole che i colpi NON attraversino i muri.
                 var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
                 var p_vel: Vector2 = proj.get("dir", Vector2.ZERO)
                 var new_pos: Vector2 = p_pos + p_vel
-                # Check se la nuova posizione è in un muro
                 var col: int = int(new_pos.x / TILE_SIZE)
                 var row: int = int((new_pos.y - UI_HEIGHT) / TILE_SIZE)
                 if maze_ref != null and maze_ref.is_wall(col, row):
-                        # Rimbalzo: inverte la direzione
-                        # Determina se ha colpito muro orizzontale o verticale
-                        var cur_col: int = int(p_pos.x / TILE_SIZE)
-                        var cur_row: int = int((p_pos.y - UI_HEIGHT) / TILE_SIZE)
-                        if col != cur_col:
-                                p_vel.x = -p_vel.x  # rimbalzo orizzontale
-                        if row != cur_row:
-                                p_vel.y = -p_vel.y  # rimbalzo verticale
-                        new_pos = p_pos + p_vel
+                        # Proiettile ha colpito un muro: DISATTIVALO (no rimbalzo)
+                        proj["active"] = false
+                        continue
                 proj["pos"] = new_pos
                 proj["dir"] = p_vel
                 # FIX (proiettili durata 6s): decrementa life_ms
