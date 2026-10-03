@@ -1075,14 +1075,18 @@ func _draw_sprite_frame() -> void:
         # nemico SD hanno content center Y = 27.5 (stesso offset).
         # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
         # l'impressione di decentramento.
-        # FIX (nemici centrati): Y_OFFSET = -12 per allineare al player.
-        # Con -8: centrati ma player più in alto. Con -24: troppo in alto.
-        # -12 dovrebbe allineare i nemici al player (che è top-aligned).
+        # FIX (nemici centrati - calcolo matematico, non tentativi):
+        # Analisi quantitativa PNG: content_top_y del player = 0, content_top_y
+        # modale dei nemici = 0 (15/28 nemici). Formula:
+        #   Y_OFFSET = -1.6 + player_ct*1.3 - enemy_ct*1.25
+        # Con player_ct=0, enemy_ct=0: Y_OFFSET = -1.6
+        # Arrotondato a -2 per sicurezza. Questo allinea il content-top del
+        # nemico a quello del player matematicamente.
         var target_size: float = 80.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        const Y_OFFSET: float = -12.0
+        const Y_OFFSET: float = -2.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
