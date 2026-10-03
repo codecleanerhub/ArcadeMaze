@@ -181,6 +181,7 @@ var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
 # matching the C++ architecture (Boss.cpp uses the same approach).
 var _deform_sprite: DeformableSprite = null
 var _deform_loaded: bool = false
+var _debug_yoffset_printed: bool = false  # DEBUG: rimuovere dopo fix
 # SD sheet cache (forzata per evitare HD gif scollegata)
 var _sd_sheet: Object = null
 # Per-enemy accent color for the walk_cycle shader (warm pulse).
@@ -980,6 +981,10 @@ func _draw() -> void:
 # The old AtlasTexture frame-cycling path is kept as a fallback for cases
 # where the SD sheet can't be loaded.
 func _draw_sprite_frame() -> void:
+        # DEBUG: print una tantum per verificare che Y_OFFSET viene applicato
+        if not _debug_yoffset_printed:
+                _debug_yoffset_printed = true
+                print("[Enemy] _draw_sprite_frame Y_OFFSET=-24 APPLIED (type=%d)" % type)
         # Update the DeformableSprite if loaded (preferred path).
         if _deform_loaded and _deform_sprite != null:
                 _update_deform_sprite_animation()
