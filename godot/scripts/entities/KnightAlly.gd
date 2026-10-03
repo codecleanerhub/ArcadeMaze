@@ -26,7 +26,7 @@ var max_health: int = 5
 # 3 frame (0.05s). 1 secondo di invulnerabilità dopo ogni hit.
 var invulnerable_timer_ms: int = 0
 var speed: int = 3  # più veloce del player (player=2, con boost=3)
-var shots_left: int = 3
+var shots_left: int = 999  # FIX (unicorno sparisce troppo presto): era 3, ora illimitato
 var disappear_timer_ms: int = 0
 var smoke_timer_ms: int = 0
 var spawning_ms: int = 800  # legacy, non usato ma mantenuto per compat

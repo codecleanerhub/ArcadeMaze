@@ -383,11 +383,9 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 last_pos = position
 
         # When close enough to cell centre, snap and try to recalc direction.
-        # FIX (nemici bloccati): separare il calcolo BFS dallo snap al centro.
-        # Prima il calcolo BFS era GATING su at_center=true — se il nemico NON
-        # era perfettamente al centro cella, non calcolava mai la direzione e
-        # restava immobile. Ora il calcolo BFS avviene SEMPRE (basato su timer),
-        # e lo snap è solo per allineamento. Mirror del fix KnightAlly commit 24fdc29.
+        # FIX (scatti al cambio direzione): snap FLUIDO con move_toward invece
+        # di assegnazione diretta. Lo snap avviene gradualmente in più frame
+        # per evitare il "salto" visibile.
         var step_size: float = float(speed) * (delta_ms / 16.6667)
         var snap_threshold: float = max(float(speed), step_size)
         # Snap graduale al centro cella (opzionale, non gating)
@@ -487,7 +485,9 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 var dest_y: float = position.y + move_dy * step_now
                 # FIX (tunneling attraverso muri): check is_wall sulla cella
                 # destinazione PRIMA di muovere. Se muro, NON muovere + forza
-                # ricalcolo BFS.
+                # ricalcolo BFS. Verifica anche i BORDI: se il movimento porta
+                # il nemico oltre il centro della cella adiacente (che è muro),
+                # blocca prima di attraversare.
                 var dest_col: int = int(dest_x / TILE_SIZE)
                 var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
                 var cur_col: int = int(position.x / TILE_SIZE)
@@ -497,6 +497,10 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         if maze.is_wall(dest_col, dest_row):
                                 # Destinazione è muro: NON muovere, forza
                                 # ricalcolo direzione al prossimo frame.
+                                # FIX: snap al centro della cella corrente
+                                # per evitare che il nemico resti decentrato.
+                                position.x = cur_col * TILE_SIZE + TILE_SIZE / 2.0
+                                position.y = cur_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
                                 dx = 0
                                 dy = 0
                                 path_update_timer = PATH_RECALC_INTERVAL_MS
@@ -1031,21 +1035,21 @@ func _draw_sprite_frame() -> void:
                 if at == null:
                         return
         # Draw centered at enemy size (72x72 ≈ TILE_SIZE*1.5, più visibile).
-        # FIX (nemici piccoli e decentrati): target_size aumentato a 64 (come
-        # TILE_SIZE) per renderli grandi quanto il player (che usa scale 1.3 =
-        # 83px). Con 64px il nemico occupa esattamente una cella, centrato.
-        # Per centrare perfettamente: draw_pos = (-tw/2, -th/2) — origine al
-        # centro dello sprite, allineato con position (centro cella).
-        # Rimosso y_center_offset che shiftava lo sprite in basso.
-        var target_size: float = 64.0
+        # FIX (nemici decentrati e più bassi del player): target_size aumentato
+        # a 80 (come player scale 1.3 = 83px). Lo sprite 64x64 viene scalato
+        # a 80x80 per pareggiare la dimensione del player.
+        # Per centrare perfettamente: draw_pos = (-tw/2, -th/2). Lo sprite
+        # PNG del mostro riempie il frame 64x64 (il mostro è centrato nel
+        # frame), quindi -tw/2, -th/2 centra lo sprite sulla position.
+        # Gli sprite dei mostri hanno il mostro centrato verticalmente nel
+        # frame, quindi niente offset verticale.
+        var target_size: float = 80.0
         var tw: float = target_size
         var th: float = target_size
         # FIX (barra HP lag): rimosso bob_y dallo sprite. Ora né lo sprite
         # né la barra oscillano → sync perfetto, nessun "lag" visivo.
         var bob_y: float = 0.0
         # FIX (centratura perfetta): draw_pos centrato su (0,0) senza offset.
-        # Lo sprite PNG riempie tutto il frame 64x64, quindi -tw/2, -th/2
-        # centra perfettamente lo sprite sulla position del nemico.
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
