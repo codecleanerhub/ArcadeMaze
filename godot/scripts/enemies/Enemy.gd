@@ -242,9 +242,20 @@ func _load_sprite() -> void:
         if _sprite_id.is_empty():
                 _sprite_loaded = false
                 return
-        if SpriteManager:
-                _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
-                _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
+        # FIX (nemici decentrati): carica SEMPRE la SD sheet (256x64, 4 frame
+        # walk cycle, mostro centrato nel frame). La HD sheet (256x256, 4x4)
+        # ha il mostro nella metà INFERIORE del frame 64x64 → appare shiftato
+        # in basso. La SD sheet ha il mostro centrato verticalmente.
+        # Prima SpriteManager carica la HD sheet se esiste, e il fallback
+        # _load_sd_sheet() non sempre riesce a sostituirla. Ora carichiamo
+        # direttamente la SD sheet, ignorando SpriteManager per i nemici.
+        _sprite_sheet = _load_sd_sheet(_sprite_id)
+        _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
+        if not _sprite_loaded:
+                # Fallback: usa SpriteManager (che può dare HD) se SD non disponibile
+                if SpriteManager:
+                        _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
+                        _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
                 if not _sprite_loaded:
                         print("[Enemy] WARNING: sprite not loaded for type=%d id=%s" % [type, _sprite_id])
 
