@@ -49,6 +49,17 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
+        # FIX (player non spara/salta in boss room): main game controller
+        # imposta process_mode = PROCESS_MODE_ALWAYS (riga 153 di
+        # MainGameController.gd) così _physics_process continua a girare
+        # anche se get_tree().paused = true. BossRoomController NON lo faceva,
+        # quindi se lo scene tree era paused (leftover da pause P o da
+        # transizione MainGame->BossRoom con pause non ripristinata),
+        # _physics_process non girava -> _handle_input non veniva chiamata
+        # -> player non spara/salta. Mirror esatto di MainGameController.
+        process_mode = Node.PROCESS_MODE_ALWAYS
+        # Safety: reset di eventuali pause state left-over dal MainGame.
+        get_tree().paused = false
         if GameManager:
                 current_level = GameManager.current_level
                 died_in_boss = GameManager.died_in_boss
