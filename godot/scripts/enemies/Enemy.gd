@@ -981,10 +981,6 @@ func _draw() -> void:
 # The old AtlasTexture frame-cycling path is kept as a fallback for cases
 # where the SD sheet can't be loaded.
 func _draw_sprite_frame() -> void:
-        # DEBUG: print una tantum per verificare che Y_OFFSET viene applicato
-        if not _debug_yoffset_printed:
-                _debug_yoffset_printed = true
-                print("[Enemy] _draw_sprite_frame Y_OFFSET=-24 APPLIED (type=%d)" % type)
         # Update the DeformableSprite if loaded (preferred path).
         if _deform_loaded and _deform_sprite != null:
                 _update_deform_sprite_animation()
@@ -1079,15 +1075,14 @@ func _draw_sprite_frame() -> void:
         # nemico SD hanno content center Y = 27.5 (stesso offset).
         # Con target_size 84 c'era uno scarto di 0.8px che poteva dare
         # l'impressione di decentramento.
-        # FIX (nemici centrati): target_size = 80 (no overflow muro).
-        # Y_OFFSET = -24 (DRASTICO) per testare se l'offset viene applicato.
-        # VLM non vede differenza tra -12 e -16, quindi o non viene applicato
-        # o serve molto più offset. Provo -24 per diagnosticare.
+        # FIX (nemici centrati): Y_OFFSET = -8 dopo test. Con -24 i nemici
+        # erano troppo in alto (più spazio sotto). Con -12 erano 4-8px sotto.
+        # -8 dovrebbe centrarli. target_size 80 OK (no overflow muro).
         var target_size: float = 80.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
-        const Y_OFFSET: float = -24.0
+        const Y_OFFSET: float = -8.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
