@@ -104,18 +104,36 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                 p1_dx = 1
         player.set_direction(p1_dx, p1_dy)
 
-        # FIX (player non spara/salta in boss room): usa is_action_pressed
-        # invece di is_action_just_pressed per maggiore robustezza.
-        # is_action_just_pressed può fallire in _physics_process se l'input
-        # viene processato tra i frame. is_action_pressed rileva il tasto
-        # tenuto premuto, con shoot_cooldown a limitare la cadenza.
-        # P1 shoot
-        if Input.is_action_pressed("shoot") and player.shoot_cooldown == 0:
+        # FIX (joystick in boss room): il MainGameController gestisce il joystick
+        # con Input.is_joy_button_pressed(p1_joy_id, joy_jump_btn/joy_shoot_btn)
+        # leggendo i bottoni configurati da ConfigManager. Il BossRoomController
+        # usava solo Input.is_action_pressed("shoot"/"jump") che sono mappati
+        # su TASTIERA (Z e Space), NON sui bottoni joystick configurati.
+        # Ora aggiungiamo il supporto joystick mirror del MainGameController.
+        var p1_joy_id: int = -1
+        var joy_pads: Array = Input.get_connected_joypads()
+        if joy_pads.size() > 0:
+                p1_joy_id = joy_pads[0]
+        var joy_jump_btn: int = ConfigManager.joy_jump() if ConfigManager else -1
+        var joy_shoot_btn: int = ConfigManager.joy_shoot() if ConfigManager else -1
+        if joy_jump_btn < 0:
+                joy_jump_btn = JOY_BUTTON_A  # default: A button = jump
+        if joy_shoot_btn < 0:
+                joy_shoot_btn = JOY_BUTTON_B  # default: B button = shoot
+
+        # P1 shoot (keyboard OR joystick)
+        var shoot_pressed: bool = Input.is_action_pressed("shoot")
+        if p1_joy_id >= 0 and Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn):
+                shoot_pressed = true
+        if shoot_pressed and player.shoot_cooldown == 0:
                 player.shoot()
                 player.shoot_cooldown = 150
 
-        # P1 jump
-        if Input.is_action_pressed("jump"):
+        # P1 jump (keyboard OR joystick)
+        var jump_pressed: bool = Input.is_action_pressed("jump")
+        if p1_joy_id >= 0 and Input.is_joy_button_pressed(p1_joy_id, joy_jump_btn):
+                jump_pressed = true
+        if jump_pressed:
                 player.activate_jump()
 
         # P2
