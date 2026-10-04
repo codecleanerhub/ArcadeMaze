@@ -437,17 +437,24 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         position.x = center_x
                         position.y = center_y
         elif dx == 0 and dy != 0:
-                # Movimento verticale: snap X al centro cella MOLTO VELOCE
-                # (8x la velocità normale, min 8px/frame). Riduce il tempo
-                # di decentramento a 2-4 frame invece di 12+.
+                # FIX (attraversamento muri al cambio direzione destra/sinistra):
+                # Movimento verticale: snap X IMMEDIATO al centro cella.
+                # Prima era 8px/frame (graduale), il che lasciava il nemico
+                # decentrato in X per 2-4 frame durante il movimento verticale
+                # → lo sprite (64px) overlapava il muro adiacente (cella a
+                # destra o sinistra) per quei frame → percepito come
+                # "attraversamento muro al cambio direzione". Ora teleporta
+                # X al centro in 1 frame. Il salto è massimo 32px (mezza
+                # cella) e avviene solo quando il nemico cambia direzione
+                # (raro), non a ogni frame.
                 if absf(position.x - center_x) > 0.5:
-                        var snap_speed_x: float = max(step_size * 8.0, 8.0)
-                        position.x = move_toward(position.x, center_x, snap_speed_x)
+                        position.x = center_x
         elif dx != 0 and dy == 0:
-                # Movimento orizzontale: snap Y al centro cella MOLTO VELOCE.
+                # FIX:Movimento orizzontale: snap Y IMMEDIATO al centro cella.
+                # Stessa logica del caso verticale: previene overlap con
+                # muri sopra/sotto durante il movimento orizzontale.
                 if absf(position.y - center_y) > 0.5:
-                        var snap_speed_y: float = max(step_size * 8.0, 8.0)
-                        position.y = move_toward(position.y, center_y, snap_speed_y)
+                        position.y = center_y
 
         # Force path recompute on: timer expiry, idle, stuck, or flee flip.
         # SEMPRE eseguito, non gating su at_center.
