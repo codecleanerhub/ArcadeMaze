@@ -218,25 +218,16 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
                 var mb_pos := _find_mini_boss_cell(maze, magic_portal.pos, player_pos)
                 if mb_pos.x >= 0:
                         mini_boss_spawner.call(mb_pos.x, mb_pos.y)
-                        # FIX (pallino procedurale accanto al miniboss, 5°
-                        # tentativo — root cause DEFINITIVA): l'utente vedeva
-                        # ancora un "pallino accanto al miniboss che si muove
-                        # con lui". I fix precedenti avevano ridotto alpha del
-                        # magic portal core, ma il portal resta VISIBILE per
-                        # 1s (open) + N×4s (spawning) + 2.8s (close) = 12-24s.
-                        # In questo periodo il miniboss può allontanarsi dal
-                        # portal, e il portal (con i suoi cerchi lavanda/bianchi)
-                        # appare come "pallino accanto al miniboss" che resta
-                        # fisso mentre il miniboss si muove.
-                        # Soluzione: chiudi il portal SUBITO dopo lo spawn del
-                        # miniboss. Il portal non serve più — la sua funzione
-                        # era spawnare il miniboss + respawnare nemici. Il
-                        # respawn dei nemici avviene già durante la fase 1, e
-                        # anche se lo interrompiamo i nemici morti restano morti
-                        # (no gameplay impact). Priorità: eliminare il bug visivo.
-                        magic_portal.phase = 2  # vai direttamente alla fase closing
-                        magic_portal.phase_timer = 200  # chiudi in 200ms (rapido fade-out)
-                        magic_portal.enemies_to_spawn = 0  # non spawnare altri nemici
+                        # FIX (portale scompare subito): prima il portale veniva
+                        # forzato a fase 2 (closing) con timer 200ms quando
+                        # spawnava il mini-boss → il portale scompariva in 200ms
+                        # e non respawnava i nemici. Ora il portale resta aperto
+                        # per il ciclo completo (open 1s + spawn N×4s + close
+                        # 2.8s) e respawn i nemici come previsto.
+                        # Il "pallino accanto al miniboss" visivo era causato dal
+                        # portale che restava fisso mentre il miniboss si
+                        # muoveva — ora il portale chiude naturalmente dopo
+                        # aver spawnato i nemici.
 
         return true
 

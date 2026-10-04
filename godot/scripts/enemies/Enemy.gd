@@ -519,20 +519,22 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         if maze.is_wall(_check_col, _check_row):
                 dx = 0
                 dy = 0
-        # FIX (nemici disallineati + no melee + no hit proiettili): se dopo
-        # il check il nemico non ha direzione (dx==0, dy==0) — tipicamente
-        # perché è entrato nella cella del player (BFS ritorna -1,-1 perché
-        # start==target) e il wall check precedente ha azzerato la direzione —
-        # il nemico PRIMA si allinea al centro della cella corrente, POI
-        # eventualmente si muove. Senza questo snap, il nemico resta ~30px
-        # fuori dal centro della cella del player, appena fuori dalla soglia
-        # di collisione melee (sqrt(800)=28.3px) e i proiettili cardinali del
-        # player lo mancano perché il nemico è decentrato rispetto alla
-        # traiettoria orizzontale/verticale del proiettile.
+        # FIX (nemici disallineati + no melee + no hit proiettili + attraversamento muri):
+        # se dopo il wall check il nemico non ha direzione (dx==0, dy==0) —
+        # tipicamente perché è entrato nella cella del player (BFS ritorna
+        # -1,-1 perché start==target) o ha appena colpito un muro (wall check
+        # azzerato) — il nemico PRIMA si allinea al centro della cella
+        # corrente, POI eventualmente si muove.
+        # FIX (attraversamento muri): lo snap è IMMEDIATO (non graduale).
+        # Prima era graduale (move_toward con _align_speed), il che lasciava
+        # il nemico decentrato per multipli frame dopo aver colpito un muro
+        # → lo sprite (64px) overlapava il muro adiacente → percepito come
+        # "attraversamento muro". Ora teleporta al centro in 1 frame.
         if dx == 0 and dy == 0:
-                var _align_speed: float = max(step_size, 1.5)
-                position.x = move_toward(position.x, center_x, _align_speed)
-                position.y = move_toward(position.y, center_y, _align_speed)
+                if absf(position.x - center_x) > 0.5 \
+                                or absf(position.y - center_y) > 0.5:
+                        position.x = center_x
+                        position.y = center_y
 
         # FIX (scatti): movimento scalato per delta_ms per frame-rate
         # independence. A 60 FPS step = speed (come prima). A 30 FPS step = speed/2.

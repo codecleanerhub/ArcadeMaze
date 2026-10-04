@@ -1023,10 +1023,22 @@ func _check_mine_vs_enemies() -> void:
                                         speed = 8.0
                                 mine_vel = Vector2(next_dir) * speed
                 homing_timer = 250
-        mine_item.homing_ms = homing_timer
+        # FIX (bomba rimbalza senza inseguire): il save di homing_ms è
+        # SPOSTATO dopo il bounce check. Prima era prima del bounce, quindi
+        # l'azzeramento homing_timer=0 dopo il rimbalzo non veniva salvato
+        # → al prossimo frame homing_timer ripartiva da 250 invece di 0 →
+        # il BFS non ricalcolava subito → oscillazione.
         # FIX (bomba arcade bouncing): muovi; se la nuova posizione è in un
         # muro, inverte l'asse di impatto e NON damped (rimbalzo elastico
         # puro, velocità costante).
+        # FIX (bomba rimbalza senza inseguire): dopo ogni rimbalzo, forza
+        # ricalcolo homing al prossimo frame (homing_timer=0). Prima, il
+        # timer homing di 250ms faceva sì che la bomba continuasse a
+        # rimbalzare nella STESSA direzione per 15 frame prima che il BFS
+        # ricalcolasse → oscillazione destra-sinistra ripetuta senza
+        # inseguire i nemici. Ora, dopo un rimbalzo, il BFS ricalcola
+        # immediatamente la direzione ottimale verso il nemico.
+        var _bounced: bool = false
         var new_pos: Vector2 = mine_pos2 + mine_vel
         var cur_col: int = int(mine_pos2.x / C.TILE_SIZE)
         var cur_row: int = int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE)
@@ -1036,17 +1048,27 @@ func _check_mine_vs_enemies() -> void:
                 if next_col != cur_col and maze.is_wall(next_col, cur_row):
                         mine_vel.x = -mine_vel.x  # rimbalzo elastico (no damping)
                         new_pos.x = mine_pos2.x
+                        _bounced = true
                 if next_row != cur_row and maze.is_wall(cur_col, next_row):
                         mine_vel.y = -mine_vel.y  # rimbalzo elastico (no damping)
                         new_pos.y = mine_pos2.y
+                        _bounced = true
         else:
                 # Out of bounds: rimbalza sui bordi schermo
                 if new_pos.x < 64.0 or new_pos.x > C.WINDOW_WIDTH - 64.0:
                         mine_vel.x = -mine_vel.x
                         new_pos.x = mine_pos2.x
+                        _bounced = true
                 if new_pos.y < C.UI_HEIGHT + 32.0 or new_pos.y > C.WINDOW_HEIGHT - 64.0:
                         mine_vel.y = -mine_vel.y
                         new_pos.y = mine_pos2.y
+                        _bounced = true
+        # FIX (bomba rimbalza senza inseguire): dopo un rimbalzo, forza
+        # ricalcolo homing al prossimo frame.
+        if _bounced:
+                homing_timer = 0
+        # SAVE homing_ms DOPO il bounce check (così l'azzeramento persiste).
+        mine_item.homing_ms = homing_timer
         mine_pos2 = new_pos
         # Aggiorna posizione e velocità della mine
         mine_item.position = mine_pos2
@@ -1772,6 +1794,33 @@ func _spawn_knight_ally(player_pos: Vector2) -> void:
         ka.health = ka.max_health
         # Posizione: accanto al player (offset 48px a destra)
         var spawn_pos: Vector2 = player_pos + Vector2(48, 0)
+        # FIX (unicorno si ferma): se la cella di spawn è un muro, l'unicorno
+        # nasce dentro il muro → BFS non trova path → si ferma. Cerchiamo la
+        # cella vuota più vicina al player (radius 1-3) in 4 direzioni.
+        var spawn_col: int = int(spawn_pos.x / C.TILE_SIZE)
+        var spawn_row: int = int((spawn_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if spawn_col > 0 and spawn_col < C.MAZE_COLS - 1 \
+                        and spawn_row > 0 and spawn_row < C.MAZE_ROWS - 1 \
+                        and maze.is_wall(spawn_col, spawn_row):
+                # Cerca cella vuota nelle vicinanze
+                for _sr in range(1, 4):
+                        var _found: bool = false
+                        for _sdc in range(-_sr, _sr + 1):
+                                for _sdr in range(-_sr, _sr + 1):
+                                        var _nc: int = spawn_col + _sdc
+                                        var _nr: int = spawn_row + _sdr
+                                        if _nc > 0 and _nc < C.MAZE_COLS - 1 \
+                                                        and _nr > 0 and _nr < C.MAZE_ROWS - 1:
+                                                if not maze.is_wall(_nc, _nr):
+                                                        spawn_pos = Vector2(
+                                                                _nc * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                                                                _nr * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
+                                                        _found = true
+                                                        break
+                                if _found:
+                                        break
+                        if _found:
+                                break
         ka.pos = spawn_pos
         add_child(ka)
         knight_ally = ka

@@ -15,8 +15,14 @@ class_name KnightAlly
 
 const TILE_SIZE: int = 64
 const UI_HEIGHT: int = 80
-const MAZE_COLS: int = 40
-const MAZE_ROWS: int = 22
+# FIX (unicorno si ferma): MAZE_COLS/ROWS erano stale (40x22) ma il maze
+# attuale è 30x15 (vedi GameConstants.gd). Con valori stale, il safety
+# clamp cercava celle fino a col=39/row=21, ma il maze reale è 30x15.
+# Inoltre, la BFS usa GameConstants (30x15), quindi se l'unicorno è in
+# una cella oltre col=29/row=14, la BFS la considera out-of-bounds e
+# non trova path → l'unicorno si ferma. Allineiamo a GameConstants.
+const MAZE_COLS: int = 30
+const MAZE_ROWS: int = 15
 
 # --- Stats ---
 var health: int = 5
