@@ -508,12 +508,28 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                         dy = next_step.y - row
                                         path_found = true
                                         stuck_timer = 0
-                                # Fallback 1: BFS failed (rare, player unreachable) -> greedy.
+                                # Fallback 1: BFS failed. Due casi:
+                                # A) start == target (nemico nella cella del
+                                #    player): NON usare greedy (causerebbe
+                                #    oscillazione: greedy manda in direzione
+                                #    random, nemico esce dalla cella, BFS lo
+                                #    rimanda indietro → ciclo). Resta fermo,
+                                #    snap al centro, lascia scattare melee.
+                                # B) player irraggiungibile (walls bloccano):
+                                #    usa greedy per avvicinarsi.
                                 if not path_found:
-                                        _move_greedy(maze, player_grid_pos)
-                                        if dx != 0 or dy != 0:
-                                                path_found = true
-                                                stuck_timer = 0
+                                        if col == player_grid_pos.x and row == player_grid_pos.y:
+                                                # Caso A: stessa cella del player.
+                                                # Resta fermo, snap al centro.
+                                                dx = 0
+                                                dy = 0
+                                                path_found = true  # non attivare fallback 2
+                                        else:
+                                                # Caso B: player irraggiungibile.
+                                                _move_greedy(maze, player_grid_pos)
+                                                if dx != 0 or dy != 0:
+                                                        path_found = true
+                                                        stuck_timer = 0
                 # Fallback 2: still no direction. Only break out if stuck.
                 if not path_found and stuck_timer > STUCK_THRESHOLD_MS:
                         _pick_random_open_dir(maze, col, row)
@@ -522,17 +538,17 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 # If not stuck yet, leave dx=dy=0; will force recalc next frame
                 # via the "idle" condition above.
 
-        # Stop if the cell ahead is a wall.
-        # Questo check viene fatto quando il nemico è al centro della cella
-        # e sta per decidere in che direzione muoversi.
-        # FIX: usa clamping degli indici per evitare index out of range su
-        # is_wall (che ritorna true per out-of-grid, ma esplicitiamo per
-        # sicurezza e coerenza).
-        var _check_col: int = clampi(col + dx, 0, MAZE_COLS - 1)
-        var _check_row: int = clampi(row + dy, 0, MAZE_ROWS - 1)
-        if maze.is_wall(_check_col, _check_row):
-                dx = 0
-                dy = 0
+        # FIX (oscillamento nemici): RIMOSSO il wall check a line 524 che
+        # azzerava dx/dy OGNI FRAME quando la cella avanti era muro. Questo
+        # causava BFS recompute immediato → direzione flip → oscillamento.
+        # Il wall check era RIDONDANTE: il movement code (linea 556+) ha già
+        # un dest-cell wall check che blocca il movimento quando la destinazione
+        # è muro. Ora dx/dy vengono azzerati SOLO dal movement check, che
+        # setta anche path_update_timer = PATH_RECALC_INTERVAL_MS per forzare
+        # BFS recompute al prossimo frame. Tra i recomputation, current_valid
+        # mantiene la direzione se valida (no muro avanti), prevenendo flip.
+
+        # Snap post-BFS (mantenuto)
         # FIX (attraversamento muri al cambio direzione destra/sinistra - ROOT CAUSE DEFINITIVA):
         # Lo snap perpendicolare PRIMA del BFS (linea 439-457) usa la VECCHIA
         # direzione. Quando il BFS cambia direzione (es. da orizzontale a

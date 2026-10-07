@@ -48,7 +48,7 @@ func _ready() -> void:
         player.reset()
         # Random level
         current_level = (randi() % C.STORY_LEVELS_COUNT) + 1
-        demo_is_boss = (randi() % 2 == 0)
+        demo_is_boss = false  # FIX: sempre maze mode (con wall collision) nel demo
         demo_duration_timer_ms = 30000
         demo_ai_timer_p1 = 0
         demo_ai_dir_p1 = 0

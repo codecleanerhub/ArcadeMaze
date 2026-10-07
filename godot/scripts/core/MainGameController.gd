@@ -1332,7 +1332,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TREASURE)
                         if AudioManager and AudioManager.music_enabled:
-                                AudioManager.play_epic_music(8)
+                                AudioManager.play_epic_music(AudioManager.TRACK_EPIC_CHALICE)
                         # Particelle pickup oro (Godot-native)
                         if EffectsManager:
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),

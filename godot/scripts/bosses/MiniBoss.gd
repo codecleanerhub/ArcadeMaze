@@ -733,6 +733,30 @@ func _draw_with_sprite() -> void:
                 var tw: int = 64  # mini-boss visual size (HD sheet scaled down)
                 var th: int = 64
                 var draw_pos := Vector2(-tw / 2, -th / 2 + 8 + bob_y)
+                # FIX (overlap muri visivo - CLAMP RENDERING): stesso fix
+                # applicato a Enemy.gd. Se lo sprite estenderebbe in una
+                # cella-muro adiacente, shift draw_pos per tenerlo dentro.
+                if maze != null and maze.has_method("is_wall"):
+                        var _mb_col: int = int(pos.x / 64)
+                        var _mb_row: int = int((pos.y - 80) / 64)
+                        var _mb_cl: float = _mb_col * 64.0
+                        var _mb_cr: float = (_mb_col + 1) * 64.0
+                        var _mb_ct: float = _mb_row * 64.0 + 80.0
+                        var _mb_cb: float = (_mb_row + 1) * 64.0 + 80.0
+                        var _mb_min_x: float = -INF
+                        var _mb_max_x: float = INF
+                        if maze.is_wall(_mb_col - 1, _mb_row):
+                                _mb_min_x = _mb_cl - pos.x
+                        if maze.is_wall(_mb_col + 1, _mb_row):
+                                _mb_max_x = _mb_cr - pos.x - tw
+                        draw_pos.x = clampf(draw_pos.x, _mb_min_x, _mb_max_x)
+                        var _mb_min_y: float = -INF
+                        var _mb_max_y: float = INF
+                        if maze.is_wall(_mb_col, _mb_row - 1):
+                                _mb_min_y = _mb_ct - pos.y
+                        if maze.is_wall(_mb_col, _mb_row + 1):
+                                _mb_max_y = _mb_cb - pos.y - th
+                        draw_pos.y = clampf(draw_pos.y, _mb_min_y, _mb_max_y)
                 var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:
                         # FIX (ruota invece di flip): usa Rect2 con width
