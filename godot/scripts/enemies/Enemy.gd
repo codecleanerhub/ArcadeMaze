@@ -526,21 +526,31 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         if maze.is_wall(_check_col, _check_row):
                 dx = 0
                 dy = 0
-        # FIX (nemici disallineati + no melee + no hit proiettili + attraversamento muri):
-        # se dopo il wall check il nemico non ha direzione (dx==0, dy==0) —
-        # tipicamente perché è entrato nella cella del player (BFS ritorna
-        # -1,-1 perché start==target) o ha appena colpito un muro (wall check
-        # azzerato) — il nemico PRIMA si allinea al centro della cella
-        # corrente, POI eventualmente si muove.
-        # FIX (attraversamento muri): lo snap è IMMEDIATO (non graduale).
-        # Prima era graduale (move_toward con _align_speed), il che lasciava
-        # il nemico decentrato per multipli frame dopo aver colpito un muro
-        # → lo sprite (64px) overlapava il muro adiacente → percepito come
-        # "attraversamento muro". Ora teleporta al centro in 1 frame.
+        # FIX (attraversamento muri al cambio direzione destra/sinistra - ROOT CAUSE DEFINITIVA):
+        # Lo snap perpendicolare PRIMA del BFS (linea 439-457) usa la VECCHIA
+        # direzione. Quando il BFS cambia direzione (es. da orizzontale a
+        # verticale), l'asse perpendicolare NUOVO (X per movimento verticale)
+        # NON viene snap-pato nello stesso frame → il nemico resta decentrato
+        # in X per 1 frame → lo sprite (64px) overlapava il muro adiacente.
+        # Fix: snap perpendicolare IMMEDIATO anche DOPO il wall check, usando
+        # la NUOVA direzione. Così, quando BFS cambia direzione, l'asse
+        # perpendicolare viene allineato al centro nello stesso frame.
         if dx == 0 and dy == 0:
+                # Fermo: snap IMMEDIATO al centro cella entrambi gli assi.
                 if absf(position.x - center_x) > 0.5 \
                                 or absf(position.y - center_y) > 0.5:
                         position.x = center_x
+                        position.y = center_y
+        elif dx == 0 and dy != 0:
+                # Movimento verticale (NUOVA direzione): snap X IMMEDIATO.
+                # Questo è lo snap che mancava — prima del BFS lo snap era
+                # per il movimento orizzontale (Y), ma ora il nemico si
+                # muove verticalmente, quindi X deve essere al centro.
+                if absf(position.x - center_x) > 0.5:
+                        position.x = center_x
+        elif dx != 0 and dy == 0:
+                # Movimento orizzontale (NUOVA direzione): snap Y IMMEDIATO.
+                if absf(position.y - center_y) > 0.5:
                         position.y = center_y
 
         # FIX (scatti): movimento scalato per delta_ms per frame-rate
@@ -1196,7 +1206,7 @@ func _draw_sprite_frame() -> void:
         # Quando il nemico è al centro cella: ZERO overlap con muri.
         # Quando è decentrato (transizione): overlap = offset, ridotto a
         # 2-4 frame dallo snap veloce (8px/frame).
-        var target_size: float = 64.0
+        var target_size: float = 48.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
