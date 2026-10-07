@@ -1236,43 +1236,46 @@ func _draw_sprite_frame() -> void:
         var bob_y: float = 0.0
         const Y_OFFSET: float = 0.0
         var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
-        # FIX (overlap muri visivo - CLAMP RENDERING):
+        # FIX (overlap muri visivo - CLAMP RENDERING ONE-PASS):
         # Il nemico si muove continuamente (2px/frame) attraverso la cella.
         # Durante il movimento, la posizione logica è off-center, e lo sprite
-        # (62px) può estendere oltre il confine della cella verso un muro.
-        # Invece di cambiare la posizione logica (che causa problemi di
-        # timing e collisione), clampiamo solo la POSIZIONE VISIVA dello
-        # sprite: se lo sprite estenderebbe in una cella-muro adiacente,
-        # shiftiamo draw_pos per tenerlo dentro la cella aperta.
-        # Questo è PURAMENTE VISIVO — la posizione logica (collisione,
-        # melee, proiettili) resta invariata.
+        # (64px) può estendere oltre il confine della cella verso un muro.
+        # Clampiamo la POSIZIONE VISIVA: se lo sprite estenderebbe in una
+        # cella-muro adiacente, shiftiamo draw_pos per tenerlo dentro la cella.
+        # FIX (asimmetria destra/sinistra): il clamp precedente era SEQUENZIALE
+        # (prima sinistra, poi destra). Dopo il clamp destro che shifta lo
+        # sprite a sinistra, il bordo sinistro potrebbe oltrepassare il confine
+        # — ma il clamp sinistro era già stato eseguito e non veniva
+        # rieseguito. Questo causava overlap solo nel cambio direzione
+        # destra→sinistra (lo sprite veniva shiftato a sinistra dal clamp
+        # destro, ma il bordo sinistro non veniva ricontrollato).
+        # Fix: calcolo min/max consentito per draw_pos.x e draw_pos.y in UNA
+        # SOLA PASSATA, considerando entrambi i muri simultaneamente.
         if _maze_ref != null and _maze_ref.has_method("is_wall"):
-                var _half_w: float = tw * 0.5
-                var _half_h: float = th * 0.5
                 var _col: int = int(position.x / TILE_SIZE)
                 var _row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
                 var _cell_left: float = _col * TILE_SIZE
                 var _cell_right: float = (_col + 1) * TILE_SIZE
                 var _cell_top: float = _row * TILE_SIZE + UI_HEIGHT
                 var _cell_bot: float = (_row + 1) * TILE_SIZE + UI_HEIGHT
-                # Sprite edges in world coords (relative to position)
-                var _sprite_left: float = position.x + draw_pos.x
-                var _sprite_right: float = position.x + draw_pos.x + tw
-                var _sprite_top: float = position.y + draw_pos.y
-                var _sprite_bot: float = position.y + draw_pos.y + th
-                # Clamp X: se la cella a sinistra è muro, lo sprite non deve
-                # estendere oltre il confine sinistro della cella corrente.
-                if _maze_ref.is_wall(_col - 1, _row) and _sprite_left < _cell_left:
-                        draw_pos.x += (_cell_left - _sprite_left)
-                # Clamp X destra
-                if _maze_ref.is_wall(_col + 1, _row) and _sprite_right > _cell_right:
-                        draw_pos.x -= (_sprite_right - _cell_right)
-                # Clamp Y sopra
-                if _maze_ref.is_wall(_col, _row - 1) and _sprite_top < _cell_top:
-                        draw_pos.y += (_cell_top - _sprite_top)
-                # Clamp Y sotto
-                if _maze_ref.is_wall(_col, _row + 1) and _sprite_bot > _cell_bot:
-                        draw_pos.y -= (_sprite_bot - _cell_bot)
+                # Calcola i limiti consentiti per draw_pos.x:
+                # sprite_left = position.x + draw_pos.x >= cell_left  →  draw_pos.x >= cell_left - position.x
+                # sprite_right = position.x + draw_pos.x + tw <= cell_right  →  draw_pos.x <= cell_right - position.x - tw
+                var _min_x: float = -INF
+                var _max_x: float = INF
+                if _maze_ref.is_wall(_col - 1, _row):
+                        _min_x = _cell_left - position.x
+                if _maze_ref.is_wall(_col + 1, _row):
+                        _max_x = _cell_right - position.x - tw
+                draw_pos.x = clampf(draw_pos.x, _min_x, _max_x)
+                # Stesso calcolo per Y
+                var _min_y: float = -INF
+                var _max_y: float = INF
+                if _maze_ref.is_wall(_col, _row - 1):
+                        _min_y = _cell_top - position.y
+                if _maze_ref.is_wall(_col, _row + 1):
+                        _max_y = _cell_bot - position.y - th
+                draw_pos.y = clampf(draw_pos.y, _min_y, _max_y)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
         # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
