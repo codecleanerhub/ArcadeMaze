@@ -593,7 +593,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 # ma questo è OK (il corridoio è stretto). Lo snap
                 # perpendicolare garantisce che il nemico sia al centro
                 # sull'asse perpendicolare, minimizzando l'overlap.
-                const SPRITE_HALF: float = 32.0  # target_size/2 = 64/2
+                const SPRITE_HALF: float = 31.0  # target_size/2 = 62/2, 1px margine
                 var dest_col: int = int(dest_x / TILE_SIZE)
                 var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
                 var cur_col: int = int(position.x / TILE_SIZE)
@@ -1219,7 +1219,11 @@ func _draw_sprite_frame() -> void:
         # Quando il nemico è al centro cella: ZERO overlap con muri.
         # Quando è decentrato (transizione): overlap = offset, ridotto a
         # 2-4 frame dallo snap veloce (8px/frame).
-        var target_size: float = 64.0
+        # FIX: target_size = 62 (non 64). Con 64px, lo sprite al centro cella
+        # estende esattamente al confine (x=center+32=cell_boundary). int() mette
+        # quel pixel nella cella adiacente (muro). Con 62px, lo sprite estende a
+        # center+31 (1px dentro la cella corrente), NON tocca la cella-muro.
+        var target_size: float = 62.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
