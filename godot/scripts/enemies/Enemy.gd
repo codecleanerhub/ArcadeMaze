@@ -576,51 +576,64 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 var step_now: float = step_size
                 var dest_x: float = position.x + move_dx * step_now
                 var dest_y: float = position.y + move_dy * step_now
-                # FIX (tunneling attraverso muri): check is_wall sulla cella
-                # destinazione PRIMA di muovere. Se muro, NON muovere + forza
-                # ricalcolo BFS. Verifica anche i BORDI: se il movimento porta
-                # il nemico oltre il centro della cella adiacente (che è muro),
-                # blocca prima di attraversare.
-                # FIX (attraversamento muri - root cause): il check precedente
-                # funzionava SOLO se dest_col != cur_col (cioè solo quando
-                # si attraversa il confine di cella). Ma se il nemico è già
-                # parzialmente dentro la cella-muro (per via di uno step che
-                # scavalca il confine in un frame solo), il check non scatta.
-                # Aggiungiamo un check ROBUSTO: verifichiamo sia la cella di
-                # dest_x/dest_y SIA la cella intermedia tra cur e dest. Se
-                # una qualunque di queste è un muro, blocchiamo il movimento.
+                # FIX (attraversamento muri - SPRITE-AWARE wall check DIREZIONALE):
+                # Il check precedente controllava solo la cella di dest.
+                # Ma lo sprite (64px) estende 32px OLTRE la posizione del
+                # nemico. Se il nemico è a x=1850 (cella 28, centro 1824) e
+                # muove a destra verso il muro (col 29 a x=1856), lo sprite
+                # estende a 1882 → 26px dentro il muro. Il vecchio check
+                # dest_col = int(1850/64) = 28 (cella corrente) → NON blocca.
+                # Fix: controlla il bordo dello sprite NELLA DIREZIONE di
+                # movimento. Se muove a destra, controlla il bordo DESTRO
+                # (dest_x + 32). Se muove a sinistra, controlla il bordo
+                # SINISTRO. Se muove giù, controlla il bordo INFERIORE. Se
+                # muove su, controlla il bordo SUPERIORE.
+                # NON controllare i bordi perpendicolari: in un corridoio
+                # (muri sopra/sotto), lo sprite estende nei muri perpendicolari
+                # ma questo è OK (il corridoio è stretto). Lo snap
+                # perpendicolare garantisce che il nemico sia al centro
+                # sull'asse perpendicolare, minimizzando l'overlap.
+                const SPRITE_HALF: float = 32.0  # target_size/2 = 64/2
                 var dest_col: int = int(dest_x / TILE_SIZE)
                 var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
                 var cur_col: int = int(position.x / TILE_SIZE)
                 var cur_row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
-                # Clamp dest_col/dest_row ai bounds del maze (out-of-grid =
-                # muro). Senza questo, int() può dare indici negativi o oltre
-                # MAZE_COLS-1, e is_wall ritorna true (perché out-of-grid è
-                # trattato come muro), ma esplicitiamo per chiarezza.
                 dest_col = clampi(dest_col, 0, MAZE_COLS - 1)
                 dest_row = clampi(dest_row, 0, MAZE_ROWS - 1)
                 var _blocked_by_wall: bool = false
+                # Check cella di dest (come prima)
                 if dest_col != cur_col or dest_row != cur_row:
-                        # Cambiamo cella: verifica che la destinazione NON sia
-                        # muro. Se lo è, blocchiamo il movimento (no tunneling).
                         if maze.is_wall(dest_col, dest_row):
                                 _blocked_by_wall = true
-                        else:
-                                position.x = dest_x
-                                position.y = dest_y
+                # Check bordo sprite NELLA DIREZIONE di movimento.
+                # Usa -1.0 di tolleranza: il bordo a x=1856.0 (esattamente
+                # sul confine) NON è considerato dentro il muro (solo se
+                # va OLTRE il confine).
+                if not _blocked_by_wall:
+                        if move_dx > 0:
+                                # Movimento a destra: controlla bordo destro
+                                var edge_col = clampi(int((dest_x + SPRITE_HALF - 1.0) / TILE_SIZE), 0, MAZE_COLS - 1)
+                                if edge_col != cur_col and maze.is_wall(edge_col, cur_row):
+                                        _blocked_by_wall = true
+                        elif move_dx < 0:
+                                # Movimento a sinistra: controlla bordo sinistro
+                                var edge_col = clampi(int((dest_x - SPRITE_HALF) / TILE_SIZE), 0, MAZE_COLS - 1)
+                                if edge_col != cur_col and maze.is_wall(edge_col, cur_row):
+                                        _blocked_by_wall = true
+                        elif move_dy > 0:
+                                # Movimento giù: controlla bordo inferiore
+                                var edge_row = clampi(int((dest_y + SPRITE_HALF - 1.0 - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
+                                if edge_row != cur_row and maze.is_wall(cur_col, edge_row):
+                                        _blocked_by_wall = true
+                        elif move_dy < 0:
+                                # Movimento su: controlla bordo superiore
+                                var edge_row = clampi(int((dest_y - SPRITE_HALF - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
+                                if edge_row != cur_row and maze.is_wall(cur_col, edge_row):
+                                        _blocked_by_wall = true
+                if not _blocked_by_wall:
+                        position.x = dest_x
+                        position.y = dest_y
                 else:
-                        # Movimento dentro la stessa cella: OK, ma verifichiamo
-                        # anche che la cella corrente non sia un muro (safety).
-                        if maze.is_wall(cur_col, cur_row):
-                                _blocked_by_wall = true
-                        else:
-                                position.x = dest_x
-                                position.y = dest_y
-                if _blocked_by_wall:
-                        # Destinazione è muro: NON muovere, snap immediato al
-                        # centro della cella corrente (no scatto visivo perché
-                        # la cella corrente è già aperta e lo snap è piccolo),
-                        # forza ricalcolo direzione al prossimo frame.
                         position.x = cur_col * TILE_SIZE + TILE_SIZE / 2.0
                         position.y = cur_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
                         dx = 0
@@ -1206,7 +1219,7 @@ func _draw_sprite_frame() -> void:
         # Quando il nemico è al centro cella: ZERO overlap con muri.
         # Quando è decentrato (transizione): overlap = offset, ridotto a
         # 2-4 frame dallo snap veloce (8px/frame).
-        var target_size: float = 48.0
+        var target_size: float = 64.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
