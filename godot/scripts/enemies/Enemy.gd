@@ -1121,23 +1121,40 @@ func _draw_sprite_frame() -> void:
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
         # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
-        # NON lo flip orizzontalmente. Per fare un flip H con
-        # draw_texture_rect, si usa un Rect2 con width negativa (il
-        # dest_rect viene disegnato da destra a sinistra).
+        # NON lo flip orizzontalmente.
         # NOTA: AtlasTexture in Godot 4.7 NON ha la property flip_h
         # (esiste solo su Sprite2D/Sprite3D), quindi non si può fare
         # flipped_at.flip_h = true.
+        #
+        # FIX (nemico disegnato +62px a destra quando guarda a sinistra —
+        # "cambia direzione sopra il muro, solo direzioni verticali"): il
+        # vecchio trick del Rect2 con LARGHEZZA NEGATIVA
+        # (Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)) NON specchia lo
+        # sprite in Godot 4.7.2: il rect viene normalizzato e la texture
+        # viene disegnata con larghezza positiva a partire da
+        # draw_pos.x + tw → lo sprite appariva spostato di +62px (una
+        # cella intera!) verso destra. Conseguenze:
+        #   * in movimento ORIZZONTALE lo sprite spostato restava comunque
+        #     dentro la fascia del corridoio → poco visibile;
+        #   * appena il nemico girava in VERTICALE lo sprite finiva sopra
+        #     la colonna-muro adiacente → "il nemico cammina sul muro";
+        #   * il player non ne soffriva perché usa Sprite2D.flip_h nativo.
+        # Verificato con test di rendering su Godot 4.7.2 reale (il rect
+        # negativo sposta il blob di +62px; draw_set_transform no).
+        # Metodo corretto: draw_set_transform con scala X = -1 specchia le
+        # draw successive attorno a un asse verticale. Usando come pivot il
+        # CENTRO X del rect, lo sprite resta esattamente nello stesso rect,
+        # solo specchiato.
         var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
         # FIX (scatto visivo da fermo): flip basato su last_dx, non dx:
         # da fermo (dx==0) lo sprite mantiene l'orientamento invece di
         # "sbloccarsi" di colpo verso destra.
         if last_dx < 0:
-                # Flip H: disegna con dest_rect che parte da destra e
-                # ha width negativa. Il Rect2 diventa:
-                #   Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)
-                # Godot disegna la texture specchiata.
-                var flip_rect: Rect2 = Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)
-                draw_texture_rect(at, flip_rect, false)
+                draw_set_transform(
+                        Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                        0.0, Vector2(-1.0, 1.0))
+                draw_texture_rect(at, dest_rect, false)
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
         else:
                 draw_texture_rect(at, dest_rect, false)
 

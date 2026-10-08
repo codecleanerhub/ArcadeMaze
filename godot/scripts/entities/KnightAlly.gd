@@ -769,10 +769,23 @@ func _draw_sprite(scale_val: float, alpha: float) -> void:
                         bob_y = sin(float(anim_time) * 0.01) * 2.0
                 var draw_pos: Vector2 = Vector2(-target_size / 2.0, -target_size / 2.0 + bob_y)
                 var flip: bool = last_dx < 0
+                # FIX (ally disegnato +72px a destra quando guarda a sinistra):
+                # il vecchio trick del Rect2 con LARGHEZZA NEGATIVA non
+                # specchia lo sprite in Godot 4.7.2 — lo disegnava spostato
+                # di +target_size px verso destra (sopra la colonna-muro
+                # adiacente quando l'ally si muove in verticale). Metodo
+                # corretto (verificato su Godot 4.7.2 reale): draw_set_transform
+                # con scala X = -1 e pivot sul CENTRO X del rect → lo sprite
+                # resta nello stesso rect, solo specchiato.
                 if flip:
+                        var dest_rect: Rect2 = Rect2(draw_pos, Vector2(target_size, target_size))
+                        draw_set_transform(
+                                Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                                0.0, Vector2(-1.0, 1.0))
                         draw_texture_rect_region(_sprite_sheet,
-                                Rect2(draw_pos.x + target_size, draw_pos.y, -target_size, target_size),
+                                dest_rect,
                                 src_rect, Color(1, 1, 1, alpha))
+                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
                 else:
                         draw_texture_rect_region(_sprite_sheet,
                                 Rect2(draw_pos, Vector2(target_size, target_size)),

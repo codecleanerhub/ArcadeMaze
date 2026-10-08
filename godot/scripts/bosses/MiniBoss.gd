@@ -762,11 +762,21 @@ func _draw_with_sprite() -> void:
                         draw_pos.y = clampf(draw_pos.y, _mb_min_y, _mb_max_y)
                 var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:
-                        # FIX (ruota invece di flip): usa Rect2 con width
-                        # negativa per flip orizzontale (AtlasTexture non
-                        # ha flip_h in Godot 4.7).
-                        var flip_rect := Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)
-                        draw_texture_rect(at, flip_rect, false)
+                        # FIX (miniboss disegnato +64px a destra quando guarda a
+                        # sinistra): il vecchio trick del Rect2 con width negativa
+                        # NON specchia lo sprite in Godot 4.7.2 — lo disegnava
+                        # spostato di +tw px verso destra, ANCHE oltre il clamp
+                        # di rendering appena calcolato (sopra il muro adiacente
+                        # quando il miniboss si muove in verticale). Metodo
+                        # corretto (verificato su Godot 4.7.2 reale):
+                        # draw_set_transform con scala X = -1 e pivot sul CENTRO
+                        # X del rect → lo sprite resta esattamente nel rect
+                        # clampato, solo specchiato.
+                        draw_set_transform(
+                                Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                                0.0, Vector2(-1.0, 1.0))
+                        draw_texture_rect(at, dest_rect, false)
+                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
                 else:
                         draw_texture_rect(at, dest_rect, false)
 
