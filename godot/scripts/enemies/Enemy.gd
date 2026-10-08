@@ -1245,23 +1245,46 @@ func _draw_sprite_frame() -> void:
                 var _cell_right: float = (_col + 1) * TILE_SIZE
                 var _cell_top: float = _row * TILE_SIZE + UI_HEIGHT
                 var _cell_bot: float = (_row + 1) * TILE_SIZE + UI_HEIGHT
-                # Calcola i limiti consentiti per draw_pos.x:
-                # sprite_left = position.x + draw_pos.x >= cell_left  →  draw_pos.x >= cell_left - position.x
-                # sprite_right = position.x + draw_pos.x + tw <= cell_right  →  draw_pos.x <= cell_right - position.x - tw
+                # FIX (overlap diagonale): il clamp precedente controllava solo
+                # le 4 celle CARDINALI (sinistra/destra/sopra/sotto). Ma quando
+                # il nemico è vicino a un muro DIAGONALE (es. cella (col+1,
+                # row+1) è muro), lo sprite estende l'angolo nel muro diagonale.
+                # Fix: controlla anche le 4 diagonali. Se una diagonale è muro,
+                # applica ENTRAMBI i clamp cardinali corrispondenti per tenere
+                # l'angolo dello sprite dentro la cella corrente.
                 var _min_x: float = -INF
                 var _max_x: float = INF
+                var _min_y: float = -INF
+                var _max_y: float = INF
+                # Cardinali
                 if _maze_ref.is_wall(_col - 1, _row):
                         _min_x = _cell_left - position.x
                 if _maze_ref.is_wall(_col + 1, _row):
                         _max_x = _cell_right - position.x - tw
-                draw_pos.x = clampf(draw_pos.x, _min_x, _max_x)
-                # Stesso calcolo per Y
-                var _min_y: float = -INF
-                var _max_y: float = INF
                 if _maze_ref.is_wall(_col, _row - 1):
                         _min_y = _cell_top - position.y
                 if _maze_ref.is_wall(_col, _row + 1):
                         _max_y = _cell_bot - position.y - th
+                # Diagonali: se il muro è in diagonale, l'angolo dello sprite
+                # non deve entrare nella cella diagonale. Questo richiede di
+                # clamare ENTRAMBI gli assi corrispondenti.
+                # Diagonale top-left (col-1, row-1)
+                if _maze_ref.is_wall(_col - 1, _row - 1):
+                        _min_x = maxf(_min_x, _cell_left - position.x)
+                        _min_y = maxf(_min_y, _cell_top - position.y)
+                # Diagonale top-right (col+1, row-1)
+                if _maze_ref.is_wall(_col + 1, _row - 1):
+                        _max_x = minf(_max_x, _cell_right - position.x - tw)
+                        _min_y = maxf(_min_y, _cell_top - position.y)
+                # Diagonale bot-left (col-1, row+1)
+                if _maze_ref.is_wall(_col - 1, _row + 1):
+                        _min_x = maxf(_min_x, _cell_left - position.x)
+                        _max_y = minf(_max_y, _cell_bot - position.y - th)
+                # Diagonale bot-right (col+1, row+1)
+                if _maze_ref.is_wall(_col + 1, _row + 1):
+                        _max_x = minf(_max_x, _cell_right - position.x - tw)
+                        _max_y = minf(_max_y, _cell_bot - position.y - th)
+                draw_pos.x = clampf(draw_pos.x, _min_x, _max_x)
                 draw_pos.y = clampf(draw_pos.y, _min_y, _max_y)
                 _report_rendered_wall_overlap(draw_pos, tw, th)
         # Flip horizontally if facing left (dx < 0).

@@ -735,13 +735,28 @@ func _draw_with_sprite() -> void:
                                 _mb_min_x = _mb_cl - pos.x
                         if maze.is_wall(_mb_col + 1, _mb_row):
                                 _mb_max_x = _mb_cr - pos.x - tw
-                        draw_pos.x = clampf(draw_pos.x, _mb_min_x, _mb_max_x)
                         var _mb_min_y: float = -INF
                         var _mb_max_y: float = INF
                         if maze.is_wall(_mb_col, _mb_row - 1):
                                 _mb_min_y = _mb_ct - pos.y
                         if maze.is_wall(_mb_col, _mb_row + 1):
                                 _mb_max_y = _mb_cb - pos.y - th
+                        # FIX (overlap diagonale): controlla anche le 4 diagonali.
+                        # Se una diagonale è muro, l'angolo dello sprite non deve
+                        # entrare nella cella diagonale → clampa entrambi gli assi.
+                        if maze.is_wall(_mb_col - 1, _mb_row - 1):
+                                _mb_min_x = maxf(_mb_min_x, _mb_cl - pos.x)
+                                _mb_min_y = maxf(_mb_min_y, _mb_ct - pos.y)
+                        if maze.is_wall(_mb_col + 1, _mb_row - 1):
+                                _mb_max_x = minf(_mb_max_x, _mb_cr - pos.x - tw)
+                                _mb_min_y = maxf(_mb_min_y, _mb_ct - pos.y)
+                        if maze.is_wall(_mb_col - 1, _mb_row + 1):
+                                _mb_min_x = maxf(_mb_min_x, _mb_cl - pos.x)
+                                _mb_max_y = minf(_mb_max_y, _mb_cb - pos.y - th)
+                        if maze.is_wall(_mb_col + 1, _mb_row + 1):
+                                _mb_max_x = minf(_mb_max_x, _mb_cr - pos.x - tw)
+                                _mb_max_y = minf(_mb_max_y, _mb_cb - pos.y - th)
+                        draw_pos.x = clampf(draw_pos.x, _mb_min_x, _mb_max_x)
                         draw_pos.y = clampf(draw_pos.y, _mb_min_y, _mb_max_y)
                 var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:
