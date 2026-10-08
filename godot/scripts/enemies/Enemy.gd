@@ -184,6 +184,8 @@ var _deform_sprite: DeformableSprite = null
 # Memorizzato in update_enemy, usato in _draw_sprite_frame per verificare
 # quali celle adiacenti sono muri e clampare la posizione visiva dello sprite.
 var _maze_ref: Object = null
+var _last_wall_overlap_report: String = ""
+var _last_grid_cell_report: Vector2i = Vector2i(-1, -1)
 var _deform_loaded: bool = false
 var _debug_yoffset_printed: bool = false  # DEBUG: rimuovere dopo fix
 # SD sheet cache (forzata per evitare HD gif scollegata)
@@ -387,6 +389,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
 
         var col := int(position.x / TILE_SIZE)
         var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
+        _report_grid_cell(maze, col, row)
         var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
         var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
         path_update_timer += int(delta_ms)
@@ -599,61 +602,11 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 var step_now: float = step_size
                 var dest_x: float = position.x + move_dx * step_now
                 var dest_y: float = position.y + move_dy * step_now
-                # FIX (attraversamento muri - SPRITE-AWARE wall check DIREZIONALE):
-                # Il check precedente controllava solo la cella di dest.
-                # Ma lo sprite (64px) estende 32px OLTRE la posizione del
-                # nemico. Se il nemico è a x=1850 (cella 28, centro 1824) e
-                # muove a destra verso il muro (col 29 a x=1856), lo sprite
-                # estende a 1882 → 26px dentro il muro. Il vecchio check
-                # dest_col = int(1850/64) = 28 (cella corrente) → NON blocca.
-                # Fix: controlla il bordo dello sprite NELLA DIREZIONE di
-                # movimento. Se muove a destra, controlla il bordo DESTRO
-                # (dest_x + 32). Se muove a sinistra, controlla il bordo
-                # SINISTRO. Se muove giù, controlla il bordo INFERIORE. Se
-                # muove su, controlla il bordo SUPERIORE.
-                # NON controllare i bordi perpendicolari: in un corridoio
-                # (muri sopra/sotto), lo sprite estende nei muri perpendicolari
-                # ma questo è OK (il corridoio è stretto). Lo snap
-                # perpendicolare garantisce che il nemico sia al centro
-                # sull'asse perpendicolare, minimizzando l'overlap.
-                const SPRITE_HALF: float = 31.0  # target_size/2 = 62/2, 1px margine
-                var dest_col: int = int(dest_x / TILE_SIZE)
-                var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
+                # Check the full sprite footprint instead of only the leading
+                # edge; one symmetric rule covers all four movement directions.
                 var cur_col: int = int(position.x / TILE_SIZE)
                 var cur_row: int = int((position.y - UI_HEIGHT) / TILE_SIZE)
-                dest_col = clampi(dest_col, 0, MAZE_COLS - 1)
-                dest_row = clampi(dest_row, 0, MAZE_ROWS - 1)
-                var _blocked_by_wall: bool = false
-                # Check cella di dest (come prima)
-                if dest_col != cur_col or dest_row != cur_row:
-                        if maze.is_wall(dest_col, dest_row):
-                                _blocked_by_wall = true
-                # Check bordo sprite NELLA DIREZIONE di movimento.
-                # Usa -1.0 di tolleranza: il bordo a x=1856.0 (esattamente
-                # sul confine) NON è considerato dentro il muro (solo se
-                # va OLTRE il confine).
-                if not _blocked_by_wall:
-                        if move_dx > 0:
-                                # Movimento a destra: controlla bordo destro
-                                var edge_col = clampi(int((dest_x + SPRITE_HALF - 1.0) / TILE_SIZE), 0, MAZE_COLS - 1)
-                                if edge_col != cur_col and maze.is_wall(edge_col, cur_row):
-                                        _blocked_by_wall = true
-                        elif move_dx < 0:
-                                # Movimento a sinistra: controlla bordo sinistro
-                                var edge_col = clampi(int((dest_x - SPRITE_HALF) / TILE_SIZE), 0, MAZE_COLS - 1)
-                                if edge_col != cur_col and maze.is_wall(edge_col, cur_row):
-                                        _blocked_by_wall = true
-                        elif move_dy > 0:
-                                # Movimento giù: controlla bordo inferiore
-                                var edge_row = clampi(int((dest_y + SPRITE_HALF - 1.0 - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
-                                if edge_row != cur_row and maze.is_wall(cur_col, edge_row):
-                                        _blocked_by_wall = true
-                        elif move_dy < 0:
-                                # Movimento su: controlla bordo superiore
-                                var edge_row = clampi(int((dest_y - SPRITE_HALF - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
-                                if edge_row != cur_row and maze.is_wall(cur_col, edge_row):
-                                        _blocked_by_wall = true
-                if not _blocked_by_wall:
+                if can_occupy_position(maze, Vector2(dest_x, dest_y)):
                         position.x = dest_x
                         position.y = dest_y
                 else:
@@ -757,6 +710,33 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
 
         # Trigger redraw so the sprite animation updates each frame.
         queue_redraw()
+
+
+func can_occupy_position(maze: Object, candidate: Vector2) -> bool:
+        const SPRITE_HALF: float = 31.0
+        const EDGE_EPSILON: float = 0.001
+        var left_col: int = floori((candidate.x - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
+        var right_col: int = floori((candidate.x + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
+        var top_row: int = floori((candidate.y - UI_HEIGHT - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
+        var bottom_row: int = floori((candidate.y - UI_HEIGHT + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
+        for col in range(left_col, right_col + 1):
+                for row in range(top_row, bottom_row + 1):
+                        if maze.is_wall(col, row):
+                                return false
+        return true
+
+
+func _report_grid_cell(maze: Object, col: int, row: int) -> void:
+        if not OS.is_debug_build() or type != EnemyType.PREDATOR_FUNGUS:
+                return
+        var cell := Vector2i(col, row)
+        if cell == _last_grid_cell_report:
+                return
+        _last_grid_cell_report = cell
+        print("[EnemyGrid] Predator Fungus cell=%s type=%d is_wall=%s position=%s" % [
+                str(cell), maze.get_cell_type(col, row), str(maze.is_wall(col, row)),
+                str(maze.to_local(global_position))
+        ])
 
 
 # ===========================================================================
@@ -1235,18 +1215,9 @@ func _draw_sprite_frame() -> void:
         # adiacenti (spesso muri). Al cambio direzione vicino a un muro,
         # questo overlap era particolarmente visibile → percepito come
         # "attraversamento muro".
-        # FIX: target_size = 64 (identica alla cella). Lo sprite sta
-        # ESATTAMENTE dentro la cella quando il nemico è al centro. Il
-        # content dei mostri (massimo 59px di larghezza per monster_019)
-        # sta dentro i 64px dello sprite con 2.5px di margine per lato.
-        # Quando il nemico è al centro cella: ZERO overlap con muri.
-        # Quando è decentrato (transizione): overlap = offset, ridotto a
-        # 2-4 frame dallo snap veloce (8px/frame).
-        # FIX: target_size = 62 (non 64). Con 64px, lo sprite al centro cella
-        # estende esattamente al confine (x=center+32=cell_boundary). int() mette
-        # quel pixel nella cella adiacente (muro). Con 62px, lo sprite estende a
-        # center+31 (1px dentro la cella corrente), NON tocca la cella-muro.
-        var target_size: float = 64.0
+        # Match the 31px collision half-extent; 64px rendered 1px beyond it
+        # and allowed the sprite corner to overlap a diagonal wall on turns.
+        var target_size: float = 62.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0
@@ -1292,6 +1263,7 @@ func _draw_sprite_frame() -> void:
                 if _maze_ref.is_wall(_col, _row + 1):
                         _max_y = _cell_bot - position.y - th
                 draw_pos.y = clampf(draw_pos.y, _min_y, _max_y)
+                _report_rendered_wall_overlap(draw_pos, tw, th)
         # Flip horizontally if facing left (dx < 0).
         # FIX (scheletro ruota a sinistra): il quinto parametro di
         # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
@@ -1313,16 +1285,41 @@ func _draw_sprite_frame() -> void:
                 draw_texture_rect(at, dest_rect, false)
 
 
+func _report_rendered_wall_overlap(draw_pos: Vector2, width: float, height: float) -> void:
+        if not OS.is_debug_build() or not (_maze_ref is Node2D):
+                return
+        var maze_node := _maze_ref as Node2D
+        var maze_pos: Vector2 = maze_node.to_local(to_global(draw_pos))
+        var left_col: int = floori(maze_pos.x / TILE_SIZE)
+        var right_col: int = floori((maze_pos.x + width - 0.001) / TILE_SIZE)
+        var top_row: int = floori((maze_pos.y - UI_HEIGHT) / TILE_SIZE)
+        var bottom_row: int = floori((maze_pos.y + height - 0.001 - UI_HEIGHT) / TILE_SIZE)
+        var overlapping_walls: Array[Vector2i] = []
+        for col in range(left_col, right_col + 1):
+                for row in range(top_row, bottom_row + 1):
+                        if _maze_ref.is_wall(col, row):
+                                overlapping_walls.append(Vector2i(col, row))
+        if overlapping_walls.is_empty():
+                _last_wall_overlap_report = ""
+                return
+        var report_key: String = str(overlapping_walls)
+        if report_key != _last_wall_overlap_report:
+                push_warning(
+                        "[Enemy] Rendered sprite overlaps wall cell(s) %s; global_position=%s, maze_position=%s, sprite_rect=%s" % [
+                                report_key, str(global_position), str(maze_node.to_local(global_position)),
+                                str(Rect2(maze_pos, Vector2(width, height)))
+                        ])
+                _last_wall_overlap_report = report_key
+
+
 # Update the DeformableSprite's animation mode based on current state.
 # Priority: death > attack > walk > idle (mirrors C++ Enemy::draw).
 func _update_deform_sprite_animation() -> void:
         if _deform_sprite == null:
                 return
         var mode: int = DeformableSprite.AnimMode.IDLE
-        # FIX (nemici piccoli): scale 1.125 (64*1.125=72px) per renderli
-        # più visibili. Era 0.88 (56px), poi 1.3 (83px, copriva muri).
-        # 1.125 = 72px = ottimo compromesso visibilità/sovrapposizione.
-        var scale_val: float = 1.125
+        # Keep the deformed sprite within the 64px maze cell, like the fallback.
+        var scale_val: float = 62.0 / 64.0
         var flipped: bool = dx < 0
         if is_dying():
                 # DeformableSprite has no "death" mode; use IDLE with a fade-out

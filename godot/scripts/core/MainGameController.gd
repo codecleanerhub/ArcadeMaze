@@ -703,8 +703,12 @@ func _update_playing(delta_ms: float) -> void:
                         if dist_sq < 1024.0 and dist_sq > 0.01:  # 32px radius
                                 var dist: float = sqrt(dist_sq)
                                 var push: Vector2 = (diff / dist) * 1.0
-                                e1.position += push
-                                e2.position -= push
+                                var e1_position: Vector2 = e1.position + push
+                                var e2_position: Vector2 = e2.position - push
+                                if e1.can_occupy_position(maze, e1_position):
+                                        e1.position = e1_position
+                                if e2.can_occupy_position(maze, e2_position):
+                                        e2.position = e2_position
 
         # (3) Spawn enemy projectiles as Projectile nodes so they get rendered + collide
         for proj_data in enemy_projectiles:

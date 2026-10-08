@@ -85,7 +85,6 @@ var dx: int = 1
 var dy: int = 1
 
 # Timers (in ms, decremented each frame; matches C++).
-var path_update_timer_ms: int = 0
 var attack_cooldown_ms: int = 0
 var attacking_timer_ms: int = 0
 var dying_timer_ms: int = 0
@@ -424,24 +423,23 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
                 return
 
         # Decrement timers.
-        if path_update_timer_ms > 0:
-                path_update_timer_ms = maxi(0, path_update_timer_ms - delta_ms)
         if attack_cooldown_ms > 0:
                 attack_cooldown_ms = maxi(0, attack_cooldown_ms - delta_ms)
         if attacking_timer_ms > 0:
                 attacking_timer_ms = maxi(0, attacking_timer_ms - delta_ms)
 
         # Pathfinding / movement.
-        var need_repath := path_update_timer_ms == 0
+        var need_repath := not has_target
         if has_target:
                 var d := target_pos - pos
-                if d.length_squared() < 4.0:
+                if d.length() <= float(speed):
+                        pos = target_pos
+                        has_target = false
                         need_repath = true
 
         if need_repath:
-                path_update_timer_ms = 300
-                var my_grid := Vector2i(int(pos.x) / TILE_SIZE,
-                                                           int((pos.y - UI_HEIGHT)) / TILE_SIZE)
+                var my_grid := Vector2i(floori(pos.x / TILE_SIZE),
+                                                           floori((pos.y - UI_HEIGHT) / TILE_SIZE))
                 if flee_mode:
                         _flee_greedy(player_grid_pos)
                 else:
@@ -451,51 +449,25 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
                                                                          next.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
                                 has_target = true
                                 var mv := target_pos - pos
-                                if mv.x > 0.1:  dx = 1
-                                elif mv.x < -0.1: dx = -1
-                                if mv.y > 0.1:  dy = 1
-                                elif mv.y < -0.1: dy = -1
+                                dx = int(signf(mv.x))
+                                dy = int(signf(mv.y))
                         else:
                                 _move_greedy(player_grid_pos)
-                                has_target = false
 
-        # Apply movement every frame (smooth).
+        # Follow cell-center waypoints one axis at a time. Repathing mid-cell
+        # can otherwise create a diagonal turn that cuts through a wall corner.
         if has_target and speed > 0:
                 var mv := target_pos - pos
-                var dist := mv.length()
-                if dist > 0.5:
-                        pos += (mv / dist) * float(speed)
-                # FIX (miniboss PNG finisce nel muro): clamp di sicurezza per
-                # evitare che il miniboss si sovrapponga ai muri. Se la posizione
-                # corrente cade in una cella WALL, riporta il miniboss al centro
-                # della cella corrente (cella vuota più vicina). Mirror del
-                # safety clamp di Enemy.gd riga 503-533.
-                var clamp_col: int = int(pos.x / TILE_SIZE)
-                var clamp_row: int = int((pos.y - UI_HEIGHT) / TILE_SIZE)
-                if clamp_col > 0 and clamp_col < MAZE_COLS - 1 \
-                                and clamp_row > 0 and clamp_row < MAZE_ROWS - 1:
-                        if maze.is_wall(clamp_col, clamp_row):
-                                # Il miniboss è finito in un muro. Cerca la cella
-                                # vuota più vicina (radius 1-3) e snap al centro.
-                                for snap_radius in range(1, 4):
-                                        var found_safe: bool = false
-                                        for sdc in range(-snap_radius, snap_radius + 1):
-                                                for sdr in range(-snap_radius, snap_radius + 1):
-                                                        var nnc: int = clamp_col + sdc
-                                                        var nnr: int = clamp_row + sdr
-                                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
-                                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
-                                                                if not maze.is_wall(nnc, nnr):
-                                                                        pos = Vector2(
-                                                                                nnc * TILE_SIZE + TILE_SIZE / 2.0,
-                                                                                nnr * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
-                                                                        target_pos = pos
-                                                                        found_safe = true
-                                                                        break
-                                                if found_safe:
-                                                        break
-                                        if found_safe:
-                                                break
+                var step := Vector2.ZERO
+                if absf(mv.x) > 0.5:
+                        step.x = signf(mv.x) * minf(float(speed), absf(mv.x))
+                elif absf(mv.y) > 0.5:
+                        step.y = signf(mv.y) * minf(float(speed), absf(mv.y))
+                var candidate := pos + step
+                if step != Vector2.ZERO and _can_occupy_position(candidate):
+                        pos = candidate
+                elif step != Vector2.ZERO:
+                        has_target = false
 
         # Meele attack.
         var atk_d := player_pixel_pos - pos
@@ -513,6 +485,20 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
         # bloccata su frame=0 idle. Mirror di Enemy.gd:504 (che chiama
         # queue_redraw() alla fine di update_enemy).
         queue_redraw()
+
+
+func _can_occupy_position(candidate: Vector2) -> bool:
+        const SPRITE_HALF: float = 31.0
+        const EDGE_EPSILON: float = 0.001
+        var left_col: int = floori((candidate.x - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
+        var right_col: int = floori((candidate.x + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
+        var top_row: int = floori((candidate.y - UI_HEIGHT - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
+        var bottom_row: int = floori((candidate.y - UI_HEIGHT + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
+        for col in range(left_col, right_col + 1):
+                for row in range(top_row, bottom_row + 1):
+                        if maze.is_wall(col, row):
+                                return false
+        return true
 
 
 # ============================================================
@@ -554,8 +540,8 @@ func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
 
 func _move_greedy(target_grid: Vector2i) -> void:
         var dirs: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
-        var my_col := int(pos.x) / TILE_SIZE
-        var my_row := int((pos.y - UI_HEIGHT)) / TILE_SIZE
+        var my_col := floori(pos.x / TILE_SIZE)
+        var my_row := floori((pos.y - UI_HEIGHT) / TILE_SIZE)
         var best_dist := absi(target_grid.x - my_col) + absi(target_grid.y - my_row)
         var best_dx := 0
         var best_dy := 0
@@ -571,18 +557,18 @@ func _move_greedy(target_grid: Vector2i) -> void:
                         best_dist = dist
                         best_dx = d.x
                         best_dy = d.y
-        pos.x += float(best_dx) * float(speed)
-        pos.y += float(best_dy) * float(speed)
-        if best_dx > 0:  dx = 1
-        elif best_dx < 0: dx = -1
-        if best_dy > 0:  dy = 1
-        elif best_dy < 0: dy = -1
+        if best_dx != 0 or best_dy != 0:
+                target_pos = Vector2((my_col + best_dx) * TILE_SIZE + TILE_SIZE / 2.0,
+                                                         (my_row + best_dy) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
+                has_target = true
+                dx = best_dx
+                dy = best_dy
 
 
 func _flee_greedy(target_grid: Vector2i) -> void:
         var dirs: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
-        var my_col := int(pos.x) / TILE_SIZE
-        var my_row := int((pos.y - UI_HEIGHT)) / TILE_SIZE
+        var my_col := floori(pos.x / TILE_SIZE)
+        var my_row := floori((pos.y - UI_HEIGHT) / TILE_SIZE)
         var cur_dist := absi(target_grid.x - my_col) + absi(target_grid.y - my_row)
         var best_dist := cur_dist
         var best_dx := 0
