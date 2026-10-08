@@ -28,8 +28,9 @@ const C = preload("res://scripts/core/GameConstants.gd")
 
 # --- Grid constants (mirror Utils.h) ----------------------------------------
 const TILE_SIZE: int = 64
-# FIX (labirinto troppo stretto): allineato con GameConstants (TILE_SIZE=64)
-const MAZE_COLS: int = 30
+# FIX (doppio muro lato destro): allineato con GameConstants (31, dispari;
+# con 30 pari la colonna 28 restava sempre muro -> doppio muro destro).
+const MAZE_COLS: int = 31
 const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 

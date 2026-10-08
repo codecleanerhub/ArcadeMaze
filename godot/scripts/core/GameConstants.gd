@@ -33,8 +33,16 @@ class_name GameConstants
 const WINDOW_WIDTH: int = 1920
 const WINDOW_HEIGHT: int = 1080
 const TILE_SIZE: int = 64
-# FIX (doppio muro): 15 righe * 64 = 960 + 80 UI = 1040px (dentro 1080)
-const MAZE_COLS: int = 30
+# FIX (doppio muro lato destro): 31 colonne (DISPARI). Con 30 (pari) la DFS
+# con passo 2 (Maze._dfs_carve) scavava solo le colonne dispari 1..27: la
+# colonna 28 (pari) restava SEMPRE muro e, sommata alla colonna di bordo 29,
+# formava un doppio muro di 128px sull'intero lato destro in OGNI livello
+# (verificato con simulazione della generazione). Con 31 colonne tutte le
+# colonne interne dispari (1..29) sono scavabili; la colonna di bordo 30
+# finisce fuori schermo (31*64=1984 > 1920 viewport) e protegge comunque
+# il confine (is_wall la tratta come muro). Il labirinto resta a schermo
+# pieno con bordi SINGOLI su tutti i lati.
+const MAZE_COLS: int = 31
 const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 

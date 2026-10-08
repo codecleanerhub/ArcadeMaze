@@ -685,30 +685,16 @@ func _update_playing(delta_ms: float) -> void:
                         enemy.set_flee_mode(player_invuln)
                         enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles, delta_ms)
 
-        # FIX (scatti): separazione nemici-nemici per evitare stacking.
-        # Quando due nemici sono entro 32px si spingono di 1px per frame.
-        # Previene il "pop" divergente quando le BFS divergono su due nemici
-        # stackati sulla stessa cella, causa di scatti improvvisi.
-        var n_enemies: int = spawner.enemies.size()
-        for i in range(n_enemies):
-                var e1 = spawner.enemies[i]
-                if not (e1 is Enemy) or e1.is_death_anim_done() or e1.is_dying():
-                        continue
-                for j in range(i + 1, n_enemies):
-                        var e2 = spawner.enemies[j]
-                        if not (e2 is Enemy) or e2.is_death_anim_done() or e2.is_dying():
-                                continue
-                        var diff: Vector2 = e1.position - e2.position
-                        var dist_sq: float = diff.length_squared()
-                        if dist_sq < 1024.0 and dist_sq > 0.01:  # 32px radius
-                                var dist: float = sqrt(dist_sq)
-                                var push: Vector2 = (diff / dist) * 1.0
-                                var e1_position: Vector2 = e1.position + push
-                                var e2_position: Vector2 = e2.position - push
-                                if e1.can_occupy_position(maze, e1_position):
-                                        e1.position = e1_position
-                                if e2.can_occupy_position(maze, e2_position):
-                                        e2.position = e2_position
+        # FIX (deriva fuori asse -> compenetrazione muri): RIMOSSA la
+        # separazione nemici-nemici (push di 1px/frame entro 32px). Il push
+        # spostava i nemici FUORI dalla linea centrale dei corridoi, rompendo
+        # l'invariante del movimento grid-locked (vedi Enemy.update_enemy):
+        # lo sprite usciva dal corridoio e compenetrava i muri, e i "fix" a
+        # cascata (clamp di rendering, snap, teleport) generavano gli scatti.
+        # Nel C++ originale i nemici si sovrappongono liberamente (come i
+        # fantasmi di Pac-Man): due nemici sulla stessa cella divergono
+        # naturalmente al centro cella successivo se il BFS dà direzioni
+        # diverse, quindi la separazione non serve e fa solo danno.
 
         # (3) Spawn enemy projectiles as Projectile nodes so they get rendered + collide
         for proj_data in enemy_projectiles:

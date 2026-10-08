@@ -61,8 +61,10 @@ enum Weapon {
 
 # Constants (must match C++ Utils.h)
 const TILE_SIZE := 64
-const MAZE_COLS := 40
-const MAZE_ROWS := 22
+# FIX (costanti stale): erano 40/22 (layout vecchio 40x22 del maze). Allineate
+# a GameConstants (31x15, vedi fix doppio muro lato destro in GameConstants).
+const MAZE_COLS := 31
+const MAZE_ROWS := 15
 const UI_HEIGHT := 80
 const WINDOW_WIDTH := 1920
 const WINDOW_HEIGHT := 1080

@@ -15,13 +15,10 @@ class_name KnightAlly
 
 const TILE_SIZE: int = 64
 const UI_HEIGHT: int = 80
-# FIX (unicorno si ferma): MAZE_COLS/ROWS erano stale (40x22) ma il maze
-# attuale è 30x15 (vedi GameConstants.gd). Con valori stale, il safety
-# clamp cercava celle fino a col=39/row=21, ma il maze reale è 30x15.
-# Inoltre, la BFS usa GameConstants (30x15), quindi se l'unicorno è in
-# una cella oltre col=29/row=14, la BFS la considera out-of-bounds e
-# non trova path → l'unicorno si ferma. Allineiamo a GameConstants.
-const MAZE_COLS: int = 30
+# FIX (costanti allineate a GameConstants, 31x15): in precedenza erano stale
+# (40x22, poi 30x15 con COLS pari -> doppio muro destro, vedi GameConstants).
+# FIX (doppio muro lato destro): allineato a GameConstants (31, dispari).
+const MAZE_COLS: int = 31
 const MAZE_ROWS: int = 15
 
 # --- Stats ---
@@ -179,24 +176,21 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                 if disappear_timer_ms <= 0:
                         disappear_timer_ms = 5000
                         print("[KnightAlly] No enemies found, disappear in 5s")
-        # Movement: solo se c'è un nemico da inseguire.
-        # FIX (AI unicorno aggira muri): usa BFS pathfinding come Enemy.gd.
-        # Ricalcola il path ogni 200ms o quando stuck/idle. Anti-tunneling
-        # wall check PRIMA di applicare il movimento.
-        # FIX (unicorno immobile): prima il calcolo direzione BFS era GATING
-        # sullo snap al centro cella — se l'unicorno NON era perfettamente al
-        # centro (es. posizione di spawn), non calcolava mai la direzione e
-        # restava immobile per sempre. Ora il calcolo BFS avviene SEMPRE
-        # (basato su timer), e il movimento è sempre applicato verso la
-        # direzione calcolata. Lo snap al centro è opzionale (migliora
-        # allineamento ma non blocca il movimento).
+        # FIX (compenetrazione muri + scatti): movimento GRID-LOCKED come
+        # Enemy.gd / C++ originale (vedi Enemy.update_enemy). La direzione è
+        # cambiata SOLO al centro cella (snap immediato di max step_size px),
+        # wall check point-based sulla cella successiva, movimento cardinale
+        # lungo la linea centrale dei corridoi. Rimossi: snap graduale non
+        # gating, BFS ricalcolato a metà cella e safety clamp con teleport
+        # (rompevano l'invariante della linea centrale -> compenetrazione
+        # muri percepita e scatti, le stesse cause dei nemici).
         if has_target:
                 var col := int(pos.x / TILE_SIZE)
                 var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
                 var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
                 var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
 
-                # Anti-stuck tracking (mirror Enemy.gd riga 365-371)
+                # Anti-stuck tracking (mirror Enemy.gd)
                 var dx_pos: float = pos.x - last_pos.x
                 var dy_pos: float = pos.y - last_pos.y
                 if dx_pos * dx_pos + dy_pos * dy_pos < 1.0:
@@ -205,104 +199,96 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                         stuck_timer = 0
                 last_pos = pos
 
-                # Force snap + recalc se stuck > 500ms (mirror Enemy.gd riga 378)
-                if stuck_timer > 500:
-                        stuck_timer = 0
-                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                # Step size frame-rate independent (mirror Enemy.gd)
+                var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
+                path_update_timer += delta_ms
+
+                # Direzione decisa SOLO al centro cella (snap immediato).
+                if absf(pos.x - center_x) < step_size \
+                                and absf(pos.y - center_y) < step_size:
                         pos = Vector2(center_x, center_y)
+
+                        # Force recalc on: timer expiry, idle, stuck.
+                        var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
+                                        or (current_dir.x == 0 and current_dir.y == 0) \
+                                        or (stuck_timer > STUCK_THRESHOLD_MS)
+                        if must_recompute and maze != null:
+                                path_update_timer = 0
+                                var target_col: int = int(chase_pos.x / TILE_SIZE)
+                                var target_row: int = int((chase_pos.y - UI_HEIGHT) / TILE_SIZE)
+                                var start_cell: Vector2i = Vector2i(col, row)
+                                var target_cell: Vector2i = Vector2i(target_col, target_row)
+                                # FIX: se start == target, è già sulla cella del target
+                                if start_cell == target_cell:
+                                        current_dir = Vector2i.ZERO
+                                else:
+                                        var next_step: Vector2i = BFS.find_path(
+                                                maze, start_cell, target_cell)
+                                        # BFS ritorna (-1, -1) se nessun path
+                                        if next_step.x >= 0 and next_step.y >= 0:
+                                                current_dir = Vector2i(
+                                                                next_step.x - col, next_step.y - row)
+                                                stuck_timer = 0
+                                        else:
+                                                # Nessun path (nemico irraggiungibile) — idle
+                                                current_dir = Vector2i.ZERO
+
+                        # Wall check point-based al centro (mai a metà cella).
+                        if current_dir.x != 0 or current_dir.y != 0:
+                                if maze.is_wall(col + current_dir.x, row + current_dir.y):
+                                        current_dir = Vector2i.ZERO
+                elif current_dir.x == 0 and current_dir.y == 0:
+                        # Fermo ma decentrato (stato anomalo): recovery al centro.
+                        pos = pos.move_toward(Vector2(center_x, center_y), step_size)
                         last_pos = pos
 
-                # Step size frame-rate independent (mirror Enemy.gd riga 389)
-                var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
-                var snap_threshold: float = max(float(speed), step_size)
+                # Movimento cardinale lungo la linea centrale.
+                pos.x += current_dir.x * step_size
+                pos.y += current_dir.y * step_size
 
-                # Snap graduale al centro cella (opzionale, non gating)
-                if absf(pos.x - center_x) < snap_threshold \
-                                and absf(pos.y - center_y) < snap_threshold:
-                        pos = Vector2(center_x, center_y)
+                # Correzione "rotaia" (no-op ESATTO se già in asse): riallinea
+                # l'asse perpendicolare alla marcia -> invariante auto-riparante.
+                if current_dir.x != 0 and current_dir.y == 0:
+                        pos.y = move_toward(pos.y, center_y, step_size)
+                elif current_dir.y != 0 and current_dir.x == 0:
+                        pos.x = move_toward(pos.x, center_x, step_size)
 
-                # Force recalc on: timer expiry, idle, stuck (SEMPRE, non gating)
-                path_update_timer += delta_ms
-                var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
-                                or (current_dir.x == 0 and current_dir.y == 0) \
-                                or (stuck_timer > STUCK_THRESHOLD_MS)
-                if must_recompute and maze != null:
-                        path_update_timer = 0
-                        var target_col: int = int(chase_pos.x / TILE_SIZE)
-                        var target_row: int = int((chase_pos.y - UI_HEIGHT) / TILE_SIZE)
-                        var start_cell: Vector2i = Vector2i(col, row)
-                        var target_cell: Vector2i = Vector2i(target_col, target_row)
-                        # FIX: se start == target, il nemico è già sulla cella del target
-                        if start_cell == target_cell:
-                                current_dir = Vector2i.ZERO
-                        else:
-                                var next_step: Vector2i = BFS.find_path(
-                                        maze, start_cell, target_cell)
-                                # BFS ritorna (-1, -1) se nessun path
-                                if next_step.x >= 0 and next_step.y >= 0:
-                                        current_dir = Vector2i(
-                                                next_step.x - col, next_step.y - row)
-                                        stuck_timer = 0
-                                else:
-                                        # Nessun path (nemico irraggiungibile) — idle
-                                        current_dir = Vector2i.ZERO
-
-                # Safety: se la cella avanti è diventata muro, reset
+                # Aggiorna la direzione visiva per lo sprite (flip).
                 if current_dir.x != 0 or current_dir.y != 0:
-                        if maze.is_wall(col + current_dir.x, row + current_dir.y):
-                                current_dir = Vector2i.ZERO
-
-                # Applica movimento (anti-tunneling wall check, mirror Enemy.gd)
-                if current_dir.x != 0 or current_dir.y != 0:
-                        var dest_x: float = pos.x + current_dir.x * step_size
-                        var dest_y: float = pos.y + current_dir.y * step_size
-                        var dest_col: int = int(dest_x / TILE_SIZE)
-                        var dest_row: int = int((dest_y - UI_HEIGHT) / TILE_SIZE)
-                        if not maze.is_wall(dest_col, dest_row):
-                                dx = current_dir.x
-                                dy = current_dir.y
-                                if dx != 0:
-                                        last_dx = dx
-                                pos = Vector2(dest_x, dest_y)
-                        else:
-                                # Destinazione muro: NON muovere, forza recalc
-                                current_dir = Vector2i.ZERO
-                                path_update_timer = PATH_RECALC_INTERVAL_MS
-                                stuck_timer = STUCK_THRESHOLD_MS + 1
+                        dx = current_dir.x
+                        dy = current_dir.y
+                        if dx != 0:
+                                last_dx = dx
                 else:
                         dx = 0
                         dy = 0
 
-                # FIX (unicorno attraversa muri): safety clamp finale. Se nonostante
-                # i check precedenti l'unicorno è finito in una cella WALL, riportalo
-                # al centro della cella corrente. Questo previene tunneling in
-                # caso di race condition o glitch.
-                var final_col: int = int(pos.x / TILE_SIZE)
-                var final_row: int = int((pos.y - UI_HEIGHT) / TILE_SIZE)
-                if final_col > 0 and final_col < MAZE_COLS - 1 \
-                                and final_row > 0 and final_row < MAZE_ROWS - 1:
-                        if maze.is_wall(final_col, final_row):
-                                # Snap al centro della cella vuota più vicina
-                                for snap_radius in range(1, 4):
-                                        var found_safe: bool = false
-                                        for sdc in range(-snap_radius, snap_radius + 1):
-                                                for sdr in range(-snap_radius, snap_radius + 1):
-                                                        var nnc: int = final_col + sdc
-                                                        var nnr: int = final_row + sdr
-                                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
-                                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
-                                                                if not maze.is_wall(nnc, nnr):
-                                                                        pos = Vector2(
+                # Safety clamp (ultima difesa): se la cella corrente è WALL
+                # (stato invalido), teleport al centro della cella aperta più
+                # vicina. Con il movimento grid-locked non dovrebbe attivarsi.
+                var final_col: int = clampi(int(pos.x / TILE_SIZE), 0, MAZE_COLS - 1)
+                var final_row: int = clampi(int((pos.y - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
+                if maze.is_wall(final_col, final_row):
+                        for snap_radius in range(1, 4):
+                                var found_safe: bool = false
+                                for sdc in range(-snap_radius, snap_radius + 1):
+                                        for sdr in range(-snap_radius, snap_radius + 1):
+                                                var nnc: int = final_col + sdc
+                                                var nnr: int = final_row + sdr
+                                                if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                                and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                        if not maze.is_wall(nnc, nnr):
+                                                                pos = Vector2(
                                                                                 nnc * TILE_SIZE + TILE_SIZE / 2.0,
                                                                                 nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
-                                                                        current_dir = Vector2i.ZERO
-                                                                        path_update_timer = PATH_RECALC_INTERVAL_MS
-                                                                        found_safe = true
-                                                                        break
-                                                if found_safe:
-                                                        break
-                                        if found_safe:
-                                                break
+                                                                current_dir = Vector2i.ZERO
+                                                                path_update_timer = PATH_RECALC_INTERVAL_MS
+                                                                found_safe = true
+                                                                break
+                                if found_safe:
+                                        break
+                        if found_safe:
+                                break
 
         # Shoot at closest enemy in range — UN colpo alla volta, solo con linea di vista.
         # FIX (richiesta utente): l'unicorno ha 3 colpi totali.
