@@ -1165,15 +1165,11 @@ func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
                         if GameManager and GameManager.music_enabled:
                                 AudioManager.play_level_music(current_level, false)
                 return
-        p.invincible_timer = max(0, p.invincible_timer - int(delta_ms))
-        if p.invincible_timer <= 0:
-                # FIX (musica calice): ferma la musica epic quando l'effetto
-                # del calice termina (15 secondi)
-                if AudioManager:
-                        AudioManager.stop_epic_music()
-                        if GameManager and GameManager.music_enabled:
-                                AudioManager.play_level_music(current_level, false)
-                return
+        # FIX (calice durava la metà): il timer viene già bruciato UNA volta
+        # per frame da Player.update_player (riga ~438, mirror del C++
+        # Player.cpp). Il decremento qui sotto lo bruciava una SECONDA volta
+        # (32ms/frame = durata dimezzata: 25s effettivi ~12.5s). Rimosso:
+        # qui ci si limita a bruciare i nemici finché il timer è > 0.
         var p_pos: Vector2 = p.get_pixel_pos()
         for enemy in spawner.enemies:
                 if enemy.is_dead() or enemy.is_dying() or enemy.is_burning():

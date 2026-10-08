@@ -7,7 +7,12 @@
 ##
 ## Each kind of item is a small Node2D with its own update/render logic.
 ## The Game scene instantiates them as needed and calls `update_step()`
-## each frame; the player's collision logic queries `active` and `pos`.
+## each frame. **Pickup collision is owned ENTIRELY by MainGameController**
+## (`_update_collectibles`, radius dist^2 < 400), mirroring the single
+## centralized check in the original C++ Game::update — the item itself
+## must NOT self-collect (FIX: the old 16px self-check silently deactivated
+## items with zero effects when the player jumped inside its radius in one
+## frame, e.g. the stop-and-resume snap-to-cell-center teleport).
 extends Node2D
 class_name Collectibles
 
@@ -127,8 +132,9 @@ func _apply_kind_defaults() -> void:
 # =========================================================
 # Update step (delta_ms ≈ 16ms per frame at 60fps)
 # =========================================================
-# `player_pos` is the pixel position of the active player (P1) for collision
-# detection. Set by the Game. For 2P, call twice (once per player).
+# `player_pos` is kept for API compatibility (unused: no self-collision —
+# the controller owns pickup detection). Set by the Game. For 2P, call
+# twice (once per player).
 func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void:
         if not active:
                 return
@@ -158,14 +164,16 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                 Kind.DYNAMITE:
                         pass  # only anim
 
-        # Collision: 16px radius for small items, 24px for the door/portal.
-        var coll_radius := 16.0
-        if kind == Kind.EXIT_DOOR or kind == Kind.MAGIC_PORTAL:
-                coll_radius = 24.0
-        elif kind == Kind.MINE:
-                coll_radius = 12.0
-        if active and pos.distance_to(player_pos) <= coll_radius:
-                _on_collected(player_id)
+        # FIX (calice non raccoglibile): RIMOSSA la self-collision a 16px.
+        # Era un duplicato più piccolo del check del controller (20px) che
+        # girava PRIMA di esso: se il player entrava nel raggio 16px in un
+        # solo frame (es. snap al centro cella da fermo, riga 477 di
+        # Player.gd, o qualunque teletrasporto), l'item si disattivava qui
+        # con ZERO effetti (il segnale `collected` non è connesso a nulla!)
+        # e il controller saltava il pickup per via del `if not active:
+        # continue`. Il calice spariva senza invincibilità, punteggio o
+        # suono. Il controller è l'unica autorità di pickup, come nel C++
+        # originale (Game.cpp: dist^2 < 500 in un unico punto).
 
 
 # =========================================================
@@ -284,62 +292,6 @@ func start_open_animation() -> void:
         if kind == Kind.EXIT_DOOR:
                 active = true
                 door_anim_timer_ms = 800
-
-
-# =========================================================
-# Collision callback
-# =========================================================
-func _on_collected(player_id: int) -> void:
-        match kind:
-                Kind.MINE:
-                        # Mine activates on touch: starts bouncing in a random
-                        # direction at FAST speed (8 px/frame ≈ 480 px/s).
-                        # The Game's collision logic detects enemy hits during
-                        # the bounce; after bounce_timer expires (7s) the mine
-                        # deactivates.
-                        # FIX (bomba a ricerca): speed 4 -> 8 (veloce, richiesta utente)
-                        # FIX (bomba a ricerca): durata 1500ms -> 7000ms (7s, richiesta utente)
-                        # FIX (bomba a ricerca): la direzione viene continuamente
-                        # aggiornata dal BFS homing in _check_mine_vs_enemies
-                        # per seguire il labirinto fino al nemico più vicino.
-                        if not bouncing:
-                                var ang := randf() * TAU
-                                start_bounce(Vector2(cos(ang), sin(ang)) * 8.0, 7000)
-                Kind.CHALICE:
-                        active = false
-                        collected.emit(self, player_id)
-                Kind.SCEPTER:
-                        # Don't deactivate yet — scepter has 5 strikes to fire.
-                        trigger_scepter()
-                        collected.emit(self, player_id)
-                Kind.SPEED_BOOTS:
-                        consume_boots(player_id)
-                        collected.emit(self, player_id)
-                Kind.TREASURE:
-                        active = false
-                        collected.emit(self, player_id)
-                Kind.EXIT_DOOR:
-                        # Door activation is handled by Game (level transition).
-                        collected.emit(self, player_id)
-                Kind.MAGIC_PORTAL:
-                        # Portal is not collectible.
-                        pass
-                Kind.MEDIKIT:
-                        # FIX (nuova meccanica): rigenera 1 punto vita del player.
-                        # La logica effettiva (heal + sound) è in MainGameController.
-                        active = false
-                        collected.emit(self, player_id)
-                Kind.KNIGHT_STATUE:
-                        # FIX (nuova meccanica): evoca cavaliere alleato.
-                        # La logica effettiva (spawn + AI) è in MainGameController.
-                        active = false
-                        collected.emit(self, player_id)
-                Kind.DYNAMITE:
-                        # FIX (nuova meccanica): candelotto di dinamite.
-                        # La logica (accensione miccia + equip + timer) è in
-                        # MainGameController. Item scompare subito.
-                        active = false
-                        collected.emit(self, player_id)
 
 
 # =========================================================
