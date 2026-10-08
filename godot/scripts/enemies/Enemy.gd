@@ -395,6 +395,10 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         path_update_timer += int(delta_ms)
         anim_time += int(delta_ms)
 
+        # FIX (scatti): definiamo step_size PRIMA del stuck timer che lo usa.
+        var step_size: float = float(speed) * (delta_ms / 16.6667)
+        var snap_threshold: float = max(float(speed), step_size)
+
         # --- Anti-stuck tracking (line 402-415) ---
         # If the enemy barely moved (<1 px) since last frame, accumulate the
         # stuck timer; otherwise reset. When it exceeds STUCK_THRESHOLD_MS we
@@ -414,14 +418,15 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # vuota più vicina che creava il movimento a scatti percepito.
         if stuck_timer > 500:
                 stuck_timer = 0
-                path_update_timer = PATH_RECALC_INTERVAL_MS  # trigger must_recompute
-                position.x = col * TILE_SIZE + TILE_SIZE / 2.0
-                position.y = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                path_update_timer = PATH_RECALC_INTERVAL_MS
+                # FIX (scatti): snap GRADUALE invece di teleport immediato.
+                var _stk_spd: float = max(step_size * 2.0, 4.0)
+                position.x = move_toward(position.x, center_x, _stk_spd)
+                position.y = move_toward(position.y, center_y, _stk_spd)
                 last_pos = position
 
         # When close enough to cell centre, snap and try to recalc direction.
-        var step_size: float = float(speed) * (delta_ms / 16.6667)
-        var snap_threshold: float = max(float(speed), step_size)
+        # step_size e snap_threshold già definiti sopra (prima del stuck timer).
         # FIX (nemici disallineati + no melee + no hit proiettili + attraverso muri al cambio direzione):
         # Allinea SEMPRE l'asse perpendicolare alla direzione di movimento
         # al centro della cella.
@@ -440,31 +445,26 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # 1 frame: il salto è massimo 32px (mezza cella) e avviene solo
         # quando il nemico si ferma (raro), quindi non è percepito come
         # "scatto" continuo.
+        # FIX (scatti): TUTTI gli snap sono ora GRADUALI con move_toward.
+        # Prima erano IMMEDIATI (position = center) → salti visibili (scatti).
+        # Il rendering clamp (in _draw_sprite_frame) previene l'overlap
+        # visivo con i muri durante lo snap graduale, quindi non c'è
+        # più bisogno del teleport immediato.
+        var _snap_spd: float = max(step_size * 2.0, 4.0)
         if dx == 0 and dy == 0:
-                # Fermo: snap IMMEDIATO al centro cella entrambi gli assi.
-                if absf(position.x - center_x) > 0.5 \
-                                or absf(position.y - center_y) > 0.5:
-                        position.x = center_x
-                        position.y = center_y
-        elif dx == 0 and dy != 0:
-                # FIX (attraversamento muri al cambio direzione destra/sinistra):
-                # Movimento verticale: snap X IMMEDIATO al centro cella.
-                # Prima era 8px/frame (graduale), il che lasciava il nemico
-                # decentrato in X per 2-4 frame durante il movimento verticale
-                # → lo sprite (64px) overlapava il muro adiacente (cella a
-                # destra o sinistra) per quei frame → percepito come
-                # "attraversamento muro al cambio direzione". Ora teleporta
-                # X al centro in 1 frame. Il salto è massimo 32px (mezza
-                # cella) e avviene solo quando il nemico cambia direzione
-                # (raro), non a ogni frame.
+                # Fermo: snap graduale entrambi gli assi al centro cella.
                 if absf(position.x - center_x) > 0.5:
-                        position.x = center_x
-        elif dx != 0 and dy == 0:
-                # FIX:Movimento orizzontale: snap Y IMMEDIATO al centro cella.
-                # Stessa logica del caso verticale: previene overlap con
-                # muri sopra/sotto durante il movimento orizzontale.
+                        position.x = move_toward(position.x, center_x, _snap_spd)
                 if absf(position.y - center_y) > 0.5:
-                        position.y = center_y
+                        position.y = move_toward(position.y, center_y, _snap_spd)
+        elif dx == 0 and dy != 0:
+                # Movimento verticale: snap graduale X al centro cella.
+                if absf(position.x - center_x) > 0.5:
+                        position.x = move_toward(position.x, center_x, _snap_spd)
+        elif dx != 0 and dy == 0:
+                # Movimento orizzontale: snap graduale Y al centro cella.
+                if absf(position.y - center_y) > 0.5:
+                        position.y = move_toward(position.y, center_y, _snap_spd)
 
         # Force path recompute on: timer expiry, idle, stuck, or flee flip.
         # SEMPRE eseguito, non gating su at_center.
@@ -551,33 +551,19 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # BFS recompute al prossimo frame. Tra i recomputation, current_valid
         # mantiene la direzione se valida (no muro avanti), prevenendo flip.
 
-        # Snap post-BFS (mantenuto)
-        # FIX (attraversamento muri al cambio direzione destra/sinistra - ROOT CAUSE DEFINITIVA):
-        # Lo snap perpendicolare PRIMA del BFS (linea 439-457) usa la VECCHIA
-        # direzione. Quando il BFS cambia direzione (es. da orizzontale a
-        # verticale), l'asse perpendicolare NUOVO (X per movimento verticale)
-        # NON viene snap-pato nello stesso frame → il nemico resta decentrato
-        # in X per 1 frame → lo sprite (64px) overlapava il muro adiacente.
-        # Fix: snap perpendicolare IMMEDIATO anche DOPO il wall check, usando
-        # la NUOVA direzione. Così, quando BFS cambia direzione, l'asse
-        # perpendicolare viene allineato al centro nello stesso frame.
+        # Snap post-BFS (graduale, non immediato)
+        # FIX (scatti): anche questo snap è GRADUALE come il pre-BFS.
         if dx == 0 and dy == 0:
-                # Fermo: snap IMMEDIATO al centro cella entrambi gli assi.
-                if absf(position.x - center_x) > 0.5 \
-                                or absf(position.y - center_y) > 0.5:
-                        position.x = center_x
-                        position.y = center_y
-        elif dx == 0 and dy != 0:
-                # Movimento verticale (NUOVA direzione): snap X IMMEDIATO.
-                # Questo è lo snap che mancava — prima del BFS lo snap era
-                # per il movimento orizzontale (Y), ma ora il nemico si
-                # muove verticalmente, quindi X deve essere al centro.
                 if absf(position.x - center_x) > 0.5:
-                        position.x = center_x
-        elif dx != 0 and dy == 0:
-                # Movimento orizzontale (NUOVA direzione): snap Y IMMEDIATO.
+                        position.x = move_toward(position.x, center_x, _snap_spd)
                 if absf(position.y - center_y) > 0.5:
-                        position.y = center_y
+                        position.y = move_toward(position.y, center_y, _snap_spd)
+        elif dx == 0 and dy != 0:
+                if absf(position.x - center_x) > 0.5:
+                        position.x = move_toward(position.x, center_x, _snap_spd)
+        elif dx != 0 and dy == 0:
+                if absf(position.y - center_y) > 0.5:
+                        position.y = move_toward(position.y, center_y, _snap_spd)
 
         # FIX (scatti): movimento scalato per delta_ms per frame-rate
         # independence. A 60 FPS step = speed (come prima). A 30 FPS step = speed/2.
@@ -610,8 +596,14 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         position.x = dest_x
                         position.y = dest_y
                 else:
-                        position.x = cur_col * TILE_SIZE + TILE_SIZE / 2.0
-                        position.y = cur_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                        # FIX (scatti): NON teletrasportare al centro cella.
+                        # Prima era position.x = cur_col * TILE_SIZE + ...
+                        # Questo causava un salto visibile (scatto) quando il
+                        # nemico veniva bloccato da un muro. Ora il nemico si
+                        # FERMA dove si trova (posizione valida, verificata
+                        # da can_occupy_position al frame precedente) e
+                        # richiede BFS recompute per trovare una nuova
+                        # direzione.
                         dx = 0
                         dy = 0
                         path_update_timer = PATH_RECALC_INTERVAL_MS
