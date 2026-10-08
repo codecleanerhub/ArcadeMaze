@@ -59,6 +59,12 @@ var path_update_timer: int = 0       # ms accumulator per BFS recalc
 var stuck_timer: int = 0             # anti-stuck detection (<1px mov -> accumula)
 var last_pos: Vector2 = Vector2.ZERO  # per stuck detection
 var current_dir: Vector2i = Vector2i.ZERO  # direzione BFS cached tra recalc
+# Waypoint corrente (centro della cella successiva), FISSATO alla decisione.
+# FIX (target che scivola): il target non va ricalcolato ogni frame dalla
+# cella corrente perche' al cambio colonna/riga a meta' transito scivola
+# avanti di una cella -> il centro intermedio non viene mai raggiunto ->
+# nessuna decisione/wall-check -> l'alleato entra nei muri.
+var _move_waypoint: Vector2 = Vector2.INF
 const PATH_RECALC_INTERVAL_MS: int = 200  # mirror Enemy.gd
 const STUCK_THRESHOLD_MS: int = 100       # mirror Enemy.gd
 
@@ -203,10 +209,19 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                 var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
                 path_update_timer += delta_ms
 
-                # Direzione decisa SOLO al centro cella (snap immediato).
-                if absf(pos.x - center_x) < step_size \
-                                and absf(pos.y - center_y) < step_size:
-                        pos = Vector2(center_x, center_y)
+                # Direzione decisa SOLO da fermo al centro cella (ESATTO).
+                # FIX (freeze a centro+step): la vecchia finestra
+                # |pos-centro| < step_size re-entrava in snap OGNI frame per
+                # l'arrotondamento float32 del Vector2: centro+step memorizzato
+                # arrotonda per difetto (es. 162.879990 con step 2.879994) ->
+                # |offset| < step -> ciclo infinito snap<->movimento. Effetto:
+                # l'alleato restava BLOCCATO in ~3 celle su 31 (speed 3 @60fps).
+                # Modello nuovo (robusto a qualunque delta_ms): il movimento e'
+                # move_toward VERSO IL CENTRO della cella successiva, clampato
+                # (mai sfora), arrivo ESATTO garantito; la decisione parte solo
+                # quando pos coincide ESATTAMENTE col centro (valori interi
+                # col*64+32, esatti in float32 -> nessun rumore di confronto).
+                if pos.x == center_x and pos.y == center_y:
 
                         # Force recalc on: timer expiry, idle, stuck.
                         var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
@@ -237,21 +252,30 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                         if current_dir.x != 0 or current_dir.y != 0:
                                 if maze.is_wall(col + current_dir.x, row + current_dir.y):
                                         current_dir = Vector2i.ZERO
+                        # Waypoint LOCKED alla decisione (vedi _move_waypoint):
+                        # centro della cella successiva, valido fino all'arrivo.
+                        if current_dir.x != 0 or current_dir.y != 0:
+                                _move_waypoint = Vector2(
+                                                center_x + current_dir.x * TILE_SIZE,
+                                                center_y + current_dir.y * TILE_SIZE)
+                        else:
+                                _move_waypoint = Vector2.INF
                 elif current_dir.x == 0 and current_dir.y == 0:
                         # Fermo ma decentrato (stato anomalo): recovery al centro.
                         pos = pos.move_toward(Vector2(center_x, center_y), step_size)
                         last_pos = pos
 
-                # Movimento cardinale lungo la linea centrale.
-                pos.x += current_dir.x * step_size
-                pos.y += current_dir.y * step_size
-
-                # Correzione "rotaia" (no-op ESATTO se già in asse): riallinea
-                # l'asse perpendicolare alla marcia -> invariante auto-riparante.
-                if current_dir.x != 0 and current_dir.y == 0:
-                        pos.y = move_toward(pos.y, center_y, step_size)
-                elif current_dir.y != 0 and current_dir.x == 0:
-                        pos.x = move_toward(pos.x, center_x, step_size)
+                # Movimento verso il WAYPOINT (centro della cella successiva,
+                # FISSATO alla decisione): move_toward non sfora MAI il target
+                # -> arrivo ESATTO al centro -> al frame successivo scatta la
+                # decisione. Elimina l'oscillazione snap<->step da arrotondamento
+                # float32 e il "target che scivola" (ricalcolo del target a
+                # meta' transito al cambio di cella). La vecchia correzione
+                # "rotaia" e' assorbita: l'asse perpendicolare converge sul
+                # waypoint a ogni frame (self-healing).
+                if (current_dir.x != 0 or current_dir.y != 0) \
+                                and _move_waypoint != Vector2.INF:
+                        pos = pos.move_toward(_move_waypoint, step_size)
 
                 # Aggiorna la direzione visiva per lo sprite (flip).
                 if current_dir.x != 0 or current_dir.y != 0:
@@ -282,13 +306,14 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                                                                 nnc * TILE_SIZE + TILE_SIZE / 2.0,
                                                                                 nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
                                                                 current_dir = Vector2i.ZERO
+                                                                _move_waypoint = Vector2.INF
                                                                 path_update_timer = PATH_RECALC_INTERVAL_MS
                                                                 found_safe = true
                                                                 break
+                                        if found_safe:
+                                                break
                                 if found_safe:
                                         break
-                        if found_safe:
-                                break
 
         # Shoot at closest enemy in range — UN colpo alla volta, solo con linea di vista.
         # FIX (richiesta utente): l'unicorno ha 3 colpi totali.
@@ -331,7 +356,12 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
 
 func _find_closest_enemy(enemies: Array) -> Node2D:
         var closest: Node2D = null
-        var closest_dist: float = 999999.0
+        # FIX (alleato ignora nemici lontani): closest_dist è confrontato con
+        # distance_squared_to (distanza AL QUADRATO). Con soglia 999999 il
+        # raggio effettivo era √999999 ≈ 1000px: in un maze da 1984px un nemico
+        # a >1000px non veniva MAI selezionato -> "No enemies found" ->
+        # countdown di scomparsa con nemici ancora vivi. INF = nessun limite.
+        var closest_dist: float = INF
         # Cerca tra i nemici normali
         for e in enemies:
                 if e == null or not is_instance_valid(e):

@@ -155,6 +155,12 @@ var dy: int = 0
 
 # Timers (simulated ms, -16 per frame @ 60 FPS).
 var path_update_timer: int = 0
+# Waypoint corrente (centro della cella successiva), FISSATO alla decisione.
+# FIX (target che scivola): il target non va ricalcolato ogni frame dalla
+# cella corrente perche' al cambio colonna/riga a meta' transito scivola
+# avanti di una cella -> il centro intermedio non viene mai raggiunto ->
+# nessuna decisione/wall-check -> il nemico entra nei muri.
+var _move_waypoint: Vector2 = Vector2.INF
 var anim_time: int = 0          # NEVER reset for BFS (see Enemy.cpp:154)
 var shoot_cooldown: int = 0
 var attacking_timer: int = 0
@@ -413,8 +419,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # FIX (compenetrazione muri + scatti): riscritto il movimento nemico
         # secondo il modello del C++ ORIGINALE (identico al Player):
         #   1) il nemico viaggia SEMPRE lungo la linea centrale dei corridoi;
-        #   2) cambia direzione SOLO quando arriva al centro cella (snap
-        #      immediato di max step_size px, impercettibile);
+        #   2) cambia direzione SOLO quando arriva ESATTAMENTE al centro cella;
         #   3) wall check point-based sulla cella successiva (is_wall):
         #      restando sulla linea centrale, lo sprite 62px nel corridoio
         #      64px (margine 1px per lato) non può MAI compenetrare un muro;
@@ -428,11 +433,18 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         #     direzione fuori centro -> compenetrazione angoli dei muri;
         #   - clamp di rendering -> lo sprite "saltava" quando il clamp si
         #     rilasciava (lo scatto al cambio direzione destra->sinistra).
-        if absf(position.x - center_x) < step_size \
-                        and absf(position.y - center_y) < step_size:
-                # (1) Arrivo al centro cella: snap immediato + decisione dir.
-                position.x = center_x
-                position.y = center_y
+        # FIX (freeze a centro+step): la vecchia finestra |pos-centro| < step
+        # re-entrava in snap OGNI frame per l'arrotondamento float32 del
+        # Vector2: centro+step memorizzato arrotonda per difetto (es.
+        # 162.879990 con step 2.879994) -> |offset| < step -> ciclo infinito
+        # snap<->movimento -> nemico BLOCCATO in ~3 celle su 31 (speed 3).
+        # Il C++ originale non soffriva perche' usava speed INTERE (esatte in
+        # float32); il port con step frazionario frame-rate-independent lo
+        # introduceva. Ora: arrivo ESATTO con move_toward clampato (vedi (3)),
+        # decisione solo quando position coincide col centro (valori interi
+        # col*64+32, esatti in float32 -> confronto senza rumore).
+        if position.x == center_x and position.y == center_y:
+                # (1) Arrivo al centro cella (ESATTO): decisione dir.
 
                 # Force path recompute on: timer expiry, idle, stuck, flee flip.
                 var flee_changed: bool = flee_mode != prev_flee_mode
@@ -501,6 +513,13 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 if maze.is_wall(col + dx, row + dy):
                         dx = 0
                         dy = 0
+                # Waypoint LOCKED alla decisione (vedi _move_waypoint): il
+                # centro della cella successiva, valido fino all'arrivo.
+                if dx != 0 or dy != 0:
+                        _move_waypoint = Vector2(center_x + dx * TILE_SIZE,
+                                        center_y + dy * TILE_SIZE)
+                else:
+                        _move_waypoint = Vector2.INF
         elif dx == 0 and dy == 0:
                 # Nemico fermo ma decentrato (stato anomalo, es. stato legacy):
                 # recovery graduale verso il centro della cella corrente.
@@ -509,19 +528,16 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 position = position.move_toward(Vector2(center_x, center_y), step_size)
                 last_pos = position
 
-        # (3) Movimento cardinale su UN solo asse lungo la linea centrale.
-        position.x += dx * step_size
-        position.y += dy * step_size
-
-        # Correzione "rotaia" (self-healing): se il nemico è fuori dalla linea
-        # centrale (stato corrotto residuo), riallinea l'asse perpendicolare
-        # alla marcia verso il centro cella. Se è già in asse è un no-op
-        # ESATTO (move_toward su errore 0 non tocca la coordinata): nessuno
-        # scatto, e l'invariante della linea centrale si auto-ripara.
-        if dx != 0 and dy == 0:
-                position.y = move_toward(position.y, center_y, step_size)
-        elif dy != 0 and dx == 0:
-                position.x = move_toward(position.x, center_x, step_size)
+        # (3) Movimento verso il WAYPOINT (centro della cella successiva,
+        # FISSATO alla decisione): move_toward non sfora MAI il target ->
+        # arrivo ESATTO al centro -> al frame successivo (1) scatta la
+        # decisione. Elimina l'oscillazione snap<->step da arrotondamento
+        # float32, i micro-salti dello snap e il "target che scivola"
+        # (ricalcolo per-cella del target a meta transito).
+        # La vecchia correzione "rotaia" e' assorbita: l'asse perpendicolare
+        # converge sul waypoint a ogni frame (self-healing).
+        if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
+                position = position.move_toward(_move_waypoint, step_size)
 
         # --- Safety clamp (ultima difesa): se la cella corrente è WALL
         # (stato invalido, es. spawn corrotto), teleport al centro della
@@ -544,6 +560,7 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                                         last_pos = position
                                                         dx = 0
                                                         dy = 0
+                                                        _move_waypoint = Vector2.INF
                                                         path_update_timer = PATH_RECALC_INTERVAL_MS
                                                         stuck_timer = 0
                                                         found_safe = true
