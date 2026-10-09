@@ -121,6 +121,26 @@ signal boss_defeated(boss_index: int)
 ## True if the player picked up the test-mode shortcut (skip current level).
 @export var test_mode_enabled: bool = false
 
+# ============================================================================
+# FIX (Hall of Fame): punteggio e livello raggiunti a fine partita. Vengono
+# impostati dai controller di gioco subito prima della transizione verso
+# LOSE/WIN e letti dalla schermata di inserimento nome (NameEntryKeyboard).
+# ============================================================================
+var final_score: int = 0
+var final_level: int = 1
+# FIX (Hall of Fame): indice della voce appena salvata da evidenziare nella
+# schermata Hall of Fame (-1 = nessuna evidenziazione).
+var hof_highlight_index: int = -1
+# FIX (standby alternato): true quando la Hall of Fame è stata aperta dal
+# timer di inattività del menu (in alternanza con la demo mode): in quel
+# caso ritorna al menu dopo 20s senza input.
+var hof_from_standby: bool = false
+# FIX (alternanza standby demo/Hall of Fame): contatore delle attivazioni
+# da inattività nel menu. Ogni 30s di standby il gioco mostra IN ALTERNANZA
+# la demo mode (attivazioni dispari: 1ª, 3ª, ...) e la Hall of Fame
+# (attivazioni pari: 2ª, 4ª, ...), come richiesto.
+var standby_show_count: int = 0
+
 
 # ============================================================================
 # LEVEL HELPERS  (mirror the inline functions in Boss.h)
@@ -240,6 +260,9 @@ func reset_run() -> void:
         config_joy_step = 0
         config_joy_player = 1
         test_mode_enabled = false
+        final_score = 0
+        final_level = 1
+        standby_show_count = 0
         current_state = C.GameState.MENU
 
 
@@ -375,6 +398,12 @@ func go_to_win() -> void:
 func go_to_lose() -> void:
         current_state = C.GameState.LOSE
         change_scene("res://scenes/LoseScreen.tscn")
+
+# FIX (Hall of Fame): transizione alla schermata Hall of Fame (dal menu e
+# dallo standby in alternanza con la demo mode).
+func go_to_hall_of_fame() -> void:
+        current_state = C.GameState.MENU
+        change_scene("res://scenes/HallOfFame.tscn")
 
 func start_level_at(level: int) -> void:
         current_level = level

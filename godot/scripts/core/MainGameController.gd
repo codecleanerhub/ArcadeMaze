@@ -90,6 +90,12 @@ var dynamite_alert_played: bool = false
 var dynamite_explode_timer_ms: int = 0  # timer esplosione dopo alert (2000ms)
 var dynamite_thrown: Node2D = null  # candelotto lanciato in volo
 
+# FIX (pozione magica): pozione (1 per livello) + traccia se l'effetto
+# fantasma era attivo nel frame precedente (per fermare la musica e
+# ripristinare quella di livello quando termina).
+var potion_item: Node2D = null
+var _ghost_was_active: bool = false
+
 # FIX (HUD last hit enemy): traccia l'ultimo nemico colpito dal player.
 # L'HUD mostra il nome + barra energia di questo nemico in alto al centro.
 # Quando il nemico muore o dopo 3s senza hit, la barra scompare.
@@ -122,20 +128,225 @@ var fire_bursts: Array = []   # [{pos, life, max_life, scale, anim_time}]
 #   - effect_fireburst: 6x4 frame 64x64 (anchor 32,40)
 var _ashpile_sheet: Variant = null
 var _fireburst_sheet: Variant = null
-# FIX (porta PNG): texture del portone di pietra
-var _exit_door_tex: Texture2D = null
+# FIX (portone di pietra): il portone è ora disegnato proceduralmente (vedi
+# _draw_exit_door_stone) — non serve più la texture PNG che sembrava un
+# cancello medievale.
 
-func _load_exit_door_texture() -> Texture2D:
-        if _exit_door_tex != null:
-                return _exit_door_tex
-        var path := "res://assets/sprites/exit_door.png"
-        var abs_path := ProjectSettings.globalize_path(path)
-        if not FileAccess.file_exists(abs_path):
-                return null
-        var img := Image.new()
-        if img.load(abs_path) == OK:
-                _exit_door_tex = ImageTexture.create_from_image(img)
-        return _exit_door_tex
+# Hash deterministico per la variazione di tono dei blocchi di pietra
+# (stabile frame per frame: niente sfarfallio).
+static func _stone_hash(i: int) -> float:
+        var h: int = (i * 2654435761) % 100000
+        return float(h) / 100000.0
+
+
+# Ritorna una variante leggermente più chiara/scura del colore pietra per il
+# blocco `idx` (ogni blocco ha un tono proprio, come la muratura vera).
+static func _stone_tint(base: Color, idx: int, amount: float) -> Color:
+        var v: float = (_stone_hash(idx) - 0.5) * 2.0 * amount
+        return Color(
+                clampf(base.r + v, 0.0, 1.0),
+                clampf(base.g + v, 0.0, 1.0),
+                clampf(base.b + v * 0.9, 0.0, 1.0),
+                base.a)
+
+
+# ============================================================================
+# PORTONE DI PIETRA (nuova grafica, disegno accurato)
+# ============================================================================
+# Struttura del disegno (centrata in door_pos, totale ~100x130 px):
+#   1. Aurea dorata pulsante attorno al portale
+#   2. Scalinata esterna in blocchi di pietra (3 gradini larghi che salgono
+#      alla soglia del portale)
+#   3. Arcata interna buia con SCALA CHE SCENDE al piano di sotto: gradini
+#      in prospettiva che si restringono verso il fondo scuro, con bagliore
+#      caldo che sale dal basso
+#   4. Porta: LASTRA DI PIETRA massiccia che scorre VERSO L'ALTO quando si
+#      apre (open_ratio 0→1), rivelando la scala sottostante
+#   5. Arco esterno a CONCI di pietra (voussoirs) con CHIAVE DI VOLTA
+#      decorata da un simbolo dorato, stipiti in blocchi squadrati
+#   6. Due torce alle pareti con fiamma tremolante calda
+# La pietra usa tinte grigio-neutre con variazione per-blocco deterministica.
+func _draw_exit_door_stone(ci: CanvasItem, door_pos: Vector2,
+                open_ratio: float, glow: float) -> void:
+        # --- Dimensioni totali ---
+        var w: float = 100.0            # larghezza arcata esterna
+        var arch_h: float = 108.0       # altezza totale arcata
+        var door_w: float = 62.0        # larghezza apertura (lastra)
+        var door_h: float = 74.0        # altezza apertura (lastra)
+        var cx: float = door_pos.x
+        # Soglia del portone: il centro verticale dell'apertura
+        var cy: float = door_pos.y + 6.0
+
+        # --- Palette pietra (grigio caverna + venature calde) ---
+        var stone_base := Color(0.36, 0.34, 0.32)
+        var stone_dark := Color(0.24, 0.23, 0.21)
+        var stone_light := Color(0.50, 0.48, 0.44)
+        var stone_edge := Color(0.16, 0.15, 0.14)
+
+        # ============ (1) AUREA DORATA ============
+        ci.draw_circle(door_pos, w * 0.85, Color(1.0, 0.84, 0.35, 0.06 + 0.06 * glow))
+        ci.draw_circle(door_pos, w * 0.55, Color(1.0, 0.86, 0.4, 0.08 + 0.08 * glow))
+
+        # ============ (2) SCALINATA ESTERNA (3 gradini che salgono alla soglia) ============
+        # I gradini sono più larghi dell'arcata e scendono verso il player.
+        var step_h: float = 7.0
+        for i in 3:
+                var sw: float = door_w + 16.0 + float(i) * 14.0
+                var sy: float = cy + door_h * 0.5 + float(i) * step_h
+                var st := _stone_tint(stone_base, 40 + i, 0.05)
+                # Alzata (faccia verticale del gradino, più scura)
+                ci.draw_rect(Rect2(cx - sw * 0.5, sy - step_h, sw, step_h),
+                        st.darkened(0.22), true)
+                ci.draw_rect(Rect2(cx - sw * 0.5, sy - step_h, sw, step_h),
+                        stone_edge, false, 1.0)
+                # Pianerottolo (piano superiore del gradino, più chiaro)
+                ci.draw_rect(Rect2(cx - sw * 0.5, sy - step_h - 3.0, sw, 3.0),
+                        st.lightened(0.12), true)
+
+        # ============ (3) ARCATA INTERNA + SCALA CHE SCENDE ============
+        # Il vano interno: buio profondo. La scala scende dal livello della
+        # soglia verso il basso lontano (prospettiva: gradini sempre più
+        # stretti e scuri), con bagliore caldo che sale dal fondo.
+        ci.draw_rect(Rect2(cx - door_w * 0.5, cy - door_h * 0.5, door_w, door_h),
+                Color(0.03, 0.025, 0.03), true)
+        # Scala in discesa (dal bordo alto verso il fondo, restringendosi)
+        var n_steps: int = 7
+        for i in n_steps:
+                var t: float = float(i) / float(n_steps - 1)
+                var stw: float = door_w * (0.94 - t * 0.62)
+                var syy: float = cy + door_h * 0.5 - 4.0 - t * (door_h - 14.0)
+                var lum: float = 0.55 - t * 0.42
+                var step_col := Color(0.30 * lum + 0.05, 0.28 * lum + 0.04, 0.26 * lum + 0.04)
+                # Pianerottolo del gradino (riflette la luce dal basso)
+                ci.draw_rect(Rect2(cx - stw * 0.5, syy, stw, 3.2), step_col, true)
+                # Alzata scura sopra il pianerottolo
+                if i < n_steps - 1:
+                        ci.draw_rect(Rect2(cx - stw * 0.5, syy - 4.2, stw, 4.2),
+                                step_col.darkened(0.45), true)
+                # Bordo pietra del gradino
+                ci.draw_rect(Rect2(cx - stw * 0.5, syy, stw, 3.2),
+                        Color(0.12, 0.11, 0.10), false, 0.5)
+        # Bagliore caldo che sale dal fondo della scala (torcia del piano sotto)
+        ci.draw_circle(Vector2(cx, cy + door_h * 0.30), 16.0 + glow * 4.0,
+                Color(1.0, 0.62, 0.22, 0.16 + 0.08 * glow))
+        ci.draw_circle(Vector2(cx, cy + door_h * 0.36), 7.0 + glow * 2.0,
+                Color(1.0, 0.78, 0.35, 0.22 + 0.10 * glow))
+
+        # ============ (4) LASTRA DI PIETRA (si solleva) ============
+        # La lastra copre il vano e sale con open_ratio, rivelando la scala.
+        # Il bordo inferiore è visibile durante il movimento.
+        var slab_h: float = door_h
+        var lift: float = open_ratio * (door_h * 0.92)
+        var slab_top: float = cy - door_h * 0.5 - lift
+        # Le due metà visibili della lastra (cornice + pannello)
+        var slab_rect := Rect2(cx - door_w * 0.5, slab_top, door_w, slab_h)
+        if open_ratio < 0.995:
+                # Corpo lastra: blocchi di pietra squadrati
+                var slab_col := _stone_tint(stone_base, 77, 0.04)
+                ci.draw_rect(slab_rect, slab_col, true)
+                # Bordo inferiore levigato (bordo della porta che sale)
+                ci.draw_rect(Rect2(slab_rect.position.x, slab_top + slab_h - 5.0,
+                        door_w, 5.0), stone_light.lightened(0.06), true)
+                ci.draw_rect(Rect2(slab_rect.position.x, slab_top + slab_h - 5.0,
+                        door_w, 5.0), stone_edge, false, 1.0)
+                # Conci della lastra: 3 file di blocchi con fughe scure
+                var rows := 4
+                var cols := 3
+                for r_i in rows:
+                        for c_i in cols:
+                                var bx: float = slab_rect.position.x + 3.0 + float(c_i) * (door_w - 6.0) / float(cols)
+                                var by: float = slab_top + 3.0 + float(r_i) * (slab_h - 12.0) / float(rows)
+                                var bw: float = (door_w - 6.0) / float(cols) - 2.0
+                                var bh: float = (slab_h - 12.0) / float(rows) - 2.0
+                                if by + bh > slab_top + slab_h - 8.0:
+                                        continue
+                                ci.draw_rect(Rect2(bx, by, bw, bh),
+                                        _stone_tint(stone_base, 100 + r_i * 3 + c_i, 0.06), true)
+                # Maniglia ad anello in ferro al centro della lastra
+                var ring_c: Vector2 = Vector2(cx, slab_top + slab_h * 0.62)
+                ci.draw_arc(ring_c, 4.5, 0.0, TAU, 20,
+                        Color(0.16, 0.15, 0.14), 1.8)
+                ci.draw_circle(ring_c + Vector2(0, -5.0), 1.6,
+                        Color(0.35, 0.33, 0.30))
+                # Ombra della lastra sul vano (profondità)
+                ci.draw_rect(Rect2(cx - door_w * 0.5, slab_top, door_w, 3.0),
+                        Color(0.0, 0.0, 0.0, 0.45), true)
+
+        # ============ (5) ARCO ESTERNO A CONCI + STIPITI + CHIAVE DI VOLTA ============
+        # Stipiti laterali: 5 blocchi ciascuno
+        var jamb_w: float = 12.0
+        for i in 5:
+                var by2: float = cy - door_h * 0.5 + float(i) * (door_h / 5.0)
+                var bh2: float = door_h / 5.0 - 1.5
+                # Sinistro
+                ci.draw_rect(Rect2(cx - door_w * 0.5 - jamb_w, by2, jamb_w, bh2),
+                        _stone_tint(stone_base, 200 + i, 0.05), true)
+                ci.draw_rect(Rect2(cx - door_w * 0.5 - jamb_w, by2, jamb_w, bh2),
+                        stone_edge, false, 0.8)
+                # Destro
+                ci.draw_rect(Rect2(cx + door_w * 0.5, by2, jamb_w, bh2),
+                        _stone_tint(stone_base, 210 + i, 0.05), true)
+                ci.draw_rect(Rect2(cx + door_w * 0.5, by2, jamb_w, bh2),
+                        stone_edge, false, 0.8)
+        # Arco a conci: semicerchio di trapezi disposti a raggiera
+        var arch_r: float = door_w * 0.5 + jamb_w * 0.5
+        var arch_cy: float = cy - door_h * 0.5
+        var n_vous: int = 9
+        for i in n_vous:
+                # Angolo di ogni concio (dal semicerchio sinistro al destro)
+                var a: float = PI + (float(i) + 0.5) * PI / float(n_vous)
+                var a0: float = PI + float(i) * PI / float(n_vous)
+                var a1: float = PI + (float(i) + 1.0) * PI / float(n_vous)
+                var r_in: float = arch_r - 2.0
+                var r_out: float = arch_r + jamb_w
+                # Trapezio del concio (4 vertici tra raggio interno/esterno)
+                var p_in0: Vector2 = Vector2(cx + cos(a0) * r_in, arch_cy + sin(a0) * r_in)
+                var p_in1: Vector2 = Vector2(cx + cos(a1) * r_in, arch_cy + sin(a1) * r_in)
+                var p_out1: Vector2 = Vector2(cx + cos(a1) * r_out, arch_cy + sin(a1) * r_out)
+                var p_out0: Vector2 = Vector2(cx + cos(a0) * r_out, arch_cy + sin(a0) * r_out)
+                var vous_col := _stone_tint(stone_base, 300 + i, 0.06)
+                ci.draw_colored_polygon(PackedVector2Array([p_in0, p_in1, p_out1, p_out0]),
+                        vous_col)
+                ci.draw_polyline(PackedVector2Array([p_in0, p_in1, p_out1, p_out0, p_in0]),
+                        stone_edge, 0.8)
+        # Chiave di volta: blocco centrale più grande con simbolo dorato
+        var key_w: float = 14.0
+        var key_h: float = 16.0
+        var key_rect := Rect2(cx - key_w * 0.5, arch_cy - arch_r - key_h * 0.72, key_w, key_h)
+        ci.draw_rect(key_rect, _stone_tint(stone_light, 400, 0.03), true)
+        ci.draw_rect(key_rect, stone_edge, false, 1.0)
+        # Simbolo dorato sulla chiave (rombo runico)
+        var rune_c: Vector2 = key_rect.get_center()
+        var rune_pts := PackedVector2Array([
+                Vector2(rune_c.x, rune_c.y - 4.5),
+                Vector2(rune_c.x + 3.5, rune_c.y),
+                Vector2(rune_c.x, rune_c.y + 4.5),
+                Vector2(rune_c.x - 3.5, rune_c.y),
+        ])
+        ci.draw_colored_polygon(rune_pts, Color(0.85, 0.68, 0.25, 0.85 + 0.15 * glow))
+        ci.draw_circle(Vector2(rune_c.x, rune_c.y), 1.2, Color(1.0, 0.9, 0.55))
+
+        # ============ (6) TORCE ALLE PARETI ============
+        # Due piccole torce ai lati dell'arcata, con fiamma tremolante.
+        for side in [-1, 1]:
+                var tx: float = cx + side * (door_w * 0.5 + jamb_w + 10.0)
+                var ty: float = cy - door_h * 0.18
+                # Sostegno in ferro
+                ci.draw_rect(Rect2(tx - 1.5, ty - 2.0, 3.0, 8.0),
+                        Color(0.20, 0.18, 0.16), true)
+                ci.draw_rect(Rect2(tx - 3.0, ty - 4.5, 6.0, 3.0),
+                        Color(0.25, 0.22, 0.19), true)
+                # Fiamma tremolante (due strati + nucleo)
+                var flick: float = sin(float(exit_door.get("glow_pulse", 0.0)) * 13.0 + side * 2.1) * 1.2
+                ci.draw_circle(Vector2(tx, ty - 7.0 + flick * 0.3), 4.5 + flick * 0.4,
+                        Color(1.0, 0.55, 0.15, 0.85))
+                ci.draw_circle(Vector2(tx, ty - 8.0 + flick * 0.2), 2.8,
+                        Color(1.0, 0.78, 0.30, 0.95))
+                ci.draw_circle(Vector2(tx, ty - 8.0), 1.3,
+                        Color(1.0, 0.95, 0.70, 1.0))
+                # Luce proiettata sulla pietra
+                ci.draw_circle(Vector2(tx, ty - 6.0), 10.0,
+                        Color(1.0, 0.6, 0.2, 0.12 + 0.05 * glow))
 
 # Frame delta in ms (for timer decrements matching C++ @ 60 FPS)
 const FRAME_MS: float = 1000.0 / 60.0
@@ -248,29 +459,22 @@ func _create_foreground_layer() -> void:
 # Disegna gli overlay SOPRA il maze. Chiamato da OverlayDrawer._draw().
 # Tutte le chiamate draw_* usano 'ci' (il CanvasItem passato) come contesto.
 func _draw_overlay(ci: CanvasItem) -> void:
-        # Exit door rendering — PNG portone di pietra che si solleva
+        # Exit door rendering — PORTONE DI PIETRA procedurale (FIX grafica:
+        # prima era un PNG che sembrava un cancello medievale). Ora è un
+        # portale monumentale in blocchi di pietra: arco a conci con
+        # chiave di volta, stipiti in blocchi, lastra di pietra che si
+        # SOLLEVA (animazione di apertura 1.4s) rivelando la scalinata
+        # interna che scende al piano di sotto, con bagliore caldo dal basso.
         if exit_door.get("active", false) and not is_boss_state:
                 var door_pos: Vector2 = exit_door["pos"]
                 var anim_ms: int = int(exit_door.get("anim_timer_ms", 0))
                 var glow: float = 0.5 + 0.5 * sin(float(exit_door["glow_pulse"]))
-                # PNG della porta (64x96, scala 2x = 128x192)
-                var door_tex: Texture2D = _load_exit_door_texture()
-                var door_w: float = float(C.TILE_SIZE) * 1.5
-                var door_h: float = float(C.TILE_SIZE) * 2.0
-                var door_x: float = door_pos.x - door_w * 0.5
-                var door_y_base: float = door_pos.y - door_h * 0.5
-                # Animazione: il portone si solleva in alto (800ms)
+                # Animazione di apertura: la lastra di pietra sale (1400ms)
                 var open_ratio: float = 1.0
                 if anim_ms > 0:
-                        open_ratio = 1.0 - (float(anim_ms) / 800.0)
+                        open_ratio = 1.0 - (float(anim_ms) / 1400.0)
                         open_ratio = clampf(open_ratio, 0.0, 1.0)
-                var lift: float = open_ratio * door_h * 0.5
-                # Glow dorato
-                ci.draw_circle(door_pos, door_w * 0.7, Color(1.0, 0.84, 0.0, 0.1 + 0.1 * glow))
-                # Disegna PNG della porta (con lift)
-                if door_tex != null:
-                        ci.draw_texture_rect(door_tex,
-                                Rect2(door_x, door_y_base - lift, door_w, door_h), false)
+                _draw_exit_door_stone(ci, door_pos, open_ratio, glow)
         # Particles
         for p in particles:
                 var pos: Vector2 = p.get("pos", Vector2.ZERO)
@@ -652,6 +856,9 @@ func _handle_input() -> void:
 func _return_to_menu() -> void:
         if AudioManager:
                 AudioManager.stop_music()
+                # FIX (pozione magica): ferma anche il tema fantasma (il
+                # canale vive sull'autoload e sopravvivrebbe al cambio scena).
+                AudioManager.stop_ghost_music()
         if GameManager:
                 GameManager.go_to_menu()
 
@@ -796,6 +1003,23 @@ func _update_playing(delta_ms: float) -> void:
         if last_hit_enemy != null and (not is_instance_valid(last_hit_enemy) or last_hit_enemy.is_dead()):
                 last_hit_enemy = null
                 last_hit_enemy_timer_ms = 0
+
+        # (9f) FIX (pozione magica): fine dell'effetto fantasma — ferma il tema
+        # fantasmagorico e ripristina la musica di livello. Il timer/scadenza
+        # dell'effetto è gestito da Player.update_player (unico owner).
+        var ghost_now: bool = player.is_ghost() or (GameManager and GameManager.num_players == 2 \
+                        and player2.visible and player2.is_ghost())
+        if ghost_now:
+                _ghost_was_active = true
+        elif _ghost_was_active:
+                _ghost_was_active = false
+                if AudioManager:
+                        AudioManager.stop_ghost_music()
+                        # Ripristina la musica di livello se attiva (e se non
+                        # c'è un calice in corso sul canale epic: quella va
+                        # fermata dal suo gestore, non qui).
+                        if AudioManager.music_enabled and not AudioManager._epic_playing:
+                                AudioManager.play_level_music(current_level, false)
 
         # (10) Exit door logic (treasures collected)
         _update_exit_door(delta_ms)
@@ -958,21 +1182,19 @@ func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
 # la velocità (rimbalzo elastico arcade, NON damped).
 # FIX (bomba homing): ogni 250ms ricalcola la direzione verso il nemico più
 # vicino (incluso mini-boss) usando BFS. La bomba "segue il labirinto".
+# FIX (bomba gira per sempre): la mina ora ESPLODE automaticamente dopo 6
+# secondi dal lancio anche se non colpisce nessun nemico. I nemici entro il
+# raggio di scoppio (60px, "pochi pixel") vengono uccisi dall'esplosione;
+# il mini-boss perde il 50% dell'energia. L'esplosione è la stessa dell'impatto
+# diretto (usa _explode_mine).
 func _check_mine_vs_enemies() -> void:
         if mine_item == null or not is_instance_valid(mine_item):
                 return
         if not mine_item.bouncing:
                 # FIX (bomba esplode quando finisce): se la mine non è più bouncing
-                # ma è ancora nel tree, esplodi e rimuovi.
+                # ma è ancora nel tree, esplodi con danno AoE e rimuovi.
                 if not mine_item.active:
-                        var explode_pos: Vector2 = mine_item.position
-                        if EffectsManager:
-                                var burst := EffectsManager.spawn_explosion(explode_pos,
-                                        Color(1.0, 0.4, 0.1), 30, 0.8)
-                                collectibles_node.add_child(burst)
-                                EffectsManager.screen_shake(8.0, 0.3)
-                        if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+                        _explode_mine(mine_item.position)
                         mine_item.queue_free()
                         mine_item = null
                 return
@@ -1064,7 +1286,7 @@ func _check_mine_vs_enemies() -> void:
         mine_item.position = mine_pos2
         mine_item.velocity = mine_vel
         mine_item.pos = mine_pos2
-        # Damage check
+        # Damage check: se un nemico è entro il raggio, esplode (uso AoE)
         var blast_radius: float = 60.0
         var blast_radius_sq: float = blast_radius * blast_radius
         var hit_any: bool = false
@@ -1073,29 +1295,50 @@ func _check_mine_vs_enemies() -> void:
                         continue
                 var e_pos: Vector2 = enemy.get_pixel_pos()
                 if mine_pos2.distance_squared_to(e_pos) < blast_radius_sq:
+                        hit_any = true
+                        break
+        if not hit_any and mini_boss != null and not mini_boss.is_dead():
+                var mb_pos2: Vector2 = mini_boss.get_pixel_pos()
+                if mine_pos2.distance_squared_to(mb_pos2) < blast_radius_sq:
+                        hit_any = true
+        if hit_any:
+                _explode_mine(mine_pos2)
+                mine_item.queue_free()
+                mine_item = null
+
+
+# FIX (bomba esplode dopo 6s): esplosione unificata della mina — usata sia
+# quando colpisce un nemico direttamente, sia allo scadere dei 6 secondi.
+# Uccide tutti i nemici entro il raggio di scoppio (60px) e toglie il 50%
+# dell'energia massima al mini-boss se è nel raggio. Effetti: esplosione,
+# screen shake, flash e suono.
+func _explode_mine(explode_pos: Vector2) -> void:
+        var blast_radius: float = 60.0
+        var blast_radius_sq: float = blast_radius * blast_radius
+        # Danno Ai nemici normali: uccisione istantanea + burning + punteggio
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                if explode_pos.distance_squared_to(e_pos) < blast_radius_sq:
                         enemy.take_damage(999)
                         enemy.start_burning(30)
                         player.add_score(2000)
-                        hit_any = true
+        # Danno al mini-boss: 50% degli HP massimi
         if mini_boss != null and not mini_boss.is_dead():
                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                if mine_pos2.distance_squared_to(mb_pos) < blast_radius_sq:
+                if explode_pos.distance_squared_to(mb_pos) < blast_radius_sq:
                         var mb_max_hp: int = mini_boss.get_max_health()
                         mini_boss.take_damage(int(mb_max_hp * 0.5))
-                        hit_any = true
-        if hit_any:
-                if EffectsManager:
-                        var burst := EffectsManager.spawn_explosion(mine_pos2,
-                                Color(1.0, 0.4, 0.1), 40, 1.0)
-                        collectibles_node.add_child(burst)
-                        EffectsManager.screen_shake(12.0, 0.4)
-                if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
-                mine_item.bouncing = false
-                mine_item.active = false
-                mine_item.queue_free()
-                mine_item = null
-                screen_flash_timer_ms = 80
+        # Effetti visivi + audio
+        if EffectsManager:
+                var burst := EffectsManager.spawn_explosion(explode_pos,
+                        Color(1.0, 0.4, 0.1), 40, 1.0)
+                collectibles_node.add_child(burst)
+                EffectsManager.screen_shake(12.0, 0.4)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        screen_flash_timer_ms = 80
 
 
 func _check_melee_collisions(p: CharacterBody2D) -> void:
@@ -1216,7 +1459,16 @@ func _check_death() -> void:
                 # CONTINUES/LOSE: lo fermiamo qui.
                 if AudioManager:
                         AudioManager.stop_epic_music()
+                        # FIX (pozione magica): ferma anche il tema fantasma
+                        AudioManager.stop_ghost_music()
                 if GameManager:
+                        # FIX (Hall of Fame): registra il punteggio finale prima
+                        # della transizione (in 2P somma i punteggi dei due player)
+                        var total_score_d: int = player.score
+                        if GameManager.num_players == 2 and player2.visible:
+                                total_score_d += player2.score
+                        GameManager.final_score = total_score_d
+                        GameManager.final_level = current_level
                         if GameManager.continues_left > 0:
                                 GameManager.player_died()
                         else:
@@ -1279,6 +1531,11 @@ func _update_collectibles(delta_ms: float) -> void:
                 child.update_step(delta_ms, p1_pos, 1)
                 if not child.has_method("get") or not child.get("active"):
                         continue
+                # FIX (mina gira per sempre): la mina in movimento (bouncing) NON
+                # può essere raccolta di nuovo dal player — ogni tocco resetta
+                # il timer dei 6 secondi rendendola di fatto infinita.
+                if child.get("bouncing"):
+                        continue
                 var item_pos: Vector2 = child.pos
                 # Check P1 collision
                 # FIX (salto sopra oggetti): se il player sta saltando, non
@@ -1308,13 +1565,16 @@ func _update_collectibles(delta_ms: float) -> void:
 func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int) -> void:
         var kind_int: int = item.kind
         match kind_int:
-                CollectiblesClass.Kind.MINE:
+                CollectiblesClass.Kind.MINE: 
                         # FIX (bomba scompare subito): velocità iniziale troppo alta
                         # (randf()*4-2)*50 = fino a 100px/frame → la bomba usciva
                         # dallo schermo in 1-2 frame. Ridotta a *5 (max 10px/frame).
-                        # FIX (durata bomba): 5000ms → 10000ms (10 secondi) per
-                        # dare tempo alla bomba di rimbalzare e colpire i nemici.
-                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 5, 10000)
+                        # FIX (durata bomba 6 secondi): come richiesto, la mina
+                        # esplode automaticamente dopo 6 secondi se non colpisce
+                        # nessun nemico (prima 10s e il timer si resettava ogni
+                        # volta che il player toccava di nuovo la mina vagante,
+                        # per cui girava per sempre).
+                        item.start_bounce(Vector2(randf() * 4 - 2, randf() * 4 - 2) * 5, 6000)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
@@ -1434,6 +1694,32 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         item.queue_free()
                         dynamite_item = null
                         _start_dynamite_pickup(p)
+                CollectiblesClass.Kind.POTION:
+                        # FIX (pozione magica): il player BEVE la pozione.
+                        # Suono di deglutizione + effetto fantasma per 5s:
+                        # evanescente, attraversa i muri, uscita automatica dal
+                        # muro a fine effetto, musica fantasmagorica per tutto
+                        # il periodo dell'effetto.
+                        item.active = false
+                        item.queue_free()
+                        potion_item = null
+                        # Suono di deglutizione (glu-glu)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.POTION_GULP)
+                        # Attiva la modalità fantasma sul player che ha bevuto
+                        p.start_ghost_mode()
+                        # Musica fantasmagorica in loop per tutta la durata
+                        # (canale dedicato, non soggetto a musicEnabled come il
+                        # jingle del calice). Abbassiamo la musica di livello
+                        # per dare spazio al tema.
+                        if AudioManager:
+                                AudioManager.stop_music()
+                                AudioManager.play_ghost_music()
+                        # Particelle verdi di trasformazione
+                        if EffectsManager:
+                                var burst_p := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(0.45, 1.0, 0.55))
+                                collectibles_node.add_child(burst_p)
 
 
 # ============================================================================
@@ -1451,11 +1737,14 @@ func _update_exit_door(delta_ms: float) -> void:
                         exit_door = {
                                 "pos": door_px,
                                 "active": true,
-                                "anim_timer_ms": 800,
+                                "anim_timer_ms": 1400,
                                 "glow_pulse": 0.0,
                         }
+                        # FIX (portone di pietra): suono DOOR_OPEN quando appare
+                        # il portone (prima usava il suono TREASURE, già sentito
+                        # a ogni tesoro raccolto).
                         if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                                AudioManager.play_sound(AudioManager.SoundType.DOOR_OPEN)
 
         if exit_door.get("active", false):
                 exit_door["anim_timer_ms"] = max(0, int(exit_door["anim_timer_ms"]) - int(delta_ms))
@@ -1535,7 +1824,9 @@ func start_level(lvl: int) -> void:
                                 player.position.y
                         )
         # Spawn enemies
-        spawner.spawn_enemies(maze)
+        # FIX (6 nemici al livello 1 + 1 dopo ogni boss): passa il livello allo
+        # spawner: ondata = 6 + numero di boss già sconfitti.
+        spawner.spawn_enemies(maze, current_level)
         initial_enemy_count = spawner.enemies.size()
         portal_used = false
         # Clear mini-boss + scepter state
@@ -1617,6 +1908,13 @@ func _spawn_collectibles() -> void:
         if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
                 dynamite_thrown.queue_free()
                 dynamite_thrown = null
+        # FIX (pozione magica): reset pozione + stato fantasma (la musica
+        # fantasma vive sull'autoload AudioManager e sopravvive al cambio
+        # livello: va fermata qui).
+        potion_item = null
+        _ghost_was_active = false
+        if AudioManager:
+                AudioManager.stop_ghost_music()
         # FIX (HUD last hit enemy): reset al cambio livello
         last_hit_enemy = null
         last_hit_enemy_timer_ms = 0
@@ -1700,6 +1998,15 @@ func _spawn_collectibles() -> void:
                 var dyn_pos := _cell_to_pixel(cell)
                 dynamite_item = _create_collectible(CollectiblesClass.Kind.DYNAMITE, dyn_pos)
                 collectibles_node.add_child(dynamite_item)
+
+        # FIX (pozione magica): Pozione (1 per livello, posizione casuale).
+        # Ampolla di vetro con liquido verde: chi la beve diventa un fantasma
+        # evanescente per 5 secondi e attraversa i muri del labirinto.
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
+                var potion_pos := _cell_to_pixel(cell)
+                potion_item = _create_collectible(CollectiblesClass.Kind.POTION, potion_pos)
+                collectibles_node.add_child(potion_item)
 
 
 # FIX (oggetti troppo vicini): estrae una cella dalla lista `cells` che sia

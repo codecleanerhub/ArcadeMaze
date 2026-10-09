@@ -35,6 +35,9 @@ enum Kind {
         MEDIKIT,         # FIX (nuova meccanica): rigenera 1 punto vita del player (1 per livello).
         KNIGHT_STATUE,   # FIX (nuova meccanica): evoca cavaliere alleato che combatte per il player.
         DYNAMITE,        # FIX (nuova meccanica): candelotto di dinamite con miccia (1 per livello).
+        POTION,          # FIX (pozione magica): ampolla di vetro con liquido verde — il player
+                         # la beve e diventa evanescente come un fantasma per 5 secondi,
+                         # attraversando i muri del labirinto.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -125,6 +128,9 @@ func _apply_kind_defaults() -> void:
                         pulse = 0.0
                         bob_offset = 0.0
                 Kind.DYNAMITE:
+                        pulse = 0.0
+                        bob_offset = 0.0
+                Kind.POTION:
                         pulse = 0.0
                         bob_offset = 0.0
 
@@ -321,6 +327,7 @@ func _draw() -> void:
                 Kind.MEDIKIT:      _draw_medikit()
                 Kind.KNIGHT_STATUE: _draw_knight_statue()
                 Kind.DYNAMITE:     _draw_dynamite()
+                Kind.POTION:       _draw_potion()
 
 
 func _draw_mine() -> void:
@@ -928,6 +935,16 @@ static func make_dynamite(at: Vector2) -> Collectibles:
         return c
 
 
+## FIX (pozione magica): Factory — crea una pozione magica (ampolla di vetro
+## con liquido verde) alla posizione indicata.
+static func make_potion(at: Vector2) -> Collectibles:
+        var c := Collectibles.new()
+        c.kind = Kind.POTION
+        c.pos = at
+        c.active = true
+        return c
+
+
 # FIX (nuova meccanica): disegna il medikit (scatola bianca con croce rossa).
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
 func _draw_medikit() -> void:
@@ -1057,3 +1074,44 @@ func _draw_dynamite() -> void:
         draw_line(Vector2(-cyl_w / 2.0 - 4, -8 + y_off),
                 Vector2(-cyl_w / 2.0 - 6, -14 + y_off),
                 Color(0.16, 0.14, 0.12, 1.0), 2)
+
+
+# FIX (pozione magica): disegna la pozione magica — ampolla di vetro con
+# liquido verde brillante (quella tipica da laboratorio / pozione magica).
+# Carica il PNG AI dedicato (128x128, stile pixel art dark fantasy); fallback
+# procedurale se il PNG non è disponibile: ampolla rotonda con collo, tappo di
+# sughero, liquido verde con bollle e riflesso del vetro.
+func _draw_potion() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_potion.png")
+        if tex != null:
+                # Aura magica verde pulsante
+                var glow_alpha: float = 0.15 + pulse * 0.12
+                draw_circle(Vector2.ZERO, 20.0, Color(0.3, 1.0, 0.35, glow_alpha))
+                draw_circle(Vector2.ZERO, 12.0, Color(0.5, 1.0, 0.55, glow_alpha * 0.8))
+                var size: float = 64.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                # Scintilla luminosa sopra il liquido (luccichio magico)
+                var spark_t: float = fmod(anim_time, 1.6)
+                if spark_t < 0.35:
+                        var spark_a: float = 1.0 - spark_t / 0.35
+                        draw_circle(Vector2(6.0, -6.0 + y_off), 2.0 + (1.0 - spark_a) * 2.0,
+                                Color(0.8, 1.0, 0.8, spark_a))
+                return
+        # Fallback procedurale: ampolla da laboratorio
+        var body_c := Vector2(0, 6.0 + y_off)
+        # Liquido verde nell'ampolla (cerchio pieno per 2/3)
+        draw_circle(body_c, 11.0, Color(0.15, 0.5, 0.2, 1.0))
+        draw_circle(body_c + Vector2(-3, -3), 7.0, Color(0.3, 0.85, 0.35, 1.0))
+        draw_circle(body_c + Vector2(-4, -4), 3.0, Color(0.6, 1.0, 0.6, 1.0))
+        # Vetro (contorno)
+        draw_arc(body_c, 12.0, 0.0, TAU, 28, Color(0.75, 0.9, 0.85, 0.8), 1.6)
+        # Collo dell'ampolla
+        draw_rect(Rect2(-3.0, -12.0 + y_off, 6.0, 8.0), Color(0.55, 0.75, 0.7, 0.55), true)
+        draw_rect(Rect2(-3.0, -12.0 + y_off, 6.0, 8.0), Color(0.75, 0.9, 0.85, 0.9), false, 1.0)
+        # Tappo di sughero
+        draw_rect(Rect2(-4.5, -16.0 + y_off, 9.0, 5.0), Color(0.55, 0.4, 0.25), true)
+        draw_rect(Rect2(-4.5, -16.0 + y_off, 9.0, 5.0), Color(0.35, 0.25, 0.15), false, 1.0)
+        # Riflesso del vetro
+        draw_line(body_c + Vector2(-8.0, -6.0), body_c + Vector2(-5.0, -9.0),
+                Color(0.9, 1.0, 0.95, 0.7), 1.5)

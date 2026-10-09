@@ -50,10 +50,20 @@ enum EnemyType {
         MIMIC, WOLF, WITCH, BONE_GOLEM,
         ASH_SERPENT, DAMNED_KNIGHT, MAD_WIZARD,
         DEMONIC_CROW, TENTACLE, GARGOYLE,
-        WELL_SPIRIT, CURSED_BOAR, PREDATOR_FUNGUS
+        WELL_SPIRIT, CURSED_BOAR, PREDATOR_FUNGUS,
+        # --- 16 new types (enemy +1 after each boss): LOTR / D&D / Doom ---
+        OWLBEAR, GIBBERING_MOUTHER, HELLHOUND, BARLGURA,
+        TROGLODYTE, BULETTE, KUO_TOA, BASILISK,
+        COCKATRICE, UMBER_HULK, HOOK_HORROR, DOPPELGANGER,
+        ENT, CAVE_DRAKE, LOST_SOUL, POSSESSED_SOLDIER
 }
 
-const ENEMY_TYPE_COUNT: int = 28
+# FIX (nemico +1 dopo ogni boss): 44 tipi totali. I primi 28 sono i tipi
+# "classici" sempre disponibili; gli ultimi 16 (OWLBEAR..POSSESSED_SOLDIER)
+# si sbloccano uno per ogni boss sconfitto (uno nuovo per livello post-boss).
+const ENEMY_TYPE_COUNT: int = 44
+const ENEMY_ORIGINAL_TYPE_COUNT: int = 28
+const ENEMY_NEW_TYPE_COUNT: int = 16
 
 # Per-type sprite id (assets/sprites/<id>_sheet.png). Mirrors
 # Enemy::getSpriteId() in src/Enemy.cpp line 55-89.
@@ -86,6 +96,23 @@ const SPRITE_ID := {
         EnemyType.ORC:             "monster_027",
         EnemyType.WRAITH:          "monster_028",
         EnemyType.IMP:             "monster_029",
+        # FIX (nemico +1 dopo ogni boss): i 16 nuovi tipi (monster_030..045)
+        EnemyType.OWLBEAR:         "monster_030",
+        EnemyType.GIBBERING_MOUTHER: "monster_031",
+        EnemyType.HELLHOUND:       "monster_032",
+        EnemyType.BARLGURA:        "monster_033",
+        EnemyType.TROGLODYTE:      "monster_034",
+        EnemyType.BULETTE:         "monster_035",
+        EnemyType.KUO_TOA:         "monster_036",
+        EnemyType.BASILISK:        "monster_037",
+        EnemyType.COCKATRICE:      "monster_038",
+        EnemyType.UMBER_HULK:      "monster_039",
+        EnemyType.HOOK_HORROR:     "monster_040",
+        EnemyType.DOPPELGANGER:    "monster_041",
+        EnemyType.ENT:              "monster_042",
+        EnemyType.CAVE_DRAKE:      "monster_043",
+        EnemyType.LOST_SOUL:       "monster_044",
+        EnemyType.POSSESSED_SOLDIER: "monster_045",
 }
 
 # Per-type stats {speed, health, max_health}. Mirrors the if/else chain in
@@ -123,6 +150,25 @@ const STATS := {
         EnemyType.WELL_SPIRIT:     {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.5, 0.7, 0.6), "accent": Color(0.5, 0.7, 0.9, 0.7)},
         EnemyType.CURSED_BOAR:     {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.4, 0.2, 0.2), "accent": Color(0.6, 0.3, 0.3)},
         EnemyType.PREDATOR_FUNGUS: {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.5, 0.3, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        # FIX (nemico +1 dopo ogni boss): stats dei 16 nuovi tipi.
+        # speed=2 come tutti gli altri nemici (grid-locked); health varia per
+        # caratterizzare ogni creatura mantenendo il bilanciamento 1..6.
+        EnemyType.OWLBEAR:         {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.45, 0.33, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        EnemyType.GIBBERING_MOUTHER: {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.75, 0.6, 0.6), "accent": Color(1.0, 0.5, 0.5)},
+        EnemyType.HELLHOUND:       {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.25, 0.1, 0.1), "accent": Color(1.0, 0.5, 0.1)},
+        EnemyType.BARLGURA:        {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.6, 0.2, 0.15), "accent": Color(1.0, 0.4, 0.2)},
+        EnemyType.TROGLODYTE:      {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.5, 0.35), "accent": Color(0.5, 0.75, 0.55)},
+        EnemyType.BULETTE:         {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.4, 0.42, 0.48), "accent": Color(0.65, 0.7, 0.8)},
+        EnemyType.KUO_TOA:         {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.35, 0.5, 0.55), "accent": Color(0.55, 0.8, 0.85)},
+        EnemyType.BASILISK:        {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.3, 0.45, 0.25), "accent": Color(0.9, 0.85, 0.2)},
+        EnemyType.COCKATRICE:      {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.55, 0.45, 0.25), "accent": Color(0.95, 0.6, 0.2)},
+        EnemyType.UMBER_HULK:      {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.4, 0.3, 0.2), "accent": Color(0.8, 0.6, 0.3)},
+        EnemyType.HOOK_HORROR:     {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.5, 0.5, 0.55), "accent": Color(0.85, 0.85, 0.9)},
+        EnemyType.DOPPELGANGER:    {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.7, 0.72, 0.78), "accent": Color(1.0, 1.0, 1.0)},
+        EnemyType.ENT:              {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.3, 0.25, 0.15), "accent": Color(0.5, 0.7, 0.3)},
+        EnemyType.CAVE_DRAKE:      {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.2, 0.35, 0.25), "accent": Color(0.9, 0.9, 0.3)},
+        EnemyType.LOST_SOUL:       {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.9, 0.5, 0.15), "accent": Color(1.0, 0.8, 0.3)},
+        EnemyType.POSSESSED_SOLDIER: {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.35, 0.45, 0.3), "accent": Color(0.9, 0.9, 0.7)},
 }
 
 # Default fallback if STATS is missing an entry (defensive programming).
@@ -833,6 +879,8 @@ func _pick_random_open_dir(maze: Object, col: int, row: int) -> bool:
 
 # can_shoot(t): true for ranged enemy types (skeleton/cultist/demon/
 # wraith/robot/witch/mad_wizard). Mirrors Enemy::canShoot() line 108-121.
+# FIX (nuovi nemici): il Soldato Posseduto spara con il fucile e il
+# Basilisco spara il suo sguardo pietrificante (proiettile a distanza).
 static func can_shoot(t: int) -> bool:
         return t == EnemyType.SKELETON \
                         or t == EnemyType.CULTIST \
@@ -840,7 +888,25 @@ static func can_shoot(t: int) -> bool:
                         or t == EnemyType.WRAITH \
                         or t == EnemyType.ROBOT \
                         or t == EnemyType.WITCH \
-                        or t == EnemyType.MAD_WIZARD
+                        or t == EnemyType.MAD_WIZARD \
+                        or t == EnemyType.POSSESSED_SOLDIER \
+                        or t == EnemyType.BASILISK
+
+
+# FIX (nemico +1 dopo ogni boss): true se `t` è uno dei 16 nuovi tipi
+# sbloccati progressivamente dopo ogni boss (usato dall'EnemySpawner per
+# comporre le ondate: slot extra = un nuovo tipo ciascuno).
+static func is_new_unlockable_type(t: int) -> bool:
+        return t >= ENEMY_ORIGINAL_TYPE_COUNT and t < ENEMY_TYPE_COUNT
+
+
+# FIX (nemico +1 dopo ogni boss): ritorna il nuovo tipo sbloccato dopo
+# `boss_index` boss sconfitti (0 = OWLBEAR, 1 = GIBBERING_MOUTHER, ...).
+# Ritorna -1 se l'indice supera i 16 nuovi tipi disponibili.
+static func get_unlockable_type(boss_index: int) -> int:
+        if boss_index < 0 or boss_index >= ENEMY_NEW_TYPE_COUNT:
+                return -1
+        return ENEMY_ORIGINAL_TYPE_COUNT + boss_index
 
 
 # uses_bfs(t): kept for parity with the C++ API. All enemy types use BFS
@@ -904,6 +970,22 @@ func get_enemy_name() -> String:
                 EnemyType.WELL_SPIRIT: return "Well Spirit"
                 EnemyType.CURSED_BOAR: return "Cursed Boar"
                 EnemyType.PREDATOR_FUNGUS: return "Predator Fungus"
+                EnemyType.OWLBEAR: return "Owlbear"
+                EnemyType.GIBBERING_MOUTHER: return "Gibbering Mouther"
+                EnemyType.HELLHOUND: return "Hellhound"
+                EnemyType.BARLGURA: return "Barlgura"
+                EnemyType.TROGLODYTE: return "Troglodyte"
+                EnemyType.BULETTE: return "Bulette"
+                EnemyType.KUO_TOA: return "Kuo Toa"
+                EnemyType.BASILISK: return "Basilisk"
+                EnemyType.COCKATRICE: return "Cockatrice"
+                EnemyType.UMBER_HULK: return "Umber Hulk"
+                EnemyType.HOOK_HORROR: return "Hook Horror"
+                EnemyType.DOPPELGANGER: return "Doppelganger"
+                EnemyType.ENT: return "Ent"
+                EnemyType.CAVE_DRAKE: return "Cave Drake"
+                EnemyType.LOST_SOUL: return "Lost Soul"
+                EnemyType.POSSESSED_SOLDIER: return "Possessed Soldier"
                 _: return "Enemy"
 
 

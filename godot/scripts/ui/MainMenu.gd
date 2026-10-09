@@ -79,9 +79,11 @@ var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
 # BACK) instead of the main menu. The OPTIONS item in the main menu sets this
 # to true; the BACK item (or ESC) sets it back to false.
 var _in_options: bool = false
-const MAIN_MENU_ITEMS: int = 6   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CREDITS
+const MAIN_MENU_ITEMS: int = 7   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CREDITS, HALL OF FAME
 const OPTIONS_MENU_ITEMS: int = 3  # MUSIC, CONFIGURE JOYSTICK, BACK
 const OPTIONS_MAIN_RETURN_INDEX: int = 3  # main menu index of OPTIONS item
+# FIX (Hall of Fame): indice della voce HALL OF FAME nel menu principale
+const HALL_OF_FAME_MENU_INDEX: int = 6
 # ---
 
 # Animation timer (mirrors menuTime in drawMenu()).
@@ -131,10 +133,21 @@ func _ready() -> void:
 
 # ============================================================================
 # Demo mode trigger (30s inactivity)
+# FIX (alternanza demo/Hall of Fame): dopo 30s di inattività il gioco mostra
+# IN ALTERNANZA la demo mode (1ª volta, 3ª, ...) e la schermata Hall of Fame
+# (2ª volta, 4ª, ...). Il contatore vive su GameManager e sopravvive ai
+# cambi scena.
 # ============================================================================
 func _start_demo_mode() -> void:
-        print("[MainMenu] Inactivity timeout, starting demo mode")
         _inactivity_timer = 0.0
+        if GameManager:
+                GameManager.standby_show_count += 1
+                if GameManager.standby_show_count % 2 == 0:
+                        print("[MainMenu] Inactivity timeout, showing HALL OF FAME (alternata)")
+                        GameManager.hof_from_standby = true
+                        GameManager.go_to_hall_of_fame()
+                        return
+        print("[MainMenu] Inactivity timeout, starting demo mode")
         get_tree().change_scene_to_file("res://scenes/DemoMode.tscn")
 
 
@@ -424,6 +437,7 @@ func _build_ui() -> void:
                 "OPTIONS",
                 "START GAME",
                 "CREDITS",
+                "HALL OF FAME",
         ]
         for txt in item_texts:
                 var lbl := Label.new()
@@ -607,6 +621,9 @@ func _update_items_text() -> void:
         _item_labels[4].visible = true
         _item_labels[5].text = "CREDITS"
         _item_labels[5].visible = true
+        # FIX (Hall of Fame): 7ª voce di menu
+        _item_labels[6].text = "HALL OF FAME"
+        _item_labels[6].visible = true
         # Hide any extra labels beyond MAIN_MENU_ITEMS (defensive; should be none).
         for i in range(MAIN_MENU_ITEMS, _item_labels.size()):
                 _item_labels[i].visible = false
@@ -808,8 +825,9 @@ func _change_option(delta: int) -> void:
                         _game_mode = GameMode.INFINITE if _game_mode == GameMode.STORY else GameMode.STORY
                 2:  # Test mode on/off
                         _test_mode_enabled = not _test_mode_enabled
-                3, 4, 5:
-                        # OPTIONS / START GAME / CREDITS are not toggleable, just activate them.
+                3, 4, 5, 6:
+                        # OPTIONS / START GAME / CREDITS / HALL OF FAME are not toggleable,
+                        # just activate them.
                         pass
                 _:
                         # Move the character wheel selection
@@ -936,6 +954,11 @@ func _activate_current() -> void:
                 5:
                         # CREDITS
                         credits_requested.emit()
+                HALL_OF_FAME_MENU_INDEX:
+                        # FIX (Hall of Fame): apre la schermata della Hall of
+                        # Fame (classifica dei migliori punteggi).
+                        if GameManager:
+                                GameManager.go_to_hall_of_fame()
                 _:
                         # Toggleable items (0..2: NUMBER OF PLAYERS, GAME MODE, TEST MODE)
                         # confirm their current value.

@@ -49,6 +49,10 @@ var last_dx: int = 1
 var last_dy: int = 0
 var anim_time: int = 0
 var shoot_cooldown: int = 0
+# FIX (unicorno: 3 colpi poi scompare): flag che indica che il 3° colpo è
+# stato sparato e l'unicorno deve svanire appena l'ultimo proiettile si
+# esaurisce (hit su nemico, muro o timeout). Prima restava in giro 5s.
+var _awaiting_last_shot: bool = false
 
 # --- Targeting ---
 var target_enemy: Node2D = null
@@ -320,10 +324,12 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
         # Shoot at closest enemy in range — UN colpo alla volta, solo con linea di vista.
         # FIX (richiesta utente): l'unicorno ha 3 colpi totali.
         # - Sparare UN colpo alla volta (non tutti insieme)
-        # - Se il primo colpo va a segno → si ferma (non spara più)
-        # - Se il primo colpo manca → spara il secondo, ecc.
         # - I colpi NON devono attraversare i muri
         # - Sparare SOLO quando c'è linea di vista libera (no muri tra unicorno e target)
+        # - Ogni colpo toglie esattamente il 50% dell'energia di qualsiasi nemico
+        #   (nemico o mini boss); se il nemico è al di sotto del 50% muore.
+        # - Dopo il 3° colpo l'unicorno SPARISCE appena l'ultimo proiettile si
+        #   risolve (non resta in giro altri 5 secondi).
         if shoot_cooldown > 0:
                 shoot_cooldown -= delta_ms
         elif shots_left > 0 and target_enemy != null and is_instance_valid(target_enemy):
@@ -344,7 +350,23 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                         shoot_cooldown = 800
                                         shots_left -= 1
                                         if shots_left == 0:
-                                                disappear_timer_ms = 5000
+                                                # Ultimo colpo sparato: svanirà appena
+                                                # il proiettile si risolve (vedi sotto).
+                                                _awaiting_last_shot = true
+
+        # FIX (3 colpi poi scompare): se l'ultimo colpo è stato sparato e non ci
+        # sono più proiettili in volo, l'unicorno svanisce immediatamente
+        # (l'animazione fumo DISAPPEARING dura 1.2s e dà la giusta chiusura).
+        if _awaiting_last_shot and state == State.ACTIVE:
+                var any_active: bool = false
+                for p in projectiles:
+                        if p.get("active", false):
+                                any_active = true
+                                break
+                if not any_active:
+                        _awaiting_last_shot = false
+                        _start_disappearing()
+                        return
 
         # FIX (cavaliere muore subito): decrementa invulnerability timer
         if invulnerable_timer_ms > 0:
@@ -620,12 +642,15 @@ func _draw() -> void:
         draw_circle(Vector2.ZERO, 32.0,
                 Color(0.6, 0.8, 1.0, 0.06 + aura_pulse * 0.04))
 
-        # FIX (pallino procedurale MOBILE accanto al miniboss, 3° tentativo):
-        # i proiettili dorati del KnightAlly erano percepiti come "pallino
-        # procedurale che SI MUOVE accanto al miniboss". Rendering disabilitato:
-        # la logica di collisione (_update_projectiles) resta attiva — i
-        # proiettili fanno ancora danno al miniboss, ma non sono più visibili.
-        pass
+        # FIX (proiettili visibili): il rendering dei proiettili era stato
+        # disattivato in un fix precedente (il vecchio codice li disegnava a
+        # coordinate SBAGLIATE e l'utente vedeva un "pallino che si muoveva
+        # accanto al miniboss"). Il problema era solo di coordinate: i
+        # proiettili memorizzano la posizione in coordinate MONDO mentre _draw
+        # lavora in coordinate LOCALI del nodo unicorno. Ora li disegniamo con
+        # l'offset corretto (posizione mondo - posizione nodo): il bolide
+        # dorato parte dall'unicorno e vola verso il bersaglio.
+        _draw_projectiles()
 
         # HP bar
         if health < max_health:
@@ -637,6 +662,42 @@ func _draw() -> void:
                 var hp_ratio: float = float(health) / float(max_health)
                 draw_rect(Rect2(-bar_w / 2, bar_y, bar_w * hp_ratio, bar_h),
                         Color(1.0, 0.85, 0.2, 1.0), true)
+
+
+# FIX (proiettili visibili): disegna i proiettili magici dorati dell'unicorno.
+# Ogni proiettile è un bolide incantato: nucleo bianco-dorato brillante, alone
+# dorato pulsante e scia di scintille. Le posizioni sono convertite da coordinate
+# mondo a coordinate locali (relative al nodo) — era questo l'offset che nel
+# vecchio codice rendeva i proiettili invisibili/mal posizionati.
+func _draw_projectiles() -> void:
+        for proj in projectiles:
+                if not proj.get("active", false):
+                        continue
+                var p_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                var local: Vector2 = p_pos - pos
+                var dir: Vector2 = proj.get("dir", Vector2.ZERO)
+                var dir_len: float = dir.length()
+                if dir_len > 0.001:
+                        dir = dir / dir_len
+                # Pulsazione luminosa del bolide
+                var pulse_t: float = fmod(float(anim_time) * 0.01, 1.0)
+                var glow_w: float = 1.0 + 0.25 * sin(pulse_t * TAU)
+                # Scia: 4 scintille decrescenti dietro il proiettile
+                for t_idx in 4:
+                        var trail_off: Vector2 = -dir * (5.0 + float(t_idx) * 5.0)
+                        var trail_a: float = 0.55 - 0.13 * float(t_idx)
+                        draw_circle(local + trail_off, 2.6 - 0.45 * t_idx,
+                                Color(1.0, 0.78, 0.25, trail_a))
+                        draw_circle(local + trail_off + Vector2(0, -1) * 0.5, 1.0,
+                                Color(1.0, 0.9, 0.55, trail_a * 0.8))
+                # Alone esterno dorato
+                draw_circle(local, 6.5 * glow_w, Color(1.0, 0.72, 0.18, 0.34))
+                # alone medio
+                draw_circle(local, 4.4, Color(1.0, 0.82, 0.35, 0.6))
+                # Nucleo brillante bianco-oro
+                draw_circle(local, 2.6, Color(1.0, 0.95, 0.75, 0.98))
+                # Riflesso specular
+                draw_circle(local + Vector2(-0.8, -0.8), 0.9, Color(1.0, 1.0, 1.0))
 
 
 # FIX (effetto nube): disegna nube densa attorno all'unicorno per transform

@@ -2,7 +2,12 @@
 ## ============================================================
 ## Porting of Game.cpp STATE_LOSE.
 ## Shows the game over screen with bg_gameover.jpg background.
-## "PRESS ENTER TO RETURN TO MENU".
+##
+## FIX (Hall of Fame): se il punteggio finale merita un posto in classifica,
+## dopo un attimo appare la TASTIERA ALFANUMERICA VIRTUALE per inserire il
+## nome (movimenti direzionali + tasto fuoco; CANC cancella; OK conferma).
+## Dopo la conferma il punteggio viene salvato e il gioco mostra la
+## schermata HALL OF FAME con la nuova voce evidenziata.
 ## ============================================================
 extends Control
 
@@ -15,6 +20,11 @@ signal back_to_menu_requested()
 var _bg_texture: Texture2D = null
 var _time: float = 0.0
 var _finished: bool = false
+# FIX (Hall of Fame): tastiera virtuale di inserimento nome
+var _keyboard: Control = null
+var _keyboard_timer: float = 0.0
+const KEYBOARD_DELAY: float = 1.6  # secondi prima che appaia la tastiera
+var _keyboard_shown: bool = false
 
 
 func _ready() -> void:
@@ -33,11 +43,61 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
         _time += delta
+        # FIX (Hall of Fame): dopo il delay, se il punteggio merita la
+        # classifica, mostra la tastiera di inserimento nome.
+        if not _keyboard_shown and not _finished:
+                _keyboard_timer += delta
+                if _keyboard_timer >= KEYBOARD_DELAY:
+                        _maybe_show_keyboard()
         queue_redraw()
+
+
+# Crea la tastiera virtuale se il punteggio finale è da Hall of Fame.
+func _maybe_show_keyboard() -> void:
+        _keyboard_shown = true
+        var score: int = 0
+        var level: int = 1
+        if GameManager:
+                score = GameManager.final_score
+                level = GameManager.final_level
+        if not HallOfFameData.qualifies(score):
+                return  # punteggio troppo basso: niente inserimento nome
+        var kb_script := load("res://scripts/ui/NameEntryKeyboard.gd")
+        _keyboard = Control.new()
+        _keyboard.set_script(kb_script)
+        _keyboard.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _keyboard.display_score = score
+        _keyboard.display_level = level
+        _keyboard.save_on_confirm = true
+        add_child(_keyboard)
+        _keyboard.entry_confirmed.connect(_on_name_confirmed)
+
+
+# Chiamato quando il player conferma il nome: salva (già fatto dalla
+# tastiera) e porta alla schermata Hall of Fame con la voce evidenziata.
+func _on_name_confirmed(player_name: String) -> void:
+        if _finished:
+                return
+        _finished = true
+        if GameManager:
+                # Trova la posizione della nuova voce per evidenziarla
+                var entries := HallOfFameData.load_entries()
+                var pos: int = -1
+                for i in entries.size():
+                        if str(entries[i]["name"]) == player_name \
+                                        and int(entries[i]["score"]) == GameManager.final_score:
+                                pos = i
+                                break
+                GameManager.hof_highlight_index = pos
+                GameManager.go_to_hall_of_fame()
 
 
 func _unhandled_input(event: InputEvent) -> void:
         if _finished:
+                return
+        # FIX (Hall of Fame): mentre la tastiera è attiva, questa schermata
+        # non consuma input (li gestisce la tastiera).
+        if _keyboard != null and is_instance_valid(_keyboard):
                 return
         if event is InputEventKey and event.pressed and not event.echo:
                 if event.keycode == KEY_ENTER or event.keycode == KEY_SPACE or event.keycode == KEY_ESCAPE:
@@ -85,9 +145,24 @@ func _draw() -> void:
                 "The maze has claimed another soul...",
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 28, color_subtitle)
 
-        # Hint (blinking)
+        # FIX (Hall of Fame): punteggio finale raggiunto
+        var score: int = 0
+        var level: int = 1
+        if GameManager:
+                score = GameManager.final_score
+                level = GameManager.final_level
+        draw_string(font, Vector2(cx - 300, 300),
+                "FINAL SCORE: %d    LEVEL: %d" % [score, level],
+                HORIZONTAL_ALIGNMENT_CENTER, 600, 30, Color(1.0, 0.84, 0.3))
+
+        # Hint (blinking) — cambia se la tastiera sta per apparire
         var hint_alpha: float = 0.5 + 0.5 * sin(_time * 2.0)
+        var hint_text: String = "PRESS ENTER TO RETURN TO MENU"
+        if not _keyboard_shown and HallOfFameData.qualifies(score):
+                hint_text = "NEW HIGH SCORE! PREPARE TO ENTER YOUR NAME..."
+        elif _keyboard_shown and _keyboard != null and is_instance_valid(_keyboard):
+                hint_text = ""
         draw_string(font, Vector2(cx - 300, size.y - 80),
-                "PRESS ENTER TO RETURN TO MENU",
+                hint_text,
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 24,
                 Color(color_hint.r, color_hint.g, color_hint.b, hint_alpha))

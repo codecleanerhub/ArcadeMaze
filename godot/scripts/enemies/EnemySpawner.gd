@@ -43,10 +43,16 @@ const CELL_TREASURE: int = 2
 const CELL_WEAPON: int = 3
 
 # --- Spawning tuning --------------------------------------------------------
-const INITIAL_WAVE_SIZE: int = 5
-# FIX (respawn 50% nemici): PORTAL_ENEMIES_TO_SPAWN era 3 (fisso).
-# Ora è 0 perché viene calcolato dinamicamente come 50% di initial_count
-# in trigger_portal_if_needed. Vedi magic_portal.enemies_to_spawn = initial_count / 2.
+# FIX (6 nemici al livello 1 + 1 per boss): l'utente ha dichiarato che al
+# livello 1 ci sono 6 nemici; dopo OGNI boss sconfitto l'ondata cresce di 1.
+# Con un gruppo di 4 livelli (3 maze + 1 boss), i boss sconfitti prima del
+# livello L sono floor((L-1)/4): livello 1..4 → 0 boss → 6 nemici;
+# livello 5 (dopo il 1° boss) → 7 nemici; livello 9 → 8; ecc.
+const BASE_WAVE_SIZE: int = 6
+const INITIAL_WAVE_SIZE: int = 6  # compat: dimensione dell'ondata al livello 1
+# FIX (respawn 100% nemici): PORTAL_ENEMIES_TO_SPAWN era 0 perché calcolato
+# come 50% di initial_count in trigger_portal_if_needed. Ora il portale
+# respawna il 100% dei nemici iniziali (6 iniziali → 6 respawnati + miniboss).
 const PORTAL_ENEMIES_TO_SPAWN: int = 0
 # Portal phase timers (ms simulated) - mirror Game.cpp line 1979-2140.
 const PORTAL_OPEN_MS: int = 1000     # phase 0: portal opening
@@ -79,6 +85,10 @@ var magic_portal: Dictionary = {
 var initial_count: int = 0
 # One-shot latch: portal triggers at most once per maze level.
 var portal_used: bool = false
+# FIX (nemico +1 dopo ogni boss): numero di nuovi tipi sbloccati per il
+# livello corrente (0..16). Impostato da spawn_enemies() in base al livello;
+# il respawn casuale dal portale pesca dal pool 28 + unlocked_new_types.
+var unlocked_new_types: int = 0
 
 # Enemy scene - override from inspector if you have a custom .tscn.
 # Default: use the Enemy.gd script directly via `Enemy.new()`.
@@ -86,19 +96,49 @@ var portal_used: bool = false
 
 
 # ===========================================================================
-# spawn_enemies(maze): generate 5 random enemies at level start.
-#
-# Logic (mirror Game::spawnEnemies() src/Game.cpp line 373-400):
-#   * Type chosen uniformly from all 28 EnemyType values.
-#   * Position random until a non-wall cell is found that's NOT in the
-#     player's safe-startup zone (col < 5 AND row < 5) - gives the player
-#     a few seconds of breathing room at the start of a level.
-#   * Replaces any previous wave (clears the pool).
+# wave_size_for_level(level): 6 nemici al livello 1, +1 dopo OGNI boss.
+# boss sconfitti prima del livello L = (L-1)/4 (i boss sono ai livelli 4, 8, ...).
+# In infinite mode cresce senza limite (lo slot extra oltre i 16 nuovi tipi
+# viene riempito con tipi originali random).
 # ===========================================================================
-func spawn_enemies(maze: Object) -> void:
+static func wave_size_for_level(level: int) -> int:
+        var bosses_defeated: int = (maxi(1, level) - 1) / 4
+        return BASE_WAVE_SIZE + bosses_defeated
+
+
+# ===========================================================================
+# unlocked_new_types_for_level(level): quanti dei 16 nuovi tipi (OWLBEAR..)
+# sono già stati sbloccati arrivando a questo livello (uno per boss).
+# ===========================================================================
+static func unlocked_new_types_for_level(level: int) -> int:
+        var bosses_defeated: int = (maxi(1, level) - 1) / 4
+        return mini(bosses_defeated, Enemy.ENEMY_NEW_TYPE_COUNT)
+
+
+# ===========================================================================
+# spawn_enemies(maze, level): generate the level wave.
+#
+# Wave composition (FIX: 6 nemici al livello 1 + 1 per ogni boss sconfitto):
+#   * base = 6 tipi originali random (i 28 "classici")
+#   * dopo ogni boss: +1 nemico, e ogni slot extra è uno dei 16 NUOVI tipi
+#     (OWLBEAR, GIBBERING_MOUTHER, ...) sbloccati in ordine — così ogni
+#     livello post-boss introduce una creatura mai vista prima, diversa da
+#     tutte le esistenti, stessa grafica/stile/dimensioni dei precedenti.
+#
+# Position: random until a non-wall cell is found that's NOT in the
+# player's safe-startup zone (col < 5 AND row < 5).
+# ===========================================================================
+func spawn_enemies(maze: Object, level: int = 1) -> void:
         enemies.clear()
-        for i in range(INITIAL_WAVE_SIZE):
-                var t: int = randi() % Enemy.ENEMY_TYPE_COUNT
+        var wave_size: int = wave_size_for_level(level)
+        unlocked_new_types = unlocked_new_types_for_level(level)
+        for i in range(wave_size):
+                var t: int
+                if i < unlocked_new_types:
+                        # Slot extra: il nuovo tipo sbloccato al boss i
+                        t = Enemy.get_unlockable_type(i)
+                else:
+                        t = randi() % Enemy.ENEMY_ORIGINAL_TYPE_COUNT
                 var c: int
                 var r: int
                 # Find a valid spawn cell: not a wall, not in the 5x5 starting zone.
@@ -195,9 +235,11 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         magic_portal.rotation = 0.0
         magic_portal.glow_pulse = 0.0
         magic_portal.enemies_to_spawn = PORTAL_ENEMIES_TO_SPAWN
-        # FIX (respawn 50% nemici): spawn 50% dei nemici iniziali, non 3 fissi.
-        # Se initial_count = 10, spawn 5 nemici. Minimo 1 per evitare 0.
-        magic_portal.enemies_to_spawn = maxi(1, initial_count / 2)
+        # FIX (respawn 100% nemici): il portale respawna il 100% dei nemici
+        # iniziali del livello (non più il 50%): se il livello è iniziato con
+        # 6 nemici, dal portale ne escono 6 + il mini-boss (il portale
+        # continua ad apparire quando i nemici scendono al 50%, cioè a 3).
+        magic_portal.enemies_to_spawn = maxi(1, initial_count)
         if magic_portal.enemies_to_spawn > initial_count:
                 magic_portal.enemies_to_spawn = initial_count
         magic_portal.spawn_timer = 0
@@ -337,8 +379,11 @@ func _spawn_enemy_from_portal(maze: Object) -> void:
                 return
         # FIX (respawn): se non ci sono dead_indices (tutti i nemici ancora
                 # vivi o già respawnati), crea un nuovo Enemy di tipo random.
+                # FIX (pool nuovi nemici): il tipo random pesca anche dai nuovi
+                # tipi sbloccati dopo i boss (28 + unlocked_new_types).
         if magic_portal.dead_indices.is_empty():
-                var new_type: int = randi() % 28  # 28 tipi di nemici
+                var pool_size: int = Enemy.ENEMY_ORIGINAL_TYPE_COUNT + unlocked_new_types
+                var new_type: int = randi() % pool_size
                 var pc_new := int(magic_portal.pos.x / TILE_SIZE)
                 var pr_new := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
                 # Cerca cella vuota vicino al portale

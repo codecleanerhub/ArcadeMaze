@@ -64,8 +64,11 @@ const MINIBOSS_TYPE_COUNT: int = 51
 # Player characters selectable from the menu.
 const CHARACTER_TYPE_COUNT: int = 8
 
-# Enemy types (15 original + 13 from the fantasy-horror bestiary).
-const ENEMY_TYPE_COUNT: int = 28
+# Enemy types (15 original + 13 from the fantasy-horror bestiary + 16 new
+# types unlocked one per defeated boss, see Enemy.gd).
+# FIX (nemico +1 dopo ogni boss): 28 -> 44 (gli ultimi 16 sono OWLBEAR..
+# POSSESSED_SOLDIER, sbloccati progressivamente dopo ogni boss).
+const ENEMY_TYPE_COUNT: int = 44
 
 # ============================================================================
 # 3. ENUMS  (mirrors the C++ enums exactly)

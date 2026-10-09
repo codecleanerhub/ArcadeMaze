@@ -48,9 +48,11 @@ enum SoundType {
         JUMP, DOOR_OPEN, TRAP, MENU_SELECT, MENU_CONFIRM,
         # Gameplay effects (10)
         PORTAL_OPEN, PORTAL_CLOSE, WEAPON_PICKUP, ENEMY_EXPLODE,
-        BLOOD_SPLAT, MINE_BOUNCE, POTION_DRINK, LIGHTNING, SCEPTER_PICKUP
+        BLOOD_SPLAT, MINE_BOUNCE, POTION_DRINK, LIGHTNING, SCEPTER_PICKUP,
+        # FIX (pozione magica): deglutizione quando il player beve la pozione
+        POTION_GULP
 }
-const SOUND_TYPE_COUNT: int = 25
+const SOUND_TYPE_COUNT: int = 26
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -59,7 +61,10 @@ const TRACK_PORTAL:        int = 5
 const TRACK_EPIC_CHALICE:  int = 6    # jingle (one-shot, separate channel)
 const TRACK_EPIC_SCEPTER:  int = 7    # jingle (one-shot, separate channel)
 const TRACK_MENU:          int = 8    # main-menu music (loop)
-const MUSIC_TRACK_COUNT:   int = 9
+# FIX (pozione magica): tema fantasmagorico/suspense che accompagna tutto il
+# periodo dell'effetto fantasma (canale dedicato _ghost_player, in loop).
+const TRACK_GHOST:         int = 9
+const MUSIC_TRACK_COUNT:   int = 10
 
 # Sample rate (mono).
 const SR: int = 44100
@@ -80,6 +85,11 @@ var _music_streams: Array[AudioStreamWAV] = []
 # Two dedicated channels (mirror `music` and `epicSound` in C++).
 var _music_player: AudioStreamPlayer = null
 var _epic_player:  AudioStreamPlayer = null
+# FIX (pozione magica): canale dedicato per il tema fantasma — separato dal
+# canale epic (che può suonare il jingle del calice) così i due effetti
+# possono coesistere senza interrompersi a vicenda.
+var _ghost_player:  AudioStreamPlayer = null
+var _ghost_music_playing: bool = false
 
 # Current track index for the music channel (or -1 if stopped).
 var _current_music_track: int = -1
@@ -113,6 +123,13 @@ func _ready() -> void:
         _epic_player.volume_db = linear_to_db(VOLUME_EPIC)
         _epic_player.bus = "Master"
         add_child(_epic_player)
+
+        # FIX (pozione magica): canale del tema fantasma
+        _ghost_player = AudioStreamPlayer.new()
+        _ghost_player.name = "GhostPlayer"
+        _ghost_player.volume_db = linear_to_db(VOLUME_EPIC)
+        _ghost_player.bus = "Master"
+        add_child(_ghost_player)
 
         # Ensure Master bus is not muted
         var master_idx: int = AudioServer.get_bus_index("Master")
@@ -238,6 +255,30 @@ func stop_epic_music() -> void:
         _epic_track_idx = -1
 
 
+# ============================================================================
+# FIX (pozione magica): tema fantasmagorico — canale dedicato in loop per
+# tutto il periodo dell'effetto fantasma. Come il canale epic, NON è soggetto
+# al flag musicEnabled (è un effetto di gioco, non musica di sottofondo):
+# lo senti anche con la musica disattivata, esattamente come il jingle del
+# calice (AudioManager.cpp:98).
+func play_ghost_music() -> void:
+        if _ghost_music_playing and _ghost_player.playing:
+                return  # già in riproduzione: no restart
+        var stream: AudioStreamWAV = _music_streams[TRACK_GHOST]
+        if stream == null:
+                return
+        stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+        _ghost_player.stream = stream
+        _ghost_player.play()
+        _ghost_music_playing = true
+
+
+# Ferma il tema fantasma (chiamato dal Game quando l'effetto termina).
+func stop_ghost_music() -> void:
+        _ghost_player.stop()
+        _ghost_music_playing = false
+
+
 # True if the music channel is currently playing.
 func is_music_playing() -> bool:
         return _music_player.playing
@@ -249,7 +290,6 @@ func set_music_enabled(enabled: bool) -> void:
         if not enabled:
                 stop_music()
                 stop_epic_music()
-
 
 # ============================================================================
 # Internal helpers
@@ -302,6 +342,11 @@ static func triangle_wave(phase: float) -> float:
 static func sawtooth_wave(phase: float) -> float:
         var p: float = phase - floor(phase)
         return 2.0 * p - 1.0
+
+# FIX (pozione magica): onda sinusoidale pura, usata dal tema fantasma per
+# i lamenti (wail) e i tritoni di tensione.
+static func sine_wave(phase: float) -> float:
+        return sin(TAU * (phase - floor(phase)))
 
 # White noise in [-1, 1] (port of noiseGen()).
 static func noise_gen() -> float:
@@ -395,6 +440,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.POTION_DRINK:  s = _sfx_potion_drink()
                 SoundType.LIGHTNING:     s = _sfx_lightning()
                 SoundType.SCEPTER_PICKUP:s = _sfx_scepter_pickup()
+                SoundType.POTION_GULP:   s = _sfx_potion_gulp()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -909,6 +955,7 @@ func _generate_track(track_idx: int) -> AudioStreamWAV:
                 TRACK_EPIC_CHALICE: return _samples_to_stream(_gen_epic_chalice())
                 TRACK_EPIC_SCEPTER: return _samples_to_stream(_gen_epic_scepter())
                 TRACK_MENU:         return _samples_to_stream(_gen_menu_track())
+                TRACK_GHOST:        return _samples_to_stream(_gen_ghost_track())
                 _:                  return _samples_to_stream(_gen_level_track(track_idx))
 
 
@@ -1175,4 +1222,173 @@ func _gen_menu_track() -> PackedFloat32Array:
                                         var bass: float = 0.25 * triangle_wave(t * bass_freq)
                                         out[write_idx] = (pad + lead + arp + bass) * env * 0.5
                                         write_idx += 1
+        return out
+
+
+# ============================================================================
+# FIX (pozione magica): SFX deglutizione — "glu-glu" singolo secco (0.35s).
+# Due deglutizioni discendenti (340Hz -> 220Hz) con rumore liquido, più un
+# piccolo "aaah" finale discendente. Più corto e netto del POTION_DRINK
+# (che è il glug-glug del medikit).
+# ============================================================================
+func _sfx_potion_gulp() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Due deglutizioni
+        for gulp in 2:
+                var freq: float = 340.0 - float(gulp) * 60.0
+                var seg: int = int(SR * 0.13)
+                for i in seg:
+                        var t: float = float(i) / SR
+                        var env: float = exp(-t * 12.0) * (1.0 - exp(-t * 60.0))
+                        # Modulazione "gorgoglio": la frequenza scende dentro il gulp
+                        var f: float = freq * (1.0 - 0.35 * t / 0.13)
+                        var mod_: float = 1.0 + 0.25 * sin(t * 26.0)
+                        var v: float = 0.45 * triangle_wave(t * f * mod_) \
+                                + 0.25 * sawtooth_wave(t * f * 0.6 * mod_) \
+                                + 0.30 * noise_gen() * exp(-t * 22.0)
+                        s.append(2600.0 / 32767.0 * v * env)
+                # Pausa tra i gulp
+                for i in int(SR * 0.05):
+                        s.append(0.0)
+        # "Aaah" finale discendente (0.12s)
+        var fin: int = int(SR * 0.12)
+        for i in fin:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 14.0) * (1.0 - exp(-t * 50.0))
+                var f: float = 260.0 * exp(-t * 6.0) + 90.0
+                var v: float = 0.4 * triangle_wave(t * f) + 0.2 * pulse_wave(t * f * 0.5, 0.5)
+                s.append(2000.0 / 32767.0 * v * env)
+        return s
+
+
+# ============================================================================
+# FIX (pozione magica): TEMA FANTASMA — musica fantasmagorica/suspense in loop
+# (~12.6s) che accompagna tutto il periodo dell'effetto fantasma del player.
+#
+# Caratteristiche (horror ambient a 60 BPM):
+#   * Basso drone D2 (73.42 Hz) triangolare con tremolo lento
+#   * Battito "cuore" sordo: due colpi profondi per battuta (kick 55 Hz)
+#   * Arpeggio diminuito D-F-Bb-Db (D dim7) campanellato e rarefatto
+#   * Lamento fantasma: sirena alta (D5) con vibrato lento e detuning
+#   * Vento: rumore filtrato con onde lente (swell ogni 2 battute)
+#   * Tritono Db5-Ab4 che si alterna al lamento per la tensione
+# Loop-friendly: le code degli elementi decadono prima della fine.
+# ============================================================================
+func _gen_ghost_track() -> PackedFloat32Array:
+        var tempo: float = 60.0
+        var beat_dur: float = 60.0 / tempo        # 1.0s
+        var bar_dur: float = beat_dur * 4.0       # 4.0s
+        var num_bars: int = 3                    # ~12.6s totali
+        var total: int = int(SR * (bar_dur * float(num_bars) + 0.6))
+        var out := PackedFloat32Array()
+        out.resize(total)
+
+        # --- Drone basso D2 + tremolo (tutto il brano) ---
+        for i in total:
+                var t: float = float(i) / SR
+                var trem: float = 0.80 + 0.20 * sin(t * TAU * 0.55)
+                var drone: float = 0.30 * triangle_wave(t * 73.42) \
+                                + 0.12 * triangle_wave(t * 73.42 * 2.0)
+                out[i] += drone * trem * 0.55
+
+        # --- Battito di cuore: due colpi per battuta ---
+        var thump_dur: float = 0.22
+        var n_thump: int = int(SR * thump_dur)
+        for bar in num_bars:
+                for beat in 4:
+                        # Primo colpo sul beat, secondo colpo 0.28s dopo (lub-dub)
+                        var base_t: float = bar * bar_dur + float(beat) * beat_dur
+                        for rep in 2:
+                                var start: int = int(SR * (base_t + float(rep) * 0.28))
+                                if rep == 1 and beat % 2 == 1:
+                                        continue  # "dub" solo sui beat pari: più raro
+                                for i in n_thump:
+                                        var idx: int = start + i
+                                        if idx >= total:
+                                                break
+                                        var t: float = float(i) / SR
+                                        var env: float = exp(-t * 14.0) * (1.0 - exp(-t * 80.0))
+                                        var f: float = 58.0 * exp(-t * 3.0) + 30.0
+                                        var v: float = 0.55 * triangle_wave(t * f) \
+                                                        + 0.20 * pulse_wave(t * f * 0.5, 0.4)
+                                        out[idx] += v * env * 0.5
+
+        # --- Arpeggio diminuito D4-F4-Bb4-Db5 (una nota ogni 2 beat) ---
+        var dim_notes := [293.66, 349.23, 466.16, 554.37]
+        var note_dur: float = 1.9
+        var n_note: int = int(SR * note_dur)
+        var note_i: int = 0
+        var t_next: float = 0.5
+        while t_next < bar_dur * float(num_bars) - note_dur:
+                var start: int = int(SR * t_next)
+                var freq: float = dim_notes[note_i % dim_notes.size()]
+                for i in n_note:
+                        var idx: int = start + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        var env: float = exp(-t * 2.2) * (1.0 - exp(-t * 25.0))
+                        # Campanellato: fondamentale + ottava, decay lento
+                        var v: float = 0.22 * triangle_wave(t * freq) \
+                                        + 0.10 * sine_wave(t * freq * 2.0)
+                        out[idx] += v * env
+                note_i += 1
+                t_next += 2.0 * beat_dur * 0.75
+
+        # --- Lamento fantasma: D5 con vibrato + detuning, swell lenti ---
+        for wail in 3:
+                var w_start_f: float = 0.8 + float(wail) * 4.1
+                var w_dur: float = 3.2
+                var start: int = int(SR * w_start_f)
+                var n_wail: int = int(SR * w_dur)
+                for i in n_wail:
+                        var idx: int = start + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        # Envelope: fade-in lento + fade-out
+                        var env: float = minf(t / 0.9, 1.0) * exp(-maxf(t - 0.9, 0.0) * 1.1)
+                        # Vibrato lento e profondo
+                        var vib: float = 5.5 * sin(t * TAU * 1.6)
+                        var f: float = 587.33 + vib
+                        # Detuning: due sine quasi uguali (battimenti)
+                        var v: float = 0.16 * sine_wave(t * f) \
+                                        + 0.16 * sine_wave(t * f * 1.0045)
+                        out[idx] += v * env
+
+        # --- Tritono di tensione Db5 + Ab4 (nei bar 2 e 3) ---
+        for chord_i in 2:
+                var c_start: float = 4.2 + float(chord_i) * 4.0
+                var c_dur: float = 3.4
+                var start: int = int(SR * c_start)
+                var n_ch: int = int(SR * c_dur)
+                for i in n_ch:
+                        var idx: int = start + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        var env: float = minf(t / 1.2, 1.0) * exp(-maxf(t - 1.2, 0.0) * 1.3)
+                        var v: float = 0.10 * sine_wave(t * 554.37) \
+                                        + 0.10 * sine_wave(t * 415.30)
+                        out[idx] += v * env
+
+        # --- Vento: rumore con onde lente ---
+        for i in total:
+                var t: float = float(i) / SR
+                var swell: float = 0.5 + 0.5 * sin(t * TAU * 0.24)
+                var wind: float = noise_gen() * (0.10 + 0.14 * swell)
+                # Filtro passa-basso grezzo: media mobile approssimata
+                if i > 0:
+                        wind = 0.6 * wind + 0.4 * (out[i - 1] * 0.0 + noise_gen() * 0.1)
+                out[i] += wind * (0.5 + 0.5 * swell)
+
+        # --- Normalizzazione + soft clip ---
+        var peak: float = 0.0001
+        for i in total:
+                var a: float = absf(out[i])
+                if a > peak:
+                        peak = a
+        var gain: float = 0.78 / peak
+        for i in total:
+                out[i] = _soft_clip(out[i] * gain)
         return out

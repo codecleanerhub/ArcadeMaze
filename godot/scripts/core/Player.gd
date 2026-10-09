@@ -132,6 +132,20 @@ var damage_timer: int = 0    # post-hit invulnerability (~1 s)
 var invincible_timer: int = 0  # chalice-of-immortality total invuln (ms)
 var speed_boost_timer: int = 0 # temporary post-jump-over-enemy speed boost (ms)
 var permanent_speed_boost: bool = false  # winged boots: persists until death
+
+# ===========================================================================
+# FIX (pozione magica): modalità FANTASMA. Il player che beve la pozione
+# diventa evanescente per GHOST_MODE_DURATION_MS e attraversa i muri.
+# A fine effetto, se si trova DENTRO un muro, scivola automaticamente verso
+# il centro della cella percorribile più vicina (mai intrappolato nel muro).
+# ===========================================================================
+const GHOST_MODE_DURATION_MS: int = 5000
+var ghost_mode: bool = false
+var ghost_timer_ms: int = 0
+# Uscita di sicurezza: quando il timer scade dentro un muro, il player
+# scivola (ancora fantasma, senza collisioni) verso questo centro cella.
+var _ghost_exit_target: Vector2 = Vector2.INF
+var _ghost_exiting: bool = false
 var shoot_cooldown: int = 0
 var shoot_anim_timer: int = 0  # >0 = attack animation playing
 var anim_time: int = 0  # accumulated for idle/walk anim (NEVER reset)
@@ -196,6 +210,8 @@ func reset() -> void:
         # Permanent boost is LOST on full reset (death). See Player.cpp:106.
         permanent_speed_boost = false
         invincible_timer = 0
+        # FIX (pozione magica): azzera lo stato fantasma
+        _end_ghost_mode_now()
 
 
 # ===========================================================================
@@ -229,6 +245,9 @@ func reset_position() -> void:
         permanent_speed_boost = false  # fix: no speed boost after death
         invincible_timer = 0
         jump_offset = 0.0
+        # FIX (pozione magica): il respawn azzera lo stato fantasma (il player
+        # torna solido nella cella di partenza, che è sempre percorribile).
+        _end_ghost_mode_now()
 
 
 # ===========================================================================
@@ -382,10 +401,13 @@ func set_direction(t_dx: int, t_dy: int) -> void:
 # Returns true if the adjacent cell is open. Also updates last_dx/last_dy
 # (so sprite/weapon orient correctly when the player stops).
 # Mirrors Player::tryMove() line 170-185.
+# FIX (pozione magica): in modalità fantasma il muro NON blocca la corsa —
+# il player attraversa i muri liberamente (uso principale della pozione:
+# sfuggire ai nemici o fare scorciatoia verso un oggetto).
 func try_move(t_dx: int, t_dy: int, maze: Object) -> bool:
         var col := int(position.x / TILE_SIZE)
         var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
-        if not maze.is_wall(col + t_dx, row + t_dy):
+        if ghost_mode or not maze.is_wall(col + t_dx, row + t_dy):
                 dx = t_dx
                 dy = t_dy
                 last_dx = t_dx
@@ -436,6 +458,26 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         anim_time += int(delta_ms)
         speed_boost_timer = _tick_timer_ms(speed_boost_timer, delta_ms)
         invincible_timer = _tick_timer_ms(invincible_timer, delta_ms)
+
+        # FIX (pozione magica): gestione della modalità fantasma.
+        if _ghost_exiting:
+                # Uscita di sicurezza dal muro: scivola verso il centro della
+                # cella libera più vicina (input ignorato, nessuna collisione).
+                var exit_speed: float = 6.0 * (float(delta_ms) / 16.6667)
+                position = position.move_toward(_ghost_exit_target, exit_speed)
+                dx = 0
+                dy = 0
+                if position.distance_to(_ghost_exit_target) < 0.5:
+                        position = _ghost_exit_target
+                        _ghost_exiting = false
+                        _ghost_exit_target = Vector2.INF
+                        ghost_mode = false
+                _update_sprite()
+                queue_redraw()
+                return
+        ghost_timer_ms = _tick_timer_ms(ghost_timer_ms, delta_ms)
+        if ghost_mode and ghost_timer_ms <= 0:
+                _end_ghost_mode(maze)
 
         # Effective speed: base 2, +1 if any boost active (permanent or temp).
         var boosted: bool = permanent_speed_boost or speed_boost_timer > 0
@@ -491,12 +533,23 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                                 next_dx = 0
                                 next_dy = 0
                         # FIX (line 278-281): if a wall is now ahead, stop.
+                        # FIX (pozione magica): in modalità fantasma il muro
+                        # non ferma il player (attraversa).
                         if dx != 0 or dy != 0:
-                                if maze.is_wall(col + dx, row + dy):
+                                if not ghost_mode and maze.is_wall(col + dx, row + dy):
                                         dx = 0
                                         dy = 0
+                # FIX (pozione magica): limite dello schermo sempre attivo
+                # anche da fantasma (mai uscire dall'area di gioco). Durante
+                # il fantasma i muri NON bloccano, i bordi sì.
                 position.x += dx * effective_speed
                 position.y += dy * effective_speed
+                if ghost_mode:
+                        var ghost_margin: float = 8.0
+                        position.x = clamp(position.x, ghost_margin,
+                                float(WINDOW_WIDTH) - ghost_margin)
+                        position.y = clamp(position.y, UI_HEIGHT + ghost_margin,
+                                float(WINDOW_HEIGHT) - ghost_margin)
 
                 # Cell pickups: treasure (10000 pts + sparkle particles) or weapon.
                 var cell_type: int = maze.get_cell_type(col, row)
@@ -764,6 +817,86 @@ func consume_picked_weapon() -> bool:
 # Sprite / flip handling
 # ===========================================================================
 
+# ===========================================================================
+# FIX (pozione magica): modalità FANTASMA — API e uscita di sicurezza.
+# ===========================================================================
+
+# start_ghost_mode(duration_ms): attiva l'effetto pozione. Chiamato dal
+# MainGameController quando il player raccoglie la pozione (dopo il suono
+# di deglutizione). Durata default 5 secondi.
+func start_ghost_mode(duration_ms: int = GHOST_MODE_DURATION_MS) -> void:
+        ghost_mode = true
+        ghost_timer_ms = duration_ms
+        _ghost_exiting = false
+        _ghost_exit_target = Vector2.INF
+
+
+# is_ghost(): true mentre l'effetto pozione è attivo (il player è evanescente
+# e attraversa i muri).
+func is_ghost() -> bool:
+        return ghost_mode
+
+
+# _end_ghost_mode(maze): fine naturale dell'effetto. Se il player è in una
+# cella percorribile, torna semplicemente solido. Se è DENTRO un muro, non
+# resta intrappolato: scivola (ancora fantasma, senza collisioni) verso il
+# centro della cella percorribile più vicina al punto in cui si trova —
+# attraversando la pietra, esattamente come richiesto.
+func _end_ghost_mode(maze: Object) -> void:
+        # FIX (boss room): in boss room il controller passa maze=null (movimento
+        # libero): nessun muro, il player torna solido subito.
+        if maze == null:
+                ghost_mode = false
+                _ghost_exiting = false
+                _ghost_exit_target = Vector2.INF
+                return
+        var col := int(position.x / TILE_SIZE)
+        var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
+        var col_c := clampi(col, 0, MAZE_COLS - 1)
+        var row_c := clampi(row, 0, MAZE_ROWS - 1)
+        if not maze.is_wall(col_c, row_c):
+                # Cellata libera: torna solido subito.
+                ghost_mode = false
+                return
+        # Dentro un muro: trova la cella percorribile più vicina (anelli
+        # crescenti attorno alla posizione corrente) e scivola verso il
+        # suo centro restando fantasma finché non la raggiunge.
+        var target := _find_nearest_open_cell(maze, col_c, row_c)
+        _ghost_exit_target = Vector2(
+                target.x * TILE_SIZE + TILE_SIZE / 2.0,
+                target.y * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
+        _ghost_exiting = true
+
+
+# _end_ghost_mode_now(): azzeramento immediato e totale dello stato fantasma
+# (usato su reset/respawn/cambio livello — la posizione viene comunque
+# reimpostata su una cella percorribile dal chiamante).
+func _end_ghost_mode_now() -> void:
+        ghost_mode = false
+        ghost_timer_ms = 0
+        _ghost_exiting = false
+        _ghost_exit_target = Vector2.INF
+
+
+# _find_nearest_open_cell(maze, col, row): ricerca ad anelli crescenti
+# (raggio 1..8) della cella non-muro più vicina. Ritorna Vector2i; se non
+# trova nulla (maze degenere), ritorna la cella di partenza.
+func _find_nearest_open_cell(maze: Object, col: int, row: int) -> Vector2i:
+        for radius in range(1, 9):
+                for dc in range(-radius, radius + 1):
+                        for dr in range(-radius, radius + 1):
+                                # solo il bordo dell'anello
+                                if absi(dc) != radius and absi(dr) != radius:
+                                        continue
+                                var nc: int = col + dc
+                                var nr: int = row + dr
+                                if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
+                                        continue
+                                if not maze.is_wall(nc, nr):
+                                        return Vector2i(nc, nr)
+        return Vector2i(col, row)
+
+
 # _update_sprite(): applies the side-view flip + jump offset each frame.
 # Sprite is right-facing by default for HERO_M/MAGE/DRAGON/VAMPIRE; the
 # others default left and the flip logic inverts.
@@ -840,6 +973,22 @@ func _update_sprite() -> void:
         # the sprite by -jumpOffset relative to its anchor.
         sprite.offset = Vector2(0, -jump_offset)
 
+        # FIX (pozione magica): il player fantasma è EVANESCENTE — sprite
+        # semitrasparente con tinta eterea ciano e pulsazione lenta. Quando
+        # l'effetto finisce, il modulate torna al tint normale (P2 blu).
+        if ghost_mode:
+                var ghost_pulse: float = 0.46 + 0.14 * sin(float(anim_time) * 0.006)
+                # Lampeggio d'avviso negli ultimi 1.2s (sta per finire)
+                if ghost_timer_ms < 1200:
+                        ghost_pulse = 0.35 + 0.35 * absf(sin(float(anim_time) * 0.012))
+                sprite.modulate = Color(
+                        tint.r * 0.7 + 0.3,
+                        tint.g * 0.85 + 0.15,
+                        tint.b * 0.9 + 0.1,
+                        ghost_pulse)
+        else:
+                sprite.modulate = tint
+
 
 # ===========================================================================
 # _draw(): render projectiles fired by this player.
@@ -847,6 +996,10 @@ func _update_sprite() -> void:
 # Each projectile dict has: pos, dir, power, active, type.
 # ===========================================================================
 func _draw() -> void:
+        # FIX (pozione magica): aura fantasmagorica attorno al player mentre
+        # l'effetto pozione è attivo (scia eterea + particelle che salgono).
+        if ghost_mode:
+                _draw_ghost_aura()
         # Draw projectiles (relative to player node origin = player position)
         # 4 distinct shapes per weapon type (mirror C++ drawProjectiles)
         for proj in projectiles:
@@ -995,6 +1148,33 @@ func _draw_dynamite_equipped() -> void:
                         var sx2: float = fuse_top_x + sin(float(anim_time) * 0.005 + i) * 2
                         draw_circle(Vector2(sx2, sy2), 2.0 - i * 0.3,
                                 Color(0.5, 0.5, 0.5, 0.4 - i * 0.1))
+
+
+# FIX (pozione magica): aura fantasmagorica del player — 3 aure eteree
+# pulsanti + 6 particelle che salgono a spirale + scia ondulata sotto i piedi.
+# Tinta verde-acqua (il colore della pozione) che sfuma nel ciano spettrale.
+func _draw_ghost_aura() -> void:
+        var t: float = float(anim_time)
+        var breath: float = (sin(t * 0.004) + 1.0) * 0.5
+        # Aure concentriche eteree
+        draw_circle(Vector2.ZERO, 30.0 + breath * 3.0, Color(0.45, 0.95, 0.75, 0.06))
+        draw_circle(Vector2.ZERO, 22.0 + breath * 2.5, Color(0.55, 1.0, 0.85, 0.08))
+        draw_circle(Vector2.ZERO, 15.0 + breath * 2.0, Color(0.65, 1.0, 0.9, 0.10))
+        # Anello spettrale che pulsa
+        draw_arc(Vector2.ZERO, 26.0 + breath * 4.0, 0.0, TAU, 32,
+                Color(0.7, 1.0, 0.9, 0.16 + 0.08 * breath), 1.5)
+        # Particelle che salgono a spirale
+        for i in 6:
+                var phase: float = t * 0.002 + float(i) * TAU / 6.0
+                var py: float = 18.0 - fmod(t * 0.045 + float(i) * 7.0, 44.0)
+                var px: float = cos(phase) * (10.0 - py * 0.15)
+                draw_circle(Vector2(px, py), 1.8,
+                        Color(0.75, 1.0, 0.9, 0.55 - absf(py) * 0.008))
+        # Scia ondulata ai piedi (bassa, sotto lo sprite)
+        for i in 4:
+                var st: float = t * 0.008 + float(i) * 1.6
+                draw_circle(Vector2(sin(st) * 4.0, 20.0 + float(i) * 1.2),
+                        2.2 - float(i) * 0.3, Color(0.6, 0.95, 0.8, 0.30 - float(i) * 0.06))
 
 
 func _projectile_color(w_type: int) -> Color:

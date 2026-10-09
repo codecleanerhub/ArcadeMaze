@@ -380,6 +380,13 @@ func _check_boss_death() -> void:
                 if AudioManager:
                         AudioManager.stop_epic_music()
                 if GameManager:
+                        # FIX (Hall of Fame): registra il punteggio finale prima
+                        # della transizione (in 2P somma i due punteggi)
+                        var total_score_b: int = player.score
+                        if GameManager.num_players == 2 and player2.visible:
+                                total_score_b += player2.score
+                        GameManager.final_score = total_score_b
+                        GameManager.final_level = current_level
                         GameManager.died_in_boss = true
                         if GameManager.continues_left > 0:
                                 GameManager.player_died()
@@ -401,6 +408,16 @@ func _check_boss_death() -> void:
                                 boss_projectiles_node.add_child(p)
                 player.add_life()
                 if GameManager:
+                        # FIX (Hall of Fame): se questa è la vittoria finale
+                        # (story completa), registra il punteggio prima di
+                        # passare alla WinScreen.
+                        if GameManager.game_mode == C.GameMode.STORY and \
+                           current_level + 1 > C.STORY_LEVELS_COUNT:
+                                var total_score_w: int = player.score
+                                if GameManager.num_players == 2 and player2.visible:
+                                        total_score_w += player2.score
+                                GameManager.final_score = total_score_w
+                                GameManager.final_level = current_level
                         GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
                         GameManager.current_level = current_level + 1
                         if GameManager.game_mode == C.GameMode.STORY and \
@@ -527,7 +544,9 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                         p2_hit = p2_pos.distance_squared_to(mine_item.pos) < 400.0
                 if p1_hit or p2_hit:
                         mine_item.bouncing = true
-                        mine_item.bounce_timer_ms = 30000
+                        # FIX (mina 6 secondi): anche nella boss room la mina
+                        # esplode automaticamente dopo 6 secondi (prima 30s).
+                        mine_item.bounce_timer_ms = 6000
                         var angle: float = randf() * TAU
                         mine_item.velocity = Vector2(cos(angle), sin(angle)) * 6.0
                         if AudioManager:
@@ -581,17 +600,30 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                 mine_item.queue_free()
                                 mine_item = null
                                 return
-                # Timer: expires after ~30s of bouncing.
+                # Timer: FIX (mina esplode dopo 6 secondi) — anche se non ha
+                # colpito il boss, allo scadere esplode e se il boss è entro il
+                # raggio di scoppio (60px, "pochi pixel") subisce il danno.
                 if mine_item != null and mine_item.bouncing:
                         if mine_item.bounce_timer_ms > int(delta_ms):
                                 mine_item.bounce_timer_ms -= int(delta_ms)
                         else:
                                 mine_item.bounce_timer_ms = 0
                         if mine_item.bounce_timer_ms == 0:
+                                # Danno al boss se entro il raggio di scoppio
+                                if boss != null and not boss.is_dead():
+                                        if mine_item.pos.distance_squared_to(boss.pos) < 60.0 * 60.0:
+                                                var expiry_dmg: int = int(float(boss.max_health) * 0.3)
+                                                if expiry_dmg < 1:
+                                                        expiry_dmg = 1
+                                                boss.take_damage(expiry_dmg)
+                                                if AudioManager:
+                                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                 if EffectsManager:
                                         var p := EffectsManager.spawn_explosion(mine_item.pos,
-                                                Color(0.7, 0.6, 0.2), 10, 0.3)
+                                                Color(1.0, 0.78, 0.2), 20, 0.5)
                                         boss_projectiles_node.add_child(p)
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                                 mine_item.active = false
                                 mine_item.bouncing = false
                                 mine_item.queue_free()

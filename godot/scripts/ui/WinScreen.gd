@@ -16,6 +16,11 @@ var _bg_texture: Texture2D = null
 var _time: float = 0.0
 var _fireworks: Array = []
 var _finished: bool = false
+# FIX (Hall of Fame): tastiera virtuale di inserimento nome
+var _keyboard: Control = null
+var _keyboard_timer: float = 0.0
+const KEYBOARD_DELAY: float = 2.2  # secondi di fuochi d'artificio prima della tastiera
+var _keyboard_shown: bool = false
 
 
 func _ready() -> void:
@@ -48,7 +53,52 @@ func _process(delta: float) -> void:
                 if int(fw.get("life", 0)) > 0:
                         alive.append(fw)
         _fireworks = alive
+        # FIX (Hall of Fame): dopo il delay, se il punteggio merita la
+        # classifica, mostra la tastiera di inserimento nome.
+        if not _keyboard_shown and not _finished:
+                _keyboard_timer += delta
+                if _keyboard_timer >= KEYBOARD_DELAY:
+                        _maybe_show_keyboard()
         queue_redraw()
+
+
+# FIX (Hall of Fame): crea la tastiera virtuale se il punteggio è da classifica.
+func _maybe_show_keyboard() -> void:
+        _keyboard_shown = true
+        var score: int = 0
+        var level: int = 1
+        if GameManager:
+                score = GameManager.final_score
+                level = GameManager.final_level
+        if not HallOfFameData.qualifies(score):
+                return
+        var kb_script := load("res://scripts/ui/NameEntryKeyboard.gd")
+        _keyboard = Control.new()
+        _keyboard.set_script(kb_script)
+        _keyboard.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _keyboard.display_score = score
+        _keyboard.display_level = level
+        _keyboard.save_on_confirm = true
+        add_child(_keyboard)
+        _keyboard.entry_confirmed.connect(_on_name_confirmed)
+
+
+# FIX (Hall of Fame): nome confermato — salva e mostra la Hall of Fame con
+# la nuova voce evidenziata.
+func _on_name_confirmed(player_name: String) -> void:
+        if _finished:
+                return
+        _finished = true
+        if GameManager:
+                var entries := HallOfFameData.load_entries()
+                var pos: int = -1
+                for i in entries.size():
+                        if str(entries[i]["name"]) == player_name \
+                                        and int(entries[i]["score"]) == GameManager.final_score:
+                                pos = i
+                                break
+                GameManager.hof_highlight_index = pos
+                GameManager.go_to_hall_of_fame()
 
 
 func _spawn_firework() -> void:
@@ -70,6 +120,10 @@ func _spawn_firework() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
         if _finished:
+                return
+        # FIX (Hall of Fame): mentre la tastiera è attiva, questa schermata
+        # non consuma input (li gestisce la tastiera).
+        if _keyboard != null and is_instance_valid(_keyboard):
                 return
         if event is InputEventKey and event.pressed and not event.echo:
                 if event.keycode == KEY_ENTER or event.keycode == KEY_SPACE or event.keycode == KEY_ESCAPE:
@@ -125,10 +179,10 @@ func _draw() -> void:
                 "All 68 levels cleared. The treasure is yours.",
                 HORIZONTAL_ALIGNMENT_CENTER, 400, 22, color_hint)
 
-        # Final score (if available)
+        # Final score (FIX Hall of Fame: letto da GameManager.final_score)
         if GameManager:
                 draw_string(font, Vector2(cx - 150, 350),
-                        "FINAL SCORE: %d" % 0,
+                        "FINAL SCORE: %d" % GameManager.final_score,
                         HORIZONTAL_ALIGNMENT_CENTER, 300, 28, color_title)
 
         # Hint (blinking)
