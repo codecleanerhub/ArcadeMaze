@@ -227,19 +227,32 @@ func _update_boss(delta_ms: float) -> void:
                         _check_boss_projectiles_vs_player(player2)
 
         # (6) Invincible player damages boss
+        # FIX (doppio decremento calice): il timer è già decrementato da
+        # Player.update_player (unico owner del tick). Qui si legge soltanto
+        # per infliggere il danno a contatto (prima veniva scalato UNA
+        # SECONDA volta per frame e l'effetto durava la metà).
         if boss and not boss.is_dead() and player.invincible_timer > 0:
-                player.invincible_timer = max(0, player.invincible_timer - int(delta_ms))
                 if player.get_pixel_pos().distance_squared_to(boss.pos) < (boss.size / 2.0) ** 2:
                         boss.take_damage(1)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
         # P2 invincibility also damages boss
         if boss and not boss.is_dead() and player2.visible and player2.invincible_timer > 0:
-                player2.invincible_timer = max(0, player2.invincible_timer - int(delta_ms))
                 if player2.get_pixel_pos().distance_squared_to(boss.pos) < (boss.size / 2.0) ** 2:
                         boss.take_damage(1)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+
+        # FIX (musica calice in boss room): quando l'effetto del calice
+        # termina durante il fight (loop epic attivo), fermalo e riprendi la
+        # musica del boss se la musica è attiva.
+        if AudioManager and AudioManager._epic_playing:
+                var p1_still: bool = player.visible and player.invincible_timer > 0
+                var p2_still: bool = player2.visible and player2.invincible_timer > 0
+                if not p1_still and not p2_still:
+                        AudioManager.stop_epic_music()
+                        if AudioManager.music_enabled and GameManager:
+                                AudioManager.play_level_music(GameManager.current_level, true)
 
         # (7) Boss room weapons pickup
         _check_boss_room_weapon_pickup(player)
@@ -362,6 +375,10 @@ func _check_boss_death() -> void:
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 p2_dead = player2.lives <= 0
         if p1_dead and p2_dead:
+                # FIX (musica calice alla morte): ferma il loop epic del
+                # calice prima di passare alle schermate CONTINUES/LOSE.
+                if AudioManager:
+                        AudioManager.stop_epic_music()
                 if GameManager:
                         GameManager.died_in_boss = true
                         if GameManager.continues_left > 0:

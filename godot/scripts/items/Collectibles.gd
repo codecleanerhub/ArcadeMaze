@@ -573,7 +573,12 @@ func _draw_treasure() -> void:
         if not tex_path.is_empty():
                 var tex: Texture2D = _load_png_cached(tex_path)
                 if tex != null:
-                        var size: float = 64.0
+                        # FIX (dimensione tesori, richiesta utente "poco più
+                        # piccole"): 64 -> 52px (-19%). I PNG dei tesori hanno
+                        # contenuto ~85-90% del frame, quindi la dimensione
+                        # visiva scende da ~57px a ~46px: ben riconoscibili
+                        # ma non più dominanti nella cella da 64px.
+                        var size: float = 52.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
                         return

@@ -30,7 +30,9 @@ const C = preload("res://scripts/core/GameConstants.gd")
 const TILE_SIZE: int = 64
 # FIX (doppio muro lato destro): allineato con GameConstants (31, dispari;
 # con 30 pari la colonna 28 restava sempre muro -> doppio muro destro).
-const MAZE_COLS: int = 31
+# FIX (muro destro invisibile): 31 -> 30, allineato a GameConstants
+# (vedi fix muro destro in GameConstants/Maze.generate).
+const MAZE_COLS: int = 30
 const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 

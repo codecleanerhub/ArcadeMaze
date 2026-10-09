@@ -85,6 +85,8 @@ var _epic_player:  AudioStreamPlayer = null
 var _current_music_track: int = -1
 # True if the epic channel is currently playing a jingle.
 var _epic_playing: bool = false
+# Track index currently on the epic channel (or -1 if stopped).
+var _epic_track_idx: int = -1
 
 # Master switch (mirrors Game::musicEnabled).
 # FIX (musica parte al boot anche se in off): default music_enabled = false
@@ -203,22 +205,37 @@ func play_menu_music() -> void:
         _play_music_track(TRACK_MENU, true)
 
 
-# Play a one-shot epic jingle on the dedicated channel.
+# Play an epic jingle on the dedicated channel.
 # track_idx must be TRACK_EPIC_CHALICE, TRACK_EPIC_SCEPTER or TRACK_MENU.
-func play_epic_music(track_idx: int) -> void:
+# FIX (musica calice): nuovo parametro `loop` - il jingle del calice suona
+# in LOOP per tutta la durata dell'invincibilità (lo ferma il Game con
+# stop_epic_music quando l'effetto scade). Scettro/victory restano one-shot
+# come nel C++ originale (AudioManager.cpp:104 epicSound.setLoop(false)).
+# FIX (gate rimosso): come nel C++ originale, il canale epic è un canale
+# EFFETTO separato NON soggetto al flag musicEnabled (il gate impediva di
+# sentire il jingle del calice con la musica disattivata).
+# Un jingle DIVERSO da quello in riproduzione ha la priorità (es. calice
+# raccolto mentre suona ancora lo scettro): il canale si riavvia.
+func play_epic_music(track_idx: int, loop: bool = false) -> void:
         if track_idx < TRACK_EPIC_CHALICE or track_idx > TRACK_MENU:
                 return
-        if _epic_playing and _epic_player.playing:
+        if _epic_playing and _epic_player.playing and _epic_track_idx == track_idx:
+                return  # stesso jingle già in riproduzione: no restart
+        var stream: AudioStreamWAV = _music_streams[track_idx]
+        if stream == null:
                 return
-        _epic_player.stream = _music_streams[track_idx]
+        stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
+        _epic_player.stream = stream
         _epic_player.play()
         _epic_playing = true
+        _epic_track_idx = track_idx
 
 
 # Stop the epic jingle (if playing).
 func stop_epic_music() -> void:
         _epic_player.stop()
         _epic_playing = false
+        _epic_track_idx = -1
 
 
 # True if the music channel is currently playing.

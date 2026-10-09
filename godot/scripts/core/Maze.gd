@@ -511,6 +511,21 @@ func generate(lvl: int = 1) -> void:
                 if _get_cell_type(c, r) == C.CellType.WALL and _count_neighbor_walls(c, r) == 2:
                         _set_cell_type(c, r, C.CellType.EMPTY)
 
+        # FIX (muro destro invisibile + doppio muro, definitivo): con 30
+        # colonne il bordo destro (col 29) è l'ultima colonna VISIBLE su
+        # schermo (30*64 = 1920 esatto). La DFS con passo 2 non scava MAI la
+        # colonna 28 (pari: non ci sono stanze a colonna 29), quindi senza
+        # questo passaggio resterebbe SEMPRE muro e, sommata al bordo (29),
+        # formerebbe il doppio muro di 128px sull'intero lato destro.
+        # FIX: apriamo la colonna 28 SOLO nelle righe in cui la colonna 27 è
+        # già aperta. Risultato: bordo destro SINGOLO e visibile ovunque, con
+        # il pattern del maze che sfuma naturalmente nel bordo (corridoi che
+        # terminano contro il muro, blocchi di muro che si fondono col bordo
+        # come nel C++ originale 21x19).
+        for r in range(1, C.MAZE_ROWS - 1):
+                if _get_cell_type(C.MAZE_COLS - 3, r) != C.CellType.WALL:
+                        _set_cell_type(C.MAZE_COLS - 2, r, C.CellType.EMPTY)
+
                 # 4) Collect empty cells and shuffle them so treasure/weapon placement
                 #    is uniformly random but with minimum-distance constraints.
 

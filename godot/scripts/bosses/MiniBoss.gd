@@ -61,13 +61,23 @@ enum Weapon {
 
 # Constants (must match C++ Utils.h)
 const TILE_SIZE := 64
-# FIX (costanti stale): erano 40/22 (layout vecchio 40x22 del maze). Allineate
-# a GameConstants (31x15, vedi fix doppio muro lato destro in GameConstants).
-const MAZE_COLS := 31
+# FIX (muro destro invisibile): 31 -> 30 colonne. Con 31 il muro di bordo
+# (col 30, x 1920..1984) finiva FUORI SCHERMO e i corridoi della col 29
+# arrivano al bordo senza muro visibile. Con 30 colonne il bordo (col 29)
+# è l'ultima colonna visibile (30*64=1920 esatto). Vedi Maze.generate per
+# l'apertura della colonna 28 che evita il doppio muro.
+const MAZE_COLS := 30
 const MAZE_ROWS := 15
 const UI_HEIGHT := 80
 const WINDOW_WIDTH := 1920
 const WINDOW_HEIGHT := 1080
+
+# Direzioni cardinali (stesso ordine di Enemy.gd/BFS.gd).
+const _DC: Array[int] = [0, 1, 0, -1]
+const _DR: Array[int] = [-1, 0, 1, 0]
+# Anti-stuck: se il mini-boss non si muove da questo tempo, forza una
+# direzione random aperta (mirror Enemy.gd STUCK_THRESHOLD_MS).
+const STUCK_THRESHOLD_MS: int = 100
 
 @export var mb_type: int = Type.MB_GOBLIN_CHIEFTAIN
 @export var level: int = 1
@@ -99,9 +109,16 @@ var burned_flag: bool = false
 # Flee mode (player invincible via chalice).
 var flee_mode: bool = false
 
-# Persistent movement target (cell center).
-var target_pos: Vector2 = Vector2.ZERO
-var has_target: bool = false
+# Facing (per flip sprite e attacco): ultima direzione orizzontale non-zero.
+var last_dx: int = 1
+# Anti-stuck tracking (mirror Enemy.gd): ms dall'ultimo movimento > 1px.
+var stuck_timer_ms: int = 0
+var last_pos: Vector2 = Vector2.ZERO
+# Waypoint LOCKED alla decisione (mirror Enemy.gd 13feb64): il centro della
+# cella successiva, valido fino all'arrivo. move_toward non sfora MAI il
+# target -> arrivo ESATTO al centro -> elimina l'oscillazione snap<->step
+# da arrotondamento float32 e assorbe la vecchia correzione "rotaia".
+var _move_waypoint: Vector2 = Vector2.INF
 
 # Sprite (loaded lazily on first render via SpriteManager).
 var sprite_id: String = ""
@@ -430,46 +447,89 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
         if attacking_timer_ms > 0:
                 attacking_timer_ms = maxi(0, attacking_timer_ms - delta_ms)
 
-        # Pathfinding / movement.
-        var need_repath := not has_target
-        if has_target:
-                var d := target_pos - pos
-                if d.length() <= float(speed):
-                        pos = target_pos
-                        has_target = false
-                        need_repath = true
+        # FIX (scatti miniboss - root cause): il movimento waypoint+footprint
+        # (_can_occupy_position 62px) fermava il miniboss a metà cella e il
+        # clamp di rendering spostava lo sprite di 8px quando c'era un muro
+        # sotto: scatti continui. Riscritto GRID-LOCKED come Enemy.gd
+        # (commit 7e67533, modello fedele al C++ originale):
+        #   1) viaggio SEMPRE sulla linea centrale dei corridoi;
+        #   2) cambio direzione SOLO al centro cella (snap max step_size px);
+        #   3) wall check point-based is_wall(col+dx, row+dy);
+        #   4) movimento cardinale su un solo asse + self-healing.
+        var col := int(pos.x / TILE_SIZE)
+        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+        var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
+        var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+        # FIX (scatti): step frame-rate independent (era speed px/frame fisso).
+        var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
 
-        if need_repath:
-                var my_grid := Vector2i(floori(pos.x / TILE_SIZE),
-                                                           floori((pos.y - UI_HEIGHT) / TILE_SIZE))
+        # --- Anti-stuck tracking (mirror Enemy.gd) ---
+        var dx_pos: float = pos.x - last_pos.x
+        var dy_pos: float = pos.y - last_pos.y
+        if dx_pos * dx_pos + dy_pos * dy_pos < 1.0:
+                stuck_timer_ms += delta_ms
+        else:
+                stuck_timer_ms = 0
+        last_pos = pos
+
+        if absf(pos.x - center_x) < step_size \
+                        and absf(pos.y - center_y) < step_size:
+                # (1) Arrivo al centro cella: snap immediato + decisione dir.
+                pos = Vector2(center_x, center_y)
+
                 if flee_mode:
+                        # FLEE (calice): massimizza la distanza dal player.
                         _flee_greedy(player_grid_pos)
+                        if dx != 0 or dy != 0:
+                                stuck_timer_ms = 0
                 else:
-                        var next := _bfs_path(my_grid, player_grid_pos)
+                        var next := _bfs_path(Vector2i(col, row), player_grid_pos)
                         if next != Vector2i(-1, -1):
-                                target_pos = Vector2(next.x * TILE_SIZE + TILE_SIZE / 2.0,
-                                                                         next.y * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
-                                has_target = true
-                                var mv := target_pos - pos
-                                dx = int(signf(mv.x))
-                                dy = int(signf(mv.y))
+                                dx = next.x - col
+                                if dx != 0:
+                                        last_dx = dx
+                                dy = next.y - row
+                                stuck_timer_ms = 0
+                        elif col == player_grid_pos.x and row == player_grid_pos.y:
+                                # Stessa cella del player: resta al centro,
+                                # lascia scattare il melee (mirror Enemy.gd).
+                                dx = 0
+                                dy = 0
                         else:
+                                # Player irraggiungibile: avvicinati greedy.
                                 _move_greedy(player_grid_pos)
 
-        # Follow cell-center waypoints one axis at a time. Repathing mid-cell
-        # can otherwise create a diagonal turn that cuts through a wall corner.
-        if has_target and speed > 0:
-                var mv := target_pos - pos
-                var step := Vector2.ZERO
-                if absf(mv.x) > 0.5:
-                        step.x = signf(mv.x) * minf(float(speed), absf(mv.x))
-                elif absf(mv.y) > 0.5:
-                        step.y = signf(mv.y) * minf(float(speed), absf(mv.y))
-                var candidate := pos + step
-                if step != Vector2.ZERO and _can_occupy_position(candidate):
-                        pos = candidate
-                elif step != Vector2.ZERO:
-                        has_target = false
+                # Anti-stuck: direzione random aperta come ultima risorsa.
+                if dx == 0 and dy == 0 and stuck_timer_ms > STUCK_THRESHOLD_MS:
+                        if _pick_random_open_dir(col, row):
+                                stuck_timer_ms = 0
+
+                # (2) Wall check point-based: se la cella avanti è muro, fermo.
+                if maze != null and maze.is_wall(col + dx, row + dy):
+                        dx = 0
+                        dy = 0
+                # Waypoint LOCKED alla decisione (mirror Enemy.gd): il centro
+                # della cella successiva, valido fino all'arrivo.
+                if dx != 0 or dy != 0:
+                        _move_waypoint = Vector2(center_x + dx * TILE_SIZE,
+                                        center_y + dy * TILE_SIZE)
+                else:
+                        _move_waypoint = Vector2.INF
+        elif dx == 0 and dy == 0:
+                # Fermo ma decentrato (stato anomalo): recovery graduale
+                # verso il centro della cella corrente.
+                pos = pos.move_toward(Vector2(center_x, center_y), step_size)
+                last_pos = pos
+
+        # (3) Movimento verso il WAYPOINT (centro della cella successiva,
+        # FISSATO alla decisione): move_toward non sfora MAI il target ->
+        # arrivo ESATTO al centro -> al frame successivo (1) scatta la
+        # decisione. Elimina l'oscillazione snap<->step da arrotondamento
+        # float32, i micro-salti dello snap e il "target che scivola".
+        # La vecchia correzione "rotaia" è assorbita: l'asse perpendicolare
+        # converge sul waypoint a ogni frame (self-healing).
+        if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
+                pos = pos.move_toward(_move_waypoint, step_size)
 
         # Meele attack.
         var atk_d := player_pixel_pos - pos
@@ -489,26 +549,6 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
         queue_redraw()
 
 
-func _can_occupy_position(candidate: Vector2) -> bool:
-        const SPRITE_HALF: float = 31.0
-        const EDGE_EPSILON: float = 0.001
-        var left_col: int = floori((candidate.x - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
-        var right_col: int = floori((candidate.x + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
-        var top_row: int = floori((candidate.y - UI_HEIGHT - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
-        var bottom_row: int = floori((candidate.y - UI_HEIGHT + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
-        for col in range(left_col, right_col + 1):
-                for row in range(top_row, bottom_row + 1):
-                        if maze.is_wall(col, row):
-                                return false
-        return true
-
-
-# ============================================================
-# Pathfinding
-# ============================================================
-
-# BFS pathfinding toward `target_grid`. Returns the next cell to step into,
-# or Vector2i(-1, -1) if no path is found.
 func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
         if start == target:
                 return Vector2i(-1, -1)
@@ -518,8 +558,11 @@ func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
         var queue: Array = [[start, Vector2i(-1, -1)]]  # [cell, first_step]
         var visited := {start: true}
         var dirs := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
+        # FIX (cap iterazioni): 200 -> 600. Il maze 30x15 ha ~450 celle (~200+
+        # aperte): con cap 200 la BFS troncava i path lunghi e il miniboss
+        # ripiegava sul greedy subottimale.
         var iter := 0
-        while queue.size() > 0 and iter < 200:
+        while queue.size() > 0 and iter < 600:
                 iter += 1
                 var entry: Array = queue.pop_front()
                 var cur: Vector2i = entry[0]
@@ -540,61 +583,97 @@ func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
         return Vector2i(-1, -1)
 
 
+# Greedy avvicinamento al player (BFS irraggiungibile): sceglie la cella
+# aperta adiacente che MINIMIZZA la distanza (mirror Enemy.gd _move_greedy).
+# Imposta direttamente dx/dy (niente waypoint: le decisioni si prendono
+# SOLO al centro cella nel movimento grid-locked).
 func _move_greedy(target_grid: Vector2i) -> void:
-        var dirs: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
-        var my_col := floori(pos.x / TILE_SIZE)
-        var my_row := floori((pos.y - UI_HEIGHT) / TILE_SIZE)
-        var best_dist := absi(target_grid.x - my_col) + absi(target_grid.y - my_row)
-        var best_dx := 0
-        var best_dy := 0
-        for d in dirs:
-                var nc: int = my_col + d.x
-                var nr: int = my_row + d.y
-                if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
-                        continue
+        var col := int(pos.x / TILE_SIZE)
+        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+        var best_dx: int = 0
+        var best_dy: int = 0
+        var min_dist: float = 999999.0
+        var any_open: bool = false
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
                 if maze != null and maze.is_wall(nc, nr):
                         continue
-                var dist := absi(target_grid.x - nc) + absi(target_grid.y - nr)
-                if dist < best_dist:
-                        best_dist = dist
-                        best_dx = d.x
-                        best_dy = d.y
-        if best_dx != 0 or best_dy != 0:
-                target_pos = Vector2((my_col + best_dx) * TILE_SIZE + TILE_SIZE / 2.0,
-                                                         (my_row + best_dy) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
-                has_target = true
-                dx = best_dx
-                dy = best_dy
+                any_open = true
+                var dist: float = float((nc - target_grid.x) * (nc - target_grid.x)
+                                + (nr - target_grid.y) * (nr - target_grid.y))
+                # Penalizza l'inversione di marcia (+10 dist).
+                if _DC[i] == -dx and _DR[i] == -dy:
+                        dist += 10.0
+                if dist < min_dist:
+                        min_dist = dist
+                        best_dx = _DC[i]
+                        best_dy = _DR[i]
+        # Dead-end: direzione random aperta.
+        if any_open and best_dx == 0 and best_dy == 0:
+                _pick_random_open_dir(col, row)
+                return
+        dx = best_dx
+        if dx != 0:
+                last_dx = dx
+        dy = best_dy
 
 
+# FLEE mode (player invincibile col calice): sceglie la cella aperta
+# adiacente che MASSIMIZZA la distanza dal player (mirror Enemy.gd
+# _flee_greedy). Imposta direttamente dx/dy.
 func _flee_greedy(target_grid: Vector2i) -> void:
-        var dirs: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
-        var my_col := floori(pos.x / TILE_SIZE)
-        var my_row := floori((pos.y - UI_HEIGHT) / TILE_SIZE)
-        var cur_dist := absi(target_grid.x - my_col) + absi(target_grid.y - my_row)
-        var best_dist := cur_dist
-        var best_dx := 0
-        var best_dy := 0
-        for d in dirs:
-                var nc: int = my_col + d.x
-                var nr: int = my_row + d.y
-                if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
-                        continue
+        var col := int(pos.x / TILE_SIZE)
+        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+        var best_dx: int = 0
+        var best_dy: int = 0
+        var max_dist: float = -1.0
+        var any_open: bool = false
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
                 if maze != null and maze.is_wall(nc, nr):
                         continue
-                var dist := absi(target_grid.x - nc) + absi(target_grid.y - nr)
-                if dist > best_dist:
-                        best_dist = dist
-                        best_dx = d.x
-                        best_dy = d.y
-        if best_dx != 0 or best_dy != 0:
-                target_pos = Vector2((my_col + best_dx) * TILE_SIZE + TILE_SIZE / 2.0,
-                                                         (my_row + best_dy) * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
-                has_target = true
-                if best_dx > 0:  dx = 1
-                elif best_dx < 0: dx = -1
-                if best_dy > 0:  dy = 1
-                elif best_dy < 0: dy = -1
+                any_open = true
+                var dist: float = float((nc - target_grid.x) * (nc - target_grid.x)
+                                + (nr - target_grid.y) * (nr - target_grid.y))
+                # Penalizza la fuga VERSO il player (inversione).
+                if _DC[i] == -dx and _DR[i] == -dy:
+                        dist -= 10.0
+                if dist > max_dist:
+                        max_dist = dist
+                        best_dx = _DC[i]
+                        best_dy = _DR[i]
+        if not any_open:
+                dx = 0
+                dy = 0
+                return
+        if best_dx == 0 and best_dy == 0:
+                _pick_random_open_dir(col, row)
+                return
+        dx = best_dx
+        if dx != 0:
+                last_dx = dx
+        dy = best_dy
+
+
+# Direzione random aperta (anti-stuck / dead-end), partendo da un offset
+# random per evitare bias direzionale (mirror Enemy.gd).
+func _pick_random_open_dir(col: int, row: int) -> bool:
+        var start: int = randi() % 4
+        for i in range(4):
+                var idx: int = (start + i) % 4
+                var nc: int = col + _DC[idx]
+                var nr: int = row + _DR[idx]
+                if maze != null and not maze.is_wall(nc, nr):
+                        dx = _DC[idx]
+                        if dx != 0:
+                                last_dx = dx
+                        dy = _DR[idx]
+                        return true
+        dx = 0
+        dy = 0
+        return false
 
 
 # ============================================================
@@ -618,8 +697,10 @@ func _draw() -> void:
 
 # Facing angle (radians): 0.0 = right, PI = left. Used by _draw_weapon_swing
 # to flip the weapon to the side the mini-boss is facing.
+# FIX (orientamento da fermo): basato su last_dx come Enemy.gd, così da
+# fermo (dx==0) mantiene l'ultimo orientamento invece di tornare a destra.
 func _get_facing_angle() -> float:
-        if dx < 0:
+        if last_dx < 0:
                 return PI
         return 0.0
 
@@ -629,7 +710,8 @@ func _draw_with_sprite() -> void:
         if scale_val < 1.0:
                 scale_val = 1.0
         var bob_y := sin(anim_time * 3.0) * 1.0
-        var flipped := dx < 0
+        # FIX (scatto visivo da fermo): flip basato su last_dx, non dx.
+        var flipped := last_dx < 0
 
         # --- FIX (gif-animata-scollegata): prefer DeformableSprite ---
         # When loaded, delegate rendering to the deform sprite (mesh deformation
@@ -650,7 +732,7 @@ func _draw_with_sprite() -> void:
                 var walk_phase: float = 1.0 if mode == DeformableSprite.AnimMode.WALK else 0.0
                 if EffectsManager:
                         EffectsManager.update_walk_cycle(self, walk_phase,
-                                dx >= 0, anim_time, 8.0)
+                                last_dx >= 0, anim_time, 8.0)
                 # Spawn dust puff periodically while walking.
                 if mode == DeformableSprite.AnimMode.WALK:
                         _dust_frame_counter += 1
@@ -717,61 +799,27 @@ func _draw_with_sprite() -> void:
         if active_sheet != null:
                 at = active_sheet.get_frame_texture(anim_name, frame)
         if at != null:
-                # Centered draw with vertical bob. Flip horizontally via src_rect.
-                var tw: int = 64  # mini-boss visual size (HD sheet scaled down)
-                var th: int = 64
-                var draw_pos := Vector2(-tw / 2, -th / 2 + 8 + bob_y)
-                # FIX (overlap muri visivo - CLAMP RENDERING): stesso fix
-                # applicato a Enemy.gd. Se lo sprite estenderebbe in una
-                # cella-muro adiacente, shift draw_pos per tenerlo dentro.
-                if maze != null and maze.has_method("is_wall"):
-                        var _mb_col: int = int(pos.x / 64)
-                        var _mb_row: int = int((pos.y - 80) / 64)
-                        var _mb_cl: float = _mb_col * 64.0
-                        var _mb_cr: float = (_mb_col + 1) * 64.0
-                        var _mb_ct: float = _mb_row * 64.0 + 80.0
-                        var _mb_cb: float = (_mb_row + 1) * 64.0 + 80.0
-                        var _mb_min_x: float = -INF
-                        var _mb_max_x: float = INF
-                        if maze.is_wall(_mb_col - 1, _mb_row):
-                                _mb_min_x = _mb_cl - pos.x
-                        if maze.is_wall(_mb_col + 1, _mb_row):
-                                _mb_max_x = _mb_cr - pos.x - tw
-                        var _mb_min_y: float = -INF
-                        var _mb_max_y: float = INF
-                        if maze.is_wall(_mb_col, _mb_row - 1):
-                                _mb_min_y = _mb_ct - pos.y
-                        if maze.is_wall(_mb_col, _mb_row + 1):
-                                _mb_max_y = _mb_cb - pos.y - th
-                        # FIX (overlap diagonale): controlla anche le 4 diagonali.
-                        # Se una diagonale è muro, l'angolo dello sprite non deve
-                        # entrare nella cella diagonale → clampa entrambi gli assi.
-                        if maze.is_wall(_mb_col - 1, _mb_row - 1):
-                                _mb_min_x = maxf(_mb_min_x, _mb_cl - pos.x)
-                                _mb_min_y = maxf(_mb_min_y, _mb_ct - pos.y)
-                        if maze.is_wall(_mb_col + 1, _mb_row - 1):
-                                _mb_max_x = minf(_mb_max_x, _mb_cr - pos.x - tw)
-                                _mb_min_y = maxf(_mb_min_y, _mb_ct - pos.y)
-                        if maze.is_wall(_mb_col - 1, _mb_row + 1):
-                                _mb_min_x = maxf(_mb_min_x, _mb_cl - pos.x)
-                                _mb_max_y = minf(_mb_max_y, _mb_cb - pos.y - th)
-                        if maze.is_wall(_mb_col + 1, _mb_row + 1):
-                                _mb_max_x = minf(_mb_max_x, _mb_cr - pos.x - tw)
-                                _mb_max_y = minf(_mb_max_y, _mb_cb - pos.y - th)
-                        draw_pos.x = clampf(draw_pos.x, _mb_min_x, _mb_max_x)
-                        draw_pos.y = clampf(draw_pos.y, _mb_min_y, _mb_max_y)
+                # FIX (scatti miniboss - rendering): disegno CENTRATO senza
+                # offset +8px e SENZA clamp di rendering. Lo sprite viaggia
+                # sulla linea centrale dei corridoi (movimento grid-locked in
+                # update_step), quindi non può compenetrare i muri. Il clamp
+                # precedente spostava lo sprite di 8px quando la cella sotto
+                # era muro e lo rilasciava quando era aperta: il miniboss
+                # "sfarfallava" verticalmente ad ogni cella (GLI SCATTI).
+                # FIX (dimensione): 64 -> 70px per rendere il mini-boss
+                # visivamente più imponente dei nemici (ora 68px); il contenuto
+                # reale degli sheet (~55-59px su frame 64) resta nei corridoi.
+                var tw: float = 70.0
+                var th: float = 70.0
+                var draw_pos := Vector2(-tw / 2.0, -th / 2.0 + bob_y)
                 var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:
-                        # FIX (miniboss disegnato +64px a destra quando guarda a
-                        # sinistra): il vecchio trick del Rect2 con width negativa
-                        # NON specchia lo sprite in Godot 4.7.2 — lo disegnava
-                        # spostato di +tw px verso destra, ANCHE oltre il clamp
-                        # di rendering appena calcolato (sopra il muro adiacente
-                        # quando il miniboss si muove in verticale). Metodo
-                        # corretto (verificato su Godot 4.7.2 reale):
-                        # draw_set_transform con scala X = -1 e pivot sul CENTRO
-                        # X del rect → lo sprite resta esattamente nel rect
-                        # clampato, solo specchiato.
+                        # FIX (flip corretto in Godot 4.7.2, mirror commit cfc2fea
+                        # di Enemy.gd): il trick del Rect2 con width negativa NON
+                        # specchia lo sprite — lo disegna spostato di +tw px a
+                        # destra. Metodo corretto: draw_set_transform con scala
+                        # X = -1 e pivot sul CENTRO X del rect -> lo sprite resta
+                        # esattamente nel rect, solo specchiato.
                         draw_set_transform(
                                 Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
                                 0.0, Vector2(-1.0, 1.0))

@@ -18,7 +18,9 @@ const UI_HEIGHT: int = 80
 # FIX (costanti allineate a GameConstants, 31x15): in precedenza erano stale
 # (40x22, poi 30x15 con COLS pari -> doppio muro destro, vedi GameConstants).
 # FIX (doppio muro lato destro): allineato a GameConstants (31, dispari).
-const MAZE_COLS: int = 31
+# FIX (muro destro invisibile): 31 -> 30, allineato a GameConstants
+# (vedi fix muro destro in GameConstants/Maze.generate).
+const MAZE_COLS: int = 30
 const MAZE_ROWS: int = 15
 
 # --- Stats ---

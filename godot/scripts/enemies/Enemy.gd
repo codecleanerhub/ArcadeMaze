@@ -31,7 +31,9 @@ const TILE_SIZE: int = 64
 # colonne interne dispari (1..29) sono scavabili; la colonna di bordo 30
 # finisce fuori schermo (31*64=1984 > 1920) e il labirinto resta a schermo
 # pieno senza doppi muri.
-const MAZE_COLS: int = 31
+# FIX (muro destro invisibile): 31 -> 30, allineato a GameConstants
+# (vedi fix muro destro in GameConstants/Maze.generate).
+const MAZE_COLS: int = 30
 const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 
@@ -1105,7 +1107,12 @@ func _draw_sprite_frame() -> void:
         # "attraversamento muro".
         # Match the 31px collision half-extent; 64px rendered 1px beyond it
         # and allowed the sprite corner to overlap a diagonal wall on turns.
-        var target_size: float = 62.0
+        # FIX (dimensione nemici, richiesta utente "poco più grandi"):
+        # 62 -> 68px. Il contenuto reale degli sheet SD (~53-61px visibili su
+        # frame 64px) cresce di ~10% e resta entro il corridoio da 64px
+        # (il movimento grid-locked mantiene lo sprite sulla linea centrale:
+        # l'eventuale padding trasparente che sfora è invisibile).
+        var target_size: float = 68.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0

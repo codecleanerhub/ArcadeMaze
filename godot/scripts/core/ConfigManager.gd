@@ -31,8 +31,10 @@ signal config_changed()
 const WINDOW_WIDTH: int = 1024
 const WINDOW_HEIGHT: int = 1024
 const TILE_SIZE: int = 64
-const MAZE_COLS: int = 21
-const MAZE_ROWS: int = 19
+# FIX (costante stale): era 21 (layout C++ originale). Allineata a
+# GameConstants (30x15, vedi fix muro destro in GameConstants/Maze.generate).
+const MAZE_COLS: int = 30
+const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 
 # --- Game modes ------------------------------------------------------------

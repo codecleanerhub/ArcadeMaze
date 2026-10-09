@@ -29,7 +29,7 @@ extends CharacterBody2D
 const WINDOW_WIDTH: int = 1920
 const WINDOW_HEIGHT: int = 1080
 const TILE_SIZE: int = 64
-const MAZE_COLS: int = 31  # FIX (costanti stale): era 21 (layout vecchio), allineato a GameConstants
+const MAZE_COLS: int = 30  # FIX (muro destro invisibile): 31 -> 30, allineato a GameConstants
 const MAZE_ROWS: int = 15  # FIX (costanti stale): era 19 (layout vecchio), allineato a GameConstants
 const UI_HEIGHT: int = 80
 

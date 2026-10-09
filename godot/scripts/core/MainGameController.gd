@@ -1131,7 +1131,7 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                                 break
 
 
-func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
+func _update_invincible_burn(p: CharacterBody2D, _delta_ms: float) -> void:
         # Finalise burning enemies: when burning_timer reaches 0 but the
         # burned_flag is still set, kill the enemy and spawn AshPile +
         # final FireBurst. Mirrors Game.cpp lines 2314-2342 (the separate
@@ -1157,19 +1157,19 @@ func _update_invincible_burn(p: CharacterBody2D, delta_ms: float) -> void:
                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
 
         # Chalice effect: while invincible_timer > 0, enemies in contact burn
+        # FIX (doppio decremento timer calice): il timer è già decrementato da
+        # Player.update_player (unico owner del tick). Qui si legge soltanto:
+        # prima veniva scalato UNA SECONDA volta per frame e l'effetto durava
+        # la metà del valore impostato.
         if p.invincible_timer <= 0:
-                # FIX (musica calice): se il timer è già 0 ma la musica epic
-                # sta ancora suonando, fermala.
+                # FIX (musica calice): quando l'effetto del calice termina,
+                # ferma la musica epic (era in loop per tutta la durata) e
+                # ripristina la musica di livello se la musica è attiva.
                 if AudioManager and AudioManager._epic_playing:
                         AudioManager.stop_epic_music()
-                        if GameManager and GameManager.music_enabled:
+                        if AudioManager.music_enabled:
                                 AudioManager.play_level_music(current_level, false)
                 return
-        # FIX (calice durava la metà): il timer viene già bruciato UNA volta
-        # per frame da Player.update_player (riga ~438, mirror del C++
-        # Player.cpp). Il decremento qui sotto lo bruciava una SECONDA volta
-        # (32ms/frame = durata dimezzata: 25s effettivi ~12.5s). Rimosso:
-        # qui ci si limita a bruciare i nemici finché il timer è > 0.
         var p_pos: Vector2 = p.get_pixel_pos()
         for enemy in spawner.enemies:
                 if enemy.is_dead() or enemy.is_dying() or enemy.is_burning():
@@ -1209,6 +1209,13 @@ func _check_death() -> void:
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 p2_dead = player2.lives <= 0
         if p1_dead and p2_dead:
+                # FIX (musica calice alla morte): il canale epic è un canale
+                # SEPARATO che sopravvive al cambio stato (autoplay su nodo
+                # AudioManager). Con il loop del calice attivo alla morte
+                # sarebbe continuato all'infinito sulle schermate
+                # CONTINUES/LOSE: lo fermiamo qui.
+                if AudioManager:
+                        AudioManager.stop_epic_music()
                 if GameManager:
                         if GameManager.continues_left > 0:
                                 GameManager.player_died()
@@ -1311,14 +1318,30 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
-                        p.set_invincible_timer(25000)  # 25s chalice invincibility (era 15s)
+                        # FIX (durata calice -3s + bug doppio decremento): il timer
+                        # veniva decrementato DUE volte per frame (in
+                        # Player.update_player E in _update_invincible_burn),
+                        # quindi i 25s nominali duravano in realtà ~12.5s.
+                        # Corretto il doppio decremento (ora un solo tick in
+                        # Player.update_player) e impostata la durata richiesta:
+                        # 12.5s percepite - 3s = 9.5s reali.
+                        p.set_invincible_timer(9500)
                         p.add_score(15000)
                         item.active = false
                         item.queue_free()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TREASURE)
-                        if AudioManager and AudioManager.music_enabled:
-                                AudioManager.play_epic_music(AudioManager.TRACK_EPIC_CHALICE)
+                                # FIX (musica calice non partiva + deve durare
+                                # tutto l'effetto): come nel C++ originale
+                                # (Game.cpp:2209, AudioManager.cpp:98) il
+                                # jingle epico suona sul canale SEPARATO epic
+                                # SENZA il gate musicEnabled (il gate impediva
+                                # di sentirlo con la musica disattivata) e ora
+                                # va in LOOP per tutta la durata dell'effetto:
+                                # lo ferma _update_invincible_burn quando
+                                # l'invincibilità scade.
+                                AudioManager.play_epic_music(
+                                                AudioManager.TRACK_EPIC_CHALICE, true)
                         # Particelle pickup oro (Godot-native)
                         if EffectsManager:
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
@@ -1330,8 +1353,9 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         item.queue_free()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.SCEPTER_PICKUP)
-                        if AudioManager and AudioManager.music_enabled:
-                                AudioManager.play_epic_music(7)  # TRACK_EPIC_SCEPTER
+                                # FIX (jingle scettro): niente gate musicEnabled,
+                                # come nel C++ originale. One-shot (no loop).
+                                AudioManager.play_epic_music(7, false)  # TRACK_EPIC_SCEPTER
                         # Activate 5 lightning strikes at 3s intervals
                         scepter_active = true
                         scepter_strikes_left = 5
@@ -1545,8 +1569,20 @@ func start_level(lvl: int) -> void:
         # Spawn collectibles (mine, chalice, scepter, speed boots)
         _spawn_collectibles()
         # Play level music
-        if AudioManager and GameManager and GameManager.music_enabled:
-                AudioManager.play_level_music(current_level, false)
+        # FIX (musica calice tra livelli): se l'effetto del calice è ancora
+        # attivo (player uscito dal livello mentre era invincibile) la
+        # musica epic resta in loop e NON viene sovrapposta dalla musica di
+        # livello: la fermerà _update_invincible_burn alla scadenza.
+        # Se invece non c'è nessun calice attivo, stop difensivo del canale
+        # epic (evita jingle residui) e musica di livello normale.
+        var chalice_still_active: bool = player.invincible_timer > 0 \
+                        or (GameManager and GameManager.num_players == 2 \
+                                and player2.visible and player2.invincible_timer > 0)
+        if AudioManager:
+                if not chalice_still_active:
+                        AudioManager.stop_epic_music()
+                if GameManager and GameManager.music_enabled:
+                        AudioManager.play_level_music(current_level, false)
 
 
 # Spawn the level collectibles: mine, chalice, scepter, speed boots.

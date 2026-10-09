@@ -262,6 +262,11 @@ func _unhandled_input(event: InputEvent) -> void:
                 if event.keycode == KEY_M:
                         if AudioManager:
                                 var new_state: bool = not AudioManager.music_enabled
+                                # FIX (flag desincronizzato): aggiorna ANCHE
+                                # GameManager.music_enabled, così il menu e i
+                                # controller leggono lo stesso stato reale
+                                # dell'audio (prima il flag restava stale).
+                                music_enabled = new_state
                                 AudioManager.set_music_enabled(new_state)
                                 if new_state:
                                         # Riavvia la musica appropriata in base allo stato
