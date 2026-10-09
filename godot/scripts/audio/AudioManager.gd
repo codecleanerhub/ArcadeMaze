@@ -1087,37 +1087,228 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
         return out
 
 
-# --- Epic chalice jingle: golden hero fanfare, ~6s ---------------------------
-# Bright major chords (C maj -> G maj), 3-voice orchestration:
-# lead pulse + pad saw + triangle bass.
+# --- Epic chalice theme: "Trionfo d'Oro", ~9.5s (loop = durata esatta del
+# calice, 9500ms) ------------------------------------------------------------
+# FIX (musica calice più epica): la vecchia versione erano solo 2 accordi
+# sostenuti (C maj -> G maj, 3s ciascuno) senza ritmo né melodia. Nuova
+# fanfara eroica completa, sintetizzata per strati:
+#   0.0-1.0s  INTRO   - rullo di timpani crescente + drone C che si apre
+#   1.0-3.0s  TEMA A  - fanfara di ottoni (G-G-DO... arco trionfale)
+#                       basso C-Am-G, timpani sui beat, rullante
+#   3.0-5.0s  TEMA A' - variazione discendente F-G, semi-cadenza sul finale
+#   5.0-6.5s  BUILD   - scala ascendente C4->G5 in ottavi + crescendo
+#   6.5-9.5s  CLIMAX  - tema un'ottava sopra, armonia a 3 voci (C-E-G),
+#                       basso in ottavi, batteria completa, accordo finale
+#                       con crash che sfuma nel riavvio del loop.
+# Voci: lead "ottoni" (pulse 0.32 + saw detune), armonia (pulse 0.5 -6dB),
+# basso (triangle + sub), timpani (60Hz thump + rumore), rullante, hi-hat,
+# crash (rumore con decadimento lungo).
 func _gen_epic_chalice() -> PackedFloat32Array:
-        var total: int = int(SR * 6.0)
+        const DUR: float = 9.5            # secondi (loop = durata calice)
+        const BPM: float = 120.0
+        const BEAT: float = 60.0 / BPM    # 0.5s
+        var total: int = int(SR * DUR)
         var out := PackedFloat32Array()
         out.resize(total)
-        # Two chords: C major (C4-E4-G4) and G major (G3-B3-D4)
-        var chords := [
-                [261.63, 329.63, 392.00],   # C maj
-                [196.00, 246.94, 293.66],   # G maj
+
+        # --- Note: [start_beat, dur_beats, freq, gain] -----------------------
+        # Lead (ottoni): tema trionfale.
+        const LEAD: Array = [
+                # TEMA A (b2-6): pickup G-G, arco C5, risposta E5-D5
+                [2.0, 0.5, 392.00, 0.30], [2.5, 0.5, 392.00, 0.30],
+                [3.0, 0.75, 523.25, 0.32], [3.75, 0.25, 493.88, 0.28],
+                [4.0, 1.0, 523.25, 0.32],
+                [5.0, 0.5, 659.25, 0.30], [5.5, 0.5, 587.33, 0.28],
+                # TEMA A' (b6-10): F5-E5, discesa D5-C5, giro G4
+                [6.0, 0.75, 698.46, 0.30], [6.75, 0.25, 659.25, 0.28],
+                [7.0, 1.0, 587.33, 0.30],
+                [8.0, 0.5, 523.25, 0.28], [8.5, 0.5, 587.33, 0.28],
+                [9.0, 1.0, 392.00, 0.30],
+                # BUILD (b10-13): scala ascendente in ottavi (12 x 0.25 beat)
+                [10.00, 0.25, 261.63, 0.26], [10.25, 0.25, 293.66, 0.26],
+                [10.50, 0.25, 329.63, 0.26], [10.75, 0.25, 349.23, 0.26],
+                [11.00, 0.25, 392.00, 0.26], [11.25, 0.25, 440.00, 0.26],
+                [11.50, 0.25, 493.88, 0.26], [11.75, 0.25, 523.25, 0.26],
+                [12.00, 0.25, 587.33, 0.27], [12.25, 0.25, 659.25, 0.27],
+                [12.50, 0.25, 698.46, 0.27], [12.75, 0.25, 783.99, 0.28],
+                # CLIMAX (b13-19): tema un'ottava sopra
+                [13.0, 0.75, 1046.50, 0.32], [13.75, 0.25, 987.77, 0.28],
+                [14.0, 1.0, 1046.50, 0.32],
+                [15.0, 0.5, 880.00, 0.30], [15.5, 0.5, 987.77, 0.30],
+                [16.0, 1.5, 1046.50, 0.34],
         ]
-        var chord_dur: float = 3.0  # 3 seconds each
-        var n_per_chord: int = int(SR * chord_dur)
-        for c_idx in chords.size():
-                var chord: Array = chords[c_idx]
-                for i in n_per_chord:
+        # Armonia (3 voci sotto il lead nel climax + accodi sezione A).
+        const HARMONY: Array = [
+                # TEMA A: accordi tenuti C (E4+G4), Am (C4+E4), G (B3+D4)
+                [3.0, 2.0, 329.63, 0.14], [3.0, 2.0, 392.00, 0.12],
+                [5.0, 1.0, 261.63, 0.13], [5.0, 1.0, 329.63, 0.11],
+                # TEMA A': F (A3+C4), G (B3+D4)
+                [6.0, 2.0, 220.00, 0.13], [6.0, 2.0, 261.63, 0.11],
+                [8.0, 2.0, 246.94, 0.13], [8.0, 2.0, 293.66, 0.11],
+                # CLIMAX: triade completa C-E-G sotto il tema
+                [13.0, 2.0, 523.25, 0.15], [13.0, 2.0, 659.25, 0.13],
+                [13.0, 2.0, 783.99, 0.11],
+                [15.0, 1.0, 523.25, 0.13], [15.0, 1.0, 698.46, 0.12],
+                [16.0, 1.5, 523.25, 0.15], [16.0, 1.5, 659.25, 0.13],
+                # Accordo finale C maggiore largo (b17.5-19)
+                [17.5, 1.5, 523.25, 0.16], [17.5, 1.5, 659.25, 0.14],
+                [17.5, 1.5, 783.99, 0.12],
+        ]
+        # Basso (progressione per beat: C-C-Am-G | F-F-G-G | pedale C | climax).
+        const BASS: Array = [
+                [2.0, 0.9, 65.41, 0.20], [3.0, 0.9, 65.41, 0.20],
+                [4.0, 0.9, 55.00, 0.19], [5.0, 0.9, 49.00, 0.19],
+                [6.0, 0.9, 43.65, 0.20], [7.0, 0.9, 43.65, 0.20],
+                [8.0, 0.9, 49.00, 0.20], [9.0, 0.9, 49.00, 0.20],
+                # pedale di bordone sotto la scala
+                [10.0, 3.0, 65.41, 0.20],
+                # climax: ottavi root-ottava (pompa marziale)
+                [13.0, 0.45, 65.41, 0.22], [13.5, 0.45, 130.81, 0.18],
+                [14.0, 0.45, 65.41, 0.22], [14.5, 0.45, 130.81, 0.18],
+                [15.0, 0.45, 43.65, 0.21], [15.5, 0.45, 87.31, 0.17],
+                [16.0, 0.45, 49.00, 0.21], [16.5, 0.45, 98.00, 0.17],
+                [17.0, 0.45, 65.41, 0.22],
+                # finale: C tenuto
+                [17.5, 1.5, 65.41, 0.22],
+        ]
+        # Timpani: [beat, accent] — beat marcati = accenti forti.
+        const TIMPANI: Array = [
+                [2.0, 1.0], [3.0, 0.6], [4.0, 0.6], [5.0, 0.6],
+                [6.0, 1.0], [7.0, 0.6], [8.0, 0.6], [9.0, 0.6],
+                [10.0, 0.8], [11.0, 0.8], [12.0, 0.9],
+                [13.0, 1.0], [13.5, 0.5], [14.0, 0.7], [14.5, 0.5],
+                [15.0, 0.8], [15.5, 0.5], [16.0, 0.8], [16.5, 0.5],
+                [17.0, 0.9], [17.5, 1.0],
+        ]
+        # Rullante: backbeat (beat 3 e 5 di ogni misura da 4).
+        const SNARE: Array = [
+                [3.0, 0.7], [5.0, 0.7], [7.0, 0.7], [9.0, 0.7],
+                [11.0, 0.6], [12.5, 0.8],
+                [13.5, 0.8], [14.5, 0.8], [15.5, 0.8], [16.5, 0.8],
+        ]
+        # Crash/piatto: inizio tema, inizio climax, accordo finale.
+        const CRASH: Array = [[2.0, 0.30], [13.0, 0.34], [17.5, 0.38]]
+
+        # --- Rendering --------------------------------------------------------
+        # Strumento "ottoni": pulse 0.32 + saw detune +2 cent, attacco 12ms,
+        # rilascio 45ms, vibrato 5.5Hz sulle note lunghe.
+        for note in LEAD:
+                var start_s: float = float(note[0]) * BEAT
+                var dur_s: float = float(note[1]) * BEAT
+                var freq: float = float(note[2])
+                var gain: float = float(note[3])
+                var n: int = int(dur_s * SR)
+                var i0: int = int(start_s * SR)
+                var phase: float = 0.0
+                for i in n:
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
                         var t: float = float(i) / SR
-                        # Slow attack + long decay
-                        var env: float = (1.0 - exp(-t * 4.0)) * exp(-t * 0.6)
-                        var lead: float = 0.0
-                        var pad: float = 0.0
-                        var bass: float = 0.0
-                        # Lead: top note pulse, melody-like
-                        lead = 0.30 * pulse_wave(t * chord[2], 0.5)
-                        # Pad: mid note saw (warm)
-                        pad = 0.20 * sawtooth_wave(t * chord[1])
-                        # Bass: root note triangle one octave down
-                        bass = 0.25 * triangle_wave(t * chord[0] * 0.5)
-                        var v: float = (lead + pad + bass) * env
-                        out[c_idx * n_per_chord + i] = v * 0.5
+                        var env: float = (1.0 - exp(-t * 180.0)) \
+                                        * (1.0 - exp(-(dur_s - t) * 90.0))
+                        var vib: float = 1.0 + 0.0035 * sin(TAU * 5.5 * t)
+                        phase += freq * vib / SR
+                        var brass: float = 0.62 * pulse_wave(phase, 0.32) \
+                                        + 0.38 * sawtooth_wave(phase * 1.0012)
+                        out[idx] += gain * brass * env
+        for note in HARMONY:
+                var start_s: float = float(note[0]) * BEAT
+                var dur_s: float = float(note[1]) * BEAT
+                var freq: float = float(note[2])
+                var gain: float = float(note[3])
+                var n: int = int(dur_s * SR)
+                var i0: int = int(start_s * SR)
+                var phase: float = 0.0
+                for i in n:
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        var env: float = (1.0 - exp(-t * 120.0)) \
+                                        * (1.0 - exp(-(dur_s - t) * 60.0))
+                        phase += freq / SR
+                        out[idx] += gain * pulse_wave(phase, 0.5) * env
+        for note in BASS:
+                var start_s: float = float(note[0]) * BEAT
+                var dur_s: float = float(note[1]) * BEAT
+                var freq: float = float(note[2])
+                var gain: float = float(note[3])
+                var n: int = int(dur_s * SR)
+                var i0: int = int(start_s * SR)
+                var phase: float = 0.0
+                for i in n:
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        var env: float = (1.0 - exp(-t * 60.0)) \
+                                        * (1.0 - exp(-(dur_s - t) * 25.0))
+                        phase += freq / SR
+                        out[idx] += gain * (0.7 * triangle_wave(phase) \
+                                        + 0.3 * pulse_wave(phase, 0.5)) * env
+        # Intro: rullo di timpani crescente (b0-b2) + drone C che si apre.
+        for i in int(1.0 * SR):
+                var t: float = float(i) / SR
+                var prog: float = t / 1.0
+                var roll_rate: float = 6.0 + 18.0 * prog
+                var roll: float = (1.0 if fmod(t * roll_rate, 1.0) < 0.25 else 0.0)
+                var thump: float = roll * triangle_wave(t * 55.0) \
+                                * exp(-fmod(t * roll_rate, 1.0) * 14.0)
+                var drone: float = 0.16 * prog * sawtooth_wave(t * 130.81) \
+                                * (0.6 + 0.4 * prog)
+                out[i] += (0.5 * prog * thump + drone)
+        for hit in TIMPANI:
+                var start_s: float = float(hit[0]) * BEAT
+                var accent: float = float(hit[1])
+                var i0: int = int(start_s * SR)
+                for i in int(0.16 * SR):
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        var thump: float = 0.5 * triangle_wave(t * 62.0) \
+                                        * exp(-t * 26.0)
+                        var skin: float = 0.12 * noise_gen() * exp(-t * 60.0)
+                        out[idx] += accent * (thump + skin)
+        for hit in SNARE:
+                var start_s: float = float(hit[0]) * BEAT
+                var accent: float = float(hit[1])
+                var i0: int = int(start_s * SR)
+                for i in int(0.10 * SR):
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        out[idx] += accent * 0.20 * noise_gen() * exp(-t * 34.0)
+        # Hi-hat in ottavi nel climax (b13-b17.5).
+        var hh_beat: float = 13.0
+        while hh_beat < 17.5:
+                var i0: int = int(hh_beat * BEAT * SR)
+                for i in int(0.05 * SR):
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        out[idx] += 0.07 * noise_gen() * exp(-t * 90.0)
+                hh_beat += 0.5
+        # Crash di piatto (rumore con lunga coda).
+        for hit in CRASH:
+                var start_s: float = float(hit[0]) * BEAT
+                var gain: float = float(hit[1])
+                var i0: int = int(start_s * SR)
+                for i in int(1.2 * SR):
+                        var idx: int = i0 + i
+                        if idx >= total:
+                                break
+                        var t: float = float(i) / SR
+                        # shimmer: rumore modulato ~6kHz (campionamento radente)
+                        var ring: float = 0.6 + 0.4 * sin(TAU * 4730.0 * t)
+                        out[idx] += gain * noise_gen() * ring * exp(-t * 3.2)
+
+        # Mix finale: soft clip + guadagno globale.
+        for i in total:
+                out[i] = 0.85 * _soft_clip(out[i] * 0.9)
         return out
 
 

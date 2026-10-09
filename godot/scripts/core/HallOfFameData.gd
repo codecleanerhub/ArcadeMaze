@@ -54,8 +54,11 @@ static func load_entries() -> Array:
 ## Aggiunge una voce e salva. Ritorna la posizione (1-based) in classifica,
 ## oppure -1 se il punteggio non è abbastanza alto per entrare nella top 10.
 static func add_entry(player_name: String, score: int, level: int) -> int:
+        # FIX (nome default troncato): "ANONYMOUS" (9 caratteri) veniva
+        # troncato a "ANONYMOU" da substr(0,8). Allineato a "HERO", il
+        # default già usato da NameEntryKeyboard._confirm_entry.
         if player_name.is_empty():
-                player_name = "ANONYMOUS"
+                player_name = "HERO"
         var entries := load_entries()
         entries.append({
                 "name": player_name.substr(0, MAX_NAME_LENGTH),

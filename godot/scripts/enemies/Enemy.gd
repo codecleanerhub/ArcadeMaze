@@ -1194,7 +1194,14 @@ func _draw_sprite_frame() -> void:
         # frame 64px) cresce di ~10% e resta entro il corridoio da 64px
         # (il movimento grid-locked mantiene lo sprite sulla linea centrale:
         # l'eventuale padding trasparente che sfora è invisibile).
-        var target_size: float = 68.0
+        # 62 -> 68 -> 78px (richiesta utente "ancora un po' più grandi":
+        # il passaggio 62->68 (+10%) non era percepibile perché il contenuto
+        # reale degli sheet SD è ~53-61px su frame 64. Con 78px il nemico è
+        # chiaramente più massiccio e resta sotto il player (83px) mantenendo
+        # la gerarchia visiva player > miniboss (82) > nemici (78) > tesori
+        # (73.6px). Il contenuto ~57-67px resta dentro i corridoi da 64px sulla
+        # linea centrale.
+        var target_size: float = 78.0
         var tw: float = target_size
         var th: float = target_size
         var bob_y: float = 0.0

@@ -472,11 +472,23 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
                 stuck_timer_ms = 0
         last_pos = pos
 
-        if absf(pos.x - center_x) < step_size \
-                        and absf(pos.y - center_y) < step_size:
-                # (1) Arrivo al centro cella: snap immediato + decisione dir.
-                pos = Vector2(center_x, center_y)
-
+        # FIX (miniboss congelato contro il muro — ROOT CAUSE): la vecchia
+        # finestra |pos-centro| < step_size re-entrava in snap OGNI frame:
+        # dopo il primo move_toward dal centro, pos = centro + step, e per
+        # l'arrotondamento float32/float64 (centro+step memorizzato per
+        # difetto) |pos-centro| < step resta VERO per sempre -> ciclo infinito
+        # snap(centro)->move(centro+step) con movimento netto ZERO per frame.
+        # Effetto in gioco: il miniboss attraversa 1-2 celle, poi si ferma al
+        # centro cella con l'animazione di camminata attiva (dx!=0) e lo
+        # sprite che "spinge" contro il muro del corridoio senza avanzare
+        # mai più. Confermato con simulazione 1:1 (scripts/sim_miniboss_stuck.py):
+        # 30/30 seed congelati al primo incrocio centro+step.
+        # FIX (mirror Enemy.gd riga 494 / KnightAlly.gd riga 230): la decisione
+        # parte SOLO quando pos coincide ESATTAMENTE col centro (col*64+32 è
+        # esatto in float32, e move_toward clampa l'arrivo SUL target ->
+        # confronto senza rumore di arrotondamento).
+        if pos.x == center_x and pos.y == center_y:
+                # (1) Arrivo al centro cella (ESATTO): decisione direzione.
                 if flee_mode:
                         # FLEE (calice): massimizza la distanza dal player.
                         _flee_greedy(player_grid_pos)
@@ -515,11 +527,19 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
                                         center_y + dy * TILE_SIZE)
                 else:
                         _move_waypoint = Vector2.INF
-        elif dx == 0 and dy == 0:
-                # Fermo ma decentrato (stato anomalo): recovery graduale
-                # verso il centro della cella corrente.
+        elif _move_waypoint == Vector2.INF:
+                # Fermo ma decentrato, SENZA waypoint (stato anomalo): recovery
+                # graduale verso il centro della cella corrente. FIX: la
+                # condizione ora è "waypoint assente" e NON più "dx==0 e dy==0"
+                # perché la vecchia melee attack scriveva dx=±1 a metà cella
+                # SENZA waypoint -> né il recovery né il movimento scattavano
+                # -> secondo percorso di congelamento. Con waypoint INF il
+                # recovery converge sempre al centro, dove la decisione (1)
+                # riparte (a prescindere da dx/dy residui).
                 pos = pos.move_toward(Vector2(center_x, center_y), step_size)
                 last_pos = pos
+                dx = 0
+                dy = 0
 
         # (3) Movimento verso il WAYPOINT (centro della cella successiva,
         # FISSATO alla decisione): move_toward non sfora MAI il target ->
@@ -531,15 +551,54 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
         if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
                 pos = pos.move_toward(_move_waypoint, step_size)
 
+        # --- Safety clamp (ultima difesa, mirror Enemy.gd): se la cella
+        # corrente è WALL (stato invalido, es. spawn corrotto), teleport al
+        # centro della cella aperta più vicina (raggio 1-3). Con il movimento
+        # grid-locked non dovrebbe MAI attivarsi in gioco. ---
+        var cur_col_after: int = clampi(int(pos.x / TILE_SIZE), 0, MAZE_COLS - 1)
+        var cur_row_after: int = clampi(int((pos.y - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
+        if maze != null and maze.is_wall(cur_col_after, cur_row_after):
+                for snap_radius in range(1, 4):
+                        var found_safe: bool = false
+                        for sdc in range(-snap_radius, snap_radius + 1):
+                                for sdr in range(-snap_radius, snap_radius + 1):
+                                        var nnc: int = cur_col_after + sdc
+                                        var nnr: int = cur_row_after + sdr
+                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                if not maze.is_wall(nnc, nnr):
+                                                        pos = Vector2(
+                                                                        nnc * TILE_SIZE + TILE_SIZE / 2.0,
+                                                                        nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
+                                                        last_pos = pos
+                                                        dx = 0
+                                                        dy = 0
+                                                        _move_waypoint = Vector2.INF
+                                                        stuck_timer_ms = 0
+                                                        found_safe = true
+                                                        break
+                                if found_safe:
+                                        break
+                        if found_safe:
+                                break
+
         # Meele attack.
         var atk_d := player_pixel_pos - pos
         var atk_dist := atk_d.length()
         if atk_dist < get_attack_range() and attack_cooldown_ms == 0:
                 attacking_timer_ms = 400
                 attack_cooldown_ms = 1200
-                if atk_d.x > 0: dx = 1
-                elif atk_d.x < 0: dx = -1
-                # Spawn particles? (delegated to Game for performance.)
+                # FIX (congelamento #2): la vecchia scrittura dx=±1 in base
+                # alla posizione del player (SENZA wall check e SENZA
+                # waypoint) poteva lasciare dx!=0 a metà cella senza waypoint
+                # -> movimento saltato + recovery saltato -> freeze. Il
+                # movimento usa SOLO il waypoint; dx/dy si decidono SOLO al
+                # centro. L'attacco ora aggiorna solo il FACING (last_dx):
+                # il miniboss si gira verso il player quando colpisce.
+                if atk_d.x > 0.5:
+                        last_dx = 1
+                elif atk_d.x < -0.5:
+                        last_dx = -1
 
         position = pos
         # FIX (animazione miniboss congelata): senza queue_redraw() il _draw()
@@ -806,11 +865,13 @@ func _draw_with_sprite() -> void:
                 # precedente spostava lo sprite di 8px quando la cella sotto
                 # era muro e lo rilasciava quando era aperta: il miniboss
                 # "sfarfallava" verticalmente ad ogni cella (GLI SCATTI).
-                # FIX (dimensione): 64 -> 70px per rendere il mini-boss
-                # visivamente più imponente dei nemici (ora 68px); il contenuto
+                # FIX (dimensione): 64 -> 70 -> 82px per rendere il mini-boss
+                # visivamente più imponente dei nemici (ora 78px, era 68: il
+                # passaggio 70->82 mantiene la gerarchia miniboss > nemici
+                # dopo l'aumento richiesto degli sprite nemici); il contenuto
                 # reale degli sheet (~55-59px su frame 64) resta nei corridoi.
-                var tw: float = 70.0
-                var th: float = 70.0
+                var tw: float = 82.0
+                var th: float = 82.0
                 var draw_pos := Vector2(-tw / 2.0, -th / 2.0 + bob_y)
                 var dest_rect := Rect2(draw_pos, Vector2(tw, th))
                 if flipped:

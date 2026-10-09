@@ -976,7 +976,12 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                                         if tex != null:
                                                 _maze_treasure_cache[tex_path] = tex
                 if tex != null:
-                        var draw_size: float = size * 1.3
+                        # FIX (tesori "ridurre di poco"): 64*1.3=83.2px era più
+                        # grande degli stessi nemici. 64*1.15=73.6px (-12%):
+                        # il tesoro resta ben visibile ma la gerarchia diventa
+                        # player (83) > miniboss (82) > nemici (78) > tesori
+                        # (73.6). Contenuto reale PNG ~68px, dentro la cella.
+                        var draw_size: float = size * 1.15
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
@@ -985,7 +990,7 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_treasure_texture(tres_type)
                 if tex:
-                        var draw_size: float = size * 1.3  # FIX: era 0.8
+                        var draw_size: float = size * 1.15  # FIX: era 0.8, poi 1.3, ora 1.15 (73.6px)
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)

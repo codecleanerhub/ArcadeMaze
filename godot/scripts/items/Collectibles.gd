@@ -581,11 +581,11 @@ func _draw_treasure() -> void:
                 var tex: Texture2D = _load_png_cached(tex_path)
                 if tex != null:
                         # FIX (dimensione tesori, richiesta utente "poco più
-                        # piccole"): 64 -> 52px (-19%). I PNG dei tesori hanno
-                        # contenuto ~85-90% del frame, quindi la dimensione
-                        # visiva scende da ~57px a ~46px: ben riconoscibili
-                        # ma non più dominanti nella cella da 64px.
-                        var size: float = 52.0
+                        # piccole"): 64 -> 52 -> 48px. Allineato ai tesori del
+                        # maze (73.6px netti su cella 64): il collectible è la
+                        # versione da raccogliere a schermo, il maze disegna il
+                        # tesoro "padre". Contenuto visivo ~43px su cella 64.
+                        var size: float = 48.0
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
                         return

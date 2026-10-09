@@ -550,6 +550,22 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
 
 
+# FIX (sprite uno sopra l'altro): true se la cella (c, r) NON contiene un
+# collectible attivo. Passato a EnemySpawner.trigger_portal_if_needed così
+# portale, mini-boss e nemici respawnati non spuntano mai sopra un oggetto.
+func _collectible_cell_free(c: int, r: int) -> bool:
+        for item in collectibles_node.get_children():
+                if item is Node2D and is_instance_valid(item):
+                        var active_val: Variant = item.get("active")
+                        if active_val != null and not bool(active_val):
+                                continue  # già raccolto/inattivo: cella libera
+                        var ip: Vector2 = item.position
+                        if int(ip.x / C.TILE_SIZE) == c \
+                                        and int((ip.y - C.UI_HEIGHT) / C.TILE_SIZE) == r:
+                                return false
+        return true
+
+
 # Setup a Camera2D for the play area. With the design space now at 1920x1080
 # (matching the viewport), the camera uses zoom = 1:1 and is positioned at
 # (960, 540) = center of the design space. The camera is added to the Window
@@ -1025,7 +1041,11 @@ func _update_playing(delta_ms: float) -> void:
         _update_exit_door(delta_ms)
 
         # (11) Magic portal (50% enemies killed) - spawn mini-boss too
-        spawner.trigger_portal_if_needed(maze, p_pos, _spawn_mini_boss)
+        # FIX (sprite uno sopra l'altro): passa anche il check delle celle
+        # occupate da collectible: portale, mini-boss e respawn non devono
+        # MAI spuntare sopra mine/calice/scetturo/statua/pozione.
+        spawner.trigger_portal_if_needed(maze, p_pos, _spawn_mini_boss,
+                _collectible_cell_free)
         spawner.update_portal(maze, int(delta_ms))
 
         # (11b) MiniBoss update + melee collision (mirror C++ riga 1581-1633)
@@ -1920,10 +1940,17 @@ func _spawn_collectibles() -> void:
         last_hit_enemy_timer_ms = 0
 
         # Find empty cells far from player start (Manhattan distance >= 5)
+        # FIX (sprite uno sopra l'altro): la vecchia condizione `not
+        # maze.is_wall(c, r)` includeva anche le celle TREASURE e WEAPON del
+        # maze -> mine/calice/scettro/statua/pozione potevano spuntare SOPRA
+        # un tesoro o un'arma (screenshot utente: unicorno sopra le monete
+        # d'oro). Ora si usa SOLO il tipo EMPTY: ogni collectible nasce su
+        # pavimento pulito, ben distanziato da tesori e armi del maze.
         var empty_cells: Array = []
         for r in range(1, C.MAZE_ROWS - 1):
                 for c in range(1, C.MAZE_COLS - 1):
-                        if not maze.is_wall(c, r) and not (c < 5 and r < 5):
+                        if maze.get_cell_type(c, r) == C.CellType.EMPTY \
+                                        and not (c < 5 and r < 5):
                                 empty_cells.append(Vector2i(c, r))
         if empty_cells.is_empty():
                 return
@@ -2111,6 +2138,82 @@ func _spawn_mini_boss(col: int, row: int) -> void:
 # Il cavaliere appare accanto al player con animazione di "materializzazione".
 const KnightAllyClass = preload("res://scripts/entities/KnightAlly.gd")
 
+# FIX (sprite uno sopra l'altro): cerca la cella LIBERA più vicina a
+# (from_col, from_row). "Libera" significa: pavimento EMPTY (non tesoro,
+# non arma), senza collectible, senza nemici, senza mini-boss, senza portale
+# o portone, e non occupata dall'altro player. La ricerca procede ad anelli
+# (radius 1..max_radius) partendo dalla direzione suggerita `prefer_dir`
+# (0=destra,1=giù,2=sinistra,3=alto) così l'alleato tende a spuntare davanti
+# al player, mantenendo però una distanza minima di 1 cella da ogni entità.
+func _find_free_cell_near(from_col: int, from_row: int, prefer_dir: int,
+                max_radius: int = 3) -> Vector2i:
+        # Celle occupate da collectible (pos -> cell).
+        var occupied: Dictionary = {}
+        for item in collectibles_node.get_children():
+                if item is Node2D and is_instance_valid(item):
+                        var ip: Vector2 = item.position
+                        occupied[Vector2i(int(ip.x / C.TILE_SIZE),
+                                int((ip.y - C.UI_HEIGHT) / C.TILE_SIZE))] = true
+        # Nemici vivi.
+        if spawner != null:
+                for e in spawner.enemies:
+                        if e is Node2D and is_instance_valid(e) and not e.is_dead():
+                                var ep: Vector2 = e.position
+                                occupied[Vector2i(int(ep.x / C.TILE_SIZE),
+                                        int((ep.y - C.UI_HEIGHT) / C.TILE_SIZE))] = true
+        # Mini-boss.
+        if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
+                var mp: Vector2 = mini_boss.get_pixel_pos()
+                occupied[Vector2i(int(mp.x / C.TILE_SIZE),
+                        int((mp.y - C.UI_HEIGHT) / C.TILE_SIZE))] = true
+        # Players (l'alleato non deve spuntare sopra di loro).
+        var p1_cell: Vector2i = Vector2i(int(player.position.x / C.TILE_SIZE),
+                int((player.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        occupied[p1_cell] = true
+        if GameManager and GameManager.num_players == 2 and player2.visible:
+                occupied[Vector2i(int(player2.position.x / C.TILE_SIZE),
+                        int((player2.position.y - C.UI_HEIGHT) / C.TILE_SIZE))] = true
+        # Portale e portone (quando attivi).
+        if spawner != null and spawner.magic_portal.active:
+                var pp: Vector2 = spawner.magic_portal.pos
+                occupied[Vector2i(int(pp.x / C.TILE_SIZE),
+                        int((pp.y - C.UI_HEIGHT) / C.TILE_SIZE))] = true
+        if exit_door != null and exit_door.get("active", false):
+                var dp: Vector2 = exit_door.get("pos", Vector2.ZERO)
+                occupied[Vector2i(int(dp.x / C.TILE_SIZE),
+                        int((dp.y - C.UI_HEIGHT) / C.TILE_SIZE))] = true
+
+        # Ricerca ad anelli (Chebyshev radius 1..max_radius), celle ordinate
+        # per distanza Manhattan reale dal player: lo spawn è sempre la
+        # cella libera più vicina possibile.
+        for radius in range(1, max_radius + 1):
+                # Celle dell'anello in ordine di distanza reale dal player
+                # (così lo spawn è sempre il più vicino possibile).
+                var ring: Array = []
+                for dc in range(-radius, radius + 1):
+                        for dr in range(-radius, radius + 1):
+                                if absi(dc) + absi(dr) != radius \
+                                                and max(absi(dc), absi(dr)) != radius:
+                                        continue  # solo il bordo dell'anello
+                                ring.append(Vector2i(from_col + dc, from_row + dr))
+                ring.sort_custom(func(a, b):
+                        return (absi(a.x - from_col) + absi(a.y - from_row)) \
+                                        < (absi(b.x - from_col) + absi(b.y - from_row)))
+                for cell in ring:
+                        var nc: int = cell.x
+                        var nr: int = cell.y
+                        if nc <= 0 or nc >= C.MAZE_COLS - 1:
+                                continue
+                        if nr <= 0 or nr >= C.MAZE_ROWS - 1:
+                                continue
+                        if maze.get_cell_type(nc, nr) != C.CellType.EMPTY:
+                                continue
+                        if occupied.has(cell):
+                                continue
+                        return cell
+        return Vector2i(-1, -1)
+
+
 func _spawn_knight_ally(player_pos: Vector2) -> void:
         if knight_ally != null and is_instance_valid(knight_ally):
                 return  # già evocato
@@ -2121,40 +2224,39 @@ func _spawn_knight_ally(player_pos: Vector2) -> void:
         var base_health: int = player.lives if player != null else 3
         ka.max_health = int(float(base_health) * 1.5) + 1
         ka.health = ka.max_health
-        # Posizione: accanto al player (offset 48px a destra)
-        var spawn_pos: Vector2 = player_pos + Vector2(48, 0)
-        # FIX (unicorno si ferma): se la cella di spawn è un muro, l'unicorno
-        # nasce dentro il muro → BFS non trova path → si ferma. Cerchiamo la
-        # cella vuota più vicina al player (radius 1-3) in 4 direzioni.
-        var spawn_col: int = int(spawn_pos.x / C.TILE_SIZE)
-        var spawn_row: int = int((spawn_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        if spawn_col > 0 and spawn_col < C.MAZE_COLS - 1 \
-                        and spawn_row > 0 and spawn_row < C.MAZE_ROWS - 1 \
-                        and maze.is_wall(spawn_col, spawn_row):
-                # Cerca cella vuota nelle vicinanze
-                for _sr in range(1, 4):
-                        var _found: bool = false
-                        for _sdc in range(-_sr, _sr + 1):
-                                for _sdr in range(-_sr, _sr + 1):
-                                        var _nc: int = spawn_col + _sdc
-                                        var _nr: int = spawn_row + _sdr
-                                        if _nc > 0 and _nc < C.MAZE_COLS - 1 \
-                                                        and _nr > 0 and _nr < C.MAZE_ROWS - 1:
-                                                if not maze.is_wall(_nc, _nr):
-                                                        spawn_pos = Vector2(
-                                                                _nc * C.TILE_SIZE + C.TILE_SIZE / 2.0,
-                                                                _nr * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
-                                                        _found = true
-                                                        break
-                                if _found:
-                                        break
-                        if _found:
-                                break
+        # FIX (unicorno sopra un tesoro): il vecchio spawn era
+        # player_pos + Vector2(48, 0), cioè 16px DENTRO la cella adiacente
+        # (non al centro!) e SENZA alcun controllo sul contenuto della cella:
+        # se lì c'era un tesuro/arma/collectible, l'unicorno animato spuntava
+        # SOPRA l'oggetto (screenshot utente). Ora: cerca la cella libera più
+        # vicina (che NON contiene tesori, armi, collectible, nemici o altri
+        # player) nella direzione in cui il player è girato, e spawn ESATTO
+        # al centro cella (griglia, on-grid per il movimento grid-locked).
+        var pc: int = int(player_pos.x / C.TILE_SIZE)
+        var pr: int = int((player_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        var prefer_dir: int = 0
+        if player != null and player.get("last_dx") != null:
+                prefer_dir = 0 if player.last_dx > 0 else 2
+        var spawn_cell: Vector2i = _find_free_cell_near(pc, pr, prefer_dir, 3)
+        if spawn_cell.x < 0:
+                # Fallback estremo: qualunque cella libera nel raggio 6.
+                spawn_cell = _find_free_cell_near(pc, pr, prefer_dir, 6)
+        var spawn_pos: Vector2
+        if spawn_cell.x >= 0:
+                spawn_pos = Vector2(
+                        spawn_cell.x * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                        spawn_cell.y * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
+        else:
+                # Maze degenere: spawn al centro della cella del player.
+                spawn_pos = Vector2(
+                        pc * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                        pr * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
         ka.pos = spawn_pos
         add_child(ka)
         knight_ally = ka
         ka.update_ally(maze, player_pos, spawner.enemies, 0)
-        print("[KnightAlly] Spawned at ", spawn_pos, " health=", ka.health, " state=", ka.state)
+        print("[KnightAlly] Spawned at cell (", spawn_cell.x, ",", spawn_cell.y,
+                ") health=", ka.health, " state=", ka.state)
 
 
 # FIX (nuova meccanica): update del cavaliere alleato.

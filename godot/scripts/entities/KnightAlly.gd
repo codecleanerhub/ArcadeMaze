@@ -826,7 +826,10 @@ func _draw_sprite(scale_val: float, alpha: float) -> void:
                 var frame_w: int = 64
                 var frame_h: int = 64
                 var src_rect: Rect2 = Rect2(frame * frame_w, 0, frame_w, frame_h)
-                var target_size: float = 72.0 * scale_val
+                # FIX (dimensione alleato): 72 -> 78px per mantenere l'unicorno
+                # allineato ai nemici (ora 78px, era 68: il vecchio 72 > 68
+                # sarebbe sembrato piccolo al confronto).
+                var target_size: float = 78.0 * scale_val
                 var bob_y: float = 0.0
                 if is_moving:
                         bob_y = sin(float(anim_time) * 0.01) * 2.0

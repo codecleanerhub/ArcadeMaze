@@ -132,6 +132,9 @@ func spawn_enemies(maze: Object, level: int = 1) -> void:
         enemies.clear()
         var wave_size: int = wave_size_for_level(level)
         unlocked_new_types = unlocked_new_types_for_level(level)
+        # FIX (sprite uno sopra l'altro): celle già usate da questo wave, per
+        # mantenere distanza minima tra spawn (uniformità visiva).
+        var used_cells: Array = []
         for i in range(wave_size):
                 var t: int
                 if i < unlocked_new_types:
@@ -141,17 +144,35 @@ func spawn_enemies(maze: Object, level: int = 1) -> void:
                         t = randi() % Enemy.ENEMY_ORIGINAL_TYPE_COUNT
                 var c: int
                 var r: int
-                # Find a valid spawn cell: not a wall, not in the 5x5 starting zone.
-                # (Game.cpp condition: while (isWall || (c<5 && r<5)))
+                # Find a valid spawn cell: EMPTY floor (non tesoro, non arma,
+                # FIX sprite sopra i tesori), NOT in the 5x5 starting zone,
+                # almeno 2 celle di distanza Manhattan dagli altri spawn di
+                # questo wave. (Game.cpp condition: while (isWall || (c<5&&r<5)))
+                # Relax progressivo: 150 tentativi con distanza, poi solo EMPTY,
+                # poi qualunque cella non-muro (maze degenere).
                 var attempts: int = 0
                 while true:
                         c = 1 + randi() % (MAZE_COLS - 2)
                         r = 1 + randi() % (MAZE_ROWS - 2)
                         attempts += 1
-                        if attempts > 200:
+                        if attempts > 250:
                                 break  # safety: maze degenerate, give up searching
-                        if not maze.is_wall(c, r) and not (c < 5 and r < 5):
+                        if c < 5 and r < 5:
+                                continue
+                        if attempts > 150:
+                                if not maze.is_wall(c, r):
+                                        break
+                                continue
+                        if maze.get_cell_type(c, r) != CELL_EMPTY:
+                                continue
+                        var far_enough: bool = true
+                        for u in used_cells:
+                                if absi(u.x - c) + absi(u.y - r) < 2:
+                                        far_enough = false
+                                        break
+                        if far_enough:
                                 break
+                used_cells.append(Vector2i(c, r))
                 _spawn_enemy_instance(t, c, r)
         # Snapshot for the 50% portal trigger.
         initial_count = enemies.size()
@@ -184,15 +205,25 @@ func _spawn_enemy_instance(t: int, col: int, row: int) -> Enemy:
         return e
 
 
+# FIX (sprite uno sopra l'altro): callable opzionale che dice se una cella
+# è libera da collectible (mine/calice/scettro/statua/pozione/ecc.). Passato
+# da MainGameController per evitare che portale, mini-boss e nemici respawnati
+# spuntino SOPRA un oggetto raccolto o raccoglibile.
+var _portal_cell_check: Callable = Callable()
+
+
 # ===========================================================================
 # trigger_portal_if_needed(maze, player_pos): check the 50%-killed
 # threshold and open the magic portal when crossed. Spawns the mini-boss
 # next to the portal at the same moment (see Game.cpp line 1996-2093).
+# `is_cell_free` (opzionale): Callable(c, r) -> bool, true se la cella NON
+# contiene collectible (usato per non aprire il portale sopra un oggetto).
 #
 # Returns true if the portal was opened THIS call.
 # ===========================================================================
 func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
-                                                          mini_boss_spawner: Callable = Callable()) -> bool:
+                                                          mini_boss_spawner: Callable = Callable(),
+                                                          is_cell_free: Callable = Callable()) -> bool:
         if portal_used or initial_count <= 0:
                 return false
 
@@ -205,8 +236,12 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         if alive_count > initial_count / 2 or alive_count <= 0:
                 return false
 
+        _portal_cell_check = is_cell_free
+
         # --- 50% threshold crossed: open the portal at the maze centre ---
         # Search for the empty cell closest to (MAZE_COLS/2, MAZE_ROWS/2).
+        # FIX: salta anche le celle occupate da collectible (il portale non
+        # deve aprirsi SOPRA mina/calice/statua/pozione: sprite sovrapposti).
         var target_c: int = MAZE_COLS / 2
         var target_r: int = MAZE_ROWS / 2
         var best_c: int = -1
@@ -215,6 +250,8 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         for c in range(1, MAZE_COLS - 1):
                 for r in range(1, MAZE_ROWS - 1):
                         if maze.get_cell_type(c, r) == CELL_EMPTY:
+                                if is_cell_free.is_valid() and not is_cell_free.call(c, r):
+                                        continue
                                 var d: int = abs(c - target_c) + abs(r - target_r)
                                 if d < best_dist:
                                         best_dist = d
@@ -305,6 +342,11 @@ func _find_mini_boss_cell(maze: Object, portal_pos: Vector2,
                                         continue
                                 if maze.get_cell_type(nc, nr) != CELL_EMPTY:
                                         continue
+                                # FIX (sprite uno sopra l'altro): il mini-boss
+                                # non spunta sopra un collectible.
+                                if _portal_cell_check.is_valid() \
+                                                and not _portal_cell_check.call(nc, nr):
+                                        continue
                                 if nc == portal_c and nr == portal_r:
                                         continue  # don't sit on top of the portal
                                 return Vector2i(nc, nr)
@@ -373,6 +415,17 @@ func update_portal(maze: Object, dt_ms: int) -> bool:
 # expanding ring around the portal, and recreates that enemy there.
 # Mirrors Game::spawnEnemyFromPortal() src/Game.cpp line 407-447.
 # ===========================================================================
+# FIX (sprite uno sopra l'altro): cella occupata da un nemico VIVO?
+func _cell_has_live_enemy(col: int, row: int) -> bool:
+        for e in enemies:
+                if e is Enemy and is_instance_valid(e) and not e.is_dead():
+                        var ep: Vector2 = e.get_pixel_pos()
+                        if int(ep.x / TILE_SIZE) == col \
+                                        and int((ep.y - UI_HEIGHT) / TILE_SIZE) == row:
+                                return true
+        return false
+
+
 func _spawn_enemy_from_portal(maze: Object) -> void:
         if magic_portal.enemies_to_spawn <= 0:
                 magic_portal.enemies_to_spawn = 0
@@ -399,6 +452,15 @@ func _spawn_enemy_from_portal(maze: Object) -> void:
                                         if maze.is_wall(nc, nr):
                                                 continue
                                         if maze.get_cell_type(nc, nr) != CELL_EMPTY:
+                                                continue
+                                        # FIX (sprite uno sopra l'altro): il
+                                        # respawn non spunta sopra un collectible.
+                                        if _portal_cell_check.is_valid() \
+                                                        and not _portal_cell_check.call(nc, nr):
+                                                continue
+                                        # FIX: non impilare il respawn sopra un
+                                        # nemico vivo (sprite uno sopra l'altro).
+                                        if _cell_has_live_enemy(nc, nr):
                                                 continue
                                         var new_enemy: Enemy = Enemy.new()
                                         new_enemy.init(new_type, nc, nr)
@@ -442,6 +504,15 @@ func _spawn_enemy_from_portal(maze: Object) -> void:
                                 if maze.is_wall(nc, nr):
                                         continue
                                 if maze.get_cell_type(nc, nr) != CELL_EMPTY:
+                                        continue
+                                # FIX (sprite uno sopra l'altro): il respawn
+                                # non spunta sopra un collectible.
+                                if _portal_cell_check.is_valid() \
+                                                and not _portal_cell_check.call(nc, nr):
+                                        continue
+                                # FIX: non impilare il respawn sopra un
+                                # nemico vivo (sprite uno sopra l'altro).
+                                if _cell_has_live_enemy(nc, nr):
                                         continue
                                 # Re-init the existing Enemy instance at the new cell.
                                 # This reuses the node (no add/remove churn) and preserves

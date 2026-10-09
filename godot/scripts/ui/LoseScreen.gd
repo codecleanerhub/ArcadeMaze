@@ -100,10 +100,31 @@ func _unhandled_input(event: InputEvent) -> void:
         if _keyboard != null and is_instance_valid(_keyboard):
                 return
         if event is InputEventKey and event.pressed and not event.echo:
-                if event.keycode == KEY_ENTER or event.keycode == KEY_SPACE or event.keycode == KEY_ESCAPE:
+                if event.keycode == KEY_ENTER or event.keycode == KEY_SPACE:
+                        # FIX (possibilità di salvare il record): se il punteggio
+                        # merita la classifica, ENTER/SPACE NON salta il salvataggio
+                        # ma apre SUBITO la tastiera di inserimento nome (di norma
+                        # appare da sola dopo 1.6s). Solo se il punteggio NON
+                        # qualifica, ENTER porta al menu.
+                        if not _keyboard_shown:
+                                var sc: int = 0
+                                if GameManager:
+                                        sc = GameManager.final_score
+                                if sc > 0 and HallOfFameData.qualifies(sc):
+                                        _maybe_show_keyboard()
+                                        return
+                        _finish()
+                elif event.keycode == KEY_ESCAPE:
                         _finish()
         elif event is InputEventJoypadButton and event.pressed:
                 if event.button_index == JOY_BUTTON_A:
+                        if not _keyboard_shown:
+                                var sc2: int = 0
+                                if GameManager:
+                                        sc2 = GameManager.final_score
+                                if sc2 > 0 and HallOfFameData.qualifies(sc2):
+                                        _maybe_show_keyboard()
+                                        return
                         _finish()
 
 
