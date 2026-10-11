@@ -80,7 +80,11 @@ var _pause_overlay: Control = null
 # poi scompare e riappare al livello labirinto successivo allo stesso modo.
 # ============================================================================
 const GhostReaperClass = preload("res://scripts/entities/GhostReaper.gd")
-var ghost_reaper: Node2D = null
+# FIX (2P): in modalità due giocatori il mini boss immortale NON è uno ma
+# DUE, uno per player, e si differenziano SOLO nel colore: quello che
+# insegue P1 è VERDE, quello che insegue P2 è ROSSO. In 1P resta il
+# singolo fantasma verde.
+var ghost_reapers: Array = []
 var hurry_up_active: bool = false
 var _hurry_up_time: float = 0.0          # animazione testo (blink + drips)
 var _since_last_treasure_ms: float = 0.0 # tempo dall'ultimo tesoro raccolto
@@ -1049,6 +1053,12 @@ func _update_playing(delta_ms: float) -> void:
                         AudioManager.play_sound(AudioManager.SoundType.TREASURE)
 
         # (2) Enemies update
+        # FIX (2P — nemici ignoravano P2): ogni nemico insegue il player VIVO
+        # più VICINO a sé (P1 o P2). Prima passavamo solo la posizione di P1:
+        # in 2P il giocatore 2 vagava indisturbato senza mai essere inseguito.
+        # Il flee mode (calice) è per-nemico: fuggono solo i nemici il cui
+        # bersaglio è invincibile (se P1 ha il calice ma il nemico sta
+        # pressando P2, quel nemico NON scappa).
         var p_pos: Vector2 = player.get_pixel_pos()
         var p_grid: Vector2i = player.get_grid_pos()
         var player_invuln: bool = player.is_invulnerable()
@@ -1056,8 +1066,14 @@ func _update_playing(delta_ms: float) -> void:
         var enemy_projectiles: Array = []
         for enemy in spawner.enemies:
                 if not enemy.is_death_anim_done():
-                        enemy.set_flee_mode(player_invuln)
-                        enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles, delta_ms)
+                        var target_p: CharacterBody2D = _nearest_alive_player(enemy.get_pixel_pos())
+                        if target_p != null:
+                                enemy.set_flee_mode(target_p.is_invulnerable())
+                                enemy.update_enemy(maze, target_p.get_grid_pos(),
+                                        target_p.get_pixel_pos(), enemy_projectiles, delta_ms)
+                        else:
+                                enemy.set_flee_mode(player_invuln)
+                                enemy.update_enemy(maze, p_grid, p_pos, enemy_projectiles, delta_ms)
 
         # FIX (deriva fuori asse -> compenetrazione muri): RIMOSSA la
         # separazione nemici-nemici (push di 1px/frame entro 32px). Il push
@@ -1146,6 +1162,9 @@ func _update_playing(delta_ms: float) -> void:
         # both take 1 damage. Mirrors C++ Game.cpp 1846-1862.
         _check_2p_friendly_fire()
 
+        # (7c) FIX (2P): eliminazione del player senza vite (non più "zombie").
+        _check_player_elimination()
+
         # (8) Death check
         _check_death()
 
@@ -1210,10 +1229,16 @@ func _update_playing(delta_ms: float) -> void:
         # non update_enemy(). Il crash "Nonexistent function 'update_enemy'"
         # bloccava il gioco dopo qualche minuto quando il portal spawnava un
         # mini-boss.
+        # FIX (2P): anche il miniboss insegue il player vivo più vicino e
+        # colpisce in melee CHUNQUE è a portata (P1 o P2), non solo P1.
         if mini_boss != null and not mini_boss.is_dead():
-                mini_boss.set_flee_mode(player_invuln)
-                mini_boss.update_step(maze, p_grid, p_pos, int(delta_ms))
-                # MiniBoss melee attack: if attacking and player in range, damage
+                var mb_target: CharacterBody2D = _nearest_alive_player(mini_boss.get_pixel_pos())
+                if mb_target == null:
+                        mb_target = player
+                mini_boss.set_flee_mode(mb_target.is_invulnerable())
+                mini_boss.update_step(maze, mb_target.get_grid_pos(),
+                                mb_target.get_pixel_pos(), int(delta_ms))
+                # MiniBoss melee attack: if attacking and target in range, damage
                 # FIX CRASH: MiniBoss non ha get_pixel_pos(); usa la property
                 # `pos` (Vector2) direttamente con .get().
                 if mini_boss.has_method("is_attacking") and mini_boss.is_attacking():
@@ -1221,16 +1246,20 @@ func _update_playing(delta_ms: float) -> void:
                         var mb_range: float = 36.0  # default attack range
                         if mini_boss.has_method("get_attack_range"):
                                 mb_range = mini_boss.get_attack_range()
-                        if p_pos.distance_squared_to(mb_pos) < (mb_range + 10) ** 2:
-                                if not player.is_invulnerable() and not player.is_jumping():
-                                        var mb_dmg: int = 5  # default
-                                        if mini_boss.has_method("get_attack_damage"):
-                                                mb_dmg = mini_boss.get_attack_damage()
-                                        var num_hits: int = max(1, mb_dmg / 5)
-                                        for _i in num_hits:
-                                                player.take_damage()
-                                        if AudioManager:
-                                                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+                        # FIX (2P): il colpo melee arriva a qualunque player a
+                        # portata (prima solo P1: P2 poteva stare accanto al
+                        # miniboss senza conseguenze).
+                        for melee_p in _alive_players():
+                                if melee_p.get_pixel_pos().distance_squared_to(mb_pos) < (mb_range + 10) ** 2:
+                                        if not melee_p.is_invulnerable() and not melee_p.is_jumping():
+                                                var mb_dmg: int = 5  # default
+                                                if mini_boss.has_method("get_attack_damage"):
+                                                        mb_dmg = mini_boss.get_attack_damage()
+                                                var num_hits: int = max(1, mb_dmg / 5)
+                                                for _i in num_hits:
+                                                        melee_p.take_damage()
+                                                if AudioManager:
+                                                        AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
         # MiniBoss death cleanup
         if mini_boss != null and mini_boss.is_dead():
                 var score_reward: int = 5000
@@ -1338,13 +1367,18 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                 # FIX (Hurry Up! — fantasma immortale): i proiettili NON lo
                 # uccidono: colpirlo fa sentire la risata tenebrosa (via
                 # segnale laughed) e il proiettile viene assorbito
-                # dall'ectoplasma.
-                if not hit_something and ghost_reaper != null and is_instance_valid(ghost_reaper):
-                        var g_pos: Vector2 = ghost_reaper.get_pixel_pos()
-                        if proj_pos.distance_squared_to(g_pos) < 1500.0:  # raggio ~39px
-                                ghost_reaper.take_damage(int(proj.get("power", 1)))
-                                proj["active"] = false
-                                hit_something = true
+                # dall'ectoplasma. In 2P ci sono DUE fantasmi (verde P1,
+                # rosso P2): entrambi assorbono i proiettili.
+                if not hit_something:
+                        for ghost in ghost_reapers:
+                                if ghost == null or not is_instance_valid(ghost):
+                                        continue
+                                var g_pos: Vector2 = ghost.get_pixel_pos()
+                                if proj_pos.distance_squared_to(g_pos) < 1500.0:  # raggio ~39px
+                                        ghost.take_damage(int(proj.get("power", 1)))
+                                        proj["active"] = false
+                                        hit_something = true
+                                        break
 
 
 func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
@@ -1548,13 +1582,14 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break
-        # FIX (Hurry Up! — fantasma immortale): il contatto col fantasma fa
-        # danno come i nemici (si può solo scappare!). Il fantasma non è in
-        # spawner.enemies, quindi va controllato a parte. Il guard su
-        # invulnerabilità/salto è già gestito dal return in testa alla
-        # funzione: qui dentro il player NON è né invulnerabile né in salto.
-        if ghost_reaper != null and is_instance_valid(ghost_reaper):
-                if p_pos.distance_squared_to(ghost_reaper.get_pixel_pos()) < 800.0:
+        # FIX (Hurry Up! — fantasmi immortali): il contatto con UN QUALSIASI
+        # fantasma fa danno come i nemici (si può solo scappare!). In 2P ci
+        # sono due fantasmi (verde per P1, rosso per P2) e ognuno insegue il
+        # SUO player, ma il contatto danneggia qualunque player tocchi.
+        for ghost in ghost_reapers:
+                if ghost == null or not is_instance_valid(ghost):
+                        continue
+                if p_pos.distance_squared_to(ghost.get_pixel_pos()) < 800.0:
                         p.take_damage()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
@@ -1643,6 +1678,110 @@ func _update_invincible_burn(p: CharacterBody2D, _delta_ms: float) -> void:
                         p.add_score(2000)
 
 
+# FIX (2P — P2 spawnava dentro il muro): il posizionamento fisso a
+# P1.x + TILE_SIZE metteva P2 nella cella (2,1), che nel labirinto DFS è
+# un muro in circa il 50% dei livelli (colonna pari: scavata solo se il
+# corridoio (1,1)->(3,1) esiste). Cerchiamo invece la cella APERTA più
+# vicina a P1 seguendo un ordine di preferenza fisso (destra, giù, su,
+# sinistra, poi gli anelli successivi) e piazziamo P2 al suo centro:
+# mai dentro un muro, mai sopra P1. Nota: la cella (1,2) è odd-odd, quindi
+# SEMPRE aperta nel maze DFS -> la ricerca riesce sempre entro il 2° tentativo.
+const _P2_SPAWN_PREF: Array[Vector2i] = [
+        Vector2i(1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(-1, 0),
+        Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1),
+        Vector2i(2, 0), Vector2i(0, 2), Vector2i(2, 1), Vector2i(1, 2),
+        Vector2i(-1, 2), Vector2i(-2, 0), Vector2i(0, -2), Vector2i(2, -1),
+        Vector2i(-2, 1), Vector2i(1, -2), Vector2i(-1, -2), Vector2i(-2, -1),
+        Vector2i(2, 2), Vector2i(-2, 2), Vector2i(2, -2), Vector2i(-2, -2),
+        Vector2i(3, 0), Vector2i(0, 3), Vector2i(3, 1), Vector2i(1, 3),
+]
+
+
+func _place_player2_near_p1() -> void:
+        var p1_col: int = int(player.position.x / C.TILE_SIZE)
+        var p1_row: int = int((player.position.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        for off in _P2_SPAWN_PREF:
+                var c: int = p1_col + off.x
+                var r: int = p1_row + off.y
+                if c < 1 or c >= C.MAZE_COLS - 1 or r < 1 or r >= C.MAZE_ROWS - 1:
+                        continue
+                if maze.is_wall(c, r):
+                        continue
+                player2.position = Vector2(
+                                c * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                                r * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
+                return
+        # Retroguardia (maze degenere): vecchio posizionamento a fianco di P1.
+        player2.position = Vector2(player.position.x + C.TILE_SIZE,
+                        player.position.y)
+
+
+# FIX (2P): lista dei player vivi (vite > 0) in gioco. In 1P contiene
+# solo P1; in 2P contiene P1 e/o P2 finché hanno vite (il player eliminato
+# scompare dalla lista: niente più danni/targeting su un morto).
+func _alive_players() -> Array:
+        var out: Array = []
+        if player != null and is_instance_valid(player) and player.lives > 0:
+                out.append(player)
+        if GameManager and GameManager.num_players == 2 and player2 != null \
+                        and is_instance_valid(player2) and player2.visible and player2.lives > 0:
+                out.append(player2)
+        return out
+
+
+# FIX (2P): il player VIVO più vicino a `from_pos` (P1 o P2), oppure null se
+# non ce ne sono. Usato dal targeting di nemici, miniboss e boss room: in 2P
+# l'IA preme su chi è più vicino invece di ignorare completamente P2.
+func _nearest_alive_player(from_pos: Vector2) -> CharacterBody2D:
+        var best: CharacterBody2D = null
+        var best_d: float = INF
+        if player != null and is_instance_valid(player) and player.lives > 0:
+                best = player
+                best_d = from_pos.distance_squared_to(player.get_pixel_pos())
+        if GameManager and GameManager.num_players == 2 and player2 != null \
+                        and is_instance_valid(player2) and player2.visible and player2.lives > 0:
+                var d2: float = from_pos.distance_squared_to(player2.get_pixel_pos())
+                if d2 < best_d:
+                        best = player2
+        return best
+
+
+# FIX (2P — eliminazione player): quando un player perde l'ultima vita ma
+# l'altro è ancora vivo, NON resta uno "zombie" giocabile (com'era prima:
+# continuava a girare con vite negative). Viene eliminato: non riceve più
+# input, non collide, non viene più preso di mira — e la scena si ricrea
+# con 3 vite per entrambi se si usa un continue. L'HUD conserva il suo
+# punteggio finale.
+func _check_player_elimination() -> void:
+        if player2 == null or not is_instance_valid(player2) or not player2.visible:
+                return
+        if player2.lives > 0 or player.lives <= 0:
+                return  # P2 vivo, oppure entrambi morti (game over via _check_death)
+        player2.visible = false
+        player2.set_direction(0, 0)
+        print("[2P] Player 2 eliminato (vite esaurite), P1 continua da solo")
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+        # Effetto visivo sull'ultimo punto noto del player eliminato.
+        if EffectsManager:
+                var burst := EffectsManager.spawn_explosion(player2.get_pixel_pos(),
+                        Color(0.55, 0.65, 1.0), 18, 0.7)
+                collectibles_node.add_child(burst)
+        # Snapshot finale sull'HUD (il 2P resta mostrato con l'ultimo punteggio).
+        if hud:
+                hud.set_player2_state({
+                        "score": player2.score,
+                        "lives": 0,
+                        "energy": 0,
+                        "max_energy": player2.max_energy,
+                        "weapon_name": C.get_weapon_name(
+                                        int(player2.current_weapon.get("type", 0))),
+                        "weapon_color": Color.WHITE,
+                        "weapon_ammo": player2.current_weapon.get("ammo", 0),
+                        "weapon_max": player2.current_weapon.get("max_ammo", 15),
+                })
+
+
 func _check_death() -> void:
         var p1_dead: bool = player.lives <= 0
         var p2_dead: bool = true
@@ -1660,11 +1799,18 @@ func _check_death() -> void:
                         AudioManager.stop_ghost_music()
                 if GameManager:
                         # FIX (Hall of Fame): registra il punteggio finale prima
-                        # della transizione (in 2P somma i punteggi dei due player)
+                        # della transizione. In 2P ogni player ha il PROPRIO
+                        # punteggio (salvabile singolarmente in classifica:
+                        # tastiera di inserimento prima per P1 poi per P2);
+                        # final_score resta la somma dei due per compatibilità
+                        # con la schermata di game over.
                         var total_score_d: int = player.score
                         if GameManager.num_players == 2 and player2.visible:
                                 total_score_d += player2.score
                         GameManager.final_score = total_score_d
+                        GameManager.final_score_p1 = player.score
+                        GameManager.final_score_p2 = player2.score if \
+                                        (GameManager.num_players == 2 and player2.visible) else 0
                         GameManager.final_level = current_level
                         if GameManager.continues_left > 0:
                                 GameManager.player_died()
@@ -2012,14 +2158,12 @@ func start_level(lvl: int) -> void:
                 player.reset()
                 if GameManager and GameManager.num_players == 2:
                         player2.reset()
+                        _place_player2_near_p1()
         else:
                 player.reset_position()
                 if GameManager and GameManager.num_players == 2:
                         player2.reset_position()
-                        player2.position = Vector2(
-                                player.position.x + C.TILE_SIZE,
-                                player.position.y
-                        )
+                        _place_player2_near_p1()
         # Spawn enemies
         # FIX (6 nemici al livello 1 + 1 dopo ogni boss): passa il livello allo
         # spawner: ondata = 6 + numero di boss già sconfitti.
@@ -2334,9 +2478,15 @@ func _update_hurry_up(delta_ms: float, p_grid: Vector2i, p_pos: Vector2) -> void
         if _ghost_laugh_cooldown_ms > 0:
                 _ghost_laugh_cooldown_ms = maxi(0, _ghost_laugh_cooldown_ms - int(delta_ms))
 
-        # Il fantasma già attivo insegue il player (P1) per tutto il tempo.
-        if ghost_reaper != null and is_instance_valid(ghost_reaper):
-                ghost_reaper.update_step(maze, p_grid, int(delta_ms))
+        # FIX (2P): i fantasmi già attivi inseguono il LORO player per tutto
+        # il tempo (verde -> P1, rosso -> P2); se il loro player è eliminato,
+        # ripiegano sull'altro (non smettono mai di dare la caccia).
+        if ghost_reapers.size() > 0:
+                for ghost in ghost_reapers:
+                        if ghost == null or not is_instance_valid(ghost):
+                                continue
+                        var target_p: CharacterBody2D = _ghost_target_player(ghost)
+                        ghost.update_step(maze, target_p.get_grid_pos(), int(delta_ms))
                 return
 
         # Trigger una sola volta per livello.
@@ -2354,7 +2504,10 @@ func _update_hurry_up(delta_ms: float, p_grid: Vector2i, p_pos: Vector2) -> void
                 _trigger_hurry_up(p_pos)
 
 
-# Attiva la scritta "Hurry Up!" e fa emergere il fantasma dal portale.
+# Attiva la scritta "Hurry Up!" e fa emergere i fantasmi dal portale.
+# FIX (2P): in due giocatori NON è uno ma DUE mini boss immortali, uno per
+# player, diversi solo nel colore (verde per P1, rosso per P2): entrambi
+# emergono dal portale (il secondo da una cella adiacente libera).
 func _trigger_hurry_up(_p_pos: Vector2) -> void:
         hurry_up_active = true
         _hurry_up_time = 0.0
@@ -2369,19 +2522,56 @@ func _trigger_hurry_up(_p_pos: Vector2) -> void:
                 spawn_col = center_cell.x
                 spawn_row = center_cell.y
         if spawn_col < 0:
-                return  # maze degenere: niente fantasma
-        # Il portale si RIAPRE visivamente e il fantasma emerge da lì.
+                return  # maze degenere: niente fantasmi
+        # Il portale si RIAPRE visivamente e i fantasmi emergono da lì.
         spawner.reopen_portal_for_ghost()
+        # 1P: un solo fantasma VERDE. 2P: DUE fantasmi (verde -> P1,
+        # rosso -> P2), il secondo su una cella adiacente libera.
+        var two_players: bool = GameManager and GameManager.num_players == 2
         var ghost := GhostReaperClass.new()
+        ghost.set("target_player_num", 1)
         ghost.setup(spawn_col, spawn_row)
         ghost.laughed.connect(_on_ghost_laughed)
         add_child(ghost)
-        ghost_reaper = ghost
-        print("[HurryUp] Fantasma immortale spawnato dal portale a cell (",
-                        spawn_col, ",", spawn_row, ")")
+        ghost_reapers.append(ghost)
+        if two_players:
+                var g2_cell: Vector2i = _find_free_cell_near(spawn_col, spawn_row, 0, 2)
+                var spawn2_col: int = spawn_col
+                var spawn2_row: int = spawn_row
+                if g2_cell.x >= 0:
+                        spawn2_col = g2_cell.x
+                        spawn2_row = g2_cell.y
+                var ghost2 := GhostReaperClass.new()
+                ghost2.set("target_player_num", 2)
+                ghost2.set("is_red_variant", true)
+                ghost2.setup(spawn2_col, spawn2_row)
+                ghost2.laughed.connect(_on_ghost_laughed)
+                add_child(ghost2)
+                ghost_reapers.append(ghost2)
+        print("[HurryUp] Fantasmi immortali spawnati dal portale a cell (",
+                        spawn_col, ",", spawn_row, ") x", ghost_reapers.size())
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
                 AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+
+
+# FIX (2P): il bersaglio del fantasma. Ogni fantasma ha il SUO player
+# (target_player_num 1 o 2, assegnato allo spawn): se il suo player è vivo
+# lo insegue, altrimenti ripiega sull'altro così la minaccia non svanisce.
+func _ghost_target_player(ghost: Node2D) -> CharacterBody2D:
+        var g_num: int = 1
+        if ghost.get("target_player_num") != null:
+                g_num = int(ghost.get("target_player_num"))
+        if g_num == 2:
+                if player2 != null and is_instance_valid(player2) and player2.visible \
+                                and player2.lives > 0:
+                        return player2
+                return player
+        if player != null and is_instance_valid(player) and player.lives > 0:
+                return player
+        if player2 != null and is_instance_valid(player2) and player2.visible:
+                return player2
+        return player
 
 
 # Il player ha sparato al fantasma: risata tenebrosa (con anti-spam).
@@ -2393,13 +2583,14 @@ func _on_ghost_laughed(_pos: Vector2) -> void:
         _ghost_laugh_cooldown_ms = GHOST_LAUGH_COOLDOWN_MS
 
 
-# FIX (fantasma immortale): rimuove il fantasma e la scritta (chiamato da
-# start_level a ogni cambio livello: "poi scompare e riapparirà al livello
-# del labirinto successivo sempre alla stessa maniera").
+# FIX (fantasmi immortali): rimuove TUTTI i fantasmi e la scritta (chiamato
+# da start_level a ogni cambio livello: "poi scompaiono e riappariranno al
+# livello del labirinto successivo sempre alla stessa maniera").
 func _clear_hurry_up() -> void:
-        if ghost_reaper != null and is_instance_valid(ghost_reaper):
-                ghost_reaper.queue_free()
-        ghost_reaper = null
+        for ghost in ghost_reapers:
+                if ghost != null and is_instance_valid(ghost):
+                        ghost.queue_free()
+        ghost_reapers.clear()
         hurry_up_active = false
         _since_last_treasure_ms = 0.0
         _ghost_laugh_cooldown_ms = 0
@@ -3413,13 +3604,17 @@ func _draw_decals() -> void:
 func _update_hud() -> void:
         if not hud:
                 return
+        # FIX (HUD weapon name sempre "PISTOL"): il Dictionary dell'arma non ha
+        # la chiave "name" (ha type/power/ammo), quindi il fallback "PISTOL"
+        # veniva usato SEMPRE, anche con fucile/razzo/laser. Ora il nome è
+        # derivato dal type con la mappa ufficiale delle armi.
         var p1_snap: Dictionary = {
                 "score": player.score,
                 "lives": player.lives,
                 "energy": player.energy,
                 "max_energy": player.max_energy,
-                "weapon_name": player.current_weapon.get("name", "PISTOL"),
-                "weapon_color": Color.WHITE,
+                "weapon_name": C.get_weapon_name(int(player.current_weapon.get("type", 0))),
+                "weapon_color": C.get_weapon_color(int(player.current_weapon.get("type", 0))),
                 "weapon_ammo": player.current_weapon.get("ammo", 0),
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
         }
@@ -3430,8 +3625,8 @@ func _update_hud() -> void:
                         "lives": player2.lives,
                         "energy": player2.energy,
                         "max_energy": player2.max_energy,
-                        "weapon_name": player2.current_weapon.get("name", "PISTOL"),
-                        "weapon_color": Color.WHITE,
+                        "weapon_name": C.get_weapon_name(int(player2.current_weapon.get("type", 0))),
+                        "weapon_color": C.get_weapon_color(int(player2.current_weapon.get("type", 0))),
                         "weapon_ammo": player2.current_weapon.get("ammo", 0),
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
                 }

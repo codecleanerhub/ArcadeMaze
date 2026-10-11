@@ -546,10 +546,27 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                 position.y += dy * effective_speed
                 if ghost_mode:
                         var ghost_margin: float = 8.0
-                        position.x = clamp(position.x, ghost_margin,
-                                float(WINDOW_WIDTH) - ghost_margin)
-                        position.y = clamp(position.y, UI_HEIGHT + ghost_margin,
-                                float(WINDOW_HEIGHT) - ghost_margin)
+                        # FIX (tunnel Pac-Man): dentro le gallerie il clamp NON
+                        # si applica — altrimenti il player-fantasma resterebbe
+                        # bloccato all'imbocco senza raggiungere mai la soglia
+                        # di wrap (il clamp gli impediva di superare il bordo).
+                        # Fuori dalle gallerie il comportamento e' invariato.
+                        if not GameConstants.is_tunnel_cell(
+                                        int(position.x / TILE_SIZE),
+                                        int((position.y - UI_HEIGHT) / TILE_SIZE)):
+                                position.x = clamp(position.x, ghost_margin,
+                                        float(WINDOW_WIDTH) - ghost_margin)
+                                position.y = clamp(position.y, UI_HEIGHT + ghost_margin,
+                                        float(WINDOW_HEIGHT) - ghost_margin)
+                # FIX (meccanica tunnel "Pac-Man"): chi supera il bordo del
+                # labirinto DENTRO una galleria riemerge dal lato opposto
+                # mantenendo direzione e coordinata trasversale (es. entra
+                # nella galleria in alto e riappare in basso, già in marcia
+                # verso l'interno). I muri di bordo bloccano ovunque altrove,
+                # quindi il wrap puo' scattare SOLO attraverso le 4 gallerie.
+                var wrapped_pos: Vector2 = GameConstants.tunnel_wrap(position)
+                if wrapped_pos != position:
+                        position = wrapped_pos
 
                 # Cell pickups: treasure (10000 pts + sparkle particles) or weapon.
                 var cell_type: int = maze.get_cell_type(col, row)

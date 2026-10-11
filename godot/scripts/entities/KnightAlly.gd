@@ -283,6 +283,20 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                 and _move_waypoint != Vector2.INF:
                         pos = pos.move_toward(_move_waypoint, step_size)
 
+                # FIX (meccanica tunnel "Pac-Man"): se l'alleato sta marciando
+                # verso la cella VIRTUALE di una galleria (waypoint fuori
+                # griglia), il passaggio del bordo attiva il wrap: riemerge
+                # dal lato opposto e il waypoint viene specchiato sul centro
+                # della cella di sbocco (l'inseguimento del player attraverso
+                # la galleria resta continuo e senza freeze).
+                var wrapped_pos_k: Vector2 = GameConstants.tunnel_wrap(pos)
+                if wrapped_pos_k != pos:
+                        pos = wrapped_pos_k
+                        if _move_waypoint != Vector2.INF:
+                                _move_waypoint = GameConstants.mirror_waypoint_after_wrap(
+                                                _move_waypoint)
+                        last_pos = pos
+
                 # Aggiorna la direzione visiva per lo sprite (flip).
                 if current_dir.x != 0 or current_dir.y != 0:
                         dx = current_dir.x

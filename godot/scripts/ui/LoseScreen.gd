@@ -25,6 +25,11 @@ var _keyboard: Control = null
 var _keyboard_timer: float = 0.0
 const KEYBOARD_DELAY: float = 1.6  # secondi prima che appaia la tastiera
 var _keyboard_shown: bool = false
+# FIX (Hall of Fame 2P): coda dei punteggi da salvare. In 2P ogni player
+# salva il PROPRIO punteggio: prima la tastiera per P1, poi (se qualifica)
+# quella per P2, infine la Hall of Fame con l'ultima voce evidenziata.
+var _hof_queue: Array = []  # [{"label": "PLAYER 1", "score": int}, ...]
+var _hof_level: int = 1
 
 
 func _ready() -> void:
@@ -52,42 +57,89 @@ func _process(delta: float) -> void:
         queue_redraw()
 
 
-# Crea la tastiera virtuale se il punteggio finale è da Hall of Fame.
+# FIX (Hall of Fame 2P): costruisce la coda dei punteggi qualificanti.
+# In 1P: il punteggio unico. In 2P: PRIMA il punteggio di P1, POI quello di
+# P2 (ognuno con la propria tastiera: entrambi possono entrare in
+# classifica). Solo i punteggi che qualificano entrano in coda.
+func _build_hof_queue() -> void:
+        _hof_queue.clear()
+        if GameManager == null:
+                return
+        _hof_level = GameManager.final_level
+        if GameManager.num_players == 2:
+                if HallOfFameData.qualifies(GameManager.final_score_p1):
+                        _hof_queue.append({"label": "PLAYER 1",
+                                        "score": GameManager.final_score_p1})
+                if HallOfFameData.qualifies(GameManager.final_score_p2):
+                        _hof_queue.append({"label": "PLAYER 2",
+                                        "score": GameManager.final_score_p2})
+        else:
+                if HallOfFameData.qualifies(GameManager.final_score):
+                        _hof_queue.append({"label": "", "score": GameManager.final_score})
+
+
+# Mostra la tastiera per il primo punteggio in coda (se c'è).
 func _maybe_show_keyboard() -> void:
         _keyboard_shown = true
-        var score: int = 0
-        var level: int = 1
-        if GameManager:
-                score = GameManager.final_score
-                level = GameManager.final_level
-        if not HallOfFameData.qualifies(score):
-                return  # punteggio troppo basso: niente inserimento nome
+        if _hof_queue.is_empty():
+                _build_hof_queue()
+        if _hof_queue.is_empty():
+                return  # nessun punteggio qualificante: niente inserimento nome
+        _show_next_keyboard()
+
+
+func _show_next_keyboard() -> void:
+        var entry: Dictionary = _hof_queue[0]
         var kb_script := load("res://scripts/ui/NameEntryKeyboard.gd")
         _keyboard = Control.new()
         _keyboard.set_script(kb_script)
         _keyboard.set_anchors_preset(Control.PRESET_FULL_RECT)
-        _keyboard.display_score = score
-        _keyboard.display_level = level
+        _keyboard.display_score = int(entry["score"])
+        _keyboard.display_level = _hof_level
+        _keyboard.display_label = str(entry["label"])
         _keyboard.save_on_confirm = true
         add_child(_keyboard)
         _keyboard.entry_confirmed.connect(_on_name_confirmed)
 
 
-# Chiamato quando il player conferma il nome: salva (già fatto dalla
-# tastiera) e porta alla schermata Hall of Fame con la voce evidenziata.
+# Chiamato quando il player conferma il nome: la tastiera ha già salvato la
+# voce. Se resta un altro player in coda, mostra la sua tastiera; altrimenti
+# porta alla schermata Hall of Fame con l'ultima voce salvata evidenziata.
 func _on_name_confirmed(player_name: String) -> void:
         if _finished:
                 return
+        # Rimuovi il punteggio appena salvato dalla coda.
+        if not _hof_queue.is_empty():
+                _hof_queue.pop_front()
+        if not _hof_queue.is_empty():
+                # C'è ancora il secondo player: nuova tastiera per lui.
+                if _keyboard != null and is_instance_valid(_keyboard):
+                        _keyboard.queue_free()
+                _keyboard = null
+                _show_next_keyboard()
+                return
         _finished = true
         if GameManager:
-                # Trova la posizione della nuova voce per evidenziarla
+                # Trova la posizione dell'ultima voce salvata per evidenziarla
+                # (l'ultima salvata è quella di P2 in 2P, altrimenti P1).
                 var entries := HallOfFameData.load_entries()
                 var pos: int = -1
+                var last_score: int = GameManager.final_score_p2 if \
+                                (GameManager.num_players == 2 \
+                                and HallOfFameData.qualifies(GameManager.final_score_p2)) \
+                                else GameManager.final_score_p1 if (GameManager.num_players == 2 \
+                                and HallOfFameData.qualifies(GameManager.final_score_p1)) \
+                                else GameManager.final_score
                 for i in entries.size():
                         if str(entries[i]["name"]) == player_name \
-                                        and int(entries[i]["score"]) == GameManager.final_score:
+                                        and int(entries[i]["score"]) == last_score:
                                 pos = i
                                 break
+                if pos < 0:
+                        for i in entries.size():
+                                if str(entries[i]["name"]) == player_name:
+                                        pos = i
+                                        break
                 GameManager.hof_highlight_index = pos
                 GameManager.go_to_hall_of_fame()
 
@@ -101,16 +153,14 @@ func _unhandled_input(event: InputEvent) -> void:
                 return
         if event is InputEventKey and event.pressed and not event.echo:
                 if event.keycode == KEY_ENTER or event.keycode == KEY_SPACE:
-                        # FIX (possibilità di salvare il record): se il punteggio
+                        # FIX (possibilità di salvare il record): se un punteggio
                         # merita la classifica, ENTER/SPACE NON salta il salvataggio
                         # ma apre SUBITO la tastiera di inserimento nome (di norma
-                        # appare da sola dopo 1.6s). Solo se il punteggio NON
+                        # appare da sola dopo 1.6s). Solo se NESSUN punteggio
                         # qualifica, ENTER porta al menu.
                         if not _keyboard_shown:
-                                var sc: int = 0
-                                if GameManager:
-                                        sc = GameManager.final_score
-                                if sc > 0 and HallOfFameData.qualifies(sc):
+                                _build_hof_queue()
+                                if not _hof_queue.is_empty():
                                         _maybe_show_keyboard()
                                         return
                         _finish()
@@ -119,10 +169,8 @@ func _unhandled_input(event: InputEvent) -> void:
         elif event is InputEventJoypadButton and event.pressed:
                 if event.button_index == JOY_BUTTON_A:
                         if not _keyboard_shown:
-                                var sc2: int = 0
-                                if GameManager:
-                                        sc2 = GameManager.final_score
-                                if sc2 > 0 and HallOfFameData.qualifies(sc2):
+                                _build_hof_queue()
+                                if not _hof_queue.is_empty():
                                         _maybe_show_keyboard()
                                         return
                         _finish()
@@ -166,20 +214,29 @@ func _draw() -> void:
                 "The maze has claimed another soul...",
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 28, color_subtitle)
 
-        # FIX (Hall of Fame): punteggio finale raggiunto
+        # FIX (Hall of Fame): punteggio finale raggiunto. In 2P mostra i
+        # punteggi SINGOLI dei due player più il totale.
         var score: int = 0
         var level: int = 1
         if GameManager:
                 score = GameManager.final_score
                 level = GameManager.final_level
+        var score_text: String = "FINAL SCORE: %d    LEVEL: %d" % [score, level]
+        if GameManager and GameManager.num_players == 2:
+                score_text = "P1 SCORE: %d    P2 SCORE: %d    LEVEL: %d" % [
+                        GameManager.final_score_p1, GameManager.final_score_p2, level]
         draw_string(font, Vector2(cx - 300, 300),
-                "FINAL SCORE: %d    LEVEL: %d" % [score, level],
+                score_text,
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 30, Color(1.0, 0.84, 0.3))
 
         # Hint (blinking) — cambia se la tastiera sta per apparire
         var hint_alpha: float = 0.5 + 0.5 * sin(_time * 2.0)
         var hint_text: String = "PRESS ENTER TO RETURN TO MENU"
-        if not _keyboard_shown and HallOfFameData.qualifies(score):
+        var pending_p1: bool = score > 0 and HallOfFameData.qualifies(
+                        GameManager.final_score_p1 if GameManager.num_players == 2 else score)
+        var pending_p2: bool = GameManager.num_players == 2 \
+                        and HallOfFameData.qualifies(GameManager.final_score_p2)
+        if not _keyboard_shown and (pending_p1 or pending_p2):
                 hint_text = "NEW HIGH SCORE! PREPARE TO ENTER YOUR NAME..."
         elif _keyboard_shown and _keyboard != null and is_instance_valid(_keyboard):
                 hint_text = ""

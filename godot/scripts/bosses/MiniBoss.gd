@@ -551,6 +551,20 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
         if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
                 pos = pos.move_toward(_move_waypoint, step_size)
 
+        # FIX (meccanica tunnel "Pac-Man"): se il miniboss sta marciando verso
+        # la cella VIRTUALE di una galleria (waypoint fuori griglia), il
+        # passaggio del bordo attiva il wrap: riemerge dal lato opposto e il
+        # waypoint viene specchiato sul centro della cella di sbocco, così
+        # l'arrivo ESATTO al centro (e la decisione successiva) restano
+        # garantiti anche attraverso la galleria.
+        var wrapped_pos_m: Vector2 = GameConstants.tunnel_wrap(pos)
+        if wrapped_pos_m != pos:
+                pos = wrapped_pos_m
+                if _move_waypoint != Vector2.INF:
+                        _move_waypoint = GameConstants.mirror_waypoint_after_wrap(
+                                        _move_waypoint)
+                last_pos = pos
+
         # --- Safety clamp (ultima difesa, mirror Enemy.gd): se la cella
         # corrente è WALL (stato invalido, es. spawn corrotto), teleport al
         # centro della cella aperta più vicina (raggio 1-3). Con il movimento
@@ -630,14 +644,25 @@ func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
                         return first if first != Vector2i(-1, -1) else Vector2i(-1, -1)
                 for d in dirs:
                         var next: Vector2i = cur + d
+                        # FIX (tunnel Pac-Man): fuori griglia e' valido SOLO se
+                        # e' la cella VIRTUALE di una galleria: il vicino di
+                        # grafo reale e' la cella di bordo OPPOSTA (wrap), ma il
+                        # PRIMO PASSO dal punto di partenza resta la cella
+                        # virtuale (la direzione d'uscita: es. (14,-1) = su),
+                        # cosi' dx/dy e waypoint restano cardinali e validi.
+                        var first_cell: Vector2i = next
                         if next.x < 0 or next.x >= MAZE_COLS or next.y < 0 or next.y >= MAZE_ROWS:
-                                continue
+                                if not GameConstants.is_tunnel_virtual_cell(next.x, next.y):
+                                        continue
+                                next = GameConstants.tunnel_partner(cur.x, cur.y)
+                                if next.x < 0:
+                                        continue
                         if maze.is_wall(next.x, next.y):
                                 continue
                         if visited.has(next):
                                 continue
                         visited[next] = true
-                        var nf: Vector2i = first if first != Vector2i(-1, -1) else next
+                        var nf: Vector2i = first if first != Vector2i(-1, -1) else first_cell
                         queue.append([next, nf])
         return Vector2i(-1, -1)
 

@@ -73,13 +73,23 @@ static func find_path(maze: Object, start: Vector2i, target: Vector2i) -> Vector
                 for i in range(4):
                         var nc: int = curr.x + _DC[i]
                         var nr: int = curr.y + _DR[i]
-                        # Bounds + wall check (out of grid treated as wall by is_wall).
-                        if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
-                                continue
                         var nb := Vector2i(nc, nr)
+                        # FIX (tunnel Pac-Man): fuori griglia e' valido SOLO se
+                        # e' la prosecuzione VIRTUALE di una galleria: in quel
+                        # caso il vicino di grafo reale e' la cella di bordo
+                        # OPPOSTA (chi entra riemerge dall'altro lato), cosi'
+                        # il BFS considera il tunnel la via piu' corta per
+                        # attraversare il labirinto.
+                        if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
+                                if not C.is_tunnel_virtual_cell(nc, nr):
+                                        continue
+                                var partner := C.tunnel_partner(curr.x, curr.y)
+                                if partner.x < 0:
+                                        continue
+                                nb = partner
                         if visited.has(nb):
                                 continue
-                        if maze.is_wall(nc, nr):
+                        if maze.is_wall(nb.x, nb.y):
                                 continue
                         visited[nb] = true
                         parent[nb] = curr
@@ -96,6 +106,20 @@ static func find_path(maze: Object, start: Vector2i, target: Vector2i) -> Vector
 
         # If target itself is adjacent to start, parent[target] == start and the
         # loop above never executes - curr stays as target, which is correct.
+        # FIX (tunnel Pac-Man): se il primo passo e' un EDGE di galleria, la
+        # cella risalita NON e' adiacente a start (es. (14,0) -> (14,14)):
+        # la direzione reale da seguire e' quella della cella VIRTUALE di
+        # uscita (es. (14,-1) = su), che il chiamante traduce in dy=-1 e
+        # waypoint nel tunnel. Senza questo fix dx/dy sarebbe 0/14 (invalido).
+        var step_d: Vector2i = curr - start
+        if abs(step_d.x) > 1 or abs(step_d.y) > 1:
+                var ex: int = 0
+                var ey: int = 0
+                if absi(step_d.x) > 1:
+                        ex = -signi(step_d.x)
+                else:
+                        ey = -signi(step_d.y)
+                return Vector2i(start.x + ex, start.y + ey)
         return curr
 
 
@@ -106,6 +130,10 @@ static func find_path(maze: Object, start: Vector2i, target: Vector2i) -> Vector
 # ---------------------------------------------------------------------------
 static func find_path_dir(maze: Object, start: Vector2i, target: Vector2i) -> Vector2i:
         var next := find_path(maze, start, target)
-        if next.x < 0:
+        # FIX (tunnel): non basta testare next.x < 0: la prima cella del
+        # passo puo' essere la VIRTUALE della galleria sinistra (-1,7),
+        # che e' una direzione valida (-1, 0). Confrontiamo il sentinella
+        # esatto di "nessun percorso".
+        if next == Vector2i(-1, -1):
                 return Vector2i.ZERO
         return next - start

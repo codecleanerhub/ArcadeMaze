@@ -56,6 +56,10 @@ var _joy_nav_cooldown: float = 0.0
 # Score mostrato nella barra del nome (set dal chiamante)
 var display_score: int = 0
 var display_level: int = 1
+# FIX (Hall of Fame 2P): etichetta del player che sta inserendo il nome
+# ("PLAYER 1" / "PLAYER 2"): in due giocatori ognuno salva il PROPRIO
+# punteggio, la tastiera appare prima per P1 e poi per P2.
+var display_label: String = ""
 # Se true, il tasto FINE/OK salva già la voce (usato dalla LoseScreen)
 var save_on_confirm: bool = true
 
@@ -238,6 +242,14 @@ func _draw() -> void:
         draw_string(font, Vector2(cx - 400, 152),
                 "SCORE: %d   -   LEVEL: %d" % [display_score, display_level],
                 HORIZONTAL_ALIGNMENT_CENTER, 800, 24, Color(0.9, 0.9, 0.9))
+
+        # FIX (Hall of Fame 2P): etichetta del player che sta inserendo il
+        # nome (azzurro per P1, arancio per P2, come i colori dell'HUD 2P).
+        if display_label != "":
+                var lbl_col: Color = Color(0.392, 0.784, 1.0) if display_label.find("2") < 0 \
+                                else Color(1.0, 0.588, 0.392)
+                draw_string(font, Vector2(cx - 400, 178), display_label,
+                        HORIZONTAL_ALIGNMENT_CENTER, 800, 22, lbl_col)
 
         # Nome in costruzione (con cursore lampeggiante)
         var shown_name: String = _name

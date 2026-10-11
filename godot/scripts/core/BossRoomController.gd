@@ -182,6 +182,12 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                 player.activate_jump()
 
         # P2
+        # FIX (2P — joystick P2 mancava nella boss room): nel labirinto P2 ha
+        # il secondo joystick configurato (JOY2_*), ma qui c'era solo la
+        # tastiera WASD/Q/E: il giocatore 2 restava senza comandi in boss
+        # room se giocava col pad. Ora leggiamo il pad configurato
+        # (joy2_id se connesso, altrimenti il 2° pad collegato) con assi,
+        # D-pad e tasti jump/shoot configurati, come per P1.
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 var p2_dx: int = 0
                 var p2_dy: int = 0
@@ -193,11 +199,56 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                         p2_dx = -1
                 elif Input.is_action_pressed("p2_right"):
                         p2_dx = 1
+                # Joystick P2: device configurato o secondo pad collegato.
+                var p2_joy_id: int = -1
+                if ConfigManager and ConfigManager.joy2_id() >= 0 \
+                                and Input.get_connected_joypads().has(ConfigManager.joy2_id()):
+                        p2_joy_id = ConfigManager.joy2_id()
+                elif joy_pads.size() > 1:
+                        p2_joy_id = joy_pads[1]
+                if p2_joy_id >= 0:
+                        var ax2: int = ConfigManager.joy2_axis_x() if ConfigManager else 0
+                        var ay2: int = ConfigManager.joy2_axis_y() if ConfigManager else 1
+                        var axis_x2: float = Input.get_joy_axis(p2_joy_id, ax2)
+                        var axis_y2: float = Input.get_joy_axis(p2_joy_id, ay2)
+                        if absf(axis_x2) > 0.3 or absf(axis_y2) > 0.3:
+                                if absf(axis_x2) > absf(axis_y2):
+                                        p2_dx = 1 if axis_x2 > 0 else -1
+                                        p2_dy = 0
+                                else:
+                                        p2_dx = 0
+                                        p2_dy = 1 if axis_y2 > 0 else -1
+                        else:
+                                if Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_UP):
+                                        p2_dy = -1
+                                elif Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_DOWN):
+                                        p2_dy = 1
+                                elif Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_LEFT):
+                                        p2_dx = -1
+                                elif Input.is_joy_button_pressed(p2_joy_id, JOY_BUTTON_DPAD_RIGHT):
+                                        p2_dx = 1
                 player2.set_direction(p2_dx, p2_dy)
-                if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
+                # FIX (parità autofire P2): P1 spara tenendo premuto il tasto
+                # (is_action_pressed + cooldown), P2 doveva RIPREMERE il tasto
+                # per ogni colpo (just_pressed). Ora anche P2 ha l'autofire.
+                var p2_shoot_pressed: bool = Input.is_action_pressed("p2_shoot")
+                if p2_joy_id >= 0:
+                        var j2_shoot: int = ConfigManager.joy2_shoot() if ConfigManager else -1
+                        if j2_shoot < 0:
+                                j2_shoot = JOY_BUTTON_B
+                        if Input.is_joy_button_pressed(p2_joy_id, j2_shoot):
+                                p2_shoot_pressed = true
+                if p2_shoot_pressed and player2.shoot_cooldown == 0:
                         player2.shoot()
                         player2.shoot_cooldown = 150
-                if Input.is_action_just_pressed("p2_jump"):
+                var p2_jump_pressed: bool = Input.is_action_pressed("p2_jump")
+                if p2_joy_id >= 0:
+                        var j2_jump: int = ConfigManager.joy2_jump() if ConfigManager else -1
+                        if j2_jump < 0:
+                                j2_jump = JOY_BUTTON_A
+                        if Input.is_joy_button_pressed(p2_joy_id, j2_jump):
+                                p2_jump_pressed = true
+                if p2_jump_pressed:
                         player2.activate_jump()
 
         # (la pausa è gestita in _unhandled_input: vedi fix sopra)
@@ -234,10 +285,16 @@ func _update_boss(delta_ms: float) -> void:
         # (projectiles_out), non un Node. Passiamo un array vuoto che
         # il boss riempirà con i nuovi proiettili, poi li spawniamo
         # come nodi figli di boss_projectiles_node.
+        # FIX (2P): il boss mira il player VIVO più vicino (prima solo P1:
+        # in 2P il giocatore 2 poteva ballare davanti al boss senza che
+        # quest'ultimo reagisse).
         if boss and not boss.is_dead():
-                var p_pos: Vector2 = player.get_pixel_pos()
+                var boss_target: CharacterBody2D = _nearest_alive_player(boss.pos)
+                if boss_target == null:
+                        boss_target = player
                 var new_projectiles: Array = []
-                boss.update_step(p_pos.x, p_pos.y, int(delta_ms), new_projectiles)
+                boss.update_step(boss_target.get_pixel_pos().x,
+                                boss_target.get_pixel_pos().y, int(delta_ms), new_projectiles)
                 # Spawn boss projectiles
                 # FIX: Boss._shoot_pattern append oggetti Projectile (Node2D).
                 # Impostiamo position = pos e visible = true, poi aggiungiamo
@@ -305,13 +362,67 @@ func _update_boss(delta_ms: float) -> void:
 
         # (9) Death / continue check
         _check_boss_death()
+        # (9b) FIX (2P): eliminazione del player senza vite (mirror
+        # MainGameController: niente più player "zombie" con vite negative).
+        _check_player2_elimination()
+
+
+# FIX (2P): il player VIVO più vicino a `from_pos` (P1 o P2), oppure null.
+# Usato dal targeting del boss: in 2P il boss preme su chi è più vicino
+# invece di ignorare completamente P2.
+func _nearest_alive_player(from_pos: Vector2) -> CharacterBody2D:
+        var best: CharacterBody2D = null
+        var best_d: float = INF
+        if player != null and is_instance_valid(player) and player.lives > 0:
+                best = player
+                best_d = from_pos.distance_squared_to(player.get_pixel_pos())
+        if GameManager and GameManager.num_players == 2 and player2 != null \
+                        and is_instance_valid(player2) and player2.visible and player2.lives > 0:
+                var d2: float = from_pos.distance_squared_to(player2.get_pixel_pos())
+                if d2 < best_d:
+                        best = player2
+        return best
+
+
+# FIX (2P — eliminazione player in boss room): quando P2 perde l'ultima
+# vita ma P1 è ancora vivo, P2 viene eliminato (non più "zombie"), come
+# nel labirinto. La scena si ricrea con 3 vite per entrambi usando un
+# continue.
+func _check_player2_elimination() -> void:
+        if player2 == null or not is_instance_valid(player2) or not player2.visible:
+                return
+        if player2.lives > 0 or player.lives <= 0:
+                return  # P2 vivo, oppure entrambi morti (game over via _check_boss_death)
+        player2.visible = false
+        player2.set_direction(0, 0)
+        print("[2P] Player 2 eliminato nella boss room (vite esaurite)")
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+        if EffectsManager:
+                var p := EffectsManager.spawn_explosion(player2.get_pixel_pos(),
+                        Color(0.55, 0.65, 1.0), 18, 0.7)
+                boss_projectiles_node.add_child(p)
+        if hud:
+                hud.set_player2_state({
+                        "score": player2.score,
+                        "lives": 0,
+                        "energy": 0,
+                        "max_energy": player2.max_energy,
+                        "weapon_name": C.get_weapon_name(
+                                        int(player2.current_weapon.get("type", 0))),
+                        "weapon_color": C.get_weapon_color(
+                                        int(player2.current_weapon.get("type", 0))),
+                        "weapon_ammo": player2.current_weapon.get("ammo", 0),
+                        "weapon_max": player2.current_weapon.get("max_ammo", 15),
+                })
 
 
 func _advance_boss_projectiles(_delta_ms: float) -> void:
         # Move boss projectiles by their velocity, apply homing if enabled.
         # FIX: Projectile ha property `dir` (Vector2 velocity) e `homing_timer_ms`
         # non meta. Leggiamo direttamente le property.
-        var player_pos: Vector2 = player.get_pixel_pos()
+        # FIX (2P): l'homing insegue il player VIVO più vicino AL PROIETTILE
+        # (prima solo P1: i proiettili a ricerca ignoravano del tutto P2).
         var to_remove: Array = []
         for proj in boss_projectiles_node.get_children():
                 if not proj is Node2D:
@@ -326,7 +437,10 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                         # Homing
                         if proj.homing_timer_ms > 0:
                                 proj.homing_timer_ms -= int(_delta_ms)
-                                var to_player: Vector2 = (player_pos - proj.position).normalized()
+                                var homing_target: CharacterBody2D = _nearest_alive_player(proj.position)
+                                if homing_target == null:
+                                        homing_target = player
+                                var to_player: Vector2 = (homing_target.get_pixel_pos() - proj.position).normalized()
                                 vel = vel.lerp(to_player * vel.length(), 0.08)
                                 proj.dir = vel
                 else:
@@ -396,13 +510,13 @@ func _check_boss_room_weapon_pickup(p: CharacterBody2D) -> void:
 
 func _check_softlock() -> void:
         # If both players have 0 ammo and no weapons on floor, respawn weapons
+        # FIX (2P): il respawn scatta solo se TUTTI i player vivi sono senza
+        # munizioni (prima bastava che UNO fosse a zero: armi infinite).
         var p1_empty: bool = int(player.current_weapon.get("ammo", 0)) == 0
-        var p2_empty: bool = true
+        var p2_empty: bool = false
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 p2_empty = int(player2.current_weapon.get("ammo", 0)) == 0
-        else:
-                p2_empty = false
-        if (p1_empty or p2_empty) and boss_room_weapons.is_empty():
+        if p1_empty and p2_empty and boss_room_weapons.is_empty():
                 _spawn_boss_room_weapons()
 
 
@@ -418,12 +532,16 @@ func _check_boss_death() -> void:
                 if AudioManager:
                         AudioManager.stop_epic_music()
                 if GameManager:
-                        # FIX (Hall of Fame): registra il punteggio finale prima
-                        # della transizione (in 2P somma i due punteggi)
+                        # FIX (Hall of Fame 2P): registra i punteggi finali SINGOLI
+                        # dei due player (ognuno salva il proprio in classifica);
+                        # final_score resta la somma per la schermata di game over.
                         var total_score_b: int = player.score
                         if GameManager.num_players == 2 and player2.visible:
                                 total_score_b += player2.score
                         GameManager.final_score = total_score_b
+                        GameManager.final_score_p1 = player.score
+                        GameManager.final_score_p2 = player2.score if \
+                                        (GameManager.num_players == 2 and player2.visible) else 0
                         GameManager.final_level = current_level
                         GameManager.died_in_boss = true
                         if GameManager.continues_left > 0:
@@ -451,10 +569,15 @@ func _check_boss_death() -> void:
                         # passare alla WinScreen.
                         if GameManager.game_mode == C.GameMode.STORY and \
                            current_level + 1 > C.STORY_LEVELS_COUNT:
+                                # FIX (Hall of Fame 2P): vittoria finale con
+                                # punteggi SINGOLI per player + somma.
                                 var total_score_w: int = player.score
                                 if GameManager.num_players == 2 and player2.visible:
                                         total_score_w += player2.score
                                 GameManager.final_score = total_score_w
+                                GameManager.final_score_p1 = player.score
+                                GameManager.final_score_p2 = player2.score if \
+                                                (GameManager.num_players == 2 and player2.visible) else 0
                                 GameManager.final_level = current_level
                         GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
                         GameManager.current_level = current_level + 1
@@ -698,8 +821,8 @@ func _update_hud() -> void:
                 "lives": player.lives,
                 "energy": player.energy,
                 "max_energy": player.max_energy,
-                "weapon_name": player.current_weapon.get("name", "PISTOL"),
-                "weapon_color": Color.WHITE,
+                "weapon_name": C.get_weapon_name(int(player.current_weapon.get("type", 0))),
+                "weapon_color": C.get_weapon_color(int(player.current_weapon.get("type", 0))),
                 "weapon_ammo": player.current_weapon.get("ammo", 0),
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
         }
@@ -712,8 +835,8 @@ func _update_hud() -> void:
                         "lives": player2.lives,
                         "energy": player2.energy,
                         "max_energy": player2.max_energy,
-                        "weapon_name": player2.current_weapon.get("name", "PISTOL"),
-                        "weapon_color": Color.WHITE,
+                        "weapon_name": C.get_weapon_name(int(player2.current_weapon.get("type", 0))),
+                        "weapon_color": C.get_weapon_color(int(player2.current_weapon.get("type", 0))),
                         "weapon_ammo": player2.current_weapon.get("ammo", 0),
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
                 }

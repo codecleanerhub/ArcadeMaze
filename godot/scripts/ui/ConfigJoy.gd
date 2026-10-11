@@ -150,7 +150,16 @@ func _unhandled_input(event: InputEvent) -> void:
                                 print("[ConfigJoy] P1 JOY_SHOOT = ", btn)
                                 ConfigManager.save_config()
                                 if GameManager.num_players == 2:
+                                        # FIX (config P2 chiesta due volte): lo switch
+                                        # in-place a PLAYER 2 deve aggiornare ANCHE
+                                        # GameManager.config_joy_player, altrimenti
+                                        # _on_config_confirmed vedeva ancora
+                                        # config_joy_player==1 e RICARICAVA la scena
+                                        # facendo ripetere la configurazione di P2.
                                         player_num = 2
+                                        if GameManager:
+                                                GameManager.config_joy_player = 2
+                                                GameManager.config_joy_step = 0
                                         step = 0
                                         player_label.text = "PLAYER 2"
                                         _update_step()

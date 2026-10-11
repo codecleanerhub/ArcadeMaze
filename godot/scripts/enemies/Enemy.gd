@@ -587,6 +587,20 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
                 position = position.move_toward(_move_waypoint, step_size)
 
+        # FIX (meccanica tunnel "Pac-Man"): se il nemico sta marciando verso
+        # la cella VIRTUALE di una galleria (waypoint fuori griglia), il
+        # passaggio del bordo attiva il wrap: riemerge dal lato opposto e il
+        # waypoint viene specchiato sul centro della cella di sbocco, così
+        # l'arrivo ESATTO al centro (e la decisione successiva) restano
+        # garantiti anche attraverso la galleria.
+        var wrapped_pos_e: Vector2 = GameConstants.tunnel_wrap(position)
+        if wrapped_pos_e != position:
+                position = wrapped_pos_e
+                if _move_waypoint != Vector2.INF:
+                        _move_waypoint = GameConstants.mirror_waypoint_after_wrap(
+                                        _move_waypoint)
+                last_pos = position
+
         # --- Safety clamp (ultima difesa): se la cella corrente è WALL
         # (stato invalido, es. spawn corrotto), teleport al centro della
         # cella aperta più vicina (raggio 1-3). Con il movimento grid-locked

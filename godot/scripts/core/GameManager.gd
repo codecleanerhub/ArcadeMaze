@@ -128,6 +128,12 @@ signal boss_defeated(boss_index: int)
 # ============================================================================
 var final_score: int = 0
 var final_level: int = 1
+# FIX (Hall of Fame 2P): punteggi finali SINGOLI dei due player. In 2P ogni
+# giocatore può salvare il PROPRIO punteggio in classifica (prima si salvava
+# solo la somma con un solo nome); final_score resta la somma per la
+# schermata di game over.
+var final_score_p1: int = 0
+var final_score_p2: int = 0
 # FIX (Hall of Fame): indice della voce appena salvata da evidenziare nella
 # schermata Hall of Fame (-1 = nessuna evidenziazione).
 var hof_highlight_index: int = -1
@@ -261,6 +267,8 @@ func reset_run() -> void:
         config_joy_player = 1
         test_mode_enabled = false
         final_score = 0
+        final_score_p1 = 0
+        final_score_p2 = 0
         final_level = 1
         standby_show_count = 0
         current_state = C.GameState.MENU

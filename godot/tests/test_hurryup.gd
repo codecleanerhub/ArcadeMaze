@@ -48,7 +48,7 @@ func _physics_process(delta: float) -> void:
                 1:
                         # Attende i 10s (con 1s di margine). Il fantasma deve apparire.
                         if t > 12.5:
-                                if main.ghost_reaper == null:
+                                if main.ghost_reapers.is_empty():
                                         _fail("il fantasma NON è apparso dopo 10s dalla morte di tutti i nemici")
                                 elif not main.hurry_up_active:
                                         _fail("hurry_up_active non impostato")
@@ -58,7 +58,7 @@ func _physics_process(delta: float) -> void:
                                 phase = 2
                 2:
                         # Spara al fantasma: proiettile finto direttamente sulla sua posizione.
-                        var ghost = main.ghost_reaper
+                        var ghost = main.ghost_reapers[0] if main.ghost_reapers.size() > 0 else null
                         if ghost == null:
                                 phase = 9
                                 return
@@ -99,7 +99,7 @@ func _physics_process(delta: float) -> void:
                 3:
                         # Contatto: teletrasporta il fantasma addosso al player e chiama
                         # la melee: il player deve perdere energia.
-                        var ghost2 = main.ghost_reaper
+                        var ghost2 = main.ghost_reapers[0] if main.ghost_reapers.size() > 0 else null
                         if ghost2 == null:
                                 phase = 9
                                 return
@@ -117,7 +117,7 @@ func _physics_process(delta: float) -> void:
                 4:
                         # Cambio livello: il fantasma e la scritta spariscono.
                         main.start_level(main.current_level + 1)
-                        if main.ghost_reaper != null:
+                        if not main.ghost_reapers.is_empty():
                                 _fail("start_level non ha rimosso il fantasma")
                         elif main.hurry_up_active:
                                 _fail("start_level non ha resettato hurry_up_active")
