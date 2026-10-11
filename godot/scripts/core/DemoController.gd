@@ -79,6 +79,16 @@ func _setup_camera() -> void:
         get_tree().root.add_child(_game_camera)
 
 
+# FIX (demo mode — camera leak): la DemoCamera veniva aggiunta al Window
+# root e MAI liberata: sopravviveva al ritorno al menu e alle scene
+# successive (più camere attive nella tree). Mirror di
+# MainGameController._exit_tree: libera la camera quando la demo termina.
+func _exit_tree() -> void:
+        if _game_camera != null and is_instance_valid(_game_camera):
+                _game_camera.queue_free()
+                _game_camera = null
+
+
 func _physics_process(_delta: float) -> void:
         var delta_ms: float = _delta * 1000.0
         delta_ms = min(delta_ms, 50.0)

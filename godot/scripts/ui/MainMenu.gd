@@ -218,6 +218,27 @@ func _on_configure_joystick_requested(player: int) -> void:
                 GameManager.go_to_config_joy()
 
 
+# FIX (demo mode): un evento rappresenta un'interazione REALE dell'utente
+# solo se è una pressione deliberata: tasto premuto (senza echo repeat),
+# bottone joystick premuto, asse joystick oltre metà corsa, click mouse o
+# touch. Il drift analogico (|asse| < 0.5) NON conta: la demo parte anche
+# con un controller collegato che "respira".
+func _is_real_user_input(event: InputEvent) -> bool:
+        if event is InputEventKey:
+                return event.pressed and not event.echo
+        if event is InputEventJoypadButton:
+                return event.pressed
+        if event is InputEventJoypadMotion:
+                return absf(event.axis_value) > 0.5
+        if event is InputEventMouseButton:
+                return event.pressed
+        if event is InputEventScreenTouch:
+                return event.pressed
+        if event is InputEventAction:
+                return event.pressed
+        return false
+
+
 func _process(delta: float) -> void:
         _menu_time += delta
         # Decrement joystick navigation cooldown (debounce)
@@ -660,8 +681,16 @@ func _update_character_wheel() -> void:
 # ============================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
-        # Reset inactivity timer on ANY input
-        _inactivity_timer = 0.0
+        # FIX (demo mode non partiva dopo 30s di standby — ROOT CAUSE): il timer
+        # di inattività veniva resettato da QUALSIASI evento, inclusi:
+        #   * InputEventJoypadMotion con valori TINY (drift analogico: molti
+        #     joystick emettono continuously micro-oscillazioni degli assi;
+        #     questi eventi RAW raggiungono _unhandled_input anche sotto la
+        #     deadzone delle action) → il timer non arrivava MAI a 30s;
+        #   * InputEventMouseMotion (movimenti involontari del mouse).
+        # Ora il timer si resetta SOLO su input REALE dell'utente.
+        if _is_real_user_input(event):
+                _inactivity_timer = 0.0
         # Keyboard navigation
         if event is InputEventKey and event.pressed and not event.echo:
                 var key: int = event.keycode

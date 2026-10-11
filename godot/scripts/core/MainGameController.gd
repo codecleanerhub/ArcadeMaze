@@ -61,6 +61,33 @@ var portal_used: bool = false
 var mini_boss: Node2D = null
 var mini_boss_spawned: bool = false
 
+# FIX (pausa P senza feedback visivo): overlay "PAUSE / PRESS P TO RESUME"
+# lampeggiante sopra tutto (CanvasLayer dedicato, layer 20 > HUD 10). Il
+# toggle del tasto P resta in _unhandled_input (process_mode ALWAYS).
+const PauseOverlayClass = preload("res://scripts/ui/PauseOverlay.gd")
+var _pause_canvas: CanvasLayer = null
+var _pause_overlay: Control = null
+
+# ============================================================================
+# FIX (meccanica "Hurry Up!" — mini boss immortale): quando TUTTI i nemici
+# del labirinto (compresi quelli respawnati dal portale) sono stati uccisi
+# e sono passati 10 secondi dall'ultimo tesoro raccolto, appare in alto
+# allo schermo la scritta lampeggiante "Hurry Up!" scritta col sangue
+# gocciolante, e DAL PORTALE emerge un fantasma immortale unico (teschio
+# con braccia scheletriche, stile Slimer): gli spari non lo uccidono (si
+# sente solo una risata tenebrosa), si può solo scappare. Insegue il
+# player a velocità dei nemici finché non passa la porta di fine livello;
+# poi scompare e riappare al livello labirinto successivo allo stesso modo.
+# ============================================================================
+const GhostReaperClass = preload("res://scripts/entities/GhostReaper.gd")
+var ghost_reaper: Node2D = null
+var hurry_up_active: bool = false
+var _hurry_up_time: float = 0.0          # animazione testo (blink + drips)
+var _since_last_treasure_ms: float = 0.0 # tempo dall'ultimo tesoro raccolto
+const HURRY_UP_DELAY_MS: float = 10000.0 # 10s richiesti dall'utente
+var _ghost_laugh_cooldown_ms: int = 0    # anti-spam risata tenebrosa
+const GHOST_LAUGH_COOLDOWN_MS: int = 1100
+
 # Lightning bolts from scepter (full-screen, hit all enemies/boss on path)
 var lightning_bolts: Array = []  # [{pos, life, max_life, zigzag_points}]
 var scepter_active: bool = false
@@ -406,6 +433,12 @@ func _ready() -> void:
         if EffectsManager:
                 var vignette := EffectsManager.create_vignette_rect()
                 add_child(vignette)
+        # FIX (pausa P senza feedback visivo): overlay PAUSE sopra tutto.
+        _pause_canvas = CanvasLayer.new()
+        _pause_canvas.layer = 20
+        _pause_overlay = PauseOverlayClass.new()
+        _pause_canvas.add_child(_pause_overlay)
+        add_child(_pause_canvas)
 
 
 # Background layer node (CanvasLayer, independent of camera and MainGame scale).
@@ -475,6 +508,11 @@ func _draw_overlay(ci: CanvasItem) -> void:
                         open_ratio = 1.0 - (float(anim_ms) / 1400.0)
                         open_ratio = clampf(open_ratio, 0.0, 1.0)
                 _draw_exit_door_stone(ci, door_pos, open_ratio, glow)
+        # FIX (meccanica "Hurry Up!"): scritta horror lampeggiante in alto,
+        # scritta col sangue gocciolante — appare quando tutti i nemici sono
+        # stati uccisi e il fantasma immortale emerge dal portale.
+        if hurry_up_active:
+                _draw_hurry_up_text(ci)
         # Particles
         for p in particles:
                 var pos: Vector2 = p.get("pos", Vector2.ZERO)
@@ -548,6 +586,97 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 # FIX: pallino centrale bianco alpha 0.5 (era 1.0 nel commit
                 # 424b038, confermato invariato).
                 ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
+
+
+# ============================================================================
+# FIX (meccanica "Hurry Up!"): scritta in alto allo schermo, lampeggiante,
+# di colore rosso in stile orrore, come scritta col sangue GOCCIOLANTE.
+# Sotto le lettere pendono gocce che crescono, si staccano e cadono, con
+# ciclo deterministico (nessun random per frame: stabile e curato).
+# ============================================================================
+const HURRY_UP_TEXT: String = "Hurry Up!"
+const HURRY_UP_FONT_SIZE: int = 84
+const HURRY_UP_BASELINE_Y: float = 170.0
+# Posizioni delle gocce in frazione della larghezza del testo + fase iniziale.
+const HURRY_UP_DRIP_T: Array[float] = [0.07, 0.18, 0.31, 0.44, 0.57, 0.69, 0.82, 0.94]
+const HURRY_UP_DRIP_PHASE: Array[float] = [0.0, 1.35, 0.6, 1.8, 0.35, 1.1, 1.6, 0.85]
+const HURRY_UP_DRIP_CYCLE: float = 2.6  # durata del ciclo di ogni goccia (s)
+
+func _draw_hurry_up_text(ci: CanvasItem) -> void:
+        var font: Font = ThemeDB.fallback_font
+        if font == null:
+                return
+        var t: float = _hurry_up_time
+        # --- Lampeggio intermittente (on 0.66s / off 0.34s, con micro-fade) ---
+        var blink_phase: float = fmod(t, 1.0)
+        var alpha: float
+        if blink_phase < 0.66:
+                # accensione rapida (0..0.06 fade-in), poi pieno
+                alpha = clampf(blink_phase / 0.06, 0.0, 1.0)
+        else:
+                # spegnimento con dissolvenza del sangue (0.66..1.0)
+                alpha = clampf(1.0 - (blink_phase - 0.66) / 0.20, 0.0, 1.0)
+        if alpha <= 0.01:
+                return
+        # Leggero tremolio orror (offset orizzontale/verticale ±1px).
+        var shiver_x: float = sin(t * 37.0) * 1.2 * alpha
+        var shiver_y: float = cos(t * 29.0) * 0.8 * alpha
+
+        var text_size: Vector2 = font.get_string_size(HURRY_UP_TEXT,
+                        HORIZONTAL_ALIGNMENT_LEFT, -1, HURRY_UP_FONT_SIZE)
+        var cx: float = C.WINDOW_WIDTH * 0.5 + shiver_x
+        var x0: float = cx - text_size.x * 0.5
+        var baseline: float = HURRY_UP_BASELINE_Y + shiver_y
+
+        # --- Alalone scuro dietro il testo (sangue che trasuda) ---
+        ci.draw_rect(Rect2(x0 - 34.0, baseline - HURRY_UP_FONT_SIZE - 18.0,
+                        text_size.x + 68.0, HURRY_UP_FONT_SIZE + 40.0),
+                Color(0.28, 0.0, 0.0, 0.16 * alpha), true)
+        ci.draw_rect(Rect2(x0 - 24.0, baseline - HURRY_UP_FONT_SIZE - 10.0,
+                        text_size.x + 48.0, HURRY_UP_FONT_SIZE + 24.0),
+                Color(0.34, 0.0, 0.0, 0.14 * alpha), true)
+
+        # --- Gocce di sangue (sotto la baseline, deterministico) ---
+        for i in HURRY_UP_DRIP_T.size():
+                var drip_x: float = x0 + text_size.x * HURRY_UP_DRIP_T[i]
+                var ct: float = fmod(t + HURRY_UP_DRIP_PHASE[i], HURRY_UP_DRIP_CYCLE)
+                # lunghezza massima variabile per goccia (deterministica)
+                var max_len: float = 22.0 + 16.0 * (0.5 + 0.5 * sin(float(i) * 2.7))
+                var blood: Color = Color(0.62, 0.02, 0.02, alpha)
+                var blood_dark: Color = Color(0.38, 0.0, 0.0, alpha)
+                if ct < 1.7:
+                        # fase 1: la goccia cresce pendendo dalla lettera
+                        var len: float = max_len * (ct / 1.7)
+                        ci.draw_rect(Rect2(drip_x - 2.5, baseline + 2.0, 5.0, len),
+                                blood, true)
+                        ci.draw_circle(Vector2(drip_x, baseline + 2.0 + len), 3.4, blood)
+                else:
+                        # fase 2: la goccia si stacca e cade, il residuo si accorcia
+                        var ft: float = (ct - 1.7) / (HURRY_UP_DRIP_CYCLE - 1.7)
+                        var resid: float = max_len * (1.0 - ft * 0.55)
+                        ci.draw_rect(Rect2(drip_x - 2.5, baseline + 2.0, 5.0, resid),
+                                blood_dark, true)
+                        var drop_y: float = baseline + 2.0 + resid \
+                                        + ft * ft * 74.0
+                        var drop_alpha: float = (1.0 - ft) * alpha
+                        ci.draw_circle(Vector2(drip_x, drop_y), 3.8,
+                                Color(0.62, 0.02, 0.02, drop_alpha))
+                        # scia della goccia che cade
+                        if ft > 0.15:
+                                ci.draw_rect(Rect2(drip_x - 1.5, drop_y - 10.0, 3.0, 8.0),
+                                        Color(0.55, 0.02, 0.02, drop_alpha * 0.55), true)
+
+        # --- Testo: ombra scura sotto + passata sangue ---
+        ci.draw_string(font, Vector2(x0 + 3.0, baseline + 3.0), HURRY_UP_TEXT,
+                        HORIZONTAL_ALIGNMENT_LEFT, -1, HURRY_UP_FONT_SIZE,
+                        Color(0.18, 0.0, 0.0, 0.85 * alpha))
+        ci.draw_string(font, Vector2(x0, baseline), HURRY_UP_TEXT,
+                        HORIZONTAL_ALIGNMENT_LEFT, -1, HURRY_UP_FONT_SIZE,
+                        Color(0.72, 0.03, 0.03, alpha))
+        # riflesso bagnato in alto (leggero, tipo vernice fresca)
+        ci.draw_string(font, Vector2(x0, baseline - 1.5), HURRY_UP_TEXT,
+                        HORIZONTAL_ALIGNMENT_LEFT, -1, HURRY_UP_FONT_SIZE,
+                        Color(0.85, 0.10, 0.08, 0.35 * alpha))
 
 
 # FIX (sprite uno sopra l'altro): true se la cella (c, r) NON contiene un
@@ -640,12 +769,30 @@ func _unhandled_input(event: InputEvent) -> void:
 # the MainGame transform). Without this cleanup, they would persist into the
 # next scene (e.g. MainMenu) and cause rendering issues.
 func _exit_tree() -> void:
+        # FIX (pausa attiva al cambio scena): se si esce dal MainGame mentre
+        # è in pausa (ESC dal menu gestito sotto, transizioni), il tree va
+        # ripristinato sennò la scena successiva parte congelata.
+        if is_paused:
+                is_paused = false
+                if get_tree():
+                        get_tree().paused = false
         if _game_camera != null and is_instance_valid(_game_camera):
                 _game_camera.queue_free()
                 _game_camera = null
         if _bg_canvas != null and is_instance_valid(_bg_canvas):
                 _bg_canvas.queue_free()
                 _bg_canvas = null
+        # FIX (porta di fine livello visibile nella schermata boss): il
+        # CanvasLayer di foreground (layer = 1, aggiunto al Window root) non
+        # veniva MAI liberato. Un CanvasItem non più ridisegnato conserva
+        # l'ultimo frame renderizzato: il portale/la porta disegnati
+        # dall'OverlayDrawer restavano "congelati" SOPRA la scena successiva
+        # (la boss room), come da screenshot utente. Ora viene liberato
+        # insieme a camera e background, così nulla sopravvive al cambio scena.
+        if _fg_canvas != null and is_instance_valid(_fg_canvas):
+                _fg_canvas.queue_free()
+                _fg_canvas = null
+                _fg_drawer = null
 
 
 func _physics_process(_delta: float) -> void:
@@ -894,6 +1041,10 @@ func _update_playing(delta_ms: float) -> void:
                 if player2.consume_picked_weapon() and AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
         if maze.get_remaining_treasures() < treasures_before:
+                # FIX (Hurry Up!): il pickup di un tesoro resetta il conteggio
+                # dei 10s — il fantasma appare solo se il player SMETTE di
+                # raccogliere tesori con tutti i nemici già morti.
+                _since_last_treasure_ms = 0.0
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.TREASURE)
 
@@ -1048,6 +1199,12 @@ func _update_playing(delta_ms: float) -> void:
                 _collectible_cell_free)
         spawner.update_portal(maze, int(delta_ms))
 
+        # (11h) FIX (meccanica "Hurry Up!"): timer tesori + trigger del
+        # fantasma immortale quando tutti i nemici (respawn compresi) sono
+        # morti da 10s dall'ultimo tesoro raccolto; il fantasma insegue
+        # finché il player non passa la porta.
+        _update_hurry_up(delta_ms, p_grid, p_pos)
+
         # (11b) MiniBoss update + melee collision (mirror C++ riga 1581-1633)
         # FIX CRASH: MiniBoss espone update_step(maze, p_grid, p_pos, delta_ms)
         # non update_enemy(). Il crash "Nonexistent function 'update_enemy'"
@@ -1178,6 +1335,16 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                                 p.add_score(10000)
                                                 if AudioManager:
                                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+                # FIX (Hurry Up! — fantasma immortale): i proiettili NON lo
+                # uccidono: colpirlo fa sentire la risata tenebrosa (via
+                # segnale laughed) e il proiettile viene assorbito
+                # dall'ectoplasma.
+                if not hit_something and ghost_reaper != null and is_instance_valid(ghost_reaper):
+                        var g_pos: Vector2 = ghost_reaper.get_pixel_pos()
+                        if proj_pos.distance_squared_to(g_pos) < 1500.0:  # raggio ~39px
+                                ghost_reaper.take_damage(int(proj.get("power", 1)))
+                                proj["active"] = false
+                                hit_something = true
 
 
 func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
@@ -1381,6 +1548,16 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break
+        # FIX (Hurry Up! — fantasma immortale): il contatto col fantasma fa
+        # danno come i nemici (si può solo scappare!). Il fantasma non è in
+        # spawner.enemies, quindi va controllato a parte. Il guard su
+        # invulnerabilità/salto è già gestito dal return in testa alla
+        # funzione: qui dentro il player NON è né invulnerabile né in salto.
+        if ghost_reaper != null and is_instance_valid(ghost_reaper):
+                if p_pos.distance_squared_to(ghost_reaper.get_pixel_pos()) < 800.0:
+                        p.take_damage()
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
         # FIX (nuova meccanica): i nemici attaccano anche il cavaliere alleato
         # se è attivo e vicino al nemico. Il cavaliere è un "player" bersaglio.
         if knight_ally != null and is_instance_valid(knight_ally):
@@ -1854,6 +2031,10 @@ func start_level(lvl: int) -> void:
                 mini_boss.queue_free()
                 mini_boss = null
         mini_boss_spawned = false
+        # FIX (Hurry Up!): rimuove il fantasma immortale e la scritta a ogni
+        # cambio livello — riapparirà al prossimo livello labirinto quando
+        # verranno uccisi tutti i nemici (10s dall'ultimo tesoro).
+        _clear_hurry_up()
         scepter_active = false
         scepter_strikes_left = 0
         scepter_timer_ms = 0
@@ -2085,10 +2266,14 @@ func _toggle_pause() -> void:
         is_paused = not is_paused
         if is_paused:
                 get_tree().paused = true
+                if _pause_overlay != null:
+                        _pause_overlay.show_overlay(false)  # tree già paused sopra
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
         else:
                 get_tree().paused = false
+                if _pause_overlay != null:
+                        _pause_overlay.hide_overlay()
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
 
@@ -2132,6 +2317,93 @@ func _spawn_mini_boss(col: int, row: int) -> void:
         print("[MiniBoss] Spawned type=", mb_type, " sprite_id=", mb.sprite_id, " sprite_loaded=", mb.sprite_loaded, " at cell (", col, ",", row, ")")
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+
+
+# ============================================================================
+# FIX (meccanica "Hurry Up!" — fantasma immortale dal portale)
+# ============================================================================
+# Timer + trigger: quando TUTTI i nemici del labirinto (compresi quelli
+# respawnati: il portale ha finito la sua coda) sono morti E sono passati
+# 10 secondi dall'ultimo tesoro raccolto, appare la scritta e dal portale
+# emerge il fantasma. Se il player raccoglie un tesoro, i 10s ripartono
+# (un player ATTIVO non viene punito: "Hurry Up!" significa muoversi!).
+func _update_hurry_up(delta_ms: float, p_grid: Vector2i, p_pos: Vector2) -> void:
+        _since_last_treasure_ms += float(delta_ms)
+        if hurry_up_active:
+                _hurry_up_time += float(delta_ms) * 0.001
+        if _ghost_laugh_cooldown_ms > 0:
+                _ghost_laugh_cooldown_ms = maxi(0, _ghost_laugh_cooldown_ms - int(delta_ms))
+
+        # Il fantasma già attivo insegue il player (P1) per tutto il tempo.
+        if ghost_reaper != null and is_instance_valid(ghost_reaper):
+                ghost_reaper.update_step(maze, p_grid, int(delta_ms))
+                return
+
+        # Trigger una sola volta per livello.
+        if hurry_up_active:
+                return
+        # "Tutti i nemici uccisi, respawn compresi": zero nemici vivi E il
+        # portale non ha respawn in sospeso (se la coda è ancora aperta,
+        # altri nemici stanno per uscire → la condizione non è ancora vera).
+        var portal_spawning: bool = spawner.magic_portal.active \
+                        and spawner.magic_portal.enemies_to_spawn > 0
+        var all_dead: bool = initial_enemy_count > 0 \
+                        and spawner.alive_count() == 0 \
+                        and not portal_spawning
+        if all_dead and _since_last_treasure_ms >= HURRY_UP_DELAY_MS:
+                _trigger_hurry_up(p_pos)
+
+
+# Attiva la scritta "Hurry Up!" e fa emergere il fantasma dal portale.
+func _trigger_hurry_up(_p_pos: Vector2) -> void:
+        hurry_up_active = true
+        _hurry_up_time = 0.0
+        # Posizione del portale (l'ultima usata: resta valida anche dopo la
+        # chiusura perché pos non viene azzerata). Fallback: centro maze.
+        var spawn_pos: Vector2 = spawner.magic_portal.pos
+        var spawn_col: int = int(spawn_pos.x / C.TILE_SIZE)
+        var spawn_row: int = int((spawn_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if spawn_col <= 0 or spawn_row <= 0 or spawn_col >= C.MAZE_COLS - 1 \
+                        or spawn_row >= C.MAZE_ROWS - 1:
+                var center_cell: Vector2i = _find_empty_cell_near_center()
+                spawn_col = center_cell.x
+                spawn_row = center_cell.y
+        if spawn_col < 0:
+                return  # maze degenere: niente fantasma
+        # Il portale si RIAPRE visivamente e il fantasma emerge da lì.
+        spawner.reopen_portal_for_ghost()
+        var ghost := GhostReaperClass.new()
+        ghost.setup(spawn_col, spawn_row)
+        ghost.laughed.connect(_on_ghost_laughed)
+        add_child(ghost)
+        ghost_reaper = ghost
+        print("[HurryUp] Fantasma immortale spawnato dal portale a cell (",
+                        spawn_col, ",", spawn_row, ")")
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+                AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+
+
+# Il player ha sparato al fantasma: risata tenebrosa (con anti-spam).
+func _on_ghost_laughed(_pos: Vector2) -> void:
+        if _ghost_laugh_cooldown_ms > 0:
+                return
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+        _ghost_laugh_cooldown_ms = GHOST_LAUGH_COOLDOWN_MS
+
+
+# FIX (fantasma immortale): rimuove il fantasma e la scritta (chiamato da
+# start_level a ogni cambio livello: "poi scompare e riapparirà al livello
+# del labirinto successivo sempre alla stessa maniera").
+func _clear_hurry_up() -> void:
+        if ghost_reaper != null and is_instance_valid(ghost_reaper):
+                ghost_reaper.queue_free()
+        ghost_reaper = null
+        hurry_up_active = false
+        _since_last_treasure_ms = 0.0
+        _ghost_laugh_cooldown_ms = 0
+        _hurry_up_time = 0.0
 
 
 # FIX (nuova meccanica): spawn cavaliere alleato evocato dalla statua.

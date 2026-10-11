@@ -19,6 +19,8 @@ const WeaponClass = preload("res://scripts/items/Weapon.gd")
 const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 const Boss = preload("res://scripts/bosses/Boss.gd")
 const Projectile = preload("res://scripts/items/Projectile.gd")
+# FIX (pausa P senza feedback visivo): overlay PAUSE (mirror MainGame).
+const PauseOverlayClass = preload("res://scripts/ui/PauseOverlay.gd")
 
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
@@ -36,6 +38,10 @@ var grace_period_ms: int = 1000  # 1s delay before Space can kill boss
 var boss_room_weapons: Array = []  # [{weapon, pos}]
 var boss: Node2D = null
 var died_in_boss: bool = false
+
+# FIX (pausa P): overlay PAUSE sopra tutto (CanvasLayer layer 20 > HUD 10).
+var _pause_canvas: CanvasLayer = null
+var _pause_overlay: Control = null
 
 # --- Boss-room mine (port of C++ `mine` in STATE_BOSS branch, Game.cpp 2728-2843).
 #     Spawns once at fight start; bounces between walls and, on impact with
@@ -74,6 +80,45 @@ func _ready() -> void:
         # Boss music
         if AudioManager and GameManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, true)
+        # FIX (pausa P senza feedback visivo): overlay PAUSE sopra tutto.
+        _pause_canvas = CanvasLayer.new()
+        _pause_canvas.layer = 20
+        _pause_overlay = PauseOverlayClass.new()
+        _pause_canvas.add_child(_pause_overlay)
+        add_child(_pause_canvas)
+
+
+# FIX (pausa P non si toglie premendo di nuovo P — ROOT CAUSE): il toggle
+# della pausa era dentro _handle_input, chiamato da _physics_process, che
+# fa `return` subito quando is_paused == true. Con la pausa attiva il check
+# di Input.is_action_just_pressed("pause") non veniva MAI eseguito → la
+# partita restava in pausa per sempre. Mirror esatto di MainGameController:
+# il toggle vive in _unhandled_input, che continua a girare con il tree in
+# pausa grazie a process_mode = PROCESS_MODE_ALWAYS (riga 60).
+func _unhandled_input(event: InputEvent) -> void:
+        if event.is_action_pressed("pause") and not event.is_echo():
+                _toggle_pause()
+                var vp: Viewport = get_viewport()
+                if vp != null:
+                        vp.set_input_as_handled()
+                return
+        # FIX (ESC durante la pausa): prima il toggle era nel loop
+        # _handle_input, irraggiungibile con is_paused == true. ESC ora
+        # toglie la pausa e torna al menu anche da fermo (mirror MainGame).
+        if event.is_action_pressed("ui_cancel") and not event.is_echo():
+                if is_paused:
+                        is_paused = false
+                        get_tree().paused = false
+                        if _pause_overlay != null:
+                                _pause_overlay.hide_overlay()
+                if AudioManager:
+                        AudioManager.stop_music()
+                if GameManager:
+                        GameManager.go_to_menu()
+                var vp2: Viewport = get_viewport()
+                if vp2 != null:
+                        vp2.set_input_as_handled()
+                return
 
 
 func _physics_process(_delta: float) -> void:
@@ -155,9 +200,7 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                 if Input.is_action_just_pressed("p2_jump"):
                         player2.activate_jump()
 
-        # Pause
-        if Input.is_action_just_pressed("pause"):
-                _toggle_pause()
+        # (la pausa è gestita in _unhandled_input: vedi fix sopra)
 
         # Test mode: Space kills boss instantly (C++ behavior).
         # FIX (boss skippato subito): il debounce test_skip_key_held veniva
@@ -174,12 +217,7 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                                         boss.take_damage(9999)
                         test_skip_key_held = space_now
 
-        # ESC: return to main menu
-        if Input.is_key_pressed(KEY_ESCAPE):
-                if AudioManager:
-                        AudioManager.stop_music()
-                if GameManager:
-                        GameManager.go_to_menu()
+        # (ESC è gestito in _unhandled_input, raggiungibile anche in pausa)
 
 
 # ============================================================================
@@ -637,8 +675,16 @@ func _toggle_pause() -> void:
         is_paused = not is_paused
         if is_paused:
                 get_tree().paused = true
+                if _pause_overlay != null:
+                        _pause_overlay.show_overlay(false)  # tree già paused sopra
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
         else:
                 get_tree().paused = false
+                if _pause_overlay != null:
+                        _pause_overlay.hide_overlay()
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
 
 
 # ============================================================================

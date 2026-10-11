@@ -50,9 +50,13 @@ enum SoundType {
         PORTAL_OPEN, PORTAL_CLOSE, WEAPON_PICKUP, ENEMY_EXPLODE,
         BLOOD_SPLAT, MINE_BOUNCE, POTION_DRINK, LIGHTNING, SCEPTER_PICKUP,
         # FIX (pozione magica): deglutizione quando il player beve la pozione
-        POTION_GULP
+        POTION_GULP,
+        # FIX (mini boss immortale "Hurry Up!"): risata tenebrosa del
+        # fantasma — si sente quando gli si spara addosso (non può morire)
+        # e quando appare dal portale.
+        DARK_LAUGH
 }
-const SOUND_TYPE_COUNT: int = 26
+const SOUND_TYPE_COUNT: int = 27
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -441,6 +445,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.LIGHTNING:     s = _sfx_lightning()
                 SoundType.SCEPTER_PICKUP:s = _sfx_scepter_pickup()
                 SoundType.POTION_GULP:   s = _sfx_potion_gulp()
+                SoundType.DARK_LAUGH:    s = _sfx_dark_laugh()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1450,6 +1455,76 @@ func _sfx_potion_gulp() -> PackedFloat32Array:
                 var v: float = 0.4 * triangle_wave(t * f) + 0.2 * pulse_wave(t * f * 0.5, 0.5)
                 s.append(2000.0 / 32767.0 * v * env)
         return s
+
+
+# --- FIX (mini boss immortale): risata tenebrosa ~1.65s ---------------------
+# "HEH-HEH-HEH-HEH... HAAA-aa": 4 sillabe con pitch discendente (voce
+# raspy sawtooth + corpo triangolare), vibrato 6Hz, modulazione gutturale
+# ~28Hz, eco cupo a 3 ritardi (sala oscura) e drone basso 55Hz. La caduta
+# finale del pitch dà la sensazione "non puoi uccidermi, scappa...".
+func _sfx_dark_laugh() -> PackedFloat32Array:
+        var base := PackedFloat32Array()
+        var syll_freqs: Array[float] = [210.0, 184.0, 162.0, 132.0]
+        var syll_dur: float = 0.22
+        var gap_dur: float = 0.085
+        var total_dur: float = syll_freqs.size() * (syll_dur + gap_dur) + 0.42
+        var n_total: int = int(SR * total_dur)
+        base.resize(n_total)
+        for i in n_total:
+                base[i] = 0.0
+        # Quattro sillabe "HEH"
+        for k in syll_freqs.size():
+                var f0: float = syll_freqs[k]
+                var seg: int = int(SR * syll_dur)
+                var offset: int = int(SR * (syll_dur + gap_dur) * float(k))
+                for i in seg:
+                        var t: float = float(i) / SR
+                        # inviluppo: attacco 8ms, rilascio esponenziale
+                        var env: float = (1.0 - exp(-t * 90.0)) * exp(-t * 9.0)
+                        # pitch che cala dentro la sillaba + vibrato
+                        var f: float = f0 * (1.0 - 0.22 * (t / syll_dur)) \
+                                        * (1.0 + 0.035 * sin(TAU * 6.0 * t + float(k)))
+                        var phase: float = f * t
+                        # gutturale: AM veloce che dà il timbro "cattivo"
+                        var gutt: float = 1.0 - 0.35 * (0.5 + 0.5 * sin(TAU * 28.0 * t))
+                        var v: float = 0.55 * sawtooth_wave(phase) \
+                                        + 0.45 * triangle_wave(phase * 0.5)
+                        var idx: int = offset + i
+                        if idx < n_total:
+                                base[idx] = 3000.0 / 32767.0 * v * env * gutt
+        # Coda "HAAA" discendente (0.35s)
+        var tail: int = int(SR * 0.35)
+        var tail_off: int = int(SR * (syll_dur + gap_dur) * float(syll_freqs.size()))
+        for i in tail:
+                var t2: float = float(i) / SR
+                var env2: float = (1.0 - exp(-t2 * 40.0)) * exp(-t2 * 5.5)
+                var f2: float = 118.0 * (1.0 - 0.4 * (t2 / 0.35))
+                var phase2: float = f2 * t2
+                var v2: float = 0.5 * sawtooth_wave(phase2) + 0.5 * triangle_wave(phase2 * 0.5)
+                var idx2: int = tail_off + i
+                if idx2 < n_total:
+                        base[idx2] += 2800.0 / 32767.0 * v2 * env2
+        # Drone basso 55Hz sotto tutto (pesantezza "tenebrosa")
+        for i in n_total:
+                var t3: float = float(i) / SR
+                base[i] += 700.0 / 32767.0 * triangle_wave(55.0 * t3) \
+                                * exp(-t3 * 1.2) * (1.0 - exp(-t3 * 30.0))
+        # Eco cupo: 3 copie ritardate (sala di pietra)
+        var out := PackedFloat32Array()
+        out.resize(n_total)
+        for i in n_total:
+                out[i] = base[i]
+        var echo_taps: Array[float] = [0.14, 0.28, 0.42]
+        var echo_gains: Array[float] = [0.45, 0.25, 0.12]
+        for tap in echo_taps.size():
+                var d: int = int(SR * echo_taps[tap])
+                var g: float = echo_gains[tap]
+                for i in range(d, n_total):
+                        out[i] += base[i - d] * g
+        # Soft-clip finale (guarantisce assenza di clipping)
+        for i in n_total:
+                out[i] = tanh(out[i] * 1.4) * 0.9
+        return out
 
 
 # ============================================================================

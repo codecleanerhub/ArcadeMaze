@@ -369,6 +369,23 @@ func _find_mini_boss_cell(maze: Object, portal_pos: Vector2,
 
 
 # ===========================================================================
+# FIX (Hurry Up! — fantasma immortale): riapre VISUALMENTE il portale magico
+# per l'ingresso del fantasma. Ciclo completo: apertura 1s → NESSUNO spawn
+# (enemies_to_spawn = 0) → chiusura 2.8s → inattivo. Il fantasma emerge dal
+# portale mentre questo si riapre.
+# ===========================================================================
+func reopen_portal_for_ghost() -> void:
+        magic_portal.active = true
+        magic_portal.phase = 0
+        magic_portal.phase_timer = PORTAL_OPEN_MS
+        magic_portal.rotation = 0.0
+        magic_portal.glow_pulse = 0.0
+        magic_portal.enemies_to_spawn = 0
+        magic_portal.spawn_timer = 0
+        magic_portal.dead_indices.clear()
+
+
+# ===========================================================================
 # update_portal(maze, dt_ms): tick the portal state machine.
 # dt_ms is simulated ms (call with 16 each _physics_process frame).
 # Returns true if the portal is still active (Game should keep ticking).
