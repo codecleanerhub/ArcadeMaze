@@ -73,6 +73,19 @@ func _finish() -> void:
         intro_finished.emit()
         if GameManager:
                 GameManager.current_level = 1
+                # FIX (nuova partita pulita): resetta continues/sessione/carry.
+                # continues_left veniva azzerato SOLO a boot (reset_run e' chiamato
+                # una sola volta in _ready dell'autoload): dopo il primo game
+                # over, ogni partita successiva partiva con 0 crediti continue e
+                # alla prima morte saltava DIRETTAMENTE alla schermata game over
+                # senza passare da "CONTINUE?". Il C++ originale resetta i
+                # continues a ogni nuova partita.
+                GameManager.continues_left = 3
+                GameManager.died_in_boss = false
+                GameManager.session_snapshot.clear()
+                GameManager.session_restore_pending = false
+                GameManager.carry_p1.clear()
+                GameManager.carry_p2.clear()
                 GameManager.go_to_maze()
         else:
                 var err := get_tree().change_scene_to_file("res://scenes/MainGame.tscn")

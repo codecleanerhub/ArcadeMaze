@@ -75,6 +75,12 @@ func _ready() -> void:
                 player2.visible = true
         else:
                 player2.visible = false
+        # FIX (punteggio perso tra le scene): ripristina lo stato dei player
+        # portato dal labirinto (score/vite/soglia vita-extra). SOLO se NON e'
+        # un restore da CONTINUE (usa session_snapshot; le vite restano le 3
+        # fresche della scena nuova, come il reset() del C++ su continue).
+        if GameManager and not GameManager.session_restore_pending:
+                GameManager.restore_player_carry(player, player2)
         # Setup boss fight
         start_boss_fight(died_in_boss)
         # FIX (continue = sessione ESATTA nella boss room — richiesta utente):
@@ -657,6 +663,13 @@ func _check_boss_death() -> void:
                                 GameManager.go_to_win()
                         else:
                                 # Back to maze
+                                # FIX (punteggio perso tra le scene): salva lo
+                                # stato dei player PRIMA del cambio scena — il
+                                # MainGame della prossima level istanzia nodi
+                                # Player NUOVI. Include la vita bonus (+1) appena
+                                # concessa da add_life() del boss sconfitto:
+                                # prima si PERDEVA al ritorno nel labirinto.
+                                GameManager.save_player_carry(player, player2)
                                 GameManager.go_to_maze()
 
 

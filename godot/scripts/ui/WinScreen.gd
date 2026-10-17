@@ -8,6 +8,13 @@ extends Control
 
 signal back_to_menu_requested()
 
+# FIX (schermata chiusa involontariamente in 1 secondo — mirror LoseScreen):
+# in test mode si arriva alla vittoria martellando SPACE (salto livelli): la
+# pressione residua chiudeva la schermata di vittoria PRIMA dei fuochi
+# d'artificio e PRIMA del salvataggio del record. GRAZIA INPUT: per i primi
+# MIN_DISPLAY_SECONDS la schermata non accetta input.
+const MIN_DISPLAY_SECONDS: float = 3.0
+
 @export var color_title:    Color = Color(1.000, 0.843, 0.000)
 @export var color_subtitle: Color = Color(0.961, 0.922, 0.784)
 @export var color_hint:     Color = Color(0.745, 0.745, 0.745)
@@ -21,6 +28,7 @@ var _keyboard: Control = null
 var _keyboard_timer: float = 0.0
 const KEYBOARD_DELAY: float = 2.2  # secondi di fuochi d'artificio prima della tastiera
 var _keyboard_shown: bool = false
+var _display_timer: float = 0.0
 # FIX (Hall of Fame 2P): coda dei punteggi da salvare. In 2P ogni player
 # salva il PROPRIO punteggio: prima la tastiera per P1, poi (se qualifica)
 # quella per P2, infine la Hall of Fame con l'ultima voce evidenziata.
@@ -59,11 +67,14 @@ func _process(delta: float) -> void:
                         alive.append(fw)
         _fireworks = alive
         # FIX (Hall of Fame): dopo il delay, se il punteggio merita la
-        # classifica, mostra la tastiera di inserimento nome.
-        if not _keyboard_shown and not _finished:
+        # classifica, mostra la tastiera di inserimento nome. La tastiera NON
+        # appare durante la grazia input (pressione residua di SPACE/fuoco).
+        if not _keyboard_shown and not _finished \
+                        and _display_timer >= MIN_DISPLAY_SECONDS:
                 _keyboard_timer += delta
                 if _keyboard_timer >= KEYBOARD_DELAY:
                         _maybe_show_keyboard()
+        _display_timer += delta
         queue_redraw()
 
 
@@ -167,6 +178,13 @@ func _spawn_firework() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
         if _finished:
+                return
+        # FIX (grazia input — mirror LoseScreen): durante i primi secondi la
+        # schermata NON consuma nessun tasto: la pressione residua del tasto di
+        # salto livelli (SPACE in test mode) o del fuoco del joystick non puo'
+        # chiudere la vittoria prima che sia leggibile e prima del salvataggio
+        # del record.
+        if _display_timer < MIN_DISPLAY_SECONDS:
                 return
         # FIX (Hall of Fame): mentre la tastiera è attiva, questa schermata
         # non consuma input (li gestisce la tastiera).

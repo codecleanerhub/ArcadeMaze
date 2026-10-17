@@ -245,8 +245,18 @@ func update_ally(maze: Node, player_pos: Vector2, enemies: Array, delta_ms: int)
                                 else:
                                         var next_step: Vector2i = BFS.find_path(
                                                 maze, start_cell, target_cell)
-                                        # BFS ritorna (-1, -1) se nessun path
-                                        if next_step.x >= 0 and next_step.y >= 0:
+                                        # FIX (gallerie sinistra/alto — mirror
+                                        # Enemy.gd): il sentinel di "nessun
+                                        # percorso" e' ESATTAMENTE (-1, -1), non
+                                        # "x < 0 o y < 0". Quando il percorso
+                                        # piu' corto passa dalla galleria
+                                        # SINISTRA find_path ritorna la cella
+                                        # virtuale (-1, 7), e per la galleria
+                                        # ALTA la (15, -1): il vecchio check
+                                        # "x >= 0 and y >= 0" le scartava come
+                                        # fallimenti -> l'unicorno ristagnava
+                                        # all'imbocco senza attraversare.
+                                        if next_step != Vector2i(-1, -1):
                                                 current_dir = Vector2i(
                                                                 next_step.x - col, next_step.y - row)
                                                 stuck_timer = 0

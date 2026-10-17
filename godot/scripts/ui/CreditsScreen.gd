@@ -247,7 +247,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func _draw() -> void:
         # Solid background
         draw_rect(Rect2(0, 0, size.x, size.y), color_bg)
+        # FIX (schermata nera dai credits): se il tema non fornisce un font di
+        # default (get_theme_default_font() puo' tornare null), usa il font di
+        # fallback del ThemeDB: senza font ogni draw_string e' un no-op e la
+        # schermata resta NERA anche se il resto funziona.
         var font := get_theme_default_font()
+        if font == null:
+                font = ThemeDB.fallback_font
         var cx: float = size.x / 2.0
 
         if not _finished:

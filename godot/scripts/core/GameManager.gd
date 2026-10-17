@@ -177,6 +177,61 @@ var standby_show_count: int = 0
 
 
 # ============================================================================
+# FIX (punteggio perso tra le scene — root cause del record HOF mancante):
+# nel C++ originale ESISTE UN SOLO oggetto Player per tutta la partita, quindi
+# punteggio/vite/soglia-vita-extra sopravvivono NATURALMENTE al passaggio
+# labirinto -> boss room -> labirinto. Nel port Godot OGNI scena (MainGame /
+# BossRoom) istanzia un nodo Player PROPRIO che riparte da reset() (score=0,
+# 3 vite): a ogni cambio scena il punteggio accumulato si AZZERAVA. Saltando
+# i livelli in test mode (maze -> boss -> maze ...) il punteggio finale alla
+# morte era ~0 e non entrava mai in Hall of Fame, e la vita bonus (+1) del
+# boss sconfitto andava persa al ritorno nel labirinto.
+# I controller salvano qui lo stato dei player PRIMA di cambiare scena e lo
+# ripristinano nel _ready() della scena di arrivo (SOLO se non e' un restore
+# da CONTINUE — quello usa session_snapshot — e non una partita nuova).
+# ============================================================================
+var carry_p1: Dictionary = {}
+var carry_p2: Dictionary = {}
+
+## Snapshot dello stato di UN player da portare nella prossima scena.
+static func make_player_carry(p: Node) -> Dictionary:
+        if p == null or not is_instance_valid(p):
+                return {}
+        return {
+                "score": int(p.score),
+                "lives": int(p.lives),
+                "next_life_threshold": int(p.next_life_threshold),
+                "permanent_speed_boost": bool(p.permanent_speed_boost),
+        }
+
+## Salva lo stato dei player di entrambe le scene di gioco (chiamato dai
+## controller subito PRIMA di GameManager.start_boss_fight() /
+## go_to_maze(), cioe' prima del cambio scena).
+func save_player_carry(p1: Node, p2: Node = null) -> void:
+        carry_p1 = make_player_carry(p1)
+        var two_players: bool = num_players == 2 and p2 != null \
+                        and is_instance_valid(p2) and p2.visible
+        carry_p2 = make_player_carry(p2) if two_players else {}
+
+## Ripristina lo stato portato sui player della scena APPENA caricata.
+## Ritorna true se e' stato applicato un carry valido.
+func restore_player_carry(p1: Node, p2: Node = null) -> bool:
+        if carry_p1.is_empty() or p1 == null or not is_instance_valid(p1):
+                return false
+        _apply_carry(p1, carry_p1)
+        if num_players == 2 and p2 != null and is_instance_valid(p2) \
+                        and p2.visible and not carry_p2.is_empty():
+                _apply_carry(p2, carry_p2)
+        return true
+
+func _apply_carry(p: Node, snap: Dictionary) -> void:
+        p.score = int(snap.get("score", 0))
+        p.lives = int(snap.get("lives", 3))
+        p.next_life_threshold = int(snap.get("next_life_threshold", 100000))
+        p.permanent_speed_boost = bool(snap.get("permanent_speed_boost", false))
+
+
+# ============================================================================
 # LEVEL HELPERS  (mirror the inline functions in Boss.h)
 # ============================================================================
 ## True if `level` (1-based) is a boss level (multiples of 4: 4, 8, ..., 68).
@@ -302,6 +357,9 @@ func reset_run() -> void:
         # FIX (continue = sessione ESATTA): nuova partita = nessun restore.
         session_snapshot.clear()
         session_restore_pending = false
+        # FIX (punteggio perso tra le scene): nuova partita = nessun carry.
+        carry_p1.clear()
+        carry_p2.clear()
         menu_item_index = 0
         config_joy_step = 0
         config_joy_player = 1

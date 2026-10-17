@@ -13,6 +13,16 @@ extends Control
 
 signal back_to_menu_requested()
 
+# FIX (game over sparita in 1 secondo — bug utente): in test mode si salta i
+# livelli martellando SPACE (o il tasto fuoco del joystick): la pressione
+# residua, riflessa sulla schermata GAME OVER appena comparsa, la chiudeva
+# subito (SPACE/ENTER/A = uscita immediata) senza che il player percepisse la
+# pressione come volontaria — e senza salvare il record in Hall of Fame.
+# GRAZIA INPUT: per i primi MIN_DISPLAY_SECONDS la schermata NON accetta
+# input: il game over deve restare leggibile e il salvataggio del record
+# non puo' essere scavalcato da una pressione accidentale.
+const MIN_DISPLAY_SECONDS: float = 3.0
+
 @export var color_title:    Color = Color(0.863, 0.157, 0.157)
 @export var color_subtitle: Color = Color(0.784, 0.784, 0.784)
 @export var color_hint:     Color = Color(0.588, 0.588, 0.588)
@@ -25,6 +35,7 @@ var _keyboard: Control = null
 var _keyboard_timer: float = 0.0
 const KEYBOARD_DELAY: float = 1.6  # secondi prima che appaia la tastiera
 var _keyboard_shown: bool = false
+var _display_timer: float = 0.0
 # FIX (Hall of Fame 2P): coda dei punteggi da salvare. In 2P ogni player
 # salva il PROPRIO punteggio: prima la tastiera per P1, poi (se qualifica)
 # quella per P2, infine la Hall of Fame con l'ultima voce evidenziata.
@@ -48,13 +59,19 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
         _time += delta
+        _display_timer += delta
+        # FIX (game over sparita): aggiorna l'hint in base alla grazia input.
+        queue_redraw()
         # FIX (Hall of Fame): dopo il delay, se il punteggio merita la
-        # classifica, mostra la tastiera di inserimento nome.
-        if not _keyboard_shown and not _finished:
+        # classifica, mostra la tastiera di inserimento nome. La tastiera NON
+        # appare durante la grazia input (l'utente potrebbe avere SPACE ancora
+        # pigiato dal salto livelli: aprire la tastiera subito farebbe
+        # selezionare/consentire caratteri per errore).
+        if not _keyboard_shown and not _finished \
+                        and _display_timer >= MIN_DISPLAY_SECONDS:
                 _keyboard_timer += delta
                 if _keyboard_timer >= KEYBOARD_DELAY:
                         _maybe_show_keyboard()
-        queue_redraw()
 
 
 # FIX (Hall of Fame 2P): costruisce la coda dei punteggi qualificanti.
@@ -147,6 +164,13 @@ func _on_name_confirmed(player_name: String) -> void:
 func _unhandled_input(event: InputEvent) -> void:
         if _finished:
                 return
+        # FIX (game over sparita in 1 secondo): durante la grazia input la
+        # schermata NON consuma nessun tasto (nemmeno ESC): la pressione
+        # residua del tasto di salto livelli (SPACE in test mode) o del tasto
+        # fuoco del joystick non puo' chiudere il game over prima che sia
+        # leggibile e prima che il record venga salvato.
+        if _display_timer < MIN_DISPLAY_SECONDS:
+                return
         # FIX (Hall of Fame): mentre la tastiera è attiva, questa schermata
         # non consuma input (li gestisce la tastiera).
         if _keyboard != null and is_instance_valid(_keyboard):
@@ -232,14 +256,20 @@ func _draw() -> void:
         # Hint (blinking) — cambia se la tastiera sta per apparire
         var hint_alpha: float = 0.5 + 0.5 * sin(_time * 2.0)
         var hint_text: String = "PRESS ENTER TO RETURN TO MENU"
-        var pending_p1: bool = score > 0 and HallOfFameData.qualifies(
-                        GameManager.final_score_p1 if GameManager.num_players == 2 else score)
-        var pending_p2: bool = GameManager.num_players == 2 \
-                        and HallOfFameData.qualifies(GameManager.final_score_p2)
-        if not _keyboard_shown and (pending_p1 or pending_p2):
-                hint_text = "NEW HIGH SCORE! PREPARE TO ENTER YOUR NAME..."
-        elif _keyboard_shown and _keyboard != null and is_instance_valid(_keyboard):
+        # FIX (game over sparita): durante la grazia input l'hint resta nascosto
+        # (non e' ancora possibile premere nulla).
+        if _display_timer < MIN_DISPLAY_SECONDS:
                 hint_text = ""
+        else:
+                var pending_p1: bool = score > 0 and HallOfFameData.qualifies(
+                                GameManager.final_score_p1 \
+                                if GameManager.num_players == 2 else score)
+                var pending_p2: bool = GameManager.num_players == 2 \
+                                and HallOfFameData.qualifies(GameManager.final_score_p2)
+                if not _keyboard_shown and (pending_p1 or pending_p2):
+                        hint_text = "NEW HIGH SCORE! PREPARE TO ENTER YOUR NAME..."
+                elif _keyboard_shown and _keyboard != null and is_instance_valid(_keyboard):
+                        hint_text = ""
         draw_string(font, Vector2(cx - 300, size.y - 80),
                 hint_text,
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 24,

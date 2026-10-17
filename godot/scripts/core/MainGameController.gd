@@ -447,6 +447,14 @@ func _ready() -> void:
                 player2.visible = true
         else:
                 player2.visible = false
+        # FIX (punteggio perso tra le scene): ripristina lo stato dei player
+        # portato dalla scena precedente (boss sconfitto -> maze, ecc.). SOLO
+        # se NON e' un restore da CONTINUE (quello usa session_snapshot, e le
+        # vite devono restare le 3 fresche della scena nuova) e non una
+        # partita nuova (livello 1: start_level chiamera' reset()).
+        if GameManager and GameManager.current_level > 1 \
+                        and not GameManager.session_restore_pending:
+                GameManager.restore_player_carry(player, player2)
         # Start the first level
         start_level(current_level)
         # Start level music if enabled
@@ -2199,6 +2207,11 @@ func _advance_level() -> void:
         if C.is_boss_level(current_level):
                 # Go to boss fight
                 if GameManager:
+                        # FIX (punteggio perso tra le scene): salva lo stato
+                        # dei player PRIMA del cambio scena — la boss room
+                        # istanzia nodi Player NUOVI che altrimenti ripartirebbero
+                        # da score=0 (nel C++ il player e' UNICO e sopravvive).
+                        GameManager.save_player_carry(player, player2)
                         GameManager.start_boss_fight()
         else:
                 current_level += 1
@@ -2211,6 +2224,8 @@ func _test_mode_skip() -> void:
         player.current_weapon["ammo"] = 15
         if C.is_boss_level(current_level):
                 if GameManager:
+                        # FIX (punteggio perso tra le scene): mirror _advance_level.
+                        GameManager.save_player_carry(player, player2)
                         GameManager.start_boss_fight()
         else:
                 current_level += 1

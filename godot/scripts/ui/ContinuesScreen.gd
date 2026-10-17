@@ -12,6 +12,14 @@ extends Control
 signal continue_used()
 signal give_up_requested()
 
+# FIX (continue consumato involontariamente — mirror LoseScreen): la
+# pressione residua del tasto di salto livelli (SPACE in test mode) o del
+# tasto fuoco del joystick, riflessa sulla schermata CONTINUE? appena comparsa,
+# confermava subito YES e consumava un credito senza che il player lo
+# volesse. GRAZIA INPUT: per i primi INPUT_GRACE_SECONDS la schermata non
+# accetta conferme (la navigazione LEFT/RIGHT resta subito disponibile).
+const INPUT_GRACE_SECONDS: float = 1.0
+
 @export var color_title:    Color = Color(1.000, 0.843, 0.000)
 @export var color_yes:      Color = Color(0.392, 0.941, 0.392)
 @export var color_no:       Color = Color(0.941, 0.235, 0.235)
@@ -24,6 +32,7 @@ var _choice: bool = true  # true = YES, false = NO
 var _blink_time: float = 0.0
 var _bg_texture: Texture2D = null
 var _finished: bool = false
+var _grace_timer: float = 0.0
 
 
 func _ready() -> void:
@@ -48,6 +57,7 @@ func _process(delta: float) -> void:
         if _finished:
                 return
         _blink_time += delta
+        _grace_timer += delta
         _countdown_timer += delta
         if _countdown_timer >= 1.0:
                 _countdown_timer = 0.0
@@ -72,8 +82,15 @@ func _unhandled_input(event: InputEvent) -> void:
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
                         KEY_ENTER, KEY_SPACE:
+                                # FIX (grazia input): durante il primo secondo una
+                                # pressione residua (SPACE del salto livelli in test
+                                # mode) NON consuma il credito.
+                                if _grace_timer < INPUT_GRACE_SECONDS:
+                                        return
                                 _confirm()
                         KEY_ESCAPE:
+                                if _grace_timer < INPUT_GRACE_SECONDS:
+                                        return
                                 _choice = false
                                 _confirm()
         elif event is InputEventJoypadMotion:
@@ -85,6 +102,9 @@ func _unhandled_input(event: InputEvent) -> void:
                         elif event.axis_value > 0.5:
                                 _choice = false  # RIGHT = NO
         elif event is InputEventJoypadButton and event.pressed:
+                # FIX (grazia input): vale anche per il tasto fuoco del joystick.
+                if _grace_timer < INPUT_GRACE_SECONDS:
+                        return
                 if event.button_index == JOY_BUTTON_A:
                         _confirm()
                 else:

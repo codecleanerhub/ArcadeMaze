@@ -526,7 +526,21 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                 # Chase: BFS shortest path (tutti i tipi nemici).
                                 var next_step: Vector2i = BFS.find_path(
                                         maze, Vector2i(col, row), player_grid_pos)
-                                if next_step.x >= 0:
+                                # FIX (nemici bloccati al foro di SINISTRA — bug
+                                # utente): il sentinel di "nessun percorso" e'
+                                # ESATTAMENTE (-1, -1), NON "x < 0". Quando il
+                                # percorso piu' corto passa dalla galleria
+                                # SINISTRA, find_path ritorna la cella VIRTUALE
+                                # (-1, 7) come primo passo (la direzione d'uscita
+                                # dal bordo): con il vecchio check "x >= 0"
+                                # quella cella veniva scambiata per un fallimento
+                                # -> dx/dy restavano 0 -> il nemico ristagnava
+                                # all'imbocco sinistro senza mai attraversare,
+                                # esattamente il bug segnalato. Le gallerie
+                                # destra/alto/basso tornano celle con x >= 0
+                                # ((30,7)/(15,-1)/(15,15)) e funzionavano gia';
+                                # ora tutte e quattro sono gestite.
+                                if next_step != Vector2i(-1, -1):
                                         dx = next_step.x - col
                                         if dx != 0:
                                                 last_dx = dx
