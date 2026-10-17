@@ -172,6 +172,21 @@ var stamina_exhausted: bool = false      # true dopo il 3° salto consecutivo �
 var _stamina_since_jump_ms: float = 99999.0  # ms trascorsi dall'ultimo salto (per il delay di ricarica)
 var _stamina_click_cd_ms: float = 0.0        # cooldown residuo del suono di click a vuoto
 
+# ===========================================================================
+# FUOCO AMICO (Task 18 — trasferimento anima): se un player uccide il
+# compagno (ultimo punto di energia portato a 0 da un suo proiettile), il
+# corpo della vittima si accascia al suolo, la sua anima si separa e vola
+# veloce verso il vincitore ricaricandogli COMPLETAMENTE l'energia.
+# Durante il volo la vittima è congelata (soul_pending = true): niente
+# input, niente danni, niente rendering — la scena la disegna
+# SoulTransferEffect (corpo + anima). Il respawn avviene quando l'anima
+# viene assorbita (respawn_after_soul).
+# ===========================================================================
+var soul_pending: bool = false
+# Visibilità degli sprite prima della morte (ripristinata al respawn).
+var _pre_soul_sprite_visible: bool = true
+var _pre_soul_weapon_visible: bool = true
+
 # --- Character selection ----------------------------------------------------
 var character_type: int = CharacterType.HERO_M
 var player_num: int = 1
@@ -233,6 +248,14 @@ func reset() -> void:
         invincible_timer = 0
         # FIX (pozione magica): azzera lo stato fantasma
         _end_ghost_mode_now()
+        # FUOCO AMICO (Task 18): safety net — un full reset (nuovo livello /
+        # continue) NON deve mai ereditare un player congelato in attesa
+        # dell'anima (l'effetto viene comunque liberato con la scena).
+        soul_pending = false
+        if sprite != null:
+                sprite.visible = true
+        if weapon_sprite != null:
+                weapon_sprite.visible = _pre_soul_weapon_visible
 
 
 # ===========================================================================
@@ -274,6 +297,14 @@ func reset_position() -> void:
         # FIX (pozione magica): il respawn azzera lo stato fantasma (il player
         # torna solido nella cella di partenza, che è sempre percorribile).
         _end_ghost_mode_now()
+        # FUOCO AMICO (Task 18): il respawn classico (perdita vita da nemico,
+        # cambio livello) scongela sempre il player dall'attesa anima.
+        if soul_pending:
+                soul_pending = false
+                if sprite != null:
+                        sprite.visible = _pre_soul_sprite_visible
+                if weapon_sprite != null:
+                        weapon_sprite.visible = _pre_soul_weapon_visible
 
 
 # ===========================================================================
@@ -465,6 +496,12 @@ func try_move(t_dx: int, t_dy: int, maze: Object) -> bool:
 #  5. Projectile advance (8 px/frame) + erase-remove inactive.
 # ===========================================================================
 func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) -> void:
+        # FUOCO AMICO (Task 18): player congelato in attesa che la sua anima
+        # raggiunga il vincitore. Nessun input/movimento/proiettile/timer:
+        # il corpo accasciato e l'anima in volo sono disegnati da
+        # SoulTransferEffect; il respawn scatta all'assorbimento.
+        if soul_pending:
+                return
         # 1) Jump visual offset: half sin curve (0 -> peak -> 0 over max_jump_time).
         if jump_timer > 0:
                 jump_timer -= 1
@@ -668,6 +705,9 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
 # Consumes 1 ammo and triggers a short attack animation.
 # Mirrors Player::shoot() line 323-354.
 func shoot() -> void:
+        # FUOCO AMICO (Task 18): il player morto-in-attesa-anima non spara.
+        if soul_pending:
+                return
         if current_weapon.ammo <= 0:
                 return
 
@@ -707,6 +747,10 @@ func shoot() -> void:
 # NOT jumping. On 0 energy, lose a life, restore energy, and respawn.
 # Mirrors Player::takeDamage() line 364-374.
 func take_damage() -> void:
+        # FUOCO AMICO (Task 18): il corpo accasciato in attesa dell'anima è
+        # già morto ai fini del gameplay: invulnerabile a ogni fonte di danno.
+        if soul_pending:
+                return
         if is_jumping() or is_invulnerable():
                 return
         energy -= 1
@@ -721,6 +765,52 @@ func take_damage() -> void:
                 lives -= 1
                 energy = max_energy
                 reset_position()  # respawn
+
+
+# ===========================================================================
+# FUOCO AMICO (Task 18) — morte per colpo del compagno + rinascita
+# ===========================================================================
+
+# kill_by_friendly_fire(): il colpo fatale arriva dal PROIETTILE del
+# compagno (MainGameController._check_friendly_fire_projectiles quando
+# energy == 1). Replica il ramo morte di take_damage (vita persa, energia
+# ripristinata) MA differisce il respawn: il player resta congelato e
+# invisibile finché la sua anima non raggiunge il vincitore
+# (SoulTransferEffect -> soul_delivered -> respawn_after_soul).
+func kill_by_friendly_fire() -> void:
+        lives -= 1
+        energy = max_energy
+        damage_timer = 0
+        # Congela: nessun input, nessun danno, nessun rendering del player.
+        soul_pending = true
+        set_direction(0, 0)
+        dx = 0
+        dy = 0
+        # I proiettili in volo si dissolvono con la morte.
+        projectiles.clear()
+        # Il corpo accasciato lo disegna l'effetto: nascondiamo gli sprite
+        # del player (salvando lo stato per il ripristino al respawn).
+        if sprite != null:
+                _pre_soul_sprite_visible = sprite.visible
+                sprite.visible = false
+        if weapon_sprite != null:
+                _pre_soul_weapon_visible = weapon_sprite.visible
+                weapon_sprite.visible = false
+        # FIX (pozione magica): se la vittima era in modalità fantasma, la
+        # chiudiamo subito (l'anima è già tutto ciò che resta di evanescente).
+        _end_ghost_mode_now()
+
+
+# respawn_after_soul(): l'anima è stata assorbita dal vincitore — la
+# vittima rinviene e respawna con la posizione/timer standard
+# (reset_position: cella di partenza, stamina piena, boost azzerati).
+func respawn_after_soul() -> void:
+        soul_pending = false
+        if sprite != null:
+                sprite.visible = _pre_soul_sprite_visible
+        if weapon_sprite != null:
+                weapon_sprite.visible = _pre_soul_weapon_visible
+        reset_position()
 
 
 # collect_weapon(w): replace the current weapon (old one discarded).
@@ -759,6 +849,9 @@ func add_life() -> void:
 # Ritorna true se il salto è partito, false altrimenti (già in salto oppure
 # senza stamina).
 func activate_jump() -> bool:
+        # FUOCO AMICO (Task 18): il player morto-in-attesa-anima non salta.
+        if soul_pending:
+                return false
         if jump_timer > 0:
                 return false  # già in salto
         # Gate di stamina: ci vuole almeno 1/3 di barra per un salto.
@@ -1100,6 +1193,10 @@ func _update_sprite() -> void:
 # Each projectile dict has: pos, dir, power, active, type.
 # ===========================================================================
 func _draw() -> void:
+        # FUOCO AMICO (Task 18): il player congelato in attesa dell'anima non
+        # disegna nulla (il corpo accasciato lo disegna SoulTransferEffect).
+        if soul_pending:
+                return
         # FIX (pozione magica): aura fantasmagorica attorno al player mentre
         # l'effetto pozione è attivo (scia eterea + particelle che salgono).
         if ghost_mode:

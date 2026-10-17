@@ -19,6 +19,12 @@ extends Node2D
 const C = preload("res://scripts/core/GameConstants.gd")
 const WeaponClass = preload("res://scripts/items/Weapon.gd")
 const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
+# FUOCO AMICO (Task 18): effetto corpo accasciato + anima che vola verso il
+# vincitore ricaricandogli l'energia.
+const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
+# FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
+# player (~25 px, tra proiettile-nemico 24.5 e miniboss 35).
+const FF_HIT_RADIUS_SQ: float = 625.0
 
 # --- Node references (assigned in _ready) ---
 @onready var maze: Node2D = $Maze
@@ -1269,6 +1275,15 @@ func _update_playing(delta_ms: float) -> void:
         # both take 1 damage. Mirrors C++ Game.cpp 1846-1862.
         _check_2p_friendly_fire()
 
+        # (7b-2) FUOCO AMICO (Task 18 — richiesta utente): i PROIETTILI di un
+        # player colpiscono l'altro player (il danno da contatto resta OFF,
+        # vedi (7b)). Colpo non fatale: -1 energia con invulnerabilita' di 1s
+        # (identico a un colpo nemico). Colpo FATALE (ultima energia): il
+        # corpo della vittima si accascia al suolo, la sua anima si separa e
+        # vola veloce verso il vincitore ricaricandogli COMPLETAMENTE
+        # l'energia (SoulTransferEffect -> _start_soul_transfer).
+        _check_friendly_fire_projectiles()
+
         # (7c) FIX (2P): eliminazione del player senza vite (non più "zombie").
         _check_player_elimination()
 
@@ -1860,12 +1875,16 @@ func _is_p2_active() -> bool:
 # FIX (2P): lista dei player vivi (vite > 0) in gioco. In 1P contiene
 # solo P1; in 2P contiene P1 e/o P2 finché hanno vite (il player eliminato
 # scompare dalla lista: niente più danni/targeting su un morto).
+# FUOCO AMICO (Task 18): il player in attesa dell'anima (soul_pending) è
+# escluso: è già caduto, non è né un bersaglio né un "vivo" per l'IA.
 func _alive_players() -> Array:
         var out: Array = []
-        if player != null and is_instance_valid(player) and player.lives > 0:
+        if player != null and is_instance_valid(player) and player.lives > 0 \
+                        and not player.soul_pending:
                 out.append(player)
         if GameManager and GameManager.num_players == 2 and player2 != null \
-                        and is_instance_valid(player2) and player2.visible and player2.lives > 0:
+                        and is_instance_valid(player2) and player2.visible and player2.lives > 0 \
+                        and not player2.soul_pending:
                 out.append(player2)
         return out
 
@@ -1876,11 +1895,15 @@ func _alive_players() -> Array:
 func _nearest_alive_player(from_pos: Vector2) -> CharacterBody2D:
         var best: CharacterBody2D = null
         var best_d: float = INF
-        if player != null and is_instance_valid(player) and player.lives > 0:
+        # FUOCO AMICO (Task 18): il player congelato in attesa dell'anima non
+        # è un bersaglio valido (né per i nemici né per i miniboss).
+        if player != null and is_instance_valid(player) and player.lives > 0 \
+                        and not player.soul_pending:
                 best = player
                 best_d = from_pos.distance_squared_to(player.get_pixel_pos())
         if GameManager and GameManager.num_players == 2 and player2 != null \
-                        and is_instance_valid(player2) and player2.visible and player2.lives > 0:
+                        and is_instance_valid(player2) and player2.visible and player2.lives > 0 \
+                        and not player2.soul_pending:
                 var d2: float = from_pos.distance_squared_to(player2.get_pixel_pos())
                 if d2 < best_d:
                         best = player2
@@ -1895,6 +1918,11 @@ func _nearest_alive_player(from_pos: Vector2) -> CharacterBody2D:
 # punteggio finale.
 func _check_player_elimination() -> void:
         if player2 == null or not is_instance_valid(player2) or not player2.visible:
+                return
+        # FUOCO AMICO (Task 18): se P2 è morto per colpo del compagno e la
+        # sua anima sta ancora volando, l'eliminazione aspetta la fine del
+        # trasferimento (il respawn_after_soul la gestisce al frame dopo).
+        if player2.soul_pending:
                 return
         if player2.lives > 0 or player.lives <= 0:
                 return  # P2 vivo, oppure entrambi morti (game over via _check_death)
@@ -1978,6 +2006,89 @@ func _check_death() -> void:
 # a P1", come richiesto dall'utente. La funzione resta come hook.
 func _check_2p_friendly_fire() -> void:
         return
+
+
+# ============================================================================
+# FUOCO AMICO (Task 18 — richiesta utente): "se un giocatore uccide l'altro
+# player il player vincitore recupera completamente l'energia con effetto
+# grafico di un'anima che si separa dal corpo del player ucciso che si
+# accascia al pavimento e [l'anima] vola velocemente verso l'altro player
+# ricaricandogli l'energia".
+# I PROIETTILI di un player colpiscono l'altro player:
+#   * colpo NON fatale: target.take_damage() (flusso identico ai colpi
+#     nemici: -1 energia, invulnerabilita' 1s, sparks/shake);
+#   * colpo FATALE (target.energy == 1): _start_soul_transfer — la vittima
+#     perde una vita ma resta congelata sul posto (soul_pending) mentre il
+#     corpo si accascia e l'anima vola verso il vincitore.
+# I colpi a bersaglio invulnerabile/in salto passano attraverso (parita'
+# con (5) proiettili nemici vs player).
+# ============================================================================
+
+
+func _check_friendly_fire_projectiles() -> void:
+        if not _is_p2_active():
+                return
+        _ff_shooter_vs_target(player, player2)
+        _ff_shooter_vs_target(player2, player)
+
+
+# Proiettili di `shooter` contro `target` (l'altro player vivo).
+func _ff_shooter_vs_target(shooter: CharacterBody2D, target: CharacterBody2D) -> void:
+        if shooter.soul_pending or target.soul_pending:
+                return
+        if target.is_invulnerable() or target.is_jumping():
+                return  # parita' proiettili nemici: passa attraverso
+        if shooter.projectiles.is_empty():
+                return
+        var target_pos: Vector2 = target.get_pixel_pos()
+        for proj in shooter.projectiles:
+                if not proj.get("active", false):
+                        continue
+                var proj_pos: Vector2 = proj.get("pos", Vector2.INF)
+                if proj_pos.distance_squared_to(target_pos) > FF_HIT_RADIUS_SQ:
+                        continue
+                # Colpito! Il proiettile si ferma nel corpo del compagno.
+                proj["active"] = false
+                if target.energy > 1:
+                        target.take_damage()
+                else:
+                        # Ultima energia: morte per fuoco amico -> anima.
+                        _start_soul_transfer(shooter, target)
+                break
+
+
+# Morte per fuoco amico: congela la vittima (kill_by_friendly_fire) e lancia
+# l'effetto anima verso il vincitore. Il segnale soul_delivered chiamera'
+# _on_soul_delivered quando l'anima arriva.
+func _start_soul_transfer(winner: CharacterBody2D, victim: CharacterBody2D) -> void:
+        victim.kill_by_friendly_fire()
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+                AudioManager.play_sound(AudioManager.SoundType.SOUL_RELEASE)
+        if EffectsManager:
+                EffectsManager.screen_shake(4.0, 0.2)
+        var fx: Node2D = SoulTransferFx.new()
+        fx.setup(victim, winner)
+        add_child(fx)  # figlio del root: disegnato sopra player e nemici
+        fx.soul_delivered.connect(_on_soul_delivered.bind(winner, victim))
+
+
+# L'anima ha raggiunto il vincitore: ricarica COMPLETA dell'energia del
+# vincitore (se ancora in gioco) e respawn della vittima. Se era l'ultima
+# vita della vittima, al frame dopo _check_player_elimination la elimina
+# in modo pulito (soul_pending e' stato riportato a false).
+func _on_soul_delivered(winner: CharacterBody2D, victim: CharacterBody2D) -> void:
+        if is_instance_valid(winner) and winner.lives > 0 and not winner.soul_pending:
+                winner.energy = winner.max_energy
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.SOUL_ABSORB)
+                if EffectsManager:
+                        EffectsManager.screen_shake(3.0, 0.15)
+                        var burst := EffectsManager.spawn_pickup_burst(
+                                        winner.get_pixel_pos(), Color(0.85, 0.95, 1.0))
+                        collectibles_node.add_child(burst)
+        if is_instance_valid(victim):
+                victim.respawn_after_soul()
 
 
 # ============================================================================

@@ -64,9 +64,16 @@ enum SoundType {
         # sgretolamento del muro interno spezzato.
         HAMMER_THROW,
         HAMMER_CLANK,
-        WALL_CRUMBLE
+        WALL_CRUMBLE,
+        # FUOCO AMICO (Task 18 — trasferimento anima): l'anim del player
+        # ucciso dal compagno si separa dal corpo e vola verso il vincitore;
+        # all'assorbimento l'energia del vincitore si ricarica al massimo.
+        # SOUL_RELEASE = whoosh etereo ascendente (separazione),
+        # SOUL_ABSORB = scintillio arpeggiato (ricarica energia).
+        SOUL_RELEASE,
+        SOUL_ABSORB
 }
-const SOUND_TYPE_COUNT: int = 31
+const SOUND_TYPE_COUNT: int = 33
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -460,6 +467,8 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.HAMMER_THROW:   s = _sfx_hammer_throw()
                 SoundType.HAMMER_CLANK:   s = _sfx_hammer_clank()
                 SoundType.WALL_CRUMBLE:   s = _sfx_wall_crumble()
+                SoundType.SOUL_RELEASE:   s = _sfx_soul_release()
+                SoundType.SOUL_ABSORB:    s = _sfx_soul_absorb()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1423,6 +1432,74 @@ func _sfx_wall_crumble() -> PackedFloat32Array:
                         next_grain_t = t + rng.randf_range(0.004, 0.05) * (1.0 + t)
                 s.append(3200.0 / 32767.0 * _soft_clip(v))
         return s
+
+
+# --- FUOCO AMICO (Task 18): whoosh etereo ascendente ~0.65s -----------------
+# L'anima si separa dal corpo del player ucciso: sweep 220 -> 880 Hz con
+# vibrato lento, strato triangle + sine detunata, attacco morbido (swell)
+# e coda shimmer che svanisce. Volume moderato: e' un evento "mistico",
+# non un'esplosione.
+func _sfx_soul_release() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.65)
+        for i in n:
+                var t: float = float(i) / SR
+                var p: float = t / 0.65  # progresso 0..1
+                # Sweep di frequenza ascendente (l'anima sale)
+                var freq: float = 220.0 + 660.0 * p * p
+                # Vibrato etereo lento (onde del ectoplasma)
+                var vib: float = 1.0 + 0.015 * sin(TAU * 5.5 * t)
+                var f: float = freq * vib
+                # Envelope: swell morbido in entrata, decadimento in uscita
+                var env: float = (1.0 - exp(-t * 18.0)) * exp(-t * 3.2)
+                var v: float = 0.45 * triangle_wave(t * f) \
+                                + 0.35 * sin(TAU * f * 1.005 * t) \
+                                + 0.20 * sin(TAU * f * 0.5 * t)
+                # Shimmer: soffio armonico alto che appare a meta' volo
+                var shimmer: float = 0.0
+                if p > 0.25:
+                        shimmer = 0.18 * sin(TAU * f * 2.0 * t) \
+                                        * exp(-(t - 0.16) * 2.0) * (p - 0.25) / 0.75
+                s.append(2400.0 / 32767.0 * (v + shimmer) * env)
+        # Coda riverbero: ultima armonica che svanisce
+        var tail: int = int(SR * 0.3)
+        for i in tail:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 6.0)
+                var v: float = 0.3 * sin(TAU * 880.0 * t) + 0.15 * triangle_wave(t * 440.0)
+                s.append(1200.0 / 32767.0 * v * env)
+        return s
+
+
+# --- FUOCO AMICO (Task 18): assorbimento anima, arpeggio scintillante ~0.5s --
+# L'anima raggiunge il vincitore e la sua energia si ricarica: 5 note
+# ascendenti (C5-E5-G5-C6-E6) sine+triangle con detune, tipo campanelline
+# magiche. Chiude con un accordo breve (energia piena!).
+func _sfx_soul_absorb() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var notes := [523.0, 659.0, 784.0, 1047.0, 1319.0]
+        for k in notes.size():
+                var note: float = notes[k]
+                var seg: int = int(SR * 0.07)
+                for i in seg:
+                        var t: float = float(i) / SR
+                        var env: float = (1.0 - exp(-t * 60.0)) * exp(-t * 9.0)
+                        var v: float = 0.5 * sin(TAU * note * t) \
+                                        + 0.3 * triangle_wave(t * note * 1.003) \
+                                        + 0.2 * sin(TAU * note * 2.0 * t)
+                        s.append(2600.0 / 32767.0 * v * env)
+        # Accordo finale: energia completamente ricaricata
+        var chord: int = int(SR * 0.22)
+        for i in chord:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 25.0)) * exp(-t * 4.0)
+                var v: float = 0.30 * sin(TAU * 1047.0 * t) \
+                                + 0.25 * sin(TAU * 1319.0 * t) \
+                                + 0.20 * sin(TAU * 1568.0 * t) \
+                                + 0.25 * triangle_wave(t * 523.0)
+                s.append(2400.0 / 32767.0 * v * env)
+        return s
+
 
 # --- Epic scepter jingle: arcane, ~7s, tritone C-F# ------------------------
 # Pad saw (C3 + F#3), 3 "oh" exclamations (G4, F4, Eb4), shimmer sweep,

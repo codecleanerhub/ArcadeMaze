@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testfriendlyfire1"]
+
+[ext_resource type="Script" path="res://tests/test_friendly_fire.gd" id="1"]
+
+[node name="TestFriendlyFire" type="Node"]
+script = ExtResource("1")
