@@ -42,7 +42,14 @@ func _physics_process(_delta: float) -> void:
                                         var ts: Vector2 = credits._bg_texture.get_size()
                                         print("[TEST] fase 1: sfondo caricato, dimensioni = ", ts)
                                         if ts.x < 512 or ts.y < 512:
-                                                _fail("dimensioni sfondo inattese: " + str(ts) + " (attese 1024x1024)")
+                                                _fail("dimensioni sfondo inattese: " + str(ts) + " (attese 1344x768)")
+                                        # Guardia anti-regressione (Task 16): lo sfondo DEVE essere
+                                        # widescreen, altrimenti il cover-fit su 1920x1080 taglia
+                                        # sopra/sotto (calotta del teschio e mani tranciate).
+                                        if ts.x / ts.y < 1.6:
+                                                _fail("aspect ratio non widescreen: " + str(ts) + \
+                                                                " (rapporto " + str(ts.x / ts.y) + " < 1.6: " + \
+                                                                "in cover-fit su 1920x1080 verrebbe tagliato)")
                                 # --- Fase 1b: le voci dei credits sono state costruite ---
                                 if credits._entries.is_empty():
                                         _fail("entries dei credits vuote: _build_entries non ha girato")
