@@ -1154,7 +1154,11 @@ func _draw() -> void:
                 var flash_dir: Vector2 = Vector2(last_dx, last_dy)
                 if flash_dir == Vector2.ZERO:
                         flash_dir = Vector2(1, 0)
-                var flash_pos: Vector2 = flash_dir * 18.0
+                # FIX (arma scollegata nel salto): il lampo di sparo segue
+                # l'arma alzata durante il salto (jump_offset), coerente con
+                # lo sprite del corpo che si alza in aria.
+                var flash_pos: Vector2 = flash_dir * 18.0 \
+                                + Vector2(0.0, -jump_offset)
                 draw_circle(flash_pos, 3.0, Color(1.0, 0.3, 0.1, 0.9))
                 draw_circle(flash_pos, 1.5, Color(1.0, 0.9, 0.5, 1.0))
 
@@ -1250,7 +1254,10 @@ func _update_hammer_sprite() -> void:
                 return
         var x_sign: float = 1.0 if last_dx >= 0 else -1.0
         _hammer_sprite.visible = true
-        _hammer_sprite.position = Vector2(19.0 * x_sign, -7.0)
+        # FIX (martello scollegato durante il salto): anche il Mjolnir segue
+        # l'arco del salto del corpo sprite (-jump_offset), come arma e
+        # dinamite, così resta in mano al player mentre è in aria.
+        _hammer_sprite.position = Vector2(19.0 * x_sign, -7.0 - jump_offset)
         _hammer_sprite.rotation = x_sign * deg_to_rad(38.0)
         var glow: float = 0.5 + 0.5 * sin(float(anim_time) * 0.006)
         _hammer_sprite.modulate = Color(1.0, 1.0, 1.0).lerp(
@@ -1270,7 +1277,9 @@ func _draw_dynamite_equipped() -> void:
         var x_sign: float = 1.0 if facing_right else -1.0
         # Posizione: accanto al player, sporgente
         var dyn_x: float = 20.0 * x_sign
-        var dyn_y: float = -2.0
+        # FIX (dinamite scollegata durante il salto): il candelotto segue
+        # l'arco del salto del corpo sprite (-jump_offset), come l'arma.
+        var dyn_y: float = -2.0 - jump_offset
         # === CANDELOTTO (cilindro rosso) ===
         # Corpo
         draw_rect(Rect2(dyn_x - 5, dyn_y - 10, 10, 20),
@@ -1327,6 +1336,9 @@ func _draw_dynamite_equipped() -> void:
 func _draw_ghost_aura() -> void:
         var t: float = float(anim_time)
         var breath: float = (sin(t * 0.004) + 1.0) * 0.5
+        # FIX (aura scollegata durante il salto): l'aura eterea segue l'arco
+        # del salto del corpo sprite (-jump_offset), come arma e martello.
+        draw_set_transform(Vector2(0.0, -jump_offset))
         # Aure concentriche eteree
         draw_circle(Vector2.ZERO, 30.0 + breath * 3.0, Color(0.45, 0.95, 0.75, 0.06))
         draw_circle(Vector2.ZERO, 22.0 + breath * 2.5, Color(0.55, 1.0, 0.85, 0.08))
@@ -1346,6 +1358,8 @@ func _draw_ghost_aura() -> void:
                 var st: float = t * 0.008 + float(i) * 1.6
                 draw_circle(Vector2(sin(st) * 4.0, 20.0 + float(i) * 1.2),
                         2.2 - float(i) * 0.3, Color(0.6, 0.95, 0.8, 0.30 - float(i) * 0.06))
+        # Reset del transform: il resto del _draw() torna a quota terra.
+        draw_set_transform(Vector2.ZERO)
 
 
 func _projectile_color(w_type: int) -> Color:
@@ -1386,6 +1400,10 @@ func _draw_fire_aura() -> void:
         # Persist anim time across frames (mirror C++ static fireAnimTime)
         _fire_aura_anim_time += 0.08
         var fire_anim: float = _fire_aura_anim_time
+        # FIX (aura scollegata durante il salto): le fiamme del calice seguono
+        # l'arco del salto del corpo sprite (-jump_offset) così restano
+        # attorno al player anche quando è in aria.
+        draw_set_transform(Vector2(0.0, -jump_offset))
 
         # --- 0. Spritesheet PNG aura di fuoco (effect_fireaura) ---
         # 6x4 frames of 64x64 with anchor (32, 32). Blend is alpha (normale)
@@ -1459,6 +1477,8 @@ func _draw_fire_aura() -> void:
         var core_r: float = 8.0 * inv_pulse
         draw_circle(Vector2.ZERO, core_r,
                 Color(COL_WHITE.r, COL_WHITE.g, COL_WHITE.b, 180.0 / 255.0))
+        # Reset del transform: il resto del _draw() torna a quota terra.
+        draw_set_transform(Vector2.ZERO)
 
 
 # ===========================================================================
@@ -1472,6 +1492,9 @@ func _draw_fire_aura() -> void:
 func _draw_character_fallback() -> void:
         if sprite_loaded and sprite != null and sprite.texture != null:
                 return  # sprite exists, no fallback needed
+        # FIX (fallback scollegato durante il salto): anche il corpo
+        # procedurale (quando manca lo sprite PNG) segue l'arco del salto.
+        draw_set_transform(Vector2(0.0, -jump_offset))
         var body_col: Color = Color(0.7, 0.6, 0.5)
         var accent_col: Color = Color(0.9, 0.8, 0.7)
         match character_type:
@@ -1599,6 +1622,8 @@ func _draw_character_fallback() -> void:
                 draw_colored_polygon(PackedVector2Array([
                         Vector2(-14, 0), Vector2(-18, -2), Vector2(-18, 2)
                 ]), accent_col)
+        # Reset del transform: il resto del _draw() torna a quota terra.
+        draw_set_transform(Vector2.ZERO)
 
 
 # ===========================================================================
@@ -1620,7 +1645,13 @@ func _draw_equipped_weapon() -> void:
         # FIX (arma piccola): scale_factor aumentato da 1.4 a 2.0 per renderla
         # più visibile. Offset passato da 14 a 22 per proporzioni.
         var scale_factor: float = 2.0
-        var y: float = -4.0  # weapon height (slightly above body centre)
+        # FIX (arma scollegata durante il salto): il corpo dello sprite viene
+        # alzato in aria di jump_offset px durante il salto (sprite.offset =
+        # (0, -jump_offset)), ma l'arma era disegnata a quota FISSA y=-4 e
+        # restava a terra mentre il player volava -> sembrava scollegata.
+        # Ora l'arma segue lo stesso arco sinusoidale del corpo: resta
+        # "attaccata" alla mano del player in ogni frame del salto.
+        var y: float = -4.0 - jump_offset  # weapon height + jump arc sync
         var facing_right: bool = last_dx >= 0
         # Offset aggiuntivo per sporgere dal corpo
         var x_off: float = 22.0
