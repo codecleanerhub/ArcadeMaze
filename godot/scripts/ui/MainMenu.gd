@@ -116,6 +116,16 @@ func _ready() -> void:
         mouse_filter = Control.MOUSE_FILTER_STOP
         focus_mode = Control.FOCUS_ALL
         _build_ui()
+        # FIX ("2 giocatori" che si resettava a 1 — bug utente 2P): il numero
+        # di players era una variabile LOCALE (_num_players = 1 di default)
+        # mai risincronizzata da GameManager: ogni ricaricamento della scena (ritorno da
+        # ConfigJoy/Options) mostrava di nuovo "1 PLAYER" anche se il valore
+        # scelto era 2. Ora _ready ripristina numero players e game mode
+        # salvati in GameManager (che sopravvive ai cambi scena), così le
+        # scelte del menu PERSISTONO finché non si cambia partita.
+        if GameManager:
+                _num_players = GameManager.num_players
+                _game_mode = GameManager.game_mode
         _update_items_text()
         _update_character_wheel()
         # Sync music state from GameManager and start menu music if enabled.
@@ -849,6 +859,13 @@ func _change_option(delta: int) -> void:
                 match _menu_item_index:
                         0:  # MUSIC on/off
                                 _music_enabled = not _music_enabled
+                                # FIX (stato musica desincronizzato): aggiorna
+                                # ANCHE GameManager.music_enabled, così il
+                                # controller di gioco e il tasto M leggono lo
+                                # stesso stato reale (mirror del toggle
+                                # NUMBER OF PLAYERS qui sopra).
+                                if GameManager:
+                                        GameManager.music_enabled = _music_enabled
                                 if AudioManager:
                                         AudioManager.set_music_enabled(_music_enabled)
                                         if _music_enabled:
@@ -867,10 +884,28 @@ func _change_option(delta: int) -> void:
                 0:  # Number of players
                         _num_players = 1 if _num_players == 2 else 2
                         _wheel_step = 0
+                        # FIX (2P — opzioni sincronizzate subito — bug utente):
+                        # num_players veniva scritto in GameManager SOLO alla
+                        # pressione di START GAME. Aprendo CONFIGURE JOYSTICK
+                        # dal sottomenu OPTIONS, ConfigJoy leggeva
+                        # GameManager.num_players == 1 (stale) e dopo la
+                        # configurazione di P1 TORNAVA al menu senza mai
+                        # chiedere i tasti di P2. Ora il toggle aggiorna
+                        # SUBITO lo stato globale (sovravvive ai cambi scena).
+                        if GameManager:
+                                GameManager.num_players = _num_players
                 1:  # Game mode
                         _game_mode = GameMode.INFINITE if _game_mode == GameMode.STORY else GameMode.STORY
+                        # FIX (2P — opzioni sincronizzate subito): mirror del
+                        # toggle NUMBER OF PLAYERS (vedi sopra).
+                        if GameManager:
+                                GameManager.game_mode = _game_mode
                 2:  # Test mode on/off
                         _test_mode_enabled = not _test_mode_enabled
+                        # FIX (opzioni sincronizzate subito): mirror del toggle
+                        # NUMBER OF PLAYERS (vedi sopra).
+                        if GameManager:
+                                GameManager.test_mode_enabled = _test_mode_enabled
                 3, 4, 5, 6:
                         # OPTIONS / START GAME / CREDITS / HALL OF FAME are not toggleable,
                         # just activate them.

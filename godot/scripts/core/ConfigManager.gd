@@ -70,6 +70,9 @@ var config: Dictionary = {
         "KEY_JUMP":   KEY_SPACE,
         "KEY_SHOOT":  KEY_ALT,
         # --- Player 1 (joystick 0) ---
+        # FIX (2P): device del pad usato per configurare P1
+        # (-1 = non configurato -> fallback primo pad collegato)
+        "JOY_ID":     -1,
         "JOY_AXIS_X": 0,
         "JOY_AXIS_Y": 1,
         "JOY_JUMP":   -1,   # -1 = not configured
@@ -95,7 +98,7 @@ const CONFIG_PATH: String = "user://config.ini"
 # Cached read-only view of the valid INI keys (used by save()).
 const _INI_KEYS: Array = [
         "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_JUMP", "KEY_SHOOT",
-        "JOY_AXIS_X", "JOY_AXIS_Y", "JOY_JUMP", "JOY_SHOOT",
+        "JOY_ID", "JOY_AXIS_X", "JOY_AXIS_Y", "JOY_JUMP", "JOY_SHOOT",
         "KEY2_UP", "KEY2_DOWN", "KEY2_LEFT", "KEY2_RIGHT", "KEY2_JUMP", "KEY2_SHOOT",
         "JOY2_ID", "JOY2_AXIS_X", "JOY2_AXIS_Y", "JOY2_JUMP", "JOY2_SHOOT",
 ]
@@ -168,6 +171,7 @@ func save_config() -> void:
         f.store_line("KEY_JUMP=%d"   % config["KEY_JUMP"])
         f.store_line("KEY_SHOOT=%d"  % config["KEY_SHOOT"])
         # Player 1 - joystick
+        f.store_line("JOY_ID=%d"     % config["JOY_ID"])
         f.store_line("JOY_AXIS_X=%d" % config["JOY_AXIS_X"])
         f.store_line("JOY_AXIS_Y=%d" % config["JOY_AXIS_Y"])
         f.store_line("JOY_JUMP=%d"   % config["JOY_JUMP"])
@@ -195,6 +199,7 @@ func key_jump()  -> int: return config["KEY_JUMP"]
 func key_shoot() -> int: return config["KEY_SHOOT"]
 
 # Player 1 joystick
+func joy_id()     -> int: return config["JOY_ID"]
 func joy_axis_x() -> int: return config["JOY_AXIS_X"]
 func joy_axis_y() -> int: return config["JOY_AXIS_Y"]
 func joy_jump()   -> int: return config["JOY_JUMP"]
@@ -239,6 +244,7 @@ func reset_to_defaults() -> void:
         config.KEY_RIGHT = KEY_RIGHT
         config.KEY_JUMP  = KEY_SPACE
         config.KEY_SHOOT = KEY_ALT
+        config.JOY_ID     = -1
         config.JOY_AXIS_X = 0
         config.JOY_AXIS_Y = 1
         config.JOY_JUMP   = -1

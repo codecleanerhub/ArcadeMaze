@@ -139,7 +139,15 @@ func _unhandled_input(event: InputEvent) -> void:
                         # "JOY_JUMP", quindi MainGame leggeva -1.
                         if player_num == 1:
                                 ConfigManager.config["JOY_JUMP"] = btn
-                                print("[ConfigJoy] P1 JOY_JUMP = ", btn)
+                                # FIX (2P — pad del giocatore 1): salva ANCHE il
+                                # DEVICE del pad su cui P1 ha premuto il tasto.
+                                # Prima P1 era hardcoded a joy_pads[0] (primo pad
+                                # collegato): se i due pad erano collegati in
+                                # ordine diverso, il pad configurato per P2
+                                # guidava P1 (bug utente: "quello che viene
+                                # guidato dal joystick è il giocatore 1").
+                                ConfigManager.config["JOY_ID"] = jid
+                                print("[ConfigJoy] P1 JOY_JUMP = ", btn, " on joy_id ", jid)
                         else:
                                 ConfigManager.config["JOY2_JUMP"] = btn
                                 ConfigManager.config["JOY2_ID"] = jid
@@ -150,10 +158,19 @@ func _unhandled_input(event: InputEvent) -> void:
                 1:
                         # Shoot button — assicuriamoci che sia diverso da jump
                         # (lo stesso tasto non può essere sia jump che shoot).
-                        var jump_btn: int = ConfigManager.config["JOY_JUMP"] if player_num == 1 else ConfigManager.config["JOY2_JUMP"]
+                        var jump_btn: int = ConfigManager.config["JOY_JUMP"] \
+                                        if player_num == 1 \
+                                        else ConfigManager.config["JOY2_JUMP"]
                         if btn == jump_btn:
-                                # Stesso tasto: ignora e aspetta un altro
+                                # FIX (tasto fuoco "non funzionava" — bug utente):
+                                # il rifiuto era SILENZIOSO (solo print in
+                                # console): l'utente non capiva che doveva premere
+                                # un ALTRO tasto, rinunciava, e JOY2_SHOOT
+                                # restava -1 -> in gioco il tasto di fuoco non
+                                # rispondeva. Ora mostriamo un messaggio chiaro.
                                 print("[ConfigJoy] same button as jump, ignoring")
+                                if hint_label:
+                                        hint_label.text = "SAME AS JUMP! PRESS ANOTHER BUTTON"
                                 return
                         if player_num == 1:
                                 ConfigManager.config["JOY_SHOOT"] = btn

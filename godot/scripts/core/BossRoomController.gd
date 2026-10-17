@@ -203,7 +203,14 @@ func _handle_input(delta_ms: float = 16.0) -> void:
         # Ora aggiungiamo il supporto joystick mirror del MainGameController.
         var p1_joy_id: int = -1
         var joy_pads: Array = Input.get_connected_joypads()
-        if joy_pads.size() > 0:
+        # FIX (2P — pad del giocatore 1, mirror MainGameController): P1 usa
+        # il DEVICE salvato in configurazione (JOY_ID), non il primo pad
+        # collegato: il pad su cui P1 ha configurato i tasti guida P1 in
+        # boss room come nel labirinto, qualunque sia l'ordine di collegamento.
+        if ConfigManager and ConfigManager.joy_id() >= 0 \
+                        and joy_pads.has(ConfigManager.joy_id()):
+                p1_joy_id = ConfigManager.joy_id()
+        elif joy_pads.size() > 0:
                 p1_joy_id = joy_pads[0]
         var joy_jump_btn: int = ConfigManager.joy_jump() if ConfigManager else -1
         var joy_shoot_btn: int = ConfigManager.joy_shoot() if ConfigManager else -1
@@ -252,6 +259,15 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                         p2_joy_id = ConfigManager.joy2_id()
                 elif joy_pads.size() > 1:
                         p2_joy_id = joy_pads[1]
+                # FIX (anti-conflitto, mirror MainGameController): se P1 e P2
+                # risolvono lo STESSO device, P2 prende il primo pad diverso
+                # da quello di P1 (se esiste), altrimenti resta in tastiera.
+                if p2_joy_id == p1_joy_id and p1_joy_id >= 0:
+                        p2_joy_id = -1
+                        for pad_id in joy_pads:
+                                if pad_id != p1_joy_id:
+                                        p2_joy_id = pad_id
+                                        break
                 if p2_joy_id >= 0:
                         var ax2: int = ConfigManager.joy2_axis_x() if ConfigManager else 0
                         var ay2: int = ConfigManager.joy2_axis_y() if ConfigManager else 1

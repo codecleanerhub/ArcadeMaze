@@ -116,6 +116,11 @@ var dynamite_item: Node2D = null
 var dynamite_spawned: bool = false  # 1 dinamite per livello
 # Stato dinamite equipaggiata
 var dynamite_equipped: bool = false
+# FIX (dinamite del giocatore 2 — bug utente 2P): P2 può raccogliere la
+# dinamite ma non poteva lanciarla (il ramo fuoco di P2 non esisteva), la
+# miccia esplodeva colpendo P1 e il candelotto veniva disegnato in mano a
+# P1 anche se l'aveva raccolto P2. Traccia il PROPRIETARIO (1 = P1, 2 = P2).
+var dynamite_player: int = 1
 var dynamite_fuse_timer_ms: int = 0  # timer miccia (7000ms = 7s)
 var dynamite_alert_played: bool = false
 var dynamite_explode_timer_ms: int = 0  # timer esplosione dopo alert (2000ms)
@@ -863,7 +868,15 @@ func _handle_input() -> void:
         #     playable immediately).
         var p1_joy_id: int = -1
         var joy_pads: Array = Input.get_connected_joypads()
-        if joy_pads.size() > 0:
+        # FIX (2P — pad del giocatore 1 — bug utente): P1 era hardcoded a
+        # joy_pads[0] (primo pad collegato). Ora usa il DEVICE salvato in
+        # configurazione durante ConfigJoy (JOY_ID): il pad su cui P1 ha
+        # premuto i tasti è quello che guida P1, qualunque sia l'ordine di
+        # collegamento. Fallback: primo pad collegato (config assente).
+        if ConfigManager and ConfigManager.joy_id() >= 0 \
+                        and joy_pads.has(ConfigManager.joy_id()):
+                p1_joy_id = ConfigManager.joy_id()
+        elif joy_pads.size() > 0:
                 p1_joy_id = joy_pads[0]
         # FIX: rimosso print debug joystick (config case-sensitive fixato in f79748f)
         if p1_joy_id >= 0:
@@ -918,10 +931,13 @@ func _handle_input() -> void:
                 if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn):
                         # FIX (dinamite): se il player ha la dinamite equipaggiata,
                         # il fuoco lancia il candelotto invece di sparare.
+                        # FIX (dinamite del proprietario — 2P): solo se la dinamite
+                        # appartiene a P1 (se l'ha raccolta P2, il fuoco di P1
+                        # spara normalmente).
                         # FIX (dinamite non lanciata): rimosso il check shoot_cooldown==0
                         # perché dopo il pickup, shoot_cooldown potrebbe essere > 0
                         # e bloccare il lancio. La dinamite ha il suo cooldown separato.
-                        if dynamite_equipped:
+                        if dynamite_equipped and dynamite_player == 1:
                                 print("[Dynamite] Joy fire pressed, throwing!")
                                 _throw_dynamite()
                                 player.shoot_cooldown = 300
@@ -957,7 +973,9 @@ func _handle_input() -> void:
 
         # P1 keyboard shoot (also works without joystick — matches C++ fallback)
         if Input.is_action_just_pressed("shoot"):
-                if dynamite_equipped:
+                # FIX (dinamite del proprietario — 2P): anche da tastiera il
+                # lancio avviene solo se la dinamite appartiene a P1.
+                if dynamite_equipped and dynamite_player == 1:
                         _throw_dynamite()
                         player.shoot_cooldown = 300
                 elif hammer_player == 1 and hammer_thrown == null:
@@ -999,11 +1017,31 @@ func _handle_input() -> void:
                         p2_dx = -1
                 elif Input.is_action_pressed("p2_right"):
                         p2_dx = 1
-                # P2 joystick input (always read when a 2nd pad is connected —
-                # same gating-fix logic as P1 above).
+                # P2 joystick input: il DEVICE configurato per P2 (JOY2_ID,
+                # salvato durante ConfigJoy), non il "secondo pad collegato".
+                # FIX (2P — bug utente "il pad guida il giocatore 1"): prima
+                # era hardcoded a joy_pads[1] e JOY2_ID veniva IGNORATO: con
+                # un solo pad (o due pad collegati in ordine diverso) il pad
+                # configurato per P2 finiva a guidare P1 e P2 restava senza
+                # comandi joystick. Questa è la stessa logica già usata nella
+                # boss room (BossRoomController), ora allineata al labirinto.
                 var p2_joy_id: int = -1
-                if joy_pads.size() > 1:
+                if ConfigManager and ConfigManager.joy2_id() >= 0 \
+                                and joy_pads.has(ConfigManager.joy2_id()):
+                        p2_joy_id = ConfigManager.joy2_id()
+                elif joy_pads.size() > 1:
                         p2_joy_id = joy_pads[1]
+                # FIX (anti-conflitto): se P1 e P2 risolvono lo STESSO device
+                # (entrambi configurati accidentalmente sullo stesso pad), P2
+                # prende il primo pad DIVERSO da quello di P1, se esiste;
+                # altrimenti resta in tastiera (WASD). Evita che un solo pad
+                # guidi entrambi i player simultaneamente.
+                if p2_joy_id == p1_joy_id and p1_joy_id >= 0:
+                        p2_joy_id = -1
+                        for pad_id in joy_pads:
+                                if pad_id != p1_joy_id:
+                                        p2_joy_id = pad_id
+                                        break
                 if p2_joy_id >= 0:
                         var ax2_cfg: int = ConfigManager.joy2_axis_x() if ConfigManager else 0
                         var ay2_cfg: int = ConfigManager.joy2_axis_y() if ConfigManager else 1
@@ -1033,9 +1071,23 @@ func _handle_input() -> void:
                         if j2_shoot < 0:
                                 j2_shoot = JOY_BUTTON_B
                         if Input.is_joy_button_pressed(p2_joy_id, j2_jump):
+                                # FIX (parità con P1): suono di salto anche per
+                                # P2 (P1 lo aveva, P2 no — "deve funzionare
+                                # analogamente al giocatore 1").
+                                var was_jumping_2: bool = player2.is_jumping()
                                 player2.activate_jump()
+                                if not was_jumping_2 and player2.is_jumping() \
+                                                and AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.JUMP)
                         if Input.is_joy_button_pressed(p2_joy_id, j2_shoot) and player2.shoot_cooldown == 0:
-                                if hammer_player == 2 and hammer_thrown == null:
+                                # FIX (dinamite del giocatore 2 — bug utente 2P):
+                                # prima il ramo dinamite NON esisteva nel fuoco
+                                # di P2: poteva raccoglierla ma non lanciarla.
+                                # Ora il fuoco di P2 lancia la dinamite se è SUA.
+                                if dynamite_equipped and dynamite_player == 2:
+                                        _throw_dynamite()
+                                        player2.shoot_cooldown = 300
+                                elif hammer_player == 2 and hammer_thrown == null:
                                         # FIX (martello di Thor): lancio P2 joystick.
                                         _throw_hammer(player2)
                                         player2.shoot_cooldown = 300
@@ -1044,7 +1096,12 @@ func _handle_input() -> void:
                                         player2.shoot_cooldown = 150
                 player2.set_direction(p2_dx, p2_dy)
                 if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
-                        if hammer_player == 2 and hammer_thrown == null:
+                        # FIX (dinamite del giocatore 2 — bug utente 2P): ramo
+                        # dinamite anche da tastiera (tasto E), come per P1.
+                        if dynamite_equipped and dynamite_player == 2:
+                                _throw_dynamite()
+                                player2.shoot_cooldown = 300
+                        elif hammer_player == 2 and hammer_thrown == null:
                                 # FIX (martello di Thor): lancio P2 tastiera.
                                 _throw_hammer(player2)
                                 player2.shoot_cooldown = 300
@@ -1052,7 +1109,11 @@ func _handle_input() -> void:
                                 player2.shoot()
                                 player2.shoot_cooldown = 150
                 if Input.is_action_just_pressed("p2_jump"):
+                        # FIX (parità con P1): suono di salto anche da tastiera.
+                        var was_jumping_2k: bool = player2.is_jumping()
                         player2.activate_jump()
+                        if not was_jumping_2k and player2.is_jumping() and AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.JUMP)
 
         # Pause + ESC sono ora gestiti da _unhandled_input (funzionano anche
         # quando il game tree è in pausa grazie a process_mode=ALWAYS).
@@ -1788,6 +1849,14 @@ func _place_player2_near_p1() -> void:
                         player.position.y)
 
 
+# FIX (2P): helper — true se il player 2 esiste, è attivo e visibile in
+# questa partita (usato dal rendering della dinamite del proprietario).
+func _is_p2_active() -> bool:
+        return GameManager != null and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2) \
+                        and player2.visible
+
+
 # FIX (2P): lista dei player vivi (vite > 0) in gioco. In 1P contiene
 # solo P1; in 2P contiene P1 e/o P2 finché hanno vite (il player eliminato
 # scompare dalla lista: niente più danni/targeting su un morto).
@@ -1897,37 +1966,18 @@ func _check_death() -> void:
                                 GameManager.give_up()
 
 
-# 2P friendly fire: when both players touch each other (distance^2 < 800,
-# i.e. ~28 px), and neither is invulnerable (post-hit or chalice) or
-# mid-jump, both take 1 energy damage. Mirrors C++ Game.cpp 1846-1862.
+# 2P friendly fire: quando i due player si sovrappongono (distanza^2 < 800,
+# cioe' ~28 px) il C++ originale infliggeva 1 danno energia a entrambi
+# (Game.cpp 1846-1862).
+# FIX (bug utente 2P — "P2 subiva colpi senza che nessuno gli sparasse"):
+# il danno da sovrapposizione è STATO DISABILITATO su segnalazione
+# dell'utente: in cooperativa i due player camminano costantemente vicini
+# nei corridoi (larghi una cella) e P2 subiva un colpo al secondo senza
+# alcun nemico visibile — percepito come un bug, non come una meccanica.
+# I due player ora si attraversano liberamente: P2 "funziona analogamente
+# a P1", come richiesto dall'utente. La funzione resta come hook.
 func _check_2p_friendly_fire() -> void:
-        if GameManager == null or GameManager.num_players != 2:
-                return
-        if not player2.visible:
-                return
-        # Skip if either player is invulnerable or jumping.
-        if player.is_invulnerable() or player2.is_invulnerable():
-                return
-        if player.is_jumping() or player2.is_jumping():
-                return
-        var p1_pos: Vector2 = player.get_pixel_pos()
-        var p2_pos: Vector2 = player2.get_pixel_pos()
-        if p1_pos.distance_squared_to(p2_pos) >= 800.0:
-                return
-        # Both players take 1 damage. Player.take_damage() returns early
-        # if is_jumping() or is_invulnerable(), so the guard above is
-        # sufficient. Track lives/energy before to detect a real hit and
-        # only then play LOSE_LIFE (mirrors C++ r1855-1860).
-        var lives_before1: int = player.lives
-        var energy_before1: int = player.energy
-        var lives_before2: int = player2.lives
-        var energy_before2: int = player2.energy
-        player.take_damage()
-        player2.take_damage()
-        if player.lives < lives_before1 or player.energy < energy_before1 \
-                or player2.lives < lives_before2 or player2.energy < energy_before2:
-                if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+        return
 
 
 # ============================================================================
@@ -2115,7 +2165,10 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         item.active = false
                         item.queue_free()
                         dynamite_item = null
-                        _start_dynamite_pickup(p)
+                        # FIX (2P): passa l'id del player che raccoglie, così la
+                        # dinamite appartiene a CHI la raccoglie (lancio, miccia,
+                        # esplosione e rendering sul player giusto).
+                        _start_dynamite_pickup(p, player_id)
                 CollectiblesClass.Kind.POTION:
                         # FIX (pozione magica): il player BEVE la pozione.
                         # Suono di deglutizione + effetto fantasma per 5s:
@@ -2454,6 +2507,7 @@ func _build_session_snapshot() -> Dictionary:
                 snap["hammer"] = {"player": hammer_player, "uses_left": hammer_uses_left}
         # --- Dinamite (se in mano senza essere scoppiata) ---
         snap["dynamite_equipped"] = dynamite_equipped
+        snap["dynamite_player"] = dynamite_player
         snap["dynamite_fuse_ms"] = dynamite_fuse_timer_ms
         # --- Player: punteggio, arma, stivali, prossima vita extra ---
         var p1_snap: Dictionary = {
@@ -2609,6 +2663,9 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
         dynamite_equipped = bool(snap.get("dynamite_equipped", false))
         dynamite_fuse_timer_ms = int(snap.get("dynamite_fuse_ms", 7000)) \
                         if dynamite_equipped else 0
+        # FIX (2P): ripristina il proprietario della dinamite (chi la tira,
+        # chi subisce l'esplosione della miccia, su chi viene disegnata).
+        dynamite_player = int(snap.get("dynamite_player", 1))
         dynamite_alert_played = false
         dynamite_explode_timer_ms = 0
         # --- Player: punteggio, arma, stivali (le vite sono quelle nuove
@@ -2901,6 +2958,8 @@ func _spawn_collectibles() -> void:
         dynamite_item = null
         dynamite_spawned = false
         dynamite_equipped = false
+        # FIX (2P): reset del proprietario della dinamite a ogni livello.
+        dynamite_player = 1
         dynamite_fuse_timer_ms = 0
         dynamite_alert_played = false
         dynamite_explode_timer_ms = 0
@@ -3429,7 +3488,10 @@ func _update_knight_ally(delta_ms: int) -> void:
 # ============================================================================
 
 # Avvia l'animazione di accensione miccia + equip
-func _start_dynamite_pickup(p: CharacterBody2D) -> void:
+# FIX (2P): `owner_id` (1 = P1, 2 = P2) registra CHI ha raccolto la dinamite:
+# il fuoco del proprietario la lancia, la miccia scaduta colpisce il
+# proprietario e il candelotto viene disegnato in mano al proprietario.
+func _start_dynamite_pickup(p: CharacterBody2D, owner_id: int = 1) -> void:
         # Animazione accensione: 0.8s di scintille
         if EffectsManager:
                 # Particelle scintille alla posizione del player
@@ -3440,23 +3502,34 @@ func _start_dynamite_pickup(p: CharacterBody2D) -> void:
                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
         # Equip immediato (l'animazione è gestita nel _draw del player)
         dynamite_equipped = true
+        dynamite_player = owner_id
         dynamite_fuse_timer_ms = 7000  # 7 secondi
         dynamite_alert_played = false
         dynamite_explode_timer_ms = 0
-        print("[Dynamite] Player equipped dynamite, fuse 7s")
+        print("[Dynamite] Player ", owner_id, " equipped dynamite, fuse 7s")
 
 
 # Update della dinamite equipaggiata (chiamato da _update_playing)
 func _update_dynamite(delta_ms: int) -> void:
+        # FIX (2P): il rendering del candelotto va sul PROPRIETARIO
+        # (dynamite_player), non sempre su P1. L'altro player non disegna nulla.
+        var dyn_owner: CharacterBody2D = player if dynamite_player == 1 else player2
+        var dyn_owner_valid: bool = dyn_owner != null \
+                        and is_instance_valid(dyn_owner) \
+                        and (dynamite_player == 1 or _is_p2_active())
         # Aggiorna candelotto lanciato se in volo
         if dynamite_thrown != null and is_instance_valid(dynamite_thrown):
                 _update_thrown_dynamite(delta_ms)
                 # Sync player rendering state
                 player.set_dynamite_equipped(false, 0, false)
+                if GameManager and GameManager.num_players == 2 and player2.visible:
+                        player2.set_dynamite_equipped(false, 0, false)
                 return
         if not dynamite_equipped:
                 # Assicurati che il player non disegni la dinamite
                 player.set_dynamite_equipped(false, 0, false)
+                if GameManager and GameManager.num_players == 2 and player2.visible:
+                        player2.set_dynamite_equipped(false, 0, false)
                 return
         # Timer miccia
         if dynamite_fuse_timer_ms > 0:
@@ -3472,9 +3545,18 @@ func _update_dynamite(delta_ms: int) -> void:
                 # Countdown esplosione
                 dynamite_explode_timer_ms -= int(delta_ms)
                 if dynamite_explode_timer_ms <= 0:
-                        _explode_dynamite(false)  # false = non lanciata, uccide player
-        # Sync player rendering state (per disegnare candelotto + scintille/fumo)
-        player.set_dynamite_equipped(dynamite_equipped, dynamite_fuse_timer_ms, dynamite_alert_played)
+                        _explode_dynamite(false)  # false = non lanciata, uccide il proprietario
+        # Sync rendering state del PROPRIETARIO (per disegnare candelotto +
+        # scintille/fumo); l'altro player non disegna niente.
+        if dyn_owner_valid:
+                var dyn_fuse: int = dynamite_fuse_timer_ms
+                var dyn_alert: bool = dynamite_alert_played
+                dyn_owner.set_dynamite_equipped(dynamite_equipped, dyn_fuse, dyn_alert)
+                if dynamite_player == 1:
+                        if GameManager and GameManager.num_players == 2 and player2.visible:
+                                player2.set_dynamite_equipped(false, 0, false)
+                else:
+                        player.set_dynamite_equipped(false, 0, false)
 
 
 # Lancia il candelotto di dinamite
@@ -3482,8 +3564,14 @@ func _throw_dynamite() -> void:
         if not dynamite_equipped:
                 print("[Dynamite] _throw_dynamite called but dynamite_equipped=false!")
                 return
-        print("[Dynamite] Throwing! player pos=", player.get_pixel_pos())
-        var dir: Vector2 = Vector2(player.last_dx, player.last_dy)
+        # FIX (2P): lancia dalla posizione e nella direzione del PROPRIETARIO
+        # della dinamite (prima era sempre P1: se P2 l'aveva raccolta, il
+        # candelotto spuntava dal player sbagliato).
+        var thrower: CharacterBody2D = player if dynamite_player == 1 else player2
+        if thrower == null or not is_instance_valid(thrower):
+                thrower = player
+        print("[Dynamite] Throwing! player ", dynamite_player, " pos=", thrower.get_pixel_pos())
+        var dir: Vector2 = Vector2(thrower.last_dx, thrower.last_dy)
         if dir == Vector2.ZERO:
                 dir = Vector2(1, 0)
         dir = dir.normalized()
@@ -3491,7 +3579,7 @@ func _throw_dynamite() -> void:
         # evitare che il candelotto spawni dentro un muro o troppo vicino
         # al player. Aggiunto grace_period_ms per non checkare collisioni
         # nei primi 200ms (lascia che il candelotto si allontani).
-        var spawn_pos: Vector2 = player.get_pixel_pos() + dir * 40.0
+        var spawn_pos: Vector2 = thrower.get_pixel_pos() + dir * 40.0
         # FIX (dinamite spawn dentro muro): se spawn_pos è in una cella WALL,
         # retrocedi verso il player finché non trova una cella vuota.
         var sp_col: int = int(spawn_pos.x / C.TILE_SIZE)
@@ -3499,7 +3587,7 @@ func _throw_dynamite() -> void:
         if sp_col >= 0 and sp_col < C.MAZE_COLS and sp_row >= 0 and sp_row < C.MAZE_ROWS:
                 if maze.is_wall(sp_col, sp_row):
                         for i in range(32, 7, -8):
-                                var tp: Vector2 = player.get_pixel_pos() + dir * float(i)
+                                var tp: Vector2 = thrower.get_pixel_pos() + dir * float(i)
                                 var tc: int = int(tp.x / C.TILE_SIZE)
                                 var tr: int = int((tp.y - C.UI_HEIGHT) / C.TILE_SIZE)
                                 if tc >= 0 and tc < C.MAZE_COLS and tr >= 0 and tr < C.MAZE_ROWS:
@@ -3653,9 +3741,14 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
 
 # Esplosione dinamite
 # thrown=true: candelotto lanciato, uccide nemici in raggio
-# thrown=false: dinamite in mano al player, uccide il player
+# thrown=false: dinamite in mano al player, uccide il player PROPRIETARIO
 func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
-        var pos: Vector2 = at_pos if thrown else player.get_pixel_pos()
+        # FIX (2P): la miccia scaduta colpisce CHI ha raccolto la dinamite
+        # (prima era sempre P1, anche se l'aveva presa P2).
+        var dyn_victim: CharacterBody2D = player if dynamite_player == 1 else player2
+        if dyn_victim == null or not is_instance_valid(dyn_victim):
+                dyn_victim = player
+        var pos: Vector2 = at_pos if thrown else dyn_victim.get_pixel_pos()
         # Particelle esplosione
         if EffectsManager:
                 var burst := EffectsManager.spawn_explosion(pos,
@@ -3666,9 +3759,9 @@ func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
         screen_flash_timer_ms = 120
         if not thrown:
-                # Dinamite in mano: uccide il player
-                player.take_damage()
-                print("[Dynamite] BOOM! Player killed by dynamite")
+                # Dinamite in mano: uccide il player proprietario
+                dyn_victim.take_damage()
+                print("[Dynamite] BOOM! Player ", dynamite_player, " hit by own dynamite")
         else:
                 # Candelotto lanciato: danno ad area in raggio 80px
                 var blast_sq: float = 80.0 * 80.0
