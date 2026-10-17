@@ -73,12 +73,16 @@ var _p1: Dictionary = {
         "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
         "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
+        # FIX (stamina salti): barra verde sotto quella della vita.
+        "stamina": 1.0, "stamina_exhausted": false,
 }
 # 2P snapshot (only used when _num_players == 2)
 var _p2: Dictionary = {
         "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
         "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
+        # FIX (stamina salti): barra verde sotto quella della vita (per P2).
+        "stamina": 1.0, "stamina_exhausted": false,
 }
 var _num_players: int = 1
 var _remaining_treasures: int = 0
@@ -285,6 +289,10 @@ func _draw_1p() -> void:
         _draw_label("ENERGY", 280, 10)
         _draw_energy_bar(280, 30, 100, 18,
                 float(_p1.energy) / float(_p1.max_energy))
+        # FIX (stamina salti): barra STAMINA verde, SOTTO la barra della
+        # vita/energia (3 salti consecutivi; 1/3 consumato a ogni salto).
+        _draw_stamina_bar(280, 52, 100, 10,
+                _p1.stamina, _p1.stamina_exhausted)
         # WPN
         _draw_label("WPN", 420, 10)
         _draw_label_colored(_p1.weapon_name, 420, 30, _p1.weapon_color)
@@ -307,6 +315,9 @@ func _draw_2p() -> void:
         _draw_label("EN", 180, 10)
         _draw_energy_bar(180, 32, 60, 14,
                 float(_p1.energy) / float(_p1.max_energy))
+        # FIX (stamina salti): barra STAMINA verde sotto la vita (P1).
+        _draw_stamina_bar(180, 50, 60, 8,
+                _p1.stamina, _p1.stamina_exhausted)
         _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
 
@@ -323,6 +334,9 @@ func _draw_2p() -> void:
         _draw_label("EN", 740, 10)
         _draw_energy_bar(740, 32, 60, 14,
                 float(_p2.energy) / float(_p2.max_energy))
+        # FIX (stamina salti): barra STAMINA verde sotto la vita (P2).
+        _draw_stamina_bar(740, 50, 60, 8,
+                _p2.stamina, _p2.stamina_exhausted)
         _draw_label_colored(_p2.weapon_name, 820, 10, _p2.weapon_color)
         _draw_label_int(_p2.weapon_ammo, 820, 30, color_score)
 
@@ -410,6 +424,32 @@ func _draw_label_colored(text: String, x: float, y: float, color: Color) -> void
 # Draw an integer as outlined text (used for SCORE/TREASURES/AMMO count).
 func _draw_label_int(value: int, x: float, y: float, color: Color) -> void:
         _draw_label_colored(str(value), x, y, color)
+
+
+# FIX (stamina salti): barra della STAMINA (verde) sotto quella della vita.
+# Piena = 3 salti disponibili; ogni salto ne consuma 1/3; si ricarica da
+# sola quando il player non salta. Quando il player è "stanco" (3° salto
+# consecutivo: barra svuotata) la barra LAMPEGGIA finché non si è ricaricata
+# completamente — in quel momento il player può di nuovo saltare.
+func _draw_stamina_bar(x: float, y: float, w: float, h: float,
+                                           ratio: float, exhausted: bool) -> void:
+        # Sfondo scuro + bordo (stesso stile delle altre barre)
+        draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
+        draw_rect(Rect2(x, y, w, h), color_energy_border, false, 1.5)
+        var r: float = clampf(ratio, 0.0, 1.0)
+        if r <= 0.0:
+                return
+        # Verde stamina; quando il player è esausto la barra lampeggia
+        # (semplificazione visiva del blocco "finché non si è caricata
+        # completamente").
+        var fill: Color = Color(0.10, 0.85, 0.30)
+        if exhausted:
+                var blink_on: bool = fmod(Time.get_ticks_msec() / 1000.0, 0.36) < 0.18
+                fill = Color(0.55, 0.95, 0.60) if blink_on else Color(0.05, 0.45, 0.18)
+        draw_rect(Rect2(x, y, w * r, h), fill, true)
+        # Highlight superiore (riflesso luce)
+        draw_rect(Rect2(x, y, w * r, 2.0),
+                Color(fill.r + 0.25, fill.g + 0.15, fill.b + 0.25, 0.55), true)
 
 
 # Draw a horizontal bar (mirror of the energy/ammo bar in UI.cpp).

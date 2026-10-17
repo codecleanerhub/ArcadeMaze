@@ -509,13 +509,20 @@ func _check_boss_room_weapon_pickup(p: CharacterBody2D) -> void:
 
 
 func _check_softlock() -> void:
-        # If both players have 0 ammo and no weapons on floor, respawn weapons
-        # FIX (2P): il respawn scatta solo se TUTTI i player vivi sono senza
-        # munizioni (prima bastava che UNO fosse a zero: armi infinite).
+        # FIX (armi boss room che non riapparivano MAI in 1P): p2_empty restava
+        # FALSE quando non c'è un player 2, quindi la condizione AND
+        # "p1_empty AND p2_empty" non scattava MAI in 1P → nessun respawn.
+        # Ora: senza P2 (o P2 eliminato) il gate dipende solo da P1.
+        # FIX (richiesta utente): quando le munizioni sono finite E le armi
+        # a terra (quelle in alto) sono terminate, appare UN ALTRO SET DI ARMI
+        # — e questo si ripete FINCHÉ IL BOSS NON VIENE TERMINATO (il check
+        # gira a ogni frame dello scontro, quindi il set si rigenera ogni
+        # volta che serve).
         var p1_empty: bool = int(player.current_weapon.get("ammo", 0)) == 0
-        var p2_empty: bool = false
-        if GameManager and GameManager.num_players == 2 and player2.visible:
-                p2_empty = int(player2.current_weapon.get("ammo", 0)) == 0
+        var p2_active: bool = GameManager and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2) and player2.visible
+        var p2_empty: bool = not p2_active \
+                        or int(player2.current_weapon.get("ammo", 0)) == 0
         if p1_empty and p2_empty and boss_room_weapons.is_empty():
                 _spawn_boss_room_weapons()
 
@@ -662,6 +669,16 @@ func _spawn_boss_room_weapons() -> void:
                 w.ammo = 5
                 var w_pos := Vector2(center_x + (float(i) - 1.0) * spacing, y_pos)
                 boss_room_weapons.append({"weapon": w, "pos": w_pos, "node": null})
+
+
+# FIX (test armi boss room): helper per i test headless — raccoglie TUTTE le
+# armi a terra teletrasportandovi sopra il player (simula il pickup completo
+# del set da parte di un player). Non usato dal gameplay reale.
+func _pickup_all_floor_weapons_for_test() -> void:
+        for w_entry in boss_room_weapons.duplicate():
+                if w_entry.get("pos") != null:
+                        player.position = w_entry["pos"]
+                        _check_boss_room_weapon_pickup(player)
 
 
 # Spawn the boss-room mine at a random position inside the room (away from
@@ -825,6 +842,9 @@ func _update_hud() -> void:
                 "weapon_color": C.get_weapon_color(int(player.current_weapon.get("type", 0))),
                 "weapon_ammo": player.current_weapon.get("ammo", 0),
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
+                # FIX (stamina salti): barra verde sotto quella della vita.
+                "stamina": player.get_stamina_ratio(),
+                "stamina_exhausted": player.is_stamina_exhausted(),
         }
         hud.set_player_state(p1_snap)
         if boss:
@@ -839,6 +859,9 @@ func _update_hud() -> void:
                         "weapon_color": C.get_weapon_color(int(player2.current_weapon.get("type", 0))),
                         "weapon_ammo": player2.current_weapon.get("ammo", 0),
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
+                        # FIX (stamina salti): barra verde sotto quella della vita (P2).
+                        "stamina": player2.get_stamina_ratio(),
+                        "stamina_exhausted": player2.is_stamina_exhausted(),
                 }
                 hud.set_player2_state(p2_snap)
 

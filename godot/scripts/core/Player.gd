@@ -139,7 +139,7 @@ var permanent_speed_boost: bool = false  # winged boots: persists until death
 # A fine effetto, se si trova DENTRO un muro, scivola automaticamente verso
 # il centro della cella percorribile più vicina (mai intrappolato nel muro).
 # ===========================================================================
-const GHOST_MODE_DURATION_MS: int = 5000
+const GHOST_MODE_DURATION_MS: int = 9000  # FIX: 5s + 4s richiesti dall'utente
 var ghost_mode: bool = false
 var ghost_timer_ms: int = 0
 # Uscita di sicurezza: quando il timer scade dentro un muro, il player
@@ -150,6 +150,27 @@ var shoot_cooldown: int = 0
 var shoot_anim_timer: int = 0  # >0 = attack animation playing
 var anim_time: int = 0  # accumulated for idle/walk anim (NEVER reset)
 var next_life_threshold: int = 100000  # extra life every 100k points
+
+# ===========================================================================
+# FIX (stamina dei salti): il player può eseguire al massimo 3 SALTI
+# CONSECUTIVI, poi "si stanca" e non può più saltare.
+#   * Ogni salto consuma 1/3 della barra (visibile in HUD, verde, sotto la
+#     barra della vita).
+#   * Dopo ogni salto la barra tende a ricaricarsi se il player non salta
+#     nuovamente (la ricarica parte poco dopo l'ultimo salto).
+#   * Al terzo salto consecutivo la barra si svuota: il player non può
+#     saltare finché non si è caricata COMPLETAMENTE.
+#   * Se prova a saltare senza stamina, non salta e si sente un rumore
+#     secco di pulsante premuto "a vuoto" (click, vedi STAMINA_CLICK).
+# ===========================================================================
+const STAMINA_JUMP_COST: float = 1.0 / 3.0
+const STAMINA_RECHARGE_FULL_MS: float = 2400.0   # barra vuota → piena in 2.4s
+const STAMINA_RECHARGE_DELAY_MS: float = 720.0   # la ricarica parte ~0.72s dopo l'ATTERRAGGIO dell'ultimo salto (così 3 salti in catena restano tali a qualunque framerate)
+const STAMINA_CLICK_COOLDOWN_MS: float = 280.0   # anti-spam del click a vuoto
+var stamina: float = 1.0                 # 1.0 = piena, 0.0 = vuota
+var stamina_exhausted: bool = false      # true dopo il 3° salto consecutivo → blocco fino a ricarica completa
+var _stamina_since_jump_ms: float = 99999.0  # ms trascorsi dall'ultimo salto (per il delay di ricarica)
+var _stamina_click_cd_ms: float = 0.0        # cooldown residuo del suono di click a vuoto
 
 # --- Character selection ----------------------------------------------------
 var character_type: int = CharacterType.HERO_M
@@ -245,6 +266,11 @@ func reset_position() -> void:
         permanent_speed_boost = false  # fix: no speed boost after death
         invincible_timer = 0
         jump_offset = 0.0
+        # FIX (stamina): al respawn le "gambe" sono riposate (barra piena).
+        stamina = 1.0
+        stamina_exhausted = false
+        _stamina_since_jump_ms = 99999.0
+        _stamina_click_cd_ms = 0.0
         # FIX (pozione magica): il respawn azzera lo stato fantasma (il player
         # torna solido nella cella di partenza, che è sempre percorribile).
         _end_ghost_mode_now()
@@ -444,6 +470,13 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                 jump_timer -= 1
                 var progress: float = 1.0 - float(jump_timer) / float(max_jump_time)
                 jump_offset = sin(progress * PI) * 25.0
+                # FIX (stamina): il delay di ricarica parte dall'ATTERRAGGIO
+                # (fine del salto), non dall'inizio: così una catena di 3
+                # salti ravvicinati è identica a qualunque framerate (il
+                # timer in ms dell'animazione dipende dagli FPS, il consumo
+                # della barra no).
+                if jump_timer == 0:
+                        _stamina_since_jump_ms = 0.0
         else:
                 jump_offset = 0.0
 
@@ -458,6 +491,19 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         anim_time += int(delta_ms)
         speed_boost_timer = _tick_timer_ms(speed_boost_timer, delta_ms)
         invincible_timer = _tick_timer_ms(invincible_timer, delta_ms)
+
+        # FIX (stamina): ricarica della barra quando il player non salta.
+        # La ricarica parte un attimo dopo l'ultimo salto (delay): 3 salti
+        # in rapida successione svuotano la barra, un ritmo più disteso
+        # permette di recuperare. Se il player è "stanco" (barra svuotata
+        # dal 3° salto) può saltare di nuovo SOLO a ricarica completa.
+        _stamina_since_jump_ms += delta_ms
+        if _stamina_click_cd_ms > 0.0:
+                _stamina_click_cd_ms = maxf(0.0, _stamina_click_cd_ms - delta_ms)
+        if not is_jumping() and _stamina_since_jump_ms >= STAMINA_RECHARGE_DELAY_MS:
+                stamina = minf(1.0, stamina + delta_ms / STAMINA_RECHARGE_FULL_MS)
+        if stamina_exhausted and stamina >= 1.0:
+                stamina_exhausted = false
 
         # FIX (pozione magica): gestione della modalità fantasma.
         if _ghost_exiting:
@@ -701,17 +747,53 @@ func add_life() -> void:
 # di 1000ms (1 secondo) per potersi allontanare dai nemici. Questo mirrora
 # il comportamento C++ del "jump over enemy" boost, ma applicato a ogni
 # salto, non solo quando si salta sopra un nemico.
-func activate_jump() -> void:
-        if jump_timer == 0:
-                max_jump_time = 40
-                jump_timer = max_jump_time
-                # FIX: speed boost post-jump per sfuggire ai nemici.
-                # 1000ms = 60 frame @ 60fps. effective_speed = speed+1 = 3.
-                speed_boost_timer = 2000  # FIX: 2s di accelerazione dopo il salto
+# FIX (stamina): il salto è consentito solo con stamina sufficiente (>= 1/3
+# di barra) e se il player non è "stanco". Al 3° salto consecutivo la barra
+# si svuota e scatta il blocco fino a ricarica completa. Il tentativo a
+# vuoto produce un click secco (pulsante senza molla).
+# Ritorna true se il salto è partito, false altrimenti (già in salto oppure
+# senza stamina).
+func activate_jump() -> bool:
+        if jump_timer > 0:
+                return false  # già in salto
+        # Gate di stamina: ci vuole almeno 1/3 di barra per un salto.
+        if stamina_exhausted or stamina < STAMINA_JUMP_COST - 0.0001:
+                # Click "a vuoto": tenendo premuto il tasto di salto il
+                # suono non si mitraglia (cooldown interno + debounce SFX).
+                if _stamina_click_cd_ms <= 0.0:
+                        _stamina_click_cd_ms = STAMINA_CLICK_COOLDOWN_MS
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.STAMINA_CLICK)
+                return false
+        stamina = maxf(0.0, stamina - STAMINA_JUMP_COST)
+        _stamina_since_jump_ms = 0.0
+        if stamina <= 0.0001:
+                # 3° salto consecutivo: barra vuota → player "stanco".
+                stamina_exhausted = true
+        max_jump_time = 40
+        jump_timer = max_jump_time
+        # FIX: speed boost post-jump per sfuggire ai nemici.
+        # 1000ms = 60 frame @ 60fps. effective_speed = speed+1 = 3.
+        speed_boost_timer = 2000  # FIX: 2s di accelerazione dopo il salto
+        return true
 
 
+# is_jumping() -> bool — true mentre il player è in salto (invulnerabile).
 func is_jumping() -> bool:
         return jump_timer > 0
+
+
+# ===========================================================================
+# FIX (stamina): accessor per la barra verde in HUD (1.0 = piena).
+# ===========================================================================
+func get_stamina_ratio() -> float:
+        return clampf(stamina, 0.0, 1.0)
+
+
+# FIX (stamina): true dopo il 3° salto consecutivo, finché la barra non si
+# è ricaricata completamente (in HUD la barra lampeggia).
+func is_stamina_exhausted() -> bool:
+        return stamina_exhausted
 
 
 # ===========================================================================

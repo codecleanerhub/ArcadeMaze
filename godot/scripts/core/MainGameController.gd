@@ -3617,6 +3617,9 @@ func _update_hud() -> void:
                 "weapon_color": C.get_weapon_color(int(player.current_weapon.get("type", 0))),
                 "weapon_ammo": player.current_weapon.get("ammo", 0),
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
+                # FIX (stamina salti): barra verde sotto quella della vita.
+                "stamina": player.get_stamina_ratio(),
+                "stamina_exhausted": player.is_stamina_exhausted(),
         }
         hud.set_player_state(p1_snap)
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -3629,6 +3632,9 @@ func _update_hud() -> void:
                         "weapon_color": C.get_weapon_color(int(player2.current_weapon.get("type", 0))),
                         "weapon_ammo": player2.current_weapon.get("ammo", 0),
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
+                        # FIX (stamina salti): barra verde sotto quella della vita (P2).
+                        "stamina": player2.get_stamina_ratio(),
+                        "stamina_exhausted": player2.is_stamina_exhausted(),
                 }
                 hud.set_player2_state(p2_snap)
         hud.set_remaining_treasures(maze.get_remaining_treasures())
