@@ -58,9 +58,15 @@ enum SoundType {
         # FIX (stamina salti): click secco "a vuoto" del tasto di salto
         # quando il player prova a saltare senza stamina (pulsante premuto
         # senza molla: non salta, si sente solo il click).
-        STAMINA_CLICK
+        STAMINA_CLICK,
+        # FIX (martello di Thor — nuova meccanica): whoosh del lancio,
+        # clang metallico dell'impatto su muro di bordo/nemico e crollo
+        # sgretolamento del muro interno spezzato.
+        HAMMER_THROW,
+        HAMMER_CLANK,
+        WALL_CRUMBLE
 }
-const SOUND_TYPE_COUNT: int = 28
+const SOUND_TYPE_COUNT: int = 31
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -451,6 +457,9 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.POTION_GULP:   s = _sfx_potion_gulp()
                 SoundType.DARK_LAUGH:    s = _sfx_dark_laugh()
                 SoundType.STAMINA_CLICK: s = _sfx_stamina_click()
+                SoundType.HAMMER_THROW:   s = _sfx_hammer_throw()
+                SoundType.HAMMER_CLANK:   s = _sfx_hammer_clank()
+                SoundType.WALL_CRUMBLE:   s = _sfx_wall_crumble()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1331,6 +1340,87 @@ func _sfx_stamina_click() -> PackedFloat32Array:
                 if t2 > 0.0:
                         v += 0.30 * noise_gen() * exp(-t2 * 550.0)
                         v += 0.18 * sin(TAU * 1250.0 * t2) * exp(-t2 * 320.0)
+                s.append(3200.0 / 32767.0 * _soft_clip(v))
+        return s
+
+# ----------------------------------------------------------------------------
+# FIX (martello di Thor): whoosh del lancio — rumore filtrato con sweep di
+# risonanza (il "sibilo" di Mjolnir che rotea) + sub thump della botta in
+# mano al lancio. 0.28s.
+func _sfx_hammer_throw() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.28)
+        var rng := RandomNumberGenerator.new()
+        rng.seed = 777017
+        var lp: float = 0.0  # stato filtro passa-basso a 1 polo
+        for i in n:
+                var t: float = float(i) / SR
+                # Envelope: attacco secco e coda che svanisce
+                var env: float = exp(-t * 14.0) * minf(t * 900.0, 1.0)
+                # Rumore "whoosh": passa-basso con cutoff che SALE (300->2400Hz)
+                var cutoff: float = 300.0 + 2100.0 * (t / 0.28)
+                var alpha: float = minf(1.0, TAU * cutoff / SR)
+                lp += alpha * ((rng.randf() * 2.0 - 1.0) - lp)
+                var v: float = 1.35 * lp
+                # Sibilo della rotazione (tono che sale, 420->900 Hz, leggero)
+                v += 0.22 * sin(TAU * (420.0 + 480.0 * t / 0.28) * t) * env
+                # Sub thump iniziale (la botta del lancio)
+                v += 0.35 * sin(TAU * 70.0 * t) * exp(-t * 45.0)
+                s.append(3000.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+# ----------------------------------------------------------------------------
+# FIX (martello di Thor): clang metallico — l'impatto su un muro DI BORDO
+# (indistruttibile) o su un nemico: colpo d'acciaio con parziali inarmoniche
+# (1250/1980/2640 Hz) + rumore d'urto. 0.16s.
+func _sfx_hammer_clank() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.16)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Urto (rumore breve, ~30ms)
+                v += 0.45 * noise_gen() * exp(-t * 260.0)
+                # Parziali metalliche inarmoniche con decadimenti diversi
+                v += 0.30 * sin(TAU * 1250.0 * t) * exp(-t * 55.0)
+                v += 0.20 * sin(TAU * 1980.0 * t) * exp(-t * 80.0)
+                v += 0.14 * sin(TAU * 2640.0 * t) * exp(-t * 110.0)
+                # Leggero detune del parziale principale (battimento)
+                v += 0.12 * sin(TAU * 1259.0 * t) * exp(-t * 55.0)
+                # Body basso (thump)
+                v += 0.25 * sin(TAU * 95.0 * t) * exp(-t * 60.0)
+                s.append(3000.0 / 32767.0 * _soft_clip(v))
+        return s
+
+# ----------------------------------------------------------------------------
+# FIX (martello di Thor): crollo del muro interno spezzato — sgretolamento
+# della pietra: rombo basso che decade + "polvere" di rumore filtrato +
+# raffica di grani di ghiaia (click casuali fitti all'inizio, radi dopo).
+# 0.55s.
+func _sfx_wall_crumble() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.55)
+        var rng := RandomNumberGenerator.new()
+        rng.seed = 424242
+        var lp: float = 0.0
+        var grains_left: int = 26  # grani di ghiaia rimanenti
+        var next_grain_t: float = 0.0
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Rombo basso del cedimento strutturale (55Hz + detune)
+                v += 0.40 * sin(TAU * 55.0 * t) * exp(-t * 6.0)
+                v += 0.18 * sin(TAU * 71.0 * t) * exp(-t * 7.0)
+                # Polvere: rumore passa-basso con cutoff che scende
+                var cutoff: float = 900.0 * exp(-t * 5.0) + 120.0
+                var alpha: float = minf(1.0, TAU * cutoff / SR)
+                lp += alpha * ((rng.randf() * 2.0 - 1.0) - lp)
+                v += 0.55 * lp * exp(-t * 4.5)
+                # Grani di ghiaia: click casuali (cumulo che si assesta)
+                if grains_left > 0 and t >= next_grain_t:
+                        v += 0.65 * (rng.randf() * 2.0 - 1.0)
+                        grains_left -= 1
+                        next_grain_t = t + rng.randf_range(0.004, 0.05) * (1.0 + t)
                 s.append(3200.0 / 32767.0 * _soft_clip(v))
         return s
 

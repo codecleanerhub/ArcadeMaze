@@ -128,6 +128,21 @@ signal boss_defeated(boss_index: int)
 ## decide whether to keep the boss state on continue).
 @export var died_in_boss: bool = false
 
+# ============================================================================
+# FIX (continue = sessione ESATTA): quando il player usa un credito continue,
+# la partita deve riprendere ESATTAMENTE da dov'era morto — stesso livello,
+# stesso layout del labirinto, stessi tesori residui, stessi nemici (numero,
+# tipo, posizione e HP), stessi item a terra, stesso punteggio; uguale nella
+# schermata del boss (HP del boss conservati). I controller di gioco
+# (MainGameController / BossRoomController) scrivono qui lo snapshot allo
+# momento della morte e lo consumano in _ready() se `session_restore_pending`
+# è true. Lo snapshot viene SEMPRE sovrascritto alla morte successiva e
+# ripulito quando si avanza di livello / si inizia una partita nuova.
+var session_snapshot: Dictionary = {}
+## True tra la conferma del continue e il _ready() della scena di gioco che
+## deve ripristinare lo snapshot (il controller lo azzera dopo il restore).
+var session_restore_pending: bool = false
+
 ## Music toggle (set from the main menu). Default OFF (user can enable in Options).
 @export var music_enabled: bool = false
 
@@ -211,7 +226,11 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
 
 ## Advance to the next level after the current one is cleared. If we are in
 ## story mode and just finished level 68, switch to WIN_STORY.
+## FIX (continue = sessione ESATTA): avanzare di livello invalida lo snapshot
+## della sessione precedente (il restore vale SOLO per il continue).
 func advance_level() -> void:
+        session_snapshot.clear()
+        session_restore_pending = false
         if game_mode == C.GameMode.STORY and current_level >= C.STORY_LEVELS_COUNT:
                 current_state = C.GameState.WIN_STORY
                 run_ended.emit()
@@ -252,8 +271,13 @@ func player_died(in_boss: bool = false) -> void:
 ## Called by the continues screen when the player picks YES: consume a
 ## continue credit and resume the game (boss fight if died there, else
 ## restart the current level).
+## FIX (continue = sessione ESATTA): marca il restore pendente così il
+## controller che ricrea la scena ripristina lo snapshot della sessione
+## (maze/tesori/nemici/item/punteggi — o gli HP del boss) invece di
+## rigenerare un livello nuovo di zecca.
 func use_continue() -> void:
         continues_left = max(0, continues_left - 1)
+        session_restore_pending = true
         if died_in_boss:
                 start_boss_fight(true)
         else:
@@ -275,6 +299,9 @@ func reset_run() -> void:
         continues_timer = 10
         continues_choice = true
         died_in_boss = false
+        # FIX (continue = sessione ESATTA): nuova partita = nessun restore.
+        session_snapshot.clear()
+        session_restore_pending = false
         menu_item_index = 0
         config_joy_step = 0
         config_joy_player = 1
@@ -436,6 +463,10 @@ func start_level_at(level: int) -> void:
                 go_to_maze()
 
 func next_level() -> void:
+        # FIX (continue = sessione ESATTA): avanzare di livello invalida lo
+        # snapshot della sessione precedente.
+        session_snapshot.clear()
+        session_restore_pending = false
         current_level += 1
         if current_level > C.STORY_LEVELS_COUNT:
                 # Vittoria: mostra credits

@@ -77,6 +77,46 @@ func _ready() -> void:
                 player2.visible = false
         # Setup boss fight
         start_boss_fight(died_in_boss)
+        # FIX (continue = sessione ESATTA nella boss room — richiesta utente):
+        # se siamo qui da un CONTINUE, ripristina lo scontro COM'E'ERA alla
+        # morte: HP del boss salvati nello snapshot (NON ricomincia da capo),
+        # punteggi e armi/ammo dei player. Le armi a terra e la mina si
+        # rigenerano fresche (il sistema anti-softlock le fa ricomparire
+        # comunque quando servono: il set si rinnova finché il boss vive).
+        if GameManager and GameManager.session_restore_pending \
+                        and not GameManager.session_snapshot.is_empty() \
+                        and str(GameManager.session_snapshot.get("kind", "")) == "boss" \
+                        and int(GameManager.session_snapshot.get("level", -1)) == current_level:
+                var snap: Dictionary = GameManager.session_snapshot
+                GameManager.session_restore_pending = false
+                if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                        var hp_snap: int = int(snap.get("boss_health", 0))
+                        if hp_snap > 0:
+                                boss.health = hp_snap
+                var p1_snap_b: Dictionary = snap.get("p1", {})
+                if not p1_snap_b.is_empty():
+                        player.score = int(p1_snap_b.get("score", 0))
+                        var w1_b: Dictionary = p1_snap_b.get("weapon", {})
+                        if not w1_b.is_empty():
+                                player.current_weapon = w1_b.duplicate()
+                                # Regola d'ingresso della boss room (già valida
+                                # per il primo ingresso): arma utilizzabile.
+                                player.current_weapon["power"] = 2
+                                player.current_weapon["ammo"] = maxi(
+                                                int(player.current_weapon.get("ammo", 0)), 30)
+                var p2_snap_b: Dictionary = snap.get("p2", {})
+                if not p2_snap_b.is_empty() and GameManager.num_players == 2:
+                        player2.visible = true
+                        player2.score = int(p2_snap_b.get("score", 0))
+                        var w2_b: Dictionary = p2_snap_b.get("weapon", {})
+                        if not w2_b.is_empty():
+                                player2.current_weapon = w2_b.duplicate()
+                                player2.current_weapon["power"] = 2
+                                player2.current_weapon["ammo"] = maxi(
+                                                int(player2.current_weapon.get("ammo", 0)), 30)
+                print("[Continue] Sessione boss room ripristinata: HP boss ",
+                                boss.health if boss != null else "?", "/ ",
+                                boss.max_health if boss != null else "?")
         # Boss music
         if AudioManager and GameManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, true)
@@ -550,9 +590,32 @@ func _check_boss_death() -> void:
                         GameManager.final_score_p2 = player2.score if \
                                         (GameManager.num_players == 2 and player2.visible) else 0
                         GameManager.final_level = current_level
-                        GameManager.died_in_boss = true
+                        # FIX (continue = sessione ESATTA — ROOT CAUSE del bug
+                        # segnalato dall'utente): qui si chiamava
+                        # GameManager.player_died() SENZA argomento, e player_died()
+                        # SOVRASCRIVEVA died_in_boss = in_boss = FALSE, Azzerando
+                        # il flag "died_in_boss = true" impostato subito prima.
+                        # Risultato: use_continue() vedeva died_in_boss = false e
+                        # invece di tornare nella BOSS ROOM rimetteva il player
+                        # nel LABIRINTO (livello maze). Ora si passa TRUE.
+                        # FIX (snapshot boss): salva anche HP del boss e stato
+                        # dei player, così il continue riprende LO STESSO
+                        # scontro (stesso HP del boss, stessi punteggi/armi).
+                        GameManager.session_snapshot = {
+                                "kind": "boss",
+                                "level": current_level,
+                                "boss_health": int(boss.health) if (boss != null and is_instance_valid(boss)) else 0,
+                                "p1": {
+                                        "score": player.score,
+                                        "weapon": player.current_weapon.duplicate(),
+                                },
+                                "p2": {
+                                        "score": player2.score,
+                                        "weapon": player2.current_weapon.duplicate(),
+                                } if (GameManager.num_players == 2 and player2.visible) else {},
+                        }
                         if GameManager.continues_left > 0:
-                                GameManager.player_died()
+                                GameManager.player_died(true)
                         else:
                                 GameManager.give_up()
                 return

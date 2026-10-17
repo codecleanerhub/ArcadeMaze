@@ -575,6 +575,50 @@ static func make_random_weapon() -> Dictionary:
         return make_weapon(t)
 
 
+# ============================================================================
+# FIX (richiesta utente — nessuna arma one-shot): NESSUNA arma del player,
+# tranne la MINA e la DINAMITE, puo' uccidere un nemico con un colpo solo.
+# Le armi hanno un numero di colpi DIVERSO in base all'arma: piu' colpi serve
+# un'arma, meno danno fa per colpo. Il danno e' calcolato come FRAZIONE degli
+# HP massimi del nemico colpito, cosi' il numero di colpi e' identico per
+# qualunque nemico (indipendente dai suoi HP):
+#   PISTOL  = 4 colpi per uccidere (25% HP max a colpo)  — piu' munizioni
+#   LASER   = 3 colpi (~34% HP max a colpo)
+#   SHOTGUN = 2 colpi (50% HP max a colpo)
+#   ROCKET  = 2 colpi (50% HP max a colpo)                — poche munizioni
+# La mina, la dinamite, il calice (fuoco) e lo scettro (fulmine) restano
+# kill istantanei: sono item magici, non armi da fuoco equipaggiabili.
+# Il martello (nuovo item) infligge il 50% degli HP max (2 colpi), come da
+# specifica utente.
+# ============================================================================
+
+## Colpi necessari a uccidere un nemico, per tipo di arma equipaggiata.
+const WEAPON_HITS_TO_KILL: Dictionary = {
+        WeaponType.PISTOL: 4,
+        WeaponType.LASER: 3,
+        WeaponType.SHOTGUN: 2,
+        WeaponType.ROCKET: 2,
+}
+
+
+## Danno per colpo di un'arma su un bersaglio con `target_max_health` HP.
+## Ritorna sempre ALMENO 1, e per costruzione NON uccide mai in un colpo solo
+## un nemico con HP >= 2 (gli HP base dei nemici sono scalati x4, vedi
+## Enemy.gd ENEMY_HEALTH_SCALE: il piu' debole ha 4 HP -> 4 colpi di pistola).
+static func weapon_damage_for(weapon_type: int, target_max_health: int) -> int:
+        var hits: int = int(WEAPON_HITS_TO_KILL.get(weapon_type, 4))
+        if hits < 2:
+                hits = 2  # sicurezza: mai one-shot per costruzione
+        var dmg: int = int(ceil(float(target_max_health) / float(hits)))
+        return maxi(1, dmg)
+
+
+## Danno del MARTELLO (50% degli HP massimi del nemico colpito: 2 colpi per
+## uccidere qualunque nemico, come richiesto dall'utente).
+static func hammer_damage_for(target_max_health: int) -> int:
+        return maxi(1, int(round(float(target_max_health) * 0.5)))
+
+
 ## Returns the human-readable name of a weapon type.
 static func get_weapon_name(type: int) -> String:
         match type:

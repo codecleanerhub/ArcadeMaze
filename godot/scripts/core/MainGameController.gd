@@ -127,6 +127,25 @@ var dynamite_thrown: Node2D = null  # candelotto lanciato in volo
 var potion_item: Node2D = null
 var _ghost_was_active: bool = false
 
+# ============================================================================
+# FIX (martello di Thor — nuova meccanica richiesta dall'utente):
+#   * nuovo item HAMMER nel labirinto (1 per livello): 2 lanci;
+#   * quando il player che lo possiede SPARA, viene lanciato IL MARTELLO
+#     (non un proiettile): vola roteando come Mjolnir;
+#   * nemico colpito: 50% dei suoi HP massimi;
+#   * muro INTERNO colpito: si ROMPE con effetto sgretolamento e crea un
+#     passaggio-scorciatoia usabile da player E nemici (i muri di BORDO non
+#     si rompono: non si crea un ulteriore effetto Pac-Man);
+#   * dopo l'impatto il martello RITORNA in mano al player; dopo il SECONDO
+#     lancio scompare dal player.
+# ============================================================================
+const HammerClass = preload("res://scripts/items/Hammer.gd")
+var hammer_item: Node2D = null          # item a terra (Collectibles.Kind.HAMMER)
+var hammer_player: int = 0              # 0 = nessuno, 1 = P1, 2 = P2
+var hammer_uses_left: int = 0           # lanci rimasti (max HAMMER_MAX_USES)
+var hammer_thrown: Node2D = null        # Hammer in volo (scripts/items/Hammer.gd)
+const HAMMER_MAX_USES: int = 2
+
 # FIX (HUD last hit enemy): traccia l'ultimo nemico colpito dal player.
 # L'HUD mostra il nome + barra energia di questo nemico in alto al centro.
 # Quando il nemico muore o dopo 3s senza hit, la barra scompare.
@@ -898,6 +917,11 @@ func _handle_input() -> void:
                                 print("[Dynamite] Joy fire pressed, throwing!")
                                 _throw_dynamite()
                                 player.shoot_cooldown = 300
+                        elif hammer_player == 1 and hammer_thrown == null:
+                                # FIX (martello di Thor): il fuoco lancia IL
+                                # MARTELLO (fino a 2 volte, poi scompare).
+                                _throw_hammer(player)
+                                player.shoot_cooldown = 300
                         elif player.shoot_cooldown == 0:
                                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                                 player.shoot()
@@ -927,6 +951,10 @@ func _handle_input() -> void:
         if Input.is_action_just_pressed("shoot"):
                 if dynamite_equipped:
                         _throw_dynamite()
+                        player.shoot_cooldown = 300
+                elif hammer_player == 1 and hammer_thrown == null:
+                        # FIX (martello di Thor): lancio da tastiera (P1).
+                        _throw_hammer(player)
                         player.shoot_cooldown = 300
                 elif player.shoot_cooldown == 0:
                         var ammo_before: int = player.current_weapon.get("ammo", 0)
@@ -999,12 +1027,22 @@ func _handle_input() -> void:
                         if Input.is_joy_button_pressed(p2_joy_id, j2_jump):
                                 player2.activate_jump()
                         if Input.is_joy_button_pressed(p2_joy_id, j2_shoot) and player2.shoot_cooldown == 0:
-                                player2.shoot()
-                                player2.shoot_cooldown = 150
+                                if hammer_player == 2 and hammer_thrown == null:
+                                        # FIX (martello di Thor): lancio P2 joystick.
+                                        _throw_hammer(player2)
+                                        player2.shoot_cooldown = 300
+                                else:
+                                        player2.shoot()
+                                        player2.shoot_cooldown = 150
                 player2.set_direction(p2_dx, p2_dy)
                 if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
-                        player2.shoot()
-                        player2.shoot_cooldown = 150
+                        if hammer_player == 2 and hammer_thrown == null:
+                                # FIX (martello di Thor): lancio P2 tastiera.
+                                _throw_hammer(player2)
+                                player2.shoot_cooldown = 300
+                        else:
+                                player2.shoot()
+                                player2.shoot_cooldown = 150
                 if Input.is_action_just_pressed("p2_jump"):
                         player2.activate_jump()
 
@@ -1179,6 +1217,9 @@ func _update_playing(delta_ms: float) -> void:
 
         # (9d) Dynamite update (FIX: nuova meccanica dinamite)
         _update_dynamite(delta_ms)
+        # FIX (martello di Thor): volo del martello lanciato (andata, impatto,
+        # ritorno in mano al player).
+        _update_thrown_hammer(delta_ms)
 
         # (9e) Last hit enemy timer (FIX: HUD nemico colpito)
         if last_hit_enemy_timer_ms > 0:
@@ -1325,7 +1366,14 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 continue
                         var e_pos: Vector2 = enemy.get_pixel_pos()
                         if proj_pos.distance_squared_to(e_pos) < 600.0:
-                                enemy.take_damage(int(proj.get("power", 1)))
+                                # FIX (nessuna arma one-shot — richiesta utente):
+                                # il danno delle armi da fuoco e' calcolato in %
+                                # degli HP massimi del nemico in base all'arma
+                                # (pistola 4 colpi, laser 3, shotgun 2, razzo
+                                # 2). NESSUNA arma uccide con un colpo solo:
+                                # solo mina, dinamite e item magici
+                                # (calice/scettro) restano kill istantanei.
+                                enemy.take_weapon_hit(int(proj.get("type", 0)))
                                 proj["active"] = false
                                 # FIX (HUD last hit enemy): traccia il nemico colpito
                                 # SOLO nel labirinto (non boss room). Nella boss room
@@ -1487,15 +1535,31 @@ func _check_mine_vs_enemies() -> void:
                         new_pos.y = mine_pos2.y
                         _bounced = true
         else:
-                # Out of bounds: rimbalza sui bordi schermo
-                if new_pos.x < 64.0 or new_pos.x > C.WINDOW_WIDTH - 64.0:
-                        mine_vel.x = -mine_vel.x
-                        new_pos.x = mine_pos2.x
-                        _bounced = true
-                if new_pos.y < C.UI_HEIGHT + 32.0 or new_pos.y > C.WINDOW_HEIGHT - 64.0:
-                        mine_vel.y = -mine_vel.y
-                        new_pos.y = mine_pos2.y
-                        _bounced = true
+                # FIX (mina incastrata nel tunnel — bug utente): la mina che
+                # entra in una galleria Pac-Man deve ATTRAVERSARLA e riemergere
+                # dal lato opposto ESATTAMENTE come player e nemici (tunnel_wrap
+                # su GameConstants). Prima cadeva nel ramo out-of-bounds e
+                # rimbalzava sul bordo schermo: l'homing BFS la respingeva di
+                # nuovo verso il tunnel -> la mina vibrava INCASTRATA
+                # nell'imbocco (il BFS la instrada attraverso la galleria perche'
+                # e' la via piu' corta verso i nemici sull'altro lato).
+                # Nota: la mina puo' uscire dai bordi SOLO attraverso un imbocco
+                # di galleria (tutte le altre celle di bordo sono muri da cui
+                # rimbalza), quindi il wrap e' intrinsecamente sicuro.
+                var wrapped_mine: Vector2 = GameConstants.tunnel_wrap(new_pos)
+                if wrapped_mine != new_pos:
+                        new_pos = wrapped_mine
+                else:
+                        # Vero out-of-bounds al di fuori delle gallerie (non
+                        # dovrebbe mai succedere): rimbalzo sui bordi schermo.
+                        if new_pos.x < 64.0 or new_pos.x > C.WINDOW_WIDTH - 64.0:
+                                mine_vel.x = -mine_vel.x
+                                new_pos.x = mine_pos2.x
+                                _bounced = true
+                        if new_pos.y < C.UI_HEIGHT + 32.0 or new_pos.y > C.WINDOW_HEIGHT - 64.0:
+                                mine_vel.y = -mine_vel.y
+                                new_pos.y = mine_pos2.y
+                                _bounced = true
         # FIX (bomba rimbalza senza inseguire): dopo un rimbalzo, forza
         # ricalcolo homing al prossimo frame.
         if _bounced:
@@ -1812,6 +1876,13 @@ func _check_death() -> void:
                         GameManager.final_score_p2 = player2.score if \
                                         (GameManager.num_players == 2 and player2.visible) else 0
                         GameManager.final_level = current_level
+                        # FIX (continue = sessione ESATTA — richiesta utente):
+                        # salva lo snapshot COMPLETO della sessione PRIMA di
+                        # uscire verso la schermata dei crediti. Se il player
+                        # usa un continue, start_level ripristina ESATTAMENTE
+                        # questa sessione (stesso labirinto, tesori residui,
+                        # nemici con numero/tipo/posizione/HP, item, punteggi).
+                        GameManager.session_snapshot = _build_session_snapshot()
                         if GameManager.continues_left > 0:
                                 GameManager.player_died()
                         else:
@@ -2063,6 +2134,26 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 var burst_p := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
                                         Color(0.45, 1.0, 0.55))
                                 collectibles_node.add_child(burst_p)
+                CollectiblesClass.Kind.HAMMER:
+                        # FIX (martello di Thor — nuova meccanica): il player
+                        # raccoglie Mjolnir. Da questo momento il tasto di
+                        # fuoco LANCIA il martello (max 2 volte); poi
+                        # scompare. In mano finché non lo lancia.
+                        item.active = false
+                        item.queue_free()
+                        hammer_item = null
+                        hammer_player = player_id
+                        hammer_uses_left = HAMMER_MAX_USES
+                        p.set_hammer_equipped(true)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+                                AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                        # Particelle elettriche blu
+                        if EffectsManager:
+                                var burst_h := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
+                                        Color(0.5, 0.8, 1.0))
+                                collectibles_node.add_child(burst_h)
+                        print("[Hammer] Player ", player_id, " ha raccolto Mjolnir (2 lanci)")
 
 
 # ============================================================================
@@ -2135,6 +2226,19 @@ func start_level(lvl: int) -> void:
         current_level = lvl
         if GameManager:
                 GameManager.current_level = lvl
+        # FIX (continue = sessione ESATTA — richiesta utente): se start_level e'
+        # stato raggiunto da un CONTINUE (GameManager.session_restore_pending)
+        # e lo snapshot corrisponde a QUESTO livello maze, ripristiniamo la
+        # sessione com'era al momento della morte (stesso labirinto, stessi
+        # tesori residui, stessi nemici in numero/tipo/posizione/HP, stessi
+        # item a terra, punteggi, porta, portale, fantasmi, martello)
+        # invece di rigenerare tutto random.
+        var restore: Dictionary = {}
+        if GameManager and GameManager.session_restore_pending \
+                        and not GameManager.session_snapshot.is_empty() \
+                        and str(GameManager.session_snapshot.get("kind", "")) == "maze" \
+                        and int(GameManager.session_snapshot.get("level", -1)) == lvl:
+                restore = GameManager.session_snapshot
         # FIX (nemici precedenti rimangono): clear tutti i nemici, proiettili,
         # collectibles e decals del livello precedente prima di generare il nuovo.
         spawner.clear()
@@ -2151,8 +2255,12 @@ func start_level(lvl: int) -> void:
         lightning_bolts.clear()
         scepter_active = false
         scepter_strikes_left = 0
-        # Generate maze
-        maze.generate(current_level)
+        # Generate maze (o RIPRISTINO dallo snapshot del continue)
+        if restore.is_empty():
+                maze.generate(current_level)
+        else:
+                maze.restore_state(restore.get("maze", {}))
+                GameManager.session_restore_pending = false
         # Reset player position
         if current_level == 1:
                 player.reset()
@@ -2167,9 +2275,14 @@ func start_level(lvl: int) -> void:
         # Spawn enemies
         # FIX (6 nemici al livello 1 + 1 dopo ogni boss): passa il livello allo
         # spawner: ondata = 6 + numero di boss già sconfitti.
-        spawner.spawn_enemies(maze, current_level)
-        initial_enemy_count = spawner.enemies.size()
-        portal_used = false
+        # FIX (continue = sessione ESATTA): al restore ricrea ESATTAMENTE i
+        # nemici vivi al momento della morte (tipo, posizione, HP residui).
+        if restore.is_empty():
+                spawner.spawn_enemies(maze, current_level)
+                initial_enemy_count = spawner.enemies.size()
+                portal_used = false
+        else:
+                _restore_enemies_from_snapshot(restore)
         # Clear mini-boss + scepter state
         if mini_boss != null:
                 mini_boss.queue_free()
@@ -2203,7 +2316,14 @@ func start_level(lvl: int) -> void:
         ash_piles.clear()
         fire_bursts.clear()
         # Spawn collectibles (mine, chalice, scepter, speed boots)
-        _spawn_collectibles()
+        if restore.is_empty():
+                _spawn_collectibles()
+        else:
+                # FIX (continue = sessione ESATTA): item a terra, giocatori,
+                # portale, mini-boss, porta, fantasmi e martello come alla
+                # morte (i tesori raccolti NON riappaiono: la griglia e' gia'
+                # stata ripristinata da maze.restore_state).
+                _restore_session_from_snapshot(restore)
         # Play level music
         # FIX (musica calice tra livelli): se l'effetto del calice è ancora
         # attivo (player uscito dal livello mentre era invincibile) la
@@ -2219,6 +2339,525 @@ func start_level(lvl: int) -> void:
                         AudioManager.stop_epic_music()
                 if GameManager and GameManager.music_enabled:
                         AudioManager.play_level_music(current_level, false)
+
+
+# ============================================================================
+# FIX (continue = sessione ESATTA): snapshot / restore della sessione maze
+# ============================================================================
+
+## Costruisce lo snapshot COMPLETO della sessione al momento della morte:
+## labirinto (celle per celle), nemici vivi (tipo/posizione/HP), spawner,
+## item a terra, porta/portale/mini-boss/fantasmi, stato martello e
+## punteggi/armi/stivali dei player. Salvato in GameManager.session_snapshot
+## e consumato da start_level quando il player usa un CONTINUE.
+func _build_session_snapshot() -> Dictionary:
+        var snap: Dictionary = {"kind": "maze", "level": current_level}
+        # --- Labirinto cella per cella ---
+        snap["maze"] = maze.serialize_state()
+        # --- Nemici VIVI (non morti/non morenti) ---
+        var enemies_snap: Array = []
+        for e in spawner.enemies:
+                if e == null or not is_instance_valid(e):
+                        continue
+                if e.is_dead() or e.is_dying():
+                        continue
+                enemies_snap.append({
+                        "type": int(e.type),
+                        "col": int(e.position.x / C.TILE_SIZE),
+                        "row": int((e.position.y - C.UI_HEIGHT) / C.TILE_SIZE),
+                        "pos": e.position,
+                        "health": int(e.health),
+                })
+        snap["enemies"] = enemies_snap
+        snap["initial_count"] = spawner.initial_count
+        # --- Portale magico ---
+        var portal_snap: Dictionary = {}
+        if spawner.magic_portal.active:
+                portal_snap = {
+                        "pos": spawner.magic_portal.pos,
+                        "active": true,
+                        "phase": int(spawner.magic_portal.phase),
+                        "phase_timer_ms": int(spawner.magic_portal.phase_timer_ms),
+                        "enemies_to_spawn": int(spawner.magic_portal.enemies_to_spawn),
+                        "spawn_timer_ms": int(spawner.magic_portal.spawn_timer_ms),
+                }
+        snap["portal"] = portal_snap
+        snap["portal_used"] = spawner.portal_used
+        snap["portal_used_local"] = portal_used
+        # --- Mini-boss (se vivo) ---
+        var mb_snap: Dictionary = {}
+        if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
+                mb_snap = {
+                        "health": int(mini_boss.health),
+                        "pos": mini_boss.position,
+                        "col": int(mini_boss.position.x / C.TILE_SIZE),
+                        "row": int((mini_boss.position.y - C.UI_HEIGHT) / C.TILE_SIZE),
+                }
+        snap["mini_boss"] = mb_snap
+        # --- Item a terra (solo quelli ancora raccoglibili) ---
+        var items: Dictionary = {}
+        if mine_item != null and is_instance_valid(mine_item) and mine_item.active:
+                items["mine"] = {"pos": mine_item.pos}
+        if chalice_item != null and is_instance_valid(chalice_item) and chalice_item.active:
+                items["chalice"] = {"pos": chalice_item.pos}
+        if scepter_item != null and is_instance_valid(scepter_item) and scepter_item.active:
+                items["scepter"] = {"pos": scepter_item.pos}
+        if speed_boots_item != null and is_instance_valid(speed_boots_item) and speed_boots_item.active:
+                items["boots1"] = {"pos": speed_boots_item.pos}
+        if speed_boots2_item != null and is_instance_valid(speed_boots2_item) and speed_boots2_item.active:
+                items["boots2"] = {"pos": speed_boots2_item.pos}
+        if medikit_item != null and is_instance_valid(medikit_item) and medikit_item.active:
+                items["medikit"] = {"pos": medikit_item.pos}
+        if knight_statue_item != null and is_instance_valid(knight_statue_item) and knight_statue_item.active:
+                items["statue"] = {"pos": knight_statue_item.pos}
+        if dynamite_item != null and is_instance_valid(dynamite_item) and dynamite_item.active:
+                items["dynamite"] = {"pos": dynamite_item.pos}
+        if potion_item != null and is_instance_valid(potion_item) and potion_item.active:
+                items["potion"] = {"pos": potion_item.pos}
+        if hammer_item != null and is_instance_valid(hammer_item) and hammer_item.active:
+                items["hammer"] = {"pos": hammer_item.pos}
+        snap["items"] = items
+        # --- Porta di uscita ---
+        snap["exit_door"] = {
+                "active": bool(exit_door.get("active", false)),
+                "pos": exit_door.get("pos", Vector2.ZERO),
+        }
+        # --- Hurry Up + fantasmi immortali ---
+        snap["hurry_up_active"] = hurry_up_active
+        var ghosts_snap: Array = []
+        for g in ghost_reapers:
+                if g == null or not is_instance_valid(g):
+                        continue
+                ghosts_snap.append({
+                        "pos": g.position,
+                        "target_player_num": int(g.get("target_player_num")),
+                        "red": bool(g.get("is_red_variant")),
+                })
+        snap["ghosts"] = ghosts_snap
+        # --- Martello ---
+        if hammer_player != 0:
+                snap["hammer"] = {"player": hammer_player, "uses_left": hammer_uses_left}
+        # --- Dinamite (se in mano senza essere scoppiata) ---
+        snap["dynamite_equipped"] = dynamite_equipped
+        snap["dynamite_fuse_ms"] = dynamite_fuse_timer_ms
+        # --- Player: punteggio, arma, stivali, prossima vita extra ---
+        var p1_snap: Dictionary = {
+                "score": player.score,
+                "next_life_threshold": player.next_life_threshold,
+                "weapon": player.current_weapon.duplicate(),
+                "boots": player.permanent_speed_boost,
+        }
+        snap["p1"] = p1_snap
+        if GameManager and GameManager.num_players == 2 and player2.visible:
+                snap["p2"] = {
+                        "score": player2.score,
+                        "next_life_threshold": player2.next_life_threshold,
+                        "weapon": player2.current_weapon.duplicate(),
+                        "boots": player2.permanent_speed_boost,
+                }
+        return snap
+
+
+## Ripristina i nemici vivi dallo snapshot del continue (tipo, posizione
+## esatta e HP residui al momento della morte).
+func _restore_enemies_from_snapshot(restore: Dictionary) -> void:
+        for e in restore.get("enemies", []):
+                var enemy: Enemy = spawner._spawn_enemy_instance(
+                                int(e.get("type", 0)),
+                                int(e.get("col", 1)), int(e.get("row", 1)))
+                if enemy == null:
+                        continue
+                var pos: Vector2 = e.get("pos", enemy.position)
+                enemy.position = pos
+                enemy.last_pos = pos
+                enemy.health = int(e.get("health", enemy.max_health))
+        initial_enemy_count = int(restore.get("initial_count", spawner.enemies.size()))
+        portal_used = bool(restore.get("portal_used_local", false))
+
+
+## Ripristina la sessione dallo snapshot: item a terra, spawner/portale,
+## mini-boss, porta, fantasmi, martello, dinamite e stato dei player.
+func _restore_session_from_snapshot(snap: Dictionary) -> void:
+        # --- Item a terra: SOLO quelli non raccolti alla morte, alle stesse
+        # posizioni (i tesori raccolti non riappaiono: la griglia e' stata
+        # gia' ripristinata cella per cella). ---
+        for child in collectibles_node.get_children():
+                child.queue_free()
+        CollectiblesClass.clear_texture_cache()
+        mine_item = null
+        chalice_item = null
+        scepter_item = null
+        speed_boots_item = null
+        speed_boots2_item = null
+        medikit_item = null
+        knight_statue_item = null
+        dynamite_item = null
+        potion_item = null
+        hammer_item = null
+        if knight_ally != null and is_instance_valid(knight_ally):
+                knight_ally.queue_free()
+                knight_ally = null
+        var items: Dictionary = snap.get("items", {})
+        var kind_map: Dictionary = {
+                "mine": CollectiblesClass.Kind.MINE,
+                "chalice": CollectiblesClass.Kind.CHALICE,
+                "scepter": CollectiblesClass.Kind.SCEPTER,
+                "boots1": CollectiblesClass.Kind.SPEED_BOOTS,
+                "boots2": CollectiblesClass.Kind.SPEED_BOOTS,
+                "medikit": CollectiblesClass.Kind.MEDIKIT,
+                "statue": CollectiblesClass.Kind.KNIGHT_STATUE,
+                "dynamite": CollectiblesClass.Kind.DYNAMITE,
+                "potion": CollectiblesClass.Kind.POTION,
+                "hammer": CollectiblesClass.Kind.HAMMER,
+        }
+        for key in items.keys():
+                var it: Dictionary = items.get(key, {})
+                if it.is_empty() or not kind_map.has(key):
+                        continue
+                var node: Collectibles = _create_collectible(int(kind_map[key]),
+                                it.get("pos", Vector2.ZERO))
+                if key == "boots1":
+                        node.owner_id = 1
+                elif key == "boots2":
+                        node.owner_id = 2
+                if key == "statue":
+                        node.active = true
+                collectibles_node.add_child(node)
+                match key:
+                        "mine": mine_item = node
+                        "chalice": chalice_item = node
+                        "scepter": scepter_item = node
+                        "boots1": speed_boots_item = node
+                        "boots2": speed_boots2_item = node
+                        "medikit": medikit_item = node
+                        "statue": knight_statue_item = node
+                        "dynamite": dynamite_item = node
+                        "potion": potion_item = node
+                        "hammer": hammer_item = node
+        medikit_used = not items.has("medikit")
+        # --- Spawner: portale e soglia del 50% ---
+        spawner.initial_count = int(snap.get("initial_count", spawner.enemies.size()))
+        spawner.portal_used = bool(snap.get("portal_used", false))
+        var portal_snap: Dictionary = snap.get("portal", {})
+        if not portal_snap.is_empty() and bool(portal_snap.get("active", false)):
+                spawner.magic_portal.pos = portal_snap.get("pos", Vector2.ZERO)
+                spawner.magic_portal.active = true
+                spawner.magic_portal.phase = int(portal_snap.get("phase", 1))
+                spawner.magic_portal.phase_timer_ms = int(portal_snap.get("phase_timer_ms", 4000))
+                spawner.magic_portal.enemies_to_spawn = int(portal_snap.get("enemies_to_spawn", 0))
+                spawner.magic_portal.spawn_timer_ms = int(portal_snap.get("spawn_timer_ms", 4000))
+        # --- Mini-boss: ricreato con gli HP che aveva alla morte ---
+        var mb_snap: Dictionary = snap.get("mini_boss", {})
+        if not mb_snap.is_empty():
+                var mb_col: int = int(mb_snap.get("col", 15))
+                var mb_row: int = int(mb_snap.get("row", 7))
+                _spawn_mini_boss(mb_col, mb_row)
+                if mini_boss != null and is_instance_valid(mini_boss):
+                        mini_boss.position = mb_snap.get("pos", mini_boss.position)
+                        mini_boss.health = int(mb_snap.get("health", mini_boss.health))
+        # --- Porta di uscita (se era gia' aperta) ---
+        var door_snap: Dictionary = snap.get("exit_door", {})
+        if bool(door_snap.get("active", false)):
+                exit_door = {
+                        "pos": door_snap.get("pos", Vector2.ZERO),
+                        "active": true,
+                        "anim_timer_ms": 0,
+                        "glow_pulse": 0.0,
+                }
+        # --- Hurry Up + fantasmi immortali ---
+        hurry_up_active = bool(snap.get("hurry_up_active", false))
+        ghost_reapers.clear()
+        if hurry_up_active:
+                _hurry_up_time = 0.0
+                for g in snap.get("ghosts", []):
+                        var ghost := GhostReaperClass.new()
+                        ghost.set("target_player_num", int(g.get("target_player_num", 1)))
+                        if bool(g.get("red", false)):
+                                ghost.set("is_red_variant", true)
+                        var g_col: int = int(g.get("pos", Vector2.ZERO).x / C.TILE_SIZE)
+                        var g_row: int = int((g.get("pos", Vector2.ZERO).y - C.UI_HEIGHT) / C.TILE_SIZE)
+                        ghost.setup(g_col, g_row)
+                        ghost.position = g.get("pos", Vector2.ZERO)
+                        ghost.laughed.connect(_on_ghost_laughed)
+                        add_child(ghost)
+                        ghost_reapers.append(ghost)
+        # --- Martello: in mano al player giusto con i lanci rimasti ---
+        var hammer_snap: Dictionary = snap.get("hammer", {})
+        hammer_player = 0
+        hammer_uses_left = 0
+        if not hammer_snap.is_empty():
+                hammer_player = int(hammer_snap.get("player", 1))
+                hammer_uses_left = int(hammer_snap.get("uses_left", 0))
+        player.set_hammer_equipped(hammer_player == 1 and hammer_uses_left > 0)
+        player2.set_hammer_equipped(hammer_player == 2 and hammer_uses_left > 0)
+        # --- Dinamite equipaggiata (senza miccia evoluta: riparte da 7s) ---
+        dynamite_equipped = bool(snap.get("dynamite_equipped", false))
+        dynamite_fuse_timer_ms = int(snap.get("dynamite_fuse_ms", 7000)) \
+                        if dynamite_equipped else 0
+        dynamite_alert_played = false
+        dynamite_explode_timer_ms = 0
+        # --- Player: punteggio, arma, stivali (le vite sono quelle nuove
+        # del continue: e' la regola arcade del credito). ---
+        var p1_snap: Dictionary = snap.get("p1", {})
+        if not p1_snap.is_empty():
+                player.score = int(p1_snap.get("score", 0))
+                player.next_life_threshold = int(p1_snap.get("next_life_threshold", 100000))
+                var w1: Dictionary = p1_snap.get("weapon", {})
+                if not w1.is_empty():
+                        player.current_weapon = w1.duplicate()
+                player.permanent_speed_boost = bool(p1_snap.get("boots", false))
+        var p2_snap: Dictionary = snap.get("p2", {})
+        if not p2_snap.is_empty() and GameManager and GameManager.num_players == 2:
+                player2.visible = true
+                player2.score = int(p2_snap.get("score", 0))
+                player2.next_life_threshold = int(p2_snap.get("next_life_threshold", 100000))
+                var w2: Dictionary = p2_snap.get("weapon", {})
+                if not w2.is_empty():
+                        player2.current_weapon = w2.duplicate()
+                player2.permanent_speed_boost = bool(p2_snap.get("boots", false))
+        # --- HUD: aggiorna subito con lo stato ripristinato ---
+        _update_hud_snapshot()
+        print("[Continue] Sessione maze ripristinata: livello ", current_level,
+                        ", nemici ", spawner.enemies.size(),
+                        ", tesori residui ", maze.get_remaining_treasures())
+
+
+# Aggiorna l'HUD con lo stato corrente (usato al termine del restore).
+func _update_hud_snapshot() -> void:
+        if hud == null:
+                return
+        hud.set_player_state({
+                "score": player.score,
+                "lives": player.lives,
+                "energy": player.energy,
+                "max_energy": player.max_energy,
+                "weapon_name": C.get_weapon_name(int(player.current_weapon.get("type", 0))),
+                "weapon_color": C.get_weapon_color(int(player.current_weapon.get("type", 0))),
+                "weapon_ammo": player.current_weapon.get("ammo", 0),
+                "weapon_max": player.current_weapon.get("max_ammo", 15),
+                "stamina": player.get_stamina_ratio(),
+                "stamina_exhausted": player.is_stamina_exhausted(),
+        })
+        if GameManager and GameManager.num_players == 2 and player2.visible:
+                hud.set_player2_state({
+                        "score": player2.score,
+                        "lives": player2.lives,
+                        "energy": player2.energy,
+                        "max_energy": player2.max_energy,
+                        "weapon_name": C.get_weapon_name(int(player2.current_weapon.get("type", 0))),
+                        "weapon_color": C.get_weapon_color(int(player2.current_weapon.get("type", 0))),
+                        "weapon_ammo": player2.current_weapon.get("ammo", 0),
+                        "weapon_max": player2.current_weapon.get("max_ammo", 15),
+                        "stamina": player2.get_stamina_ratio(),
+                        "stamina_exhausted": player2.is_stamina_exhausted(),
+                })
+
+
+# ============================================================================
+# FIX (martello di Thor — nuova meccanica): lancio, volo e ritorno
+# ============================================================================
+
+## Lancia il martello di Thor nella direzione in cui e' rivolto il player.
+## Consuma uno dei 2 usi: quando uses_left arriva a 0, al ritorno il
+## martello SCOMPARE dal player (il lancio in corso si conclude comunque).
+func _throw_hammer(p: CharacterBody2D) -> void:
+        if hammer_thrown != null and is_instance_valid(hammer_thrown):
+                return  # martello gia' in volo
+        if hammer_uses_left <= 0:
+                hammer_player = 0
+                p.set_hammer_equipped(false)
+                return
+        var dir_vec: Vector2 = Vector2(float(p.last_dx), float(p.last_dy))
+        if dir_vec == Vector2.ZERO:
+                dir_vec = Vector2(1.0, 0.0)
+        dir_vec = dir_vec.normalized()
+        var hammer := HammerClass.new()
+        hammer.dir = dir_vec
+        hammer.speed = 13.0
+        hammer.position = p.get_pixel_pos() + dir_vec * 24.0
+        # FIX (2P): il martello torna SEMPRE a chi lo ha lanciato, anche
+        # all'ultimo lancio (dopo il quale scompare).
+        hammer.set_meta("thrower_num", 1 if p == player else 2)
+        hammer_thrown = hammer
+        # Consuma l'uso e toglie subito il martello dalla mano (e' in volo).
+        hammer_uses_left -= 1
+        p.set_hammer_equipped(false)
+        if hammer_uses_left <= 0:
+                hammer_player = 0
+        # Contenitore sicuro (come la dinamite lanciata).
+        collectibles_node.add_child(hammer)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAMMER_THROW)
+        print("[Hammer] Lanciato da P", 1 if p == player else 2,
+                        " (usi rimasti: ", hammer_uses_left, ")")
+
+
+## Update del martello in volo: andata (fino a nemico/muro/max corsa) e
+## ritorno in mano al player. Chiamato da _update_playing a ogni frame.
+func _update_thrown_hammer(delta_ms: float) -> void:
+        if hammer_thrown == null or not is_instance_valid(hammer_thrown):
+                hammer_thrown = null
+                return
+        var hammer = hammer_thrown  # dynamic: Hammer.gd (Node2D + proprieta' di volo)
+        var steps_scale: float = delta_ms / 16.6667
+        # Il martello torna a chi lo ha lanciato (meta sul nodo, valida anche
+        # per l'ultimo lancio dopo il quale hammer_player viene azzerato).
+        var thrower_num: int = int(hammer.get_meta("thrower_num", 1))
+        var owner_p: CharacterBody2D = player2 if thrower_num == 2 else player
+        # Rotazione costante (piu' veloce al ritorno, come Mjolnir).
+        hammer.spin_deg = fmod(hammer.spin_deg
+                        + (26.0 if hammer.phase == 0 else 40.0) * steps_scale, 360.0)
+        if hammer.phase == 0:
+                # ================= ANDATA =================
+                var new_pos: Vector2 = hammer.position + hammer.dir * hammer.speed * steps_scale
+                hammer.travelled_px += hammer.speed * steps_scale
+                # Tunnel Pac-Man: il martello attraversa le gallerie.
+                var wrapped: Vector2 = GameConstants.tunnel_wrap(new_pos)
+                if wrapped != new_pos:
+                        new_pos = wrapped
+                var hit_cell: Vector2i = Vector2i(
+                                int(new_pos.x / C.TILE_SIZE),
+                                int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                # --- Impatto con MURO ---
+                if hit_cell.x >= 0 and hit_cell.x < C.MAZE_COLS \
+                                and hit_cell.y >= 0 and hit_cell.y < C.MAZE_ROWS \
+                                and maze.is_wall(hit_cell.x, hit_cell.y):
+                        var is_border: bool = hit_cell.x == 0 or hit_cell.x == C.MAZE_COLS - 1 \
+                                        or hit_cell.y == 0 or hit_cell.y == C.MAZE_ROWS - 1
+                        if not is_border:
+                                # MURO INTERNO: si rompe (effetto sgretolamento)
+                                _break_internal_wall(hit_cell, new_pos)
+                        else:
+                                # Muro di BORDO: indistruttibile (nessun altro
+                                # effetto Pac-Man oltre alle gallerie).
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                                if EffectsManager:
+                                        var spark_burst := EffectsManager.spawn_sparks(new_pos, 14)
+                                        collectibles_node.add_child(spark_burst)
+                                        EffectsManager.screen_shake(5.0, 0.2)
+                        hammer.position = new_pos - hammer.dir * 10.0
+                        hammer.start_return()
+                        return
+                hammer.position = new_pos
+                hammer.push_trail_point(new_pos)
+                # --- Impatto con NEMICO (50% HP max) ---
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        if new_pos.distance_squared_to(enemy.get_pixel_pos()) < 700.0:
+                                var dmg: int = enemy.take_hammer_hit()
+                                last_hit_enemy = enemy
+                                last_hit_enemy_timer_ms = 3000
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                                        AudioManager.play_sound(AudioManager.SoundType.BLOOD_SPLAT)
+                                if EffectsManager:
+                                        var hit_burst := EffectsManager.spawn_explosion(new_pos,
+                                                Color(0.65, 0.8, 1.0), 16, 0.5)
+                                        collectibles_node.add_child(hit_burst)
+                                        EffectsManager.screen_shake(6.0, 0.25)
+                                if enemy.is_dead():
+                                        owner_p.add_score(5000)
+                                        if AudioManager:
+                                                AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
+                                        _spawn_blood_stain(enemy.get_pixel_pos())
+                                        _spawn_fire_burst(enemy.get_pixel_pos(), 1.0)
+                                print("[Hammer] Nemico colpito: -", dmg, " HP")
+                                hammer.start_return()
+                                return
+                # --- Impatto con MINI-BOSS (35% HP max, come lo scettro) ---
+                if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
+                        if new_pos.distance_squared_to(mini_boss.get_pixel_pos()) < 1100.0:
+                                var mb_max: int = mini_boss.get_max_health()
+                                var mb_dmg: int = maxi(1, int(float(mb_max) * 0.35))
+                                mini_boss.take_damage(mb_dmg)
+                                last_hit_enemy = mini_boss
+                                last_hit_enemy_timer_ms = 3000
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                                if EffectsManager:
+                                        var mb_burst := EffectsManager.spawn_explosion(new_pos,
+                                                Color(0.65, 0.8, 1.0), 20, 0.6)
+                                        collectibles_node.add_child(mb_burst)
+                                        EffectsManager.screen_shake(7.0, 0.3)
+                                hammer.start_return()
+                                return
+                # --- Fantasmi immortali: assorbono il martello (risata) ---
+                for ghost in ghost_reapers:
+                        if ghost == null or not is_instance_valid(ghost):
+                                continue
+                        if new_pos.distance_squared_to(ghost.get_pixel_pos()) < 1500.0:
+                                ghost.take_damage(1)  # immortale: risata
+                                hammer.start_return()
+                                return
+                # --- Corsa massima: ritorno automatico ---
+                if hammer.travelled_px >= HammerClass.MAX_TRAVEL_PX:
+                        hammer.start_return()
+                return
+        # ================= RITORNO =================
+        var target_pos: Vector2 = owner_p.get_pixel_pos()
+        var to_target: Vector2 = target_pos - hammer.position
+        var dist: float = to_target.length()
+        var step: float = hammer.speed * steps_scale
+        if dist <= maxf(step, 22.0):
+                # Il martello raggiunge chi lo ha lanciato.
+                hammer.queue_free()
+                hammer_thrown = null
+                if hammer_player != 0 and hammer_uses_left > 0:
+                        # Ulteriori lanci disponibili: il martello torna in mano.
+                        owner_p.set_hammer_equipped(true)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                        print("[Hammer] Tornato in mano (lanci rimasti: ", hammer_uses_left, ")")
+                else:
+                        # Ultimo lancio usato: il martello SPARISCE dal player.
+                        hammer_player = 0
+                        hammer_uses_left = 0
+                        if EffectsManager:
+                                var vanish := EffectsManager.spawn_pickup_burst(target_pos,
+                                        Color(0.6, 0.85, 1.0))
+                                collectibles_node.add_child(vanish)
+                        print("[Hammer] Usi esauriti: il martello scompare dal player")
+                return
+        var dir_back: Vector2 = to_target / maxf(dist, 0.001)
+        hammer.position += dir_back * step
+        hammer.push_trail_point(hammer.position)
+
+
+## Rompe il muro INTERNO colpito dal martello: la cella diventa pavimento
+## (scorciatoia usabile da player E nemici: BFS la vede subito), con effetto
+## di sgretolamento (frammenti di pietra, polvere, screen shake e suono).
+func _break_internal_wall(cell: Vector2i, impact_pos: Vector2) -> void:
+        var broken: bool = maze.break_wall(cell.x, cell.y)
+        if not broken:
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                return
+        var cell_center: Vector2 = Vector2(
+                        cell.x * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                        cell.y * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
+        # Sgretolamento: 3 ondate di frammenti di pietra con colori del muro.
+        if EffectsManager:
+                var stone_a: Color = maze.wall_color.lightened(0.15)
+                var stone_b: Color = maze.wall_color.darkened(0.2)
+                var stone_c: Color = Color(0.55, 0.5, 0.42)
+                for i in 3:
+                        var burst := EffectsManager.spawn_explosion(
+                                        cell_center + Vector2(randf() * 30.0 - 15.0,
+                                                        randf() * 30.0 - 15.0),
+                                        [stone_a, stone_b, stone_c][i], 26, 0.7 + 0.25 * float(i))
+                        collectibles_node.add_child(burst)
+                var dust := EffectsManager.spawn_sparks(cell_center, 20)
+                collectibles_node.add_child(dust)
+                EffectsManager.screen_shake(10.0, 0.45)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.WALL_CRUMBLE)
+                AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+        screen_flash_timer_ms = 60
+        print("[Hammer] Muro interno spezzato alla cella (", cell.x, ",", cell.y,
+                        "): nuova scorciatoia aperta")
 
 
 # Spawn the level collectibles: mine, chalice, scepter, speed boots.
@@ -2260,6 +2899,17 @@ func _spawn_collectibles() -> void:
         _ghost_was_active = false
         if AudioManager:
                 AudioManager.stop_ghost_music()
+        # FIX (martello di Thor): reset stato martello a inizio livello.
+        hammer_item = null
+        hammer_player = 0
+        hammer_uses_left = 0
+        if hammer_thrown != null and is_instance_valid(hammer_thrown):
+                hammer_thrown.queue_free()
+        hammer_thrown = null
+        if player != null:
+                player.set_hammer_equipped(false)
+        if player2 != null:
+                player2.set_hammer_equipped(false)
         # FIX (HUD last hit enemy): reset al cambio livello
         last_hit_enemy = null
         last_hit_enemy_timer_ms = 0
@@ -2359,6 +3009,15 @@ func _spawn_collectibles() -> void:
                 var potion_pos := _cell_to_pixel(cell)
                 potion_item = _create_collectible(CollectiblesClass.Kind.POTION, potion_pos)
                 collectibles_node.add_child(potion_item)
+
+        # FIX (martello di Thor — nuova meccanica): Mjolnir (1 per livello,
+        # posizione casuale). Chi lo raccoglie puo' lanciarlo 2 volte: 50%
+        # dei danni ai nemici e spezza i muri INTERNI del labirinto.
+        cell = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
+        if cell.x >= 0:
+                var hammer_pos := _cell_to_pixel(cell)
+                hammer_item = _create_collectible(CollectiblesClass.Kind.HAMMER, hammer_pos)
+                collectibles_node.add_child(hammer_item)
 
 
 # FIX (oggetti troppo vicini): estrae una cella dalla lista `cells` che sia

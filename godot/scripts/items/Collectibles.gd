@@ -38,6 +38,10 @@ enum Kind {
         POTION,          # FIX (pozione magica): ampolla di vetro con liquido verde — il player
                          # la beve e diventa evanescente come un fantasma per 5 secondi,
                          # attraversando i muri del labirinto.
+        HAMMER,          # FIX (martello di Thor — nuova meccanica): Mjolnir da raccogliere
+                         # nel labirinto. 2 lanci: infligge il 50% degli HP max ai nemici
+                         # e spezza i muri INTERNI creando scorciatoie usabili da player e
+                         # nemici. Dopo il secondo lancio scompare dal player.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -133,6 +137,9 @@ func _apply_kind_defaults() -> void:
                 Kind.POTION:
                         pulse = 0.0
                         bob_offset = 0.0
+                Kind.HAMMER:
+                        pulse = 0.0
+                        bob_offset = 0.0
 
 
 # =========================================================
@@ -169,6 +176,8 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                         pass  # only anim
                 Kind.DYNAMITE:
                         pass  # only anim
+                Kind.HAMMER:
+                        pass  # only anim (bob + aura elettrica nel _draw)
 
         # FIX (calice non raccoglibile): RIMOSSA la self-collision a 16px.
         # Era un duplicato più piccolo del check del controller (20px) che
@@ -328,6 +337,7 @@ func _draw() -> void:
                 Kind.KNIGHT_STATUE: _draw_knight_statue()
                 Kind.DYNAMITE:     _draw_dynamite()
                 Kind.POTION:       _draw_potion()
+                Kind.HAMMER:       _draw_hammer()
 
 
 func _draw_mine() -> void:
@@ -1115,3 +1125,59 @@ func _draw_potion() -> void:
         # Riflesso del vetro
         draw_line(body_c + Vector2(-8.0, -6.0), body_c + Vector2(-5.0, -9.0),
                 Color(0.9, 1.0, 0.95, 0.7), 1.5)
+
+
+# ============================================================================
+# FIX (martello di Thor — nuova meccanica): Mjolnir da raccogliere nel
+# labirinto. PNG AI dedicato (128x128, testa d'acciaio squadrata con rune
+# incise e crepe elettriche, manico avvolto in cuoio); fallback procedurale
+# dettagliato con teste perni e legatura del manico se il PNG manca.
+# Il martello a terra ruota LENTAMENTE su se stesso (come esposto su un
+# piedistallo magico) con aura elettrica blu che pulsa.
+func _draw_hammer() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/collectibles/item_hammer.png")
+        # Aura elettrica blu pulsante (il "potere del fulmine" di Mjolnir)
+        var glow_alpha: float = 0.12 + pulse * 0.10
+        draw_circle(Vector2.ZERO, 24.0, Color(0.45, 0.75, 1.0, glow_alpha))
+        draw_circle(Vector2.ZERO, 15.0, Color(0.55, 0.85, 1.0, glow_alpha * 0.8))
+        if tex != null:
+                # Rotazione lenta (9 gradi/s): il martello gira su un perno
+                # invisibile mentre e' esposto a terra.
+                draw_set_transform(Vector2(0.0, y_off),
+                                deg_to_rad(fmod(anim_time * 9.0, 360.0)), Vector2.ONE)
+                var size: float = 64.0
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0, size, size), false)
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                # Scintilla elettrica che corre sulla testa del martello
+                var spark_t: float = fmod(anim_time, 2.2)
+                if spark_t < 0.4:
+                        var sa: float = sin((spark_t / 0.4) * PI)
+                        draw_circle(Vector2(-10.0, -12.0 + y_off), 1.5 + sa * 1.5,
+                                Color(0.75, 0.9, 1.0, sa))
+                return
+        # Fallback procedurale: Mjolnir stilizzato in pixel art
+        # Testa squadrata in acciaio con smusso e perni + manico in cuoio.
+        draw_set_transform(Vector2(0.0, y_off), deg_to_rad(-35.0), Vector2.ONE)
+        # Ombra a terra
+        draw_circle(Vector2(0.0, 16.0), 14.0, Color(0, 0, 0, 0.25))
+        # Testa del martello (acciaio a 3 tonalita')
+        draw_rect(Rect2(-17, -22, 34, 15), Color(0.58, 0.62, 0.70), true)
+        draw_rect(Rect2(-17, -22, 34, 4), Color(0.76, 0.80, 0.88), true)
+        draw_rect(Rect2(-17, -11, 34, 4), Color(0.44, 0.47, 0.54), true)
+        # Perni laterali
+        draw_rect(Rect2(-20, -19, 3, 9), Color(0.5, 0.54, 0.62), true)
+        draw_rect(Rect2(17, -19, 3, 9), Color(0.5, 0.54, 0.62), true)
+        # Rune incise (bagliore blu)
+        draw_rect(Rect2(-8, -20, 3, 10), Color(0.45, 0.8, 1.0), true)
+        draw_rect(Rect2(-2, -20, 3, 6), Color(0.55, 0.85, 1.0), true)
+        draw_rect(Rect2(4, -20, 3, 8), Color(0.45, 0.8, 1.0), true)
+        # Manico avvolto nel cuoio
+        draw_rect(Rect2(-3.5, -8, 7, 22), Color(0.42, 0.28, 0.16), true)
+        for strap in range(5):
+                draw_rect(Rect2(-3.5, -6 + strap * 4.5, 7, 1.6),
+                                Color(0.3, 0.19, 0.1), true)
+        # Pomo metallico
+        draw_rect(Rect2(-4.5, 13, 9, 5), Color(0.62, 0.58, 0.44), true)
+        draw_rect(Rect2(-4.5, 13, 9, 2), Color(0.8, 0.76, 0.6), true)
+        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

@@ -260,6 +260,15 @@ const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms @ 60fps
 # init(type, start_col, start_row): constructor equivalent to C++
 # `Enemy(EnemyType t, int startCol, int startRow)`. Call this immediately
 # after instantiating the Enemy node (or after add_child).
+# FIX (nessuna arma one-shot): gli HP base della tabella STATS sono scalati
+# x ENEMY_HEALTH_SCALE. Senza scala, i nemici da 1 HP (fantasma/pipistrello/
+# imp) morirebbero comunque al primo colpo di QUALSIASI arma (danno minimo 1),
+# violando la richiesta utente. Con la scala x4 il piu' debole ha 4 HP:
+# 4 colpi di pistola / 3 di laser / 2 di shotgun o razzo — e il danno delle
+# armi e' calcolato in % degli HP max (GameConstants.weapon_damage_for), per
+# cui il numero di colpi e' lo stesso per TUTTI i nemici a parita' di arma.
+const ENEMY_HEALTH_SCALE: int = 4
+
 func init(t: int, start_col: int, start_row: int) -> void:
         type = t
         # Pixel position = cell centre, offset down by UI_HEIGHT (UI bar on top).
@@ -274,8 +283,8 @@ func init(t: int, start_col: int, start_row: int) -> void:
         # Pull stats from the per-type table.
         var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
         speed = stats.speed
-        health = stats.health
-        max_health = stats.max_health
+        max_health = int(stats.max_health) * ENEMY_HEALTH_SCALE
+        health = max_health
 
         # Reset all timers (constructor initializer list in C++).
         path_update_timer = 0
@@ -710,6 +719,38 @@ func take_damage(dmg: int) -> void:
                         if get_parent():
                                 get_parent().add_child(p)
                         EffectsManager.screen_shake(4.0, 0.2)
+
+
+# ===========================================================================
+# FIX (nessuna arma one-shot — richiesto dall'utente): danno delle ARMI del
+# player calcolato come frazione degli HP massimi di QUESTO nemico, in base
+# al tipo di arma (GameConstants.WEAPON_HITS_TO_KILL: pistola 4 colpi, laser
+# 3, shotgun 2, razzo 2). NESSUNA arma da fuoco uccide in un colpo solo.
+# Gli item magici (mina/dinamite/calice/scettro) e il martello (50%) hanno
+# le loro funzioni dedicate e NON passano da qui.
+# ===========================================================================
+
+## Danno per un colpo di arma da fuoco `weapon_type` ( Weapon.Type ) su
+## questo nemico. Applica il danno internamente e RITORNA il danno inflitto
+## (utile al chiamante per punteggio/HUD).
+func take_weapon_hit(weapon_type: int) -> int:
+        var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health)
+        take_damage(dmg)
+        return dmg
+
+
+## Danno del MARTELLO di Thor: 50% degli HP massimi (2 colpi per uccidere
+## qualunque nemico, come da specifica utente). Ritorna il danno inflitto.
+func take_hammer_hit() -> int:
+        var dmg: int = GameConstants.hammer_damage_for(max_health)
+        take_damage(dmg)
+        return dmg
+
+
+## HP massimi del nemico (scalati x ENEMY_HEALTH_SCALE). Usato da alleati
+## (KnightAlly) e dal controller per i danni percentuali.
+func get_max_health() -> int:
+        return max_health
 
 
 func is_dead() -> bool:

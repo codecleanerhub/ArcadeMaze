@@ -175,7 +175,10 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
 
 # Per-cell placement constants (from Maze.cpp).
 const _NUM_EXTRA_OPENINGS: int = 15
-const _TREASURES_PER_LEVEL: int = 8
+# FIX (richiesta utente — tesori -20%): i tesori da raccogliere passano da 8
+# a 6 (-20% = 8 - 1.6, arrotondato per difetto al valore intero piu' vicino
+# che rispetta il vincolo di distanza minima 4 su griglia 30x15).
+const _TREASURES_PER_LEVEL: int = 6
 const _WEAPONS_PER_LEVEL: int = 5
 const _MIN_DIST_TREASURE: int = 4
 const _MIN_DIST_WEAPON: int = 5
@@ -636,6 +639,73 @@ func _init_grid() -> void:
                         }
 
 
+# ============================================================================
+# FIX (continue = sessione ESATTA): serializzazione / ripristino della griglia
+# ============================================================================
+## Serializza lo stato COMPLETO della griglia (tipo cella, tipo tesoro, arma
+## a terra) in un Dictionary serializzabile (Array piatti). Usato dal
+## MainGameController per lo snapshot della sessione al momento della morte:
+## al continue il labirinto viene ripristinato CELLA PER CELLA (tesori gia'
+## raccolti che restano raccolti, muri rotti dal martello che restano rotti,
+## armi a terra residue al loro posto) invece di essere rigenerato random.
+func serialize_state() -> Dictionary:
+        var types: Array = []
+        types.resize(_grid.size())
+        var tres: Array = []
+        tres.resize(_grid.size())
+        var wpns: Array = []
+        wpns.resize(_grid.size())
+        for i in range(_grid.size()):
+                var cell: Dictionary = _grid[i]
+                types[i] = int(cell.get("type", C.CellType.WALL))
+                tres[i] = int(cell.get("treasure", 0))
+                var w: Dictionary = cell.get("weapon", {})
+                if w.is_empty():
+                        wpns[i] = {}
+                else:
+                        wpns[i] = {
+                                "type": int(w.get("type", 0)),
+                                "power": int(w.get("power", 1)),
+                                "ammo": int(w.get("ammo", 0)),
+                        }
+        return {"level": level, "types": types, "treasures": tres, "weapons": wpns}
+
+
+## Ripristina la griglia da uno snapshot di serialize_state() e riapplica
+## palette / texture rocciose / luci delle torce / redraw (le stesse code di
+## generate(), SENZA rigenerare nulla: il layout resta identico a quando il
+## player e' morto).
+func restore_state(snap_data: Dictionary) -> void:
+        var types: Array = snap_data.get("types", [])
+        var tres: Array = snap_data.get("treasures", [])
+        var wpns: Array = snap_data.get("weapons", [])
+        var expected: int = C.MAZE_COLS * C.MAZE_ROWS
+        if types.size() != expected or tres.size() != expected or wpns.size() != expected:
+                push_warning("[Maze] restore_state: snapshot malformato (size "
+                                + str(types.size()) + "), rigenero il livello.")
+                generate(int(snap_data.get("level", 1)))
+                return
+        level = int(snap_data.get("level", 1))
+        _init_grid()
+        for i in range(expected):
+                var cell: Dictionary = _grid[i]
+                cell["type"] = int(types[i])
+                cell["treasure"] = int(tres[i])
+                var w: Dictionary = wpns[i]
+                if w is Dictionary and not (w as Dictionary).is_empty():
+                        cell["weapon"] = (w as Dictionary).duplicate()
+        # 7) Palette / texture rocciose / luci: identico a generate().
+        var pal_idx: int = C.get_palette_index(level)
+        var pal: Dictionary = _PALETTES[pal_idx]
+        wall_color = pal["wall"]
+        bg_color = pal["bg"]
+        _rock_tex = _generate_rock_texture(pal_idx, wall_color)
+        _spawn_torch_lights()
+        needs_redraw = true
+        maze_generated.emit(level)
+        queue_redraw()
+
+
 ## Iterative DFS maze carving (step 2 of generate). Matches the C++ stack
 ## loop exactly. Note: the start cell is (1, 1) and the deltas are step 2.
 func _dfs_carve() -> void:
@@ -745,6 +815,24 @@ func collect_treasure(col: int, row: int) -> void:
         treasure_collected.emit(col, row, tres_type)
         if get_remaining_treasures() == 0:
                 all_treasures_collected.emit()
+
+
+## FIX (martello di Thor): rompe il muro INTERNO alla cella (col, row),
+## trasformandolo in pavimento calpestabile. Usato dal MainGameController
+## quando il martello lanciato colpisce un muro. La cella diventa EMPTY:
+## player, nemici e BFS la usano subito come passaggio-scorciatoia (la
+## griglia e' letta in tempo reale da is_wall / BFS.find_path).
+## Il chiamante filtra gia' i muri di BORDO (indistruttibili per progetto:
+## romperli creerebbe un ulteriore effetto Pac-Man oltre alle gallerie).
+func break_wall(col: int, row: int) -> bool:
+        if col < 0 or col >= C.MAZE_COLS or row < 0 or row >= C.MAZE_ROWS:
+                return false
+        if _get_cell_type(col, row) != C.CellType.WALL:
+                return false
+        _set_cell_type(col, row, C.CellType.EMPTY)
+        needs_redraw = true
+        queue_redraw()
+        return true
 
 
 # FIX (scarpe alate bloccano livello): cerca e rimuove la cella TREASURE

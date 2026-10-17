@@ -519,6 +519,8 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                         _ghost_exit_target = Vector2.INF
                         ghost_mode = false
                 _update_sprite()
+                # FIX (martello di Thor): sync dello sprite in mano.
+                _update_hammer_sprite()
                 queue_redraw()
                 return
         ghost_timer_ms = _tick_timer_ms(ghost_timer_ms, delta_ms)
@@ -650,6 +652,9 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
 
         # Apply sprite flip + jump offset for rendering.
         _update_sprite()
+        # FIX (martello di Thor): sync dello sprite in mano (posizione/lato
+        # rispetto al facing del player + bagliore elettrico).
+        _update_hammer_sprite()
         # Trigger redraw so projectiles/aura/muzzle flash update visually.
         queue_redraw()
 
@@ -1177,6 +1182,10 @@ func _draw() -> void:
         # funzione del player per abilitare/disabilitare il rendering.
         if _dynamite_equipped:
                 _draw_dynamite_equipped()
+        # FIX (martello di Thor): il Mjolnir in mano NON viene disegnato qui:
+        # i figli Sprite2D (personaggio) disegnano SOPRA il _draw del parent,
+        # quindi qui resterebbe NASCOSTO dietro il corpo. Usa il child
+        # Sprite2D dedicato _hammer_sprite (vedi _update_hammer_sprite).
 
 
 # FIX (dinamite): variabile di stato per il rendering della dinamite.
@@ -1184,6 +1193,69 @@ func _draw() -> void:
 var _dynamite_equipped: bool = false
 var _dynamite_fuse_timer_ms: int = 0  # per animazione scintille
 var _dynamite_alert_played: bool = false  # per cambio colore miccia
+
+# FIX (martello di Thor): stato del martello impugnato. Settato dal
+# MainGameController al pickup e azzerato quando finiscono i 2 lanci.
+var _hammer_equipped: bool = false
+# Texture PNG del martello (cache statica condivisa tra i player).
+static var _hammer_tex: Texture2D = null
+# FIX (visibilita' in mano): Sprite2D figlio DEDICATO al martello — aggiunto
+# DOPO lo sprite del personaggio, quindi disegnato SOPRA di lui (nel _draw
+# del parent resterebbe coperto dal corpo: i child Node2D renderizzano dopo
+# il canvas del parent).
+var _hammer_sprite: Sprite2D = null
+
+
+func set_hammer_equipped(equipped: bool) -> void:
+        _hammer_equipped = equipped
+        _ensure_hammer_sprite()
+        if _hammer_sprite != null and is_instance_valid(_hammer_sprite):
+                _hammer_sprite.visible = equipped
+
+
+func is_hammer_equipped() -> bool:
+        return _hammer_equipped
+
+
+# Crea (una volta sola) lo Sprite2D del martello in mano.
+func _ensure_hammer_sprite() -> void:
+        if _hammer_sprite != null and is_instance_valid(_hammer_sprite):
+                return
+        if _hammer_tex == null:
+                var abs_path: String = ProjectSettings.globalize_path(
+                                "res://assets/sprites/collectibles/item_hammer.png")
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                _hammer_tex = ImageTexture.create_from_image(img)
+        if _hammer_tex == null:
+                return  # senza PNG niente martello in mano (il volo ha il fallback)
+        _hammer_sprite = Sprite2D.new()
+        _hammer_sprite.name = "HammerSprite"
+        _hammer_sprite.texture = _hammer_tex
+        _hammer_sprite.scale = Vector2(0.34, 0.34)  # ~43px
+        _hammer_sprite.centered = true
+        _hammer_sprite.visible = false
+        add_child(_hammer_sprite)
+
+
+# Aggiorna posizione/rotazione/aura del martello in mano (ogni frame da
+# _update_sprite): pendere al fianco del player, inclinato in avanti, con
+# bagliore elettrico che pulsa.
+func _update_hammer_sprite() -> void:
+        if _hammer_sprite == null or not is_instance_valid(_hammer_sprite):
+                return
+        if not _hammer_equipped:
+                _hammer_sprite.visible = false
+                return
+        var x_sign: float = 1.0 if last_dx >= 0 else -1.0
+        _hammer_sprite.visible = true
+        _hammer_sprite.position = Vector2(19.0 * x_sign, -7.0)
+        _hammer_sprite.rotation = x_sign * deg_to_rad(38.0)
+        var glow: float = 0.5 + 0.5 * sin(float(anim_time) * 0.006)
+        _hammer_sprite.modulate = Color(1.0, 1.0, 1.0).lerp(
+                        Color(0.72, 0.88, 1.0), 0.14 + 0.22 * glow)
+
 
 func set_dynamite_equipped(equipped: bool, fuse_ms: int = 0, alert: bool = false) -> void:
         _dynamite_equipped = equipped
