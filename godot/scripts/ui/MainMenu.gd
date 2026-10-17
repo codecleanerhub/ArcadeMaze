@@ -129,6 +129,15 @@ func _ready() -> void:
         start_requested.connect(_on_start_requested)
         credits_requested.connect(_on_credits_requested)
         configure_joystick_requested.connect(_on_configure_joystick_requested)
+        # FIX (config joystick dal menu OPTIONS): se torniamo al menu dopo
+        # aver configurato il joystick dalle opzioni, riapriamo il sottomenu
+        # OPTIONS col cursore su CONFIGURE JOYSTICK (da lì il giocatore può
+        # premere BACK o riconfigurare), NON il menu principale radice.
+        if GameManager and GameManager.menu_reopen_options:
+                GameManager.menu_reopen_options = false
+                _set_in_options(true)
+                _menu_item_index = 1  # CONFIGURE JOYSTICK
+                _update_items_text()
 
 
 # ============================================================================
@@ -157,6 +166,10 @@ func _start_demo_mode() -> void:
 func _on_start_requested(num_players: int, game_mode: int, music: bool,
                 p1_char: int, p2_char: int) -> void:
         if GameManager:
+                # FIX (config joystick dal menu OPTIONS): questo è il flusso
+                # START GAME: a fine ConfigJoy si prosegue verso SelectPlayer
+                # -> Intro -> partita (NON si torna al menu).
+                GameManager.config_joy_from_options = false
                 GameManager.num_players = num_players
                 GameManager.game_mode = game_mode
                 GameManager.music_enabled = music
@@ -213,6 +226,10 @@ func _on_credits_requested() -> void:
 
 func _on_configure_joystick_requested(player: int) -> void:
         if GameManager:
+                # FIX (dopo la configurazione parte il gioco): ConfigJoy aperta
+                # dal sottomenu OPTIONS deve riportare al MENU PRINCIPALE, non
+                # verso SelectPlayer -> partita. Marciamo la provenienza.
+                GameManager.config_joy_from_options = true
                 GameManager.config_joy_player = player
                 GameManager.config_joy_step = 0
                 GameManager.go_to_config_joy()

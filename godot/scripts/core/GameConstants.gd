@@ -449,16 +449,18 @@ static func get_player_tint(player_num: int) -> Color:
 # 6b. TUNNEL "PAC-MAN" (effetto wrap-around ai 4 lati del labirinto)
 # ============================================================================
 # Il labirinto ha 4 gallerie scavate nel muro di bordo: alto al centro
-# (colonne 14-15, riga 0), basso al centro (colonne 14-15, riga 14),
-# sinistra al centro (colonna 0, riga 7) e destra al centro (colonna 29,
-# riga 7). Player e nemici che entrano in una galleria riemergono dal lato
+# (colonna 15, riga 0), basso al centro (colonna 15, riga 14), sinistra
+# al centro (colonna 0, riga 7) e destra al centro (colonna 29, riga 7).
+# Player e nemici che entrano in una galleria riemergono dal lato
 # OPPOSTO dello schermo, raggiungendo cosi' prima il lato opposto.
 #
-# Coordinate: MAZE_COLS=30 -> il centro esatto cade TRA le colonne 14 e 15
-# (per questo i tunnel alto/basso sono larghi 2 celle); MAZE_ROWS=15 ->
-# il centro esatto e' la riga 7 (i tunnel sinistra/destra sono alti 1 cella,
-# coerenti con la larghezza 1 cella di tutti i corridoi del DFS).
-const TUNNEL_COLS_TOP_BOTTOM: Array[int] = [14, 15]
+# FIX (fori verticali piu' grandi dei laterali): i tunnel alto/basso erano
+# larghi 2 colonne (14-15 = 128px) mentre quelli laterali sono alti 1 riga
+# (64px). Ora TUTTE le gallerie sono larghe 1 cella (64px), cosi' i 4 fori
+# hanno la STESSA dimensione. Colonna 15 (dispari): le celle di accesso
+# (15,1) e (15,13) sono odd-odd, che la DFS scava SEMPRE -> connessione
+# garantita senza scavi extra.
+const TUNNEL_COLS_TOP_BOTTOM: Array[int] = [15]
 const TUNNEL_ROW_SIDES: int = 7
 
 
@@ -466,8 +468,8 @@ const TUNNEL_ROW_SIDES: int = 7
 ## "fuori labirinto" calpestabile: chi le attraversa riemerge dal lato
 ## opposto). Tutto il resto fuori griglia resta muro (is_wall = true).
 static func is_tunnel_virtual_cell(c: int, r: int) -> bool:
-        # Sopra il tunnel alto / sotto il tunnel basso (colonne 14-15).
-        if (c == 14 or c == 15) and (r == -1 or r == MAZE_ROWS):
+        # Sopra il tunnel alto / sotto il tunnel basso (colonna singola).
+        if TUNNEL_COLS_TOP_BOTTOM.has(c) and (r == -1 or r == MAZE_ROWS):
                 return true
         # A sinistra del tunnel sinistro / a destra del tunnel destro (riga 7).
         if r == TUNNEL_ROW_SIDES and (c == -1 or c == MAZE_COLS):
@@ -477,11 +479,11 @@ static func is_tunnel_virtual_cell(c: int, r: int) -> bool:
 
 ## Se (c, r) è una cella di BORDO scavata come imbocco di galleria, ritorna
 ## la cella di bordo OPPOSTA in cui si riemerge dopo il wrap; altrimenti
-## (-1, -1). Mappa completa: (14|15, 0) <-> (14|15, 14) e (0, 7) <-> (29, 7).
+## (-1, -1). Mappa completa: (15, 0) <-> (15, 14) e (0, 7) <-> (29, 7).
 static func tunnel_partner(c: int, r: int) -> Vector2i:
-        if r == 0 and (c == 14 or c == 15):
+        if r == 0 and TUNNEL_COLS_TOP_BOTTOM.has(c):
                 return Vector2i(c, MAZE_ROWS - 1)
-        if r == MAZE_ROWS - 1 and (c == 14 or c == 15):
+        if r == MAZE_ROWS - 1 and TUNNEL_COLS_TOP_BOTTOM.has(c):
                 return Vector2i(c, 0)
         if c == 0 and r == TUNNEL_ROW_SIDES:
                 return Vector2i(MAZE_COLS - 1, TUNNEL_ROW_SIDES)
@@ -494,8 +496,8 @@ static func tunnel_partner(c: int, r: int) -> Vector2i:
 ## accesso (serve alla grafica e al clamp della modalità fantasma).
 ## Ritorna true se la cella è un imbocco di galleria o il suo corridoio.
 static func is_tunnel_cell(c: int, r: int) -> bool:
-        # Imbocchi + corridoi alto / basso (colonne 14-15, righe 0-1 e 13-14).
-        if (c == 14 or c == 15) and (r <= 1 or r >= MAZE_ROWS - 2):
+        # Imbocchi + corridoi alto / basso (colonna singola, righe 0-1 e 13-14).
+        if TUNNEL_COLS_TOP_BOTTOM.has(c) and (r <= 1 or r >= MAZE_ROWS - 2):
                 return true
         # Imbocchi + corridoi sinistra / destra (riga 7, colonne 0-1 e 28-29).
         if r == TUNNEL_ROW_SIDES and (c <= 1 or c >= MAZE_COLS - 2):

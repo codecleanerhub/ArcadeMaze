@@ -98,6 +98,19 @@ signal boss_defeated(boss_index: int)
 ## Which player we are configuring in the joystick config screen (1 or 2).
 @export var config_joy_player: int = 1
 
+## FIX (config joystick dal menu OPTIONS): true se la schermata ConfigJoy
+## e' stata aperta dal sottomenu OPTIONS (non dal flusso START GAME).
+## A fine configurazione ConfigJoy deve riportare al MENU PRINCIPALE
+## (sottomenu OPTIONS aperto, cursore su CONFIGURE JOYSTICK) invece di
+## mandare il giocatore in SelectPlayer -> partita avviata di colpo.
+@export var config_joy_from_options: bool = false
+
+## FIX (ritorno al menu dopo ConfigJoy): MainMenu lo legge in _ready() e,
+## se true, riapre il sottomenu OPTIONS col cursore su CONFIGURE JOYSTICK
+## (indice 1), poi lo azzera. Scritto da ConfigJoy._on_config_finished
+## prima di go_to_menu().
+@export var menu_reopen_options: bool = false
+
 ## State we were in before pausing (so we can restore it on resume).
 @export var paused_from_state: int = C.GameState.PLAYING
 
@@ -265,6 +278,8 @@ func reset_run() -> void:
         menu_item_index = 0
         config_joy_step = 0
         config_joy_player = 1
+        config_joy_from_options = false
+        menu_reopen_options = false
         test_mode_enabled = false
         final_score = 0
         final_score_p1 = 0

@@ -81,25 +81,30 @@ func _physics_process(delta: float) -> void:
                                 else:
                                         print("[TEST] OK B: P2 eliminato escluso dal targeting")
                                 main.player2.lives = p2_lives_bak
-                                # --- C: celle virtuali tunnel ---
-                                for v in [Vector2i(14, -1), Vector2i(15, -1),
-                                                Vector2i(14, C.MAZE_ROWS), Vector2i(15, C.MAZE_ROWS),
+                                # --- C: celle virtuali tunnel (colonna singola 15) ---
+                                for v in [Vector2i(15, -1), Vector2i(15, C.MAZE_ROWS),
                                                 Vector2i(-1, 7), Vector2i(C.MAZE_COLS, 7)]:
                                         if main.maze.is_wall(v.x, v.y):
                                                 _fail("C: cella virtuale " + str(v) + " dovrebbe essere aperta")
-                                for w in [Vector2i(13, -1), Vector2i(0, -1), Vector2i(-1, 6),
-                                                Vector2i(-1, 8), Vector2i(C.MAZE_COLS, 8), Vector2i(14, -2)]:
+                                for w in [Vector2i(14, -1), Vector2i(16, -1), Vector2i(0, -1),
+                                                Vector2i(-1, 6), Vector2i(-1, 8),
+                                                Vector2i(C.MAZE_COLS, 8), Vector2i(14, C.MAZE_ROWS),
+                                                Vector2i(15, -2)]:
                                         if not main.maze.is_wall(w.x, w.y):
                                                 _fail("C: OOB " + str(w) + " dovrebbe essere muro")
-                                # celle tunnel scavate
-                                for cell in [Vector2i(14, 0), Vector2i(15, 0), Vector2i(14, 1), Vector2i(15, 1),
-                                                Vector2i(14, C.MAZE_ROWS - 1), Vector2i(15, C.MAZE_ROWS - 1),
-                                                Vector2i(14, C.MAZE_ROWS - 2), Vector2i(15, C.MAZE_ROWS - 2),
+                                # celle tunnel scavate (colonna 15 = 1 cella, come i laterali)
+                                for cell in [Vector2i(15, 0), Vector2i(15, 1),
+                                                Vector2i(15, C.MAZE_ROWS - 1), Vector2i(15, C.MAZE_ROWS - 2),
                                                 Vector2i(0, 7), Vector2i(1, 7),
                                                 Vector2i(C.MAZE_COLS - 1, 7), Vector2i(C.MAZE_COLS - 2, 7)]:
                                         if main.maze.is_wall(cell.x, cell.y):
                                                 _fail("C: cella tunnel " + str(cell) + " non scavata")
-                                print("[TEST] OK C: celle virtuali + scavature tunnel corrette")
+                                # la vecchia seconda colonna (14) e' tornata muro
+                                for solid in [Vector2i(14, 0), Vector2i(16, 0),
+                                                Vector2i(14, C.MAZE_ROWS - 1), Vector2i(16, C.MAZE_ROWS - 1)]:
+                                        if not main.maze.is_wall(solid.x, solid.y):
+                                                _fail("C: cella " + str(solid) + " dovrebbe essere muro (fori tutti da 1 cella)")
+                                print("[TEST] OK C: celle virtuali + scavature tunnel corrette (fori 1 cella)")
                                 phase = 1
                 1:
                         # --- D: wrap player attraverso il tunnel alto ---
@@ -124,7 +129,7 @@ func _physics_process(delta: float) -> void:
                                 var cell: Vector2i = Vector2i(
                                                 int(main.player.position.x / C.TILE_SIZE),
                                                 int((main.player.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                                if cell.x != 14 and cell.x != 15:
+                                if cell.x != 15:
                                         _fail("D: sbocco wrap con colonna sbagliata: " + str(cell))
                                 elif cell.y < C.MAZE_ROWS - 3:
                                         _fail("D: il player non è nella zona bassa dopo il wrap: " + str(cell))

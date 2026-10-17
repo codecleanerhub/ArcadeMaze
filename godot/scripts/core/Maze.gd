@@ -211,9 +211,10 @@ func _draw() -> void:
         # Decora alcune celle WALL con teschi, ragnatele, crepe
         # (vantaggio Godot: texture procedurali ad alta risoluzione)
         _render_wall_decorations()
-        # FIX (meccanica tunnel "Pac-Man"): bocche di grotta rocciosa sulle
-        # 4 aperture del muro di bordo (stesso colore/tinta del muro).
-        _draw_tunnel_caves()
+        # FIX (meccanica tunnel "Pac-Man"): deformazione a SEMILUNA del
+        # muro di bordo sulle 4 aperture (richiesta utente: niente grafica
+        # di grotta, solo la deformazione del muro stesso).
+        _draw_tunnel_halfmoons()
 
 
 # Variabili per le luci delle torce (create una volta in generate)
@@ -539,8 +540,11 @@ func generate(lvl: int = 1) -> void:
         # (wrap gestito da GameConstants.tunnel_wrap + is_wall sulle celle
         # virtuali). I tesori/armi NON finiscono nelle gallerie: il placement
         # pesca solo celle interne (righe/colonne 1..N-2).
-        # - Alto al centro (colonne 14-15): imbocco riga 0 + corridoio riga 1.
-        # - Basso al centro (colonne 14-15): imbocco riga 14 + corridoio riga 13.
+        # FIX (dimensione fori): tutte le gallerie sono larghe 1 cella (64px)
+        # anche in alto/basso (colonna 15), cosi' i 4 fori sono IDENTICI.
+        # - Alto al centro (colonna 15): imbocco riga 0 + corridoio riga 1
+        #   ((15,1) e' odd-odd, sempre gia' aperta).
+        # - Basso al centro (colonna 15): imbocco riga 14 + corridoio riga 13.
         # - Sinistra al centro (riga 7): imbocco col 0 + corridoio col 1.
         # - Destra al centro (riga 7): imbocco col 29 + corridoio col 28
         #   (col 27 e' gia' aperta: odd-odd sempre scavata dalla DFS).
@@ -1073,160 +1077,102 @@ func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) 
 
 
 # ============================================================================
-# GALLERIE "PAC-MAN" — grafica della bocca di grotta rocciosa
+# GALLERIE "PAC-MAN" — deformazione a SEMILUNA del muro di bordo
 # ============================================================================
-# Le 4 aperture nel muro di bordo (alto/basso al centro su colonne 14-15,
-# sinistra/destra al centro sulla riga 7) sono disegnate come BOCCA DI
-# GALLERIA scavata nella roccia: un foro ad arco con bordo frastagliato di
-# conci (stesso colore del muro del livello), soglia in pietra sul lato
-# interno del labirinto, crepe che si irradiano nel muro e buio profondo
-# verso l'esterno. Chi entra nel foro riemerge dal lato opposto (wrap).
+# Le 4 aperture nel muro di bordo (alto/basso al centro sulla colonna 15,
+# sinistra/destra al centro sulla riga 7) sono rese con UNA SEMPLICE
+# DEFORMAZIONE A SEMILUNA del muro (richiesta utente: "elimina quella
+# grafica dei fori, applica solo una deformazione a semiluna"): niente
+# conci, glow, chiave di volta, crepe o soglie — solo i due angoli del
+# muro che fiancheggiano ogni imbocco vengono arrotondati con un quarto
+# di cerchio (raggio meta' cella), cosi' la bocca della galleria ha il
+# profilo a semiluna. Il foro e' largo ESATTAMENTE 1 cella (64px) su
+# TUTTI e 4 i lati (prima alto/basso erano larghi 2 celle = 128px:
+# "i fori sopra e sotto piu' grandi di quelli laterali").
 #
-# La forma e' disegnata in coordinate LOCALI con l'arco verso -y (il lato
-# del buco) e l'apertura verso +y (il labirinto); le altre tre bocche sono
-# la STESSA forma ruotata di 90/180/270 gradi attorno al centro dell'imbocco
-# (draw_set_transform), cosi' lo stile e' identico su tutti i lati.
+# La zona arrotondata e' riempita col colore del gradiente del pavimento
+# (stessa formula di _render_floor_gradient, campionata dentro lo scalone)
+# e l'arco e' profilato con la stessa matita scura del bordo delle celle
+# muro: la galleria sembra un pezzo di muro DEFORMATO, non un decal
+# incollato sopra.
 
-# Genera i punti dell'arco della bocca (da sinistra a destra; l'apertura
-# guarda verso +y = interno del labirinto, il buco sale verso -y).
-# half_w = semi-larghezza della bocca; arch_h = altezza dell'arco;
-# jitter = entita' della irregolarita' rocciosa; salt varia il pattern.
-func _tunnel_arch_points(half_w: float, base_y: float, arch_h: float,
-                jitter: float, salt: int, segments: int) -> PackedVector2Array:
+
+# Colore del gradiente del pavimento nel punto (x, y): replica la formula
+# a quad 8x8 di _render_floor_gradient e ritorna il colore del quad che
+# contiene il punto, cosi' lo scalone si fonde col pavimento gia' disegnato
+# intorno all'imbocco.
+func _floor_gradient_color_at(x: float, y: float) -> Color:
+        var center_c: float = C.MAZE_COLS / 2.0
+        var center_r: float = C.MAZE_ROWS / 2.0
+        var step_x: float = C.MAZE_COLS * C.TILE_SIZE / 8.0
+        var step_y: float = C.MAZE_ROWS * C.TILE_SIZE / 8.0
+        var sx: float = clampf(floor(x / step_x), 0.0, 7.0)
+        var sy: float = clampf(floor((y - C.UI_HEIGHT) / step_y), 0.0, 7.0)
+        var cell_cx: float = (sx + 0.5) * step_x / C.TILE_SIZE
+        var cell_cy: float = (sy + 0.5) * step_y / C.TILE_SIZE
+        var dx: float = (cell_cx - center_c) / center_c
+        var dy: float = (cell_cy - center_r) / center_r
+        var dist: float = clampf(sqrt(dx * dx + dy * dy), 0.0, 1.0)
+        var brightness: float = 24.0 - dist * 18.0
+        return Color(
+                clampf(bg_color.r + brightness / 255.0, 0.0, 1.0),
+                clampf(bg_color.g + brightness * 0.7 / 255.0, 0.0, 1.0),
+                clampf(bg_color.b + brightness * 0.4 / 255.0, 0.0, 1.0),
+        )
+
+
+# Disegna un quarto di disco (scalone a semiluna) con centro `center`,
+# raggio `radius`, nel quadrante (sx, sy): es. sx=-1 e sy=-1 = quarto di
+# disco in alto a sinistra del centro (dentro il muro che fiancheggia
+# l'imbocco). Il riempimento usa il colore pavimento campionato al
+# baricentro dello scalone; l'arco e' profilato col bordo scuro usato
+# anche per il perimetro delle celle muro.
+func _draw_halfmoon_scallop(center: Vector2, radius: float, sx: float, sy: float) -> void:
+        var fill: Color = _floor_gradient_color_at(
+                center.x + sx * radius * 0.5, center.y + sy * radius * 0.5)
         var pts := PackedVector2Array()
-        for i in range(segments + 1):
-                var t: float = float(i) / float(segments)
-                var x: float = -half_w + 2.0 * half_w * t
-                # Profilo ad arco: sin^0.75 -> fianchi ripidi, vetta ampia.
-                var arch: float = pow(sin(PI * t), 0.75)
-                var y: float = base_y - arch_h * arch
-                # Irregolarita' deterministica (roccia scabra, stabile tra frame):
-                # piu' marcata sulla vetta, quasi nulla agli angoli della base.
-                var j: float = (_cell_hash(11 + i, 7 + i, salt) - 0.5) * 2.0 * jitter
-                y += j * (0.25 + 0.75 * arch)
-                pts.append(Vector2(x + j * 0.7, y))
-        return pts
+        pts.append(center)
+        const SEG: int = 10
+        for i in range(SEG + 1):
+                var t: float = float(i) / float(SEG)
+                var a: float = t * PI * 0.5
+                pts.append(center + Vector2(
+                        sx * cos(a) * radius, sy * sin(a) * radius))
+        draw_colored_polygon(pts, fill)
+        # Bordo dell'arco: stessa matita scura del perimetro delle celle muro
+        # (vedi _render_wall_cell), cosi' il "taglio" della semiluna si
+        # presenta come il bordo del muro stesso.
+        var arc := pts.slice(1, pts.size())
+        draw_polyline(arc, Color(0.04, 0.04, 0.04), 1.5, true)
 
 
-# Disegna una singola bocca di grotta. `center` = centro pixel dell'imbocco,
-# `rot` = rotazione (0 = tunnel ALTO con buco verso l'alto; PI = basso;
-# -PI/2 = sinistra; +PI/2 = destra), `half_w` = semi-larghezza della bocca
-# (64 per i tunnel alto/basso larghi 2 celle, 32 per i laterali da 1 cella).
-func _draw_one_tunnel_cave(center: Vector2, rot: float, half_w: float) -> void:
-        # Palette roccia ricavata dal colore del MURO del livello: la galleria
-        # deve sembrare scavata nello stesso muro (richiesta utente).
-        var rock_dark: Color = wall_color.darkened(0.48)
-        var rock_mid: Color = wall_color.darkened(0.16)
-        var rock_light: Color = wall_color.lightened(0.16)
-        var rim_edge: Color = Color(0.04, 0.04, 0.04)
-        var void_deep: Color = Color(0.012, 0.010, 0.016)
-        var void_mouth: Color = Color(0.055, 0.048, 0.062)
-
-        var base_y: float = 28.0                      # base dell'arco (lato labirinto)
-        var arch_h: float = minf(52.0, 24.0 + half_w * 0.16)  # altezza foro
-
-        draw_set_transform(center, rot, Vector2.ONE)
-        # Tutti i punti sono in coordinate locali rispetto al centro imbocco.
-
-        # --- (1) Anello esterno di conci (il muro "rotto" attorno al foro) ---
-        var outer_pts := _tunnel_arch_points(half_w + 10.0, base_y + 6.0,
-                arch_h + 9.0, 2.6, 31, 14)
-        var outer_cols := PackedColorArray()
-        for i in outer_pts.size():
-                var t: float = float(i) / float(maxi(1, outer_pts.size() - 1))
-                # Tinta per-blocco deterministica: conci leggermente diversi.
-                var v: float = (_cell_hash(3 + i, 5 + i, 77) - 0.5) * 0.22
-                outer_cols.append(Color(
-                        clampf(rock_mid.r + v, 0.0, 1.0),
-                        clampf(rock_mid.g + v, 0.0, 1.0),
-                        clampf(rock_mid.b + v, 0.0, 1.0)))
-        var ring_poly := PackedVector2Array(outer_pts)
-        ring_poly.append(Vector2(half_w + 10.0, base_y + 10.0))
-        ring_poly.append(Vector2(-(half_w + 10.0), base_y + 10.0))
-        while outer_cols.size() < ring_poly.size():
-                outer_cols.append(rock_dark)
-        draw_polygon(ring_poly, outer_cols)
-
-        # --- (2) Anello interno del foro (bordo scavato, piu' scuro) ---
-        var rim_pts := _tunnel_arch_points(half_w + 2.0, base_y + 2.0,
-                arch_h + 2.0, 2.0, 61, 12)
-        var rim_poly := PackedVector2Array(rim_pts)
-        rim_poly.append(Vector2(half_w + 2.0, base_y + 6.0))
-        rim_poly.append(Vector2(-(half_w + 2.0), base_y + 6.0))
-        draw_colored_polygon(rim_poly, rock_dark)
-        # Spessore dell'orlo: linea chiara sull'arco interno (spigolo vivo).
-        draw_polyline(rim_pts, rock_light, 2.0, true)
-
-        # --- (3) BUCO (il foro ad arco): vertice profondo quasi nero, base
-        # leggermente piu' chiara, con respiro lento del buio (glow tenue) ---
-        var hole_pts := _tunnel_arch_points(half_w - 2.0, base_y, arch_h, 1.4, 91, 12)
-        var hole_cols := PackedColorArray()
-        for i in hole_pts.size():
-                var t: float = float(i) / float(maxi(1, hole_pts.size() - 1))
-                var arch: float = pow(sin(PI * t), 0.75)
-                # Più ci si allontana dall'apertura, più scuro (profondità).
-                hole_cols.append(void_mouth.lerp(void_deep, clampf(arch, 0.0, 1.0)))
-        draw_polygon(hole_pts, hole_cols)
-        # Glow freddo pulsante molto tenue dentro il foro.
-        var glow_a: float = 0.05 + 0.025 * sin(_anim_time * 0.9)
-        draw_circle(Vector2(0.0, base_y - arch_h * 0.42),
-                minf(half_w * 0.55, 20.0), Color(0.30, 0.24, 0.40, glow_a))
-        # Nucleo di buio assoluto in fondo alla galleria.
-        draw_circle(Vector2(0.0, base_y - arch_h * 0.62),
-                minf(half_w * 0.42, 15.0), void_deep)
-
-        # --- (4) Chiave di volta (concio in rilievo sulla vetta dell'arco) ---
-        var key_w: float = maxf(7.0, half_w * 0.14)
-        var key_top_y: float = base_y - arch_h - 7.0
-        var keystone := PackedVector2Array([
-                Vector2(-key_w, key_top_y + 9.0),
-                Vector2(key_w, key_top_y + 9.0),
-                Vector2(key_w * 0.72, key_top_y),
-                Vector2(-key_w * 0.72, key_top_y),
-        ])
-        draw_colored_polygon(keystone, rock_light)
-        draw_polyline(keystone + PackedVector2Array([keystone[0]]),
-                rim_edge, 1.2, true)
-
-        # --- (5) Crepe che si irradiano dal foro nel muro circostante ---
-        for i in 3:
-                var h1: float = _cell_hash(17 + i, 23 + i, 55)
-                var h2: float = _cell_hash(29 + i, 31 + i, 56)
-                var cside: float = -1.0 if i % 2 == 0 else 1.0
-                var cxx: float = cside * (half_w * (0.35 + 0.45 * h1))
-                var cyy: float = base_y - arch_h * (0.30 + 0.55 * h2)
-                var clen: float = 7.0 + h2 * 9.0
-                draw_line(Vector2(cxx, cyy),
-                        Vector2(cxx + cside * clen * 0.7, cyy - clen),
-                        Color(0.02, 0.02, 0.02, 0.55), 1.2)
-
-        # --- (6) Soglia in pietra sul lato interno (pavimento della bocca) ---
-        var sill_rect := Rect2(-half_w + 5.0, base_y - 5.0, 2.0 * half_w - 10.0, 8.0)
-        draw_rect(sill_rect, rock_mid.darkened(0.28), true)
-        draw_rect(sill_rect, rim_edge, false, 1.0)
-        draw_line(Vector2(-half_w + 6.0, base_y - 4.0),
-                Vector2(half_w - 6.0, base_y - 4.0), rock_light, 1.4)
-        # Sassiolini sulla soglia.
-        for i in 2:
-                var hp: float = _cell_hash(41 + i, 43 + i, 99)
-                draw_circle(Vector2(-half_w * 0.4 + hp * half_w * 0.8, base_y - 2.0),
-                        1.4 + hp * 1.1, rock_dark.lightened(0.06))
-
-        # Reset della trasformazione per i draw successivi.
-        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-
-# Disegna le 4 bocche di galleria del labirinto (viene chiamata da _draw()
-# DOPO celle e decorazioni: la roccia della galleria copre il pavimento
-# delle celle di bordo scavate).
-func _draw_tunnel_caves() -> void:
-        var top_cx: float = (C.TUNNEL_COLS_TOP_BOTTOM[0] + 1) * C.TILE_SIZE
-        _draw_one_tunnel_cave(
-                Vector2(top_cx, 0.5 * C.TILE_SIZE + C.UI_HEIGHT), 0.0, 64.0)
-        _draw_one_tunnel_cave(
-                Vector2(top_cx, (C.MAZE_ROWS - 0.5) * C.TILE_SIZE + C.UI_HEIGHT), PI, 64.0)
-        var side_cy: float = (C.TUNNEL_ROW_SIDES + 0.5) * C.TILE_SIZE + C.UI_HEIGHT
-        _draw_one_tunnel_cave(
-                Vector2(0.5 * C.TILE_SIZE, side_cy), -PI * 0.5, 32.0)
-        _draw_one_tunnel_cave(
-                Vector2((C.MAZE_COLS - 0.5) * C.TILE_SIZE, side_cy), PI * 0.5, 32.0)
+# Disegna la deformazione a semiluna sulle 4 bocche di galleria (chiamata
+# da _draw() DOPO celle e decorazioni: gli scaloni coprono gli angoli
+# delle celle muro che fiancheggiano ogni imbocco). Geometria: ogni
+# imbocco e' largo 1 cella; i due angoli del muro sul lato che guarda il
+# labirinto vengono smussati con un quarto di cerchio di raggio meta'
+# cella -> la bocca si allarga dolcemente a semiluna verso il interno.
+func _draw_tunnel_halfmoons() -> void:
+        var r: float = C.TILE_SIZE * 0.5        # semiluna piena (32px)
+        var half: float = C.TILE_SIZE * 0.5    # semi-larghezza imbocco
+        var tb_col: float = float(C.TUNNEL_COLS_TOP_BOTTOM[0])
+        var cx: float = (tb_col + 0.5) * C.TILE_SIZE  # centro imbocco alto/basso
+        # --- Tunnel ALTO (colonna 15, riga 0): angoli INFERIORI dei muri
+        #     che fiancheggiano l'imbocco, lato che guarda il labirinto.
+        var top_y: float = C.UI_HEIGHT + C.TILE_SIZE
+        _draw_halfmoon_scallop(Vector2(cx - half, top_y), r, -1.0, -1.0)
+        _draw_halfmoon_scallop(Vector2(cx + half, top_y), r, 1.0, -1.0)
+        # --- Tunnel BASSO (colonna 15, riga 14): angoli SUPERIORI.
+        var bot_y: float = C.UI_HEIGHT + (C.MAZE_ROWS - 1) * C.TILE_SIZE
+        _draw_halfmoon_scallop(Vector2(cx - half, bot_y), r, -1.0, 1.0)
+        _draw_halfmoon_scallop(Vector2(cx + half, bot_y), r, 1.0, 1.0)
+        # --- Tunnel SINISTRA (riga 7, colonna 0): angoli DESTRI dei muri
+        #     sopra e sotto l'imbocco (la faccia interna del muro e' x=64).
+        var side_cy: float = (float(C.TUNNEL_ROW_SIDES) + 0.5) * C.TILE_SIZE + C.UI_HEIGHT
+        _draw_halfmoon_scallop(Vector2(C.TILE_SIZE, side_cy - half), r, -1.0, -1.0)
+        _draw_halfmoon_scallop(Vector2(C.TILE_SIZE, side_cy + half), r, -1.0, 1.0)
+        # --- Tunnel DESTRA (riga 7, colonna 29): angoli SINISTRI
+        #     (faccia interna del muro e' x=1856).
+        var right_x: float = (C.MAZE_COLS - 1) * C.TILE_SIZE
+        _draw_halfmoon_scallop(Vector2(right_x, side_cy - half), r, 1.0, -1.0)
+        _draw_halfmoon_scallop(Vector2(right_x, side_cy + half), r, 1.0, 1.0)

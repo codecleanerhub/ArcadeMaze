@@ -42,8 +42,18 @@ func _ready() -> void:
         config_finished.connect(_on_config_finished)
 
 func _on_config_finished() -> void:
-        # After joystick config, go to character selection (not back to menu)
+        # FIX (dopo la configurazione partiva il gioco): se la configurazione
+        # e' stata aperta dal sottomenu OPTIONS, a fine configurazione si torna
+        # al MENU PRINCIPALE (sottomenu OPTIONS, cursore su CONFIGURE JOYSTICK)
+        # invece di andare in SelectPlayer -> Intro -> partita avviata.
+        # Vale anche per l'annullamento con ESC ("ESC TO CANCEL").
         if GameManager:
+                if GameManager.config_joy_from_options:
+                        GameManager.config_joy_from_options = false
+                        GameManager.menu_reopen_options = true
+                        GameManager.go_to_menu()
+                        return
+                # Flusso START GAME: joystick non ancora configurato.
                 if GameManager.config_joy_player == 1 and GameManager.num_players == 2:
                         # P2 also needs config
                         GameManager.config_joy_player = 2
