@@ -50,6 +50,22 @@ func _physics_process(_delta: float) -> void:
                                                 _fail("aspect ratio non widescreen: " + str(ts) + \
                                                                 " (rapporto " + str(ts.x / ts.y) + " < 1.6: " + \
                                                                 "in cover-fit su 1920x1080 verrebbe tagliato)")
+                                        # Guardia anti-regressione (Task 17): i bordi verticali
+                                        # dell'asset devono essere SCURI. L'outpaint originale
+                                        # aveva bande bianche che, con l'overlay 0.45, apparivano
+                                        # come bande grigie uniformi sopra e sotto lo schermo.
+                                        var _img_chk: Image = credits._bg_texture.get_image()
+                                        for y in [0, 4, 10, int(ts.y) - 1, int(ts.y) - 5, int(ts.y) - 11]:
+                                                var lum: float = 0.0
+                                                var n: int = 0
+                                                for x in range(0, int(ts.x), 16):
+                                                        var c: Color = _img_chk.get_pixel(x, y)
+                                                        lum += (c.r + c.g + c.b) / 3.0
+                                                        n += 1
+                                                lum /= float(n)
+                                                if lum > 0.35:
+                                                        _fail("riga y=" + str(y) + " dell'asset troppo chiara " + \
+                                                                        "(lum " + str(lum) + " > 0.35): banda bianca residua ai bordi")
                                 # --- Fase 1b: le voci dei credits sono state costruite ---
                                 if credits._entries.is_empty():
                                         _fail("entries dei credits vuote: _build_entries non ha girato")
