@@ -26,6 +26,12 @@
 #
 # Emitted signals:
 #   * back_to_menu_requested()  -- when ESC is pressed or the timeout fires.
+#
+# Background dedicato (bg_credits.png): teschio pirata stile Monkey Island con
+# occhiali da sole (emoji style) e braccia scheletriche con la mano nel gesto
+# OK (pugno chiuso e pollice in su), su sala gotica con torce — stesso stile
+# e palette degli altri sfondi (es. bg_halloffame.png). Copertina cover-fit
+# + overlay scuro per la leggibilità del testo scorrevole, come HallOfFame.
 # ============================================================================
 extends Control
 
@@ -39,6 +45,9 @@ signal back_to_menu_requested()
 @export var color_publisher: Color = Color(0.784, 0.784, 0.784)
 @export var color_hint:     Color = Color(0.588, 0.588, 0.588)
 @export var color_bg:       Color = Color(0.020, 0.020, 0.039)    # 5,5,10
+
+# --- Background (stile delle altre schermate: cover-fit + overlay) ---------
+var _bg_texture: Texture2D = null
 
 # --- Scrolling constants --------------------------------------------------
 # Mirror: "Scroll speed: 30px/sec", "0.5px per frame at 60fps".
@@ -75,6 +84,14 @@ func _ready() -> void:
                         AudioManager.play_menu_music()
         # Self-wire: when the user requests to go back, return to menu.
         back_to_menu_requested.connect(_on_back_to_menu_requested)
+        # Background dedicato (pattern HallOfFameScreen): caricamento diretto
+        # dal filesystem perche' l'import di Godot potrebbe non essere ancora
+        # disponibile al primo avvio dopo l'aggiunta del file.
+        var _abs := ProjectSettings.globalize_path("res://assets/backgrounds/bg_credits.png")
+        if FileAccess.file_exists(_abs):
+                var _img := Image.new()
+                if _img.load(_abs) == OK:
+                        _bg_texture = ImageTexture.create_from_image(_img)
 
 
 func _on_back_to_menu_requested() -> void:
@@ -245,8 +262,19 @@ func _unhandled_input(event: InputEvent) -> void:
 # drawCredits()  (mirror of Game::drawCredits)
 # ============================================================================
 func _draw() -> void:
-        # Solid background
-        draw_rect(Rect2(0, 0, size.x, size.y), color_bg)
+        # --- Background (cover-fit come HallOfFameScreen/MainMenu) ---
+        if _bg_texture:
+                var tex_size: Vector2 = _bg_texture.get_size()
+                var scale_val: float = max(size.x / tex_size.x, size.y / tex_size.y)
+                var draw_size: Vector2 = tex_size * scale_val
+                var draw_pos: Vector2 = (size - draw_size) / 2.0
+                draw_texture_rect(_bg_texture, Rect2(draw_pos, draw_size), false)
+                # Overlay scuro per la leggibilità del testo che scorre
+                # (stesso trattamento della Hall of Fame: 0.45).
+                draw_rect(Rect2(0, 0, size.x, size.y), Color(0.0, 0.0, 0.0, 0.45), true)
+        else:
+                # Fallback: solid background
+                draw_rect(Rect2(0, 0, size.x, size.y), color_bg)
         # FIX (schermata nera dai credits): se il tema non fornisce un font di
         # default (get_theme_default_font() puo' tornare null), usa il font di
         # fallback del ThemeDB: senza font ogni draw_string e' un no-op e la
