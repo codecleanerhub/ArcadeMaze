@@ -85,6 +85,28 @@ var magic_portal: Dictionary = {
 var initial_count: int = 0
 # One-shot latch: portal triggers at most once per maze level.
 var portal_used: bool = false
+
+# ---------------------------------------------------------------------------
+# TASK 23 (meccanica utente): RESPAWN PROGRESSIVO dopo il 5° boss.
+# Dal livello 21 in poi (5 boss sconfitti) il portale NON scarica più tutto
+# il respawn in un'unica ondata: al primo trigger (soglia 50%, come prima)
+# escono il MINI-BOSS + 1 nemico comune, il portale si chiude; poi, a ogni
+# KILL di un nemico del labirinto, il portale RIAPPARE e fa uscire altri 2
+# nemici — e così via finché non sono usciti tutti i nemici previsti per
+# quel livello (budget = numero di nemici iniziali). Massimo 2 alla volta
+# per non affollare il labirinto.
+# ---------------------------------------------------------------------------
+## True dal livello 21+ (boss sconfitti >= 5): respawn a ventaglietti.
+var progressive_respawn: bool = false
+## Nemici ancora da far uscire dal portale (respawn progressivo).
+var respawn_budget: int = 0
+
+## TASK 23: true se il respawn progressivo ha ancora nemici in sospeso
+## (il MainGameController lo usa per non far scattare HURRY UP finché il
+## portale non ha finito di "sfornare").
+func respawn_pending() -> bool:
+        return progressive_respawn and respawn_budget > 0
+
 # FIX (nemico +1 dopo ogni boss): numero di nuovi tipi sbloccati per il
 # livello corrente (0..16). Impostato da spawn_enemies() in base al livello;
 # il respawn casuale dal portale pesca dal pool 28 + unlocked_new_types.
@@ -132,6 +154,9 @@ func spawn_enemies(maze: Object, level: int = 1) -> void:
         enemies.clear()
         var wave_size: int = wave_size_for_level(level)
         unlocked_new_types = unlocked_new_types_for_level(level)
+        # TASK 23: respawn progressivo dal livello 21 (dopo il 5° boss:
+        # boss ai livelli 4,8,12,16,20 → boss sconfitti = (21-1)/4 = 5).
+        progressive_respawn = wave_size_for_level(level) >= BASE_WAVE_SIZE + 5
         # FIX (sprite uno sopra l'altro): celle già usate da questo wave, per
         # mantenere distanza minima tra spawn (uniformità visiva).
         var used_cells: Array = []
@@ -177,6 +202,9 @@ func spawn_enemies(maze: Object, level: int = 1) -> void:
         # Snapshot for the 50% portal trigger.
         initial_count = enemies.size()
         portal_used = false
+        # TASK 23: budget respawn = tutti i nemici previsti per il livello
+        # (nelle modalità progressive verranno rilasciati 1 + 2 per kill).
+        respawn_budget = initial_count if progressive_respawn else 0
         # Reset portal state to inactive.
         magic_portal.active = false
         magic_portal.phase = 3
@@ -272,13 +300,21 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         magic_portal.rotation = 0.0
         magic_portal.glow_pulse = 0.0
         magic_portal.enemies_to_spawn = PORTAL_ENEMIES_TO_SPAWN
-        # FIX (respawn 100% nemici): il portale respawna il 100% dei nemici
-        # iniziali del livello (non più il 50%): se il livello è iniziato con
-        # 6 nemici, dal portale ne escono 6 + il mini-boss (il portale
-        # continua ad apparire quando i nemici scendono al 50%, cioè a 3).
-        magic_portal.enemies_to_spawn = maxi(1, initial_count)
-        if magic_portal.enemies_to_spawn > initial_count:
-                magic_portal.enemies_to_spawn = initial_count
+        # TASK 23 (respawn progressivo post-5° boss): al PRIMO trigger il
+        # portale fa uscire SOLO 1 nemico comune (+ il mini-boss, spawnato
+        # qui sotto): il resto arriva 2 per volta a ogni kill successiva
+        # (notify_enemy_killed) finché il budget non è esaurito.
+        if progressive_respawn:
+                magic_portal.enemies_to_spawn = mini(1, maxi(0, respawn_budget))
+                respawn_budget = maxi(0, respawn_budget - magic_portal.enemies_to_spawn)
+        else:
+                # FIX (respawn 100% nemici): il portale respawna il 100% dei nemici
+                # iniziali del livello (non più il 50%): se il livello è iniziato con
+                # 6 nemici, dal portale ne escono 6 + il mini-boss (il portale
+                # continua ad apparire quando i nemici scendono al 50%, cioè a 3).
+                magic_portal.enemies_to_spawn = maxi(1, initial_count)
+                if magic_portal.enemies_to_spawn > initial_count:
+                        magic_portal.enemies_to_spawn = initial_count
         magic_portal.spawn_timer = 0
         magic_portal.dead_indices.clear()
 
@@ -386,12 +422,55 @@ func reopen_portal_for_ghost() -> void:
 
 
 # ===========================================================================
+# TASK 23 (respawn progressivo post-5° boss): a ogni KILL di un nemico del
+# labirinto il MainGameController chiama notify_enemy_killed(). Se il budget
+# respawn non è esaurito, il portale RIAPPARE e farà uscire 2 nemici
+# (uno alla volta a 4s di distanza, ciclo open 1s → spawn → close 2.8s).
+# Non fa nulla se: modalità non progressiva, budget esaurito, il portale è
+# già aperto (i kill durante un ciclo aperto non si accodano) oppure il
+# primo trigger del 50% non è ancora scattato (portal_used).
+# ===========================================================================
+func notify_enemy_killed(maze: Object) -> void:
+        if not progressive_respawn or respawn_budget <= 0:
+                return
+        if not portal_used:
+                return  # il primo "respiro" (mid-boss + 1) deve ancora arrivare
+        if magic_portal.active:
+                return  # ciclo già in corso: il prossimo kill riaprirà
+        _reopen_progressive_portal(maze)
+
+
+# TASK 23: riapre il portale riservando fino a 2 nemici dal budget.
+func _reopen_progressive_portal(_maze: Object) -> void:
+        if respawn_budget <= 0:
+                return
+        var reserve: int = mini(2, respawn_budget)
+        respawn_budget -= reserve
+        magic_portal.active = true
+        magic_portal.phase = 0
+        magic_portal.phase_timer = PORTAL_OPEN_MS
+        magic_portal.rotation = 0.0
+        magic_portal.glow_pulse = 0.0
+        magic_portal.enemies_to_spawn = reserve
+        magic_portal.spawn_timer = 0
+        magic_portal.dead_indices.clear()
+
+
+# ===========================================================================
 # update_portal(maze, dt_ms): tick the portal state machine.
 # dt_ms is simulated ms (call with 16 each _physics_process frame).
 # Returns true if the portal is still active (Game should keep ticking).
 # ===========================================================================
 func update_portal(maze: Object, dt_ms: int) -> bool:
         if not magic_portal.active:
+                # TASK 23 (anti-softlock): respawn progressivo con budget
+                # residuo e NESSUN nemico vivo → il portale si riapre DA SÌ:
+                # senza kill non ci sarebbe altro modo di far uscire i nemici
+                # mancanti ("finché non escono tutti i nemici previsti").
+                if progressive_respawn and portal_used and respawn_budget > 0 \
+                                and alive_count() == 0:
+                        _reopen_progressive_portal(maze)
+                        return true
                 return false
 
         # Animate portal rotation + glow (visual cue; rendered by Game node).
@@ -410,6 +489,14 @@ func update_portal(maze: Object, dt_ms: int) -> bool:
                         # Closing complete -> deactivate.
                         magic_portal.phase = 3
                         magic_portal.active = false
+                        # TASK 23: appena chiuso, se il budget ha ancora
+                        # nemici e non è rimasto nessuno vivo, riapre subito
+                        # (continua a "sfornare" finché il livello non ha
+                        # tirato fuori tutti i nemici previsti).
+                        if progressive_respawn and portal_used \
+                                        and respawn_budget > 0 and alive_count() == 0:
+                                _reopen_progressive_portal(maze)
+                                return true
                         return false
 
         # Phase 1: spawn enemies one-by-one on a 4-second interval.

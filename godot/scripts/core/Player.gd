@@ -152,23 +152,24 @@ var anim_time: int = 0  # accumulated for idle/walk anim (NEVER reset)
 var next_life_threshold: int = 100000  # extra life every 100k points
 
 # ===========================================================================
-# FIX (stamina dei salti): il player può eseguire al massimo 3 SALTI
-# CONSECUTIVI, poi "si stanca" e non può più saltare.
-#   * Ogni salto consuma 1/3 della barra (visibile in HUD, verde, sotto la
+# FIX (stamina dei salti): il player può eseguire al massimo 2 SALTI
+# CONSECUTIVI (TASK 23: richiesto dall'utente — prima erano 3), poi "si
+# stanca" e non può più saltare.
+#   * Ogni salto consuma 1/2 della barra (visibile in HUD, verde, sotto la
 #     barra della vita).
 #   * Dopo ogni salto la barra tende a ricaricarsi se il player non salta
 #     nuovamente (la ricarica parte poco dopo l'ultimo salto).
-#   * Al terzo salto consecutivo la barra si svuota: il player non può
+#   * Al secondo salto consecutivo la barra si svuota: il player non può
 #     saltare finché non si è caricata COMPLETAMENTE.
 #   * Se prova a saltare senza stamina, non salta e si sente un rumore
 #     secco di pulsante premuto "a vuoto" (click, vedi STAMINA_CLICK).
 # ===========================================================================
-const STAMINA_JUMP_COST: float = 1.0 / 3.0
+const STAMINA_JUMP_COST: float = 1.0 / 2.0
 const STAMINA_RECHARGE_FULL_MS: float = 2400.0   # barra vuota → piena in 2.4s
-const STAMINA_RECHARGE_DELAY_MS: float = 720.0   # la ricarica parte ~0.72s dopo l'ATTERRAGGIO dell'ultimo salto (così 3 salti in catena restano tali a qualunque framerate)
+const STAMINA_RECHARGE_DELAY_MS: float = 720.0   # la ricarica parte ~0.72s dopo l'ATTERRAGGIO dell'ultimo salto (così 2 salti in catena restano tali a qualunque framerate)
 const STAMINA_CLICK_COOLDOWN_MS: float = 280.0   # anti-spam del click a vuoto
 var stamina: float = 1.0                 # 1.0 = piena, 0.0 = vuota
-var stamina_exhausted: bool = false      # true dopo il 3° salto consecutivo → blocco fino a ricarica completa
+var stamina_exhausted: bool = false      # true dopo il 2° salto consecutivo → blocco fino a ricarica completa
 var _stamina_since_jump_ms: float = 99999.0  # ms trascorsi dall'ultimo salto (per il delay di ricarica)
 var _stamina_click_cd_ms: float = 0.0        # cooldown residuo del suono di click a vuoto
 
@@ -321,6 +322,30 @@ func armor_aura_pulse(delta_ms: float) -> bool:
         if _armor_aura_timer_ms < float(armor_relic.get("aura_ms", 2000)):
                 return false
         _armor_aura_timer_ms = 0.0
+        armor_relic["charges"] = armor_charges() - 1
+        if armor_charges() <= 0:
+                _break_relic_armor()
+        return true
+
+
+## TASK 23 (fix bug utente — corazza di fuoco): true se il contatto con un
+## nemico attiva l'ustione (il controller applica il danno al nemico e il
+## player NON subisce il colpo). Consuma UNA carica per proc con cooldown
+## AURA_CONTACT_CD_MS (così restare appoggiati a un nemico non fonde tutte
+## le 20 cariche in un secondo). Ritorna false se l'armatura non c'è, non ha
+## cariche o il cooldown non è ancora scaduto.
+const AURA_CONTACT_CD_MS: float = 450.0
+var _aura_contact_cd_ms: float = 0.0
+
+
+func armor_aura_contact_proc(delta_ms: float) -> bool:
+        if _aura_contact_cd_ms > 0.0:
+                _aura_contact_cd_ms = maxf(0.0, _aura_contact_cd_ms - delta_ms)
+        if armor_kind() != "aura" or armor_charges() <= 0:
+                return false
+        if _aura_contact_cd_ms > 0.0:
+                return false
+        _aura_contact_cd_ms = AURA_CONTACT_CD_MS
         armor_relic["charges"] = armor_charges() - 1
         if armor_charges() <= 0:
                 _break_relic_armor()
@@ -1246,8 +1271,8 @@ func add_life() -> void:
 # di 1000ms (1 secondo) per potersi allontanare dai nemici. Questo mirrora
 # il comportamento C++ del "jump over enemy" boost, ma applicato a ogni
 # salto, non solo quando si salta sopra un nemico.
-# FIX (stamina): il salto è consentito solo con stamina sufficiente (>= 1/3
-# di barra) e se il player non è "stanco". Al 3° salto consecutivo la barra
+# FIX (stamina): il salto è consentito solo con stamina sufficiente (>= 1/2
+# di barra) e se il player non è "stanco". Al 2° salto consecutivo la barra
 # si svuota e scatta il blocco fino a ricarica completa. Il tentativo a
 # vuoto produce un click secco (pulsante senza molla).
 # Ritorna true se il salto è partito, false altrimenti (già in salto oppure
@@ -1270,7 +1295,7 @@ func activate_jump() -> bool:
         stamina = maxf(0.0, stamina - STAMINA_JUMP_COST)
         _stamina_since_jump_ms = 0.0
         if stamina <= 0.0001:
-                # 3° salto consecutivo: barra vuota → player "stanco".
+                # 2° salto consecutivo: barra vuota → player "stanco".
                 stamina_exhausted = true
         max_jump_time = 40
         jump_timer = max_jump_time
@@ -1292,7 +1317,7 @@ func get_stamina_ratio() -> float:
         return clampf(stamina, 0.0, 1.0)
 
 
-# FIX (stamina): true dopo il 3° salto consecutivo, finché la barra non si
+# FIX (stamina): true dopo il 2° salto consecutivo, finché la barra non si
 # è ricaricata completamente (in HUD la barra lampeggia).
 func is_stamina_exhausted() -> bool:
         return stamina_exhausted
@@ -1890,50 +1915,136 @@ func _draw_relic_projectile(local_pos: Vector2, dir: Vector2, w_type: int) -> vo
                 draw_circle(local_pos, 2.5, Color.WHITE)
                 return
         var col: Color = rdef.get("color", Color.WHITE)
+        var ang: float = dir.angle()
+        var perp: Vector2 = Vector2(-dir.y, dir.x)
         match w_type:
                 GameConstants.RelicType.CROSSBOW:
-                        # Dardo d'argento allungato nella direzione di volo.
-                        var tip: Vector2 = local_pos + dir * 7.0
-                        var tail: Vector2 = local_pos - dir * 7.0
-                        draw_line(tail, tip, col, 2.5)
-                        draw_circle(tip, 2.0, Color(1.0, 1.0, 1.0))
+                        # TASK 23: dardo d'argento DETTAGLIATO — asta in legno
+                        # chiaro con impennaggio + punta d'acciaio affilata.
+                        var shaft_tail: Vector2 = local_pos - dir * 9.0
+                        var shaft_tip: Vector2 = local_pos + dir * 6.0
+                        draw_line(shaft_tail, shaft_tip, Color(0.72, 0.62, 0.44), 2.6)
+                        draw_line(shaft_tail, shaft_tip, Color(0.88, 0.80, 0.62), 1.2)
+                        # punta triangolare d'acciaio
+                        var tip_a: Vector2 = local_pos + dir * 10.0
+                        draw_colored_polygon(PackedVector2Array([
+                                tip_a, local_pos + dir * 5.0 + perp * 2.0,
+                                local_pos + dir * 5.0 - perp * 2.0]),
+                                Color(0.92, 0.94, 1.0))
+                        # impennaggio posteriore (2 penne)
+                        for fs in [-1.0, 1.0]:
+                                draw_colored_polygon(PackedVector2Array([
+                                        local_pos - dir * 4.0,
+                                        local_pos - dir * 9.0 + perp * 3.0 * fs,
+                                        local_pos - dir * 8.5]),
+                                        Color(0.85, 0.88, 0.95, 0.9))
                 GameConstants.RelicType.ARCANE_ORB:
-                        # Sfera arcana pulsante con nucleo luminoso.
+                        # TASK 23: sfera arcana con anello runico orbitante.
                         var pulse: float = 1.0 + 0.25 * sin(float(anim_time) * 0.02)
-                        draw_circle(local_pos, 6.0 * pulse,
-                                Color(col.r, col.g, col.b, 0.35))
-                        draw_circle(local_pos, 3.5, col)
-                        draw_circle(local_pos - dir * 2.0, 1.5, Color(0.9, 0.85, 1.0))
+                        draw_circle(local_pos, 7.5 * pulse,
+                                Color(col.r, col.g, col.b, 0.28))
+                        draw_circle(local_pos, 4.2, col)
+                        draw_circle(local_pos, 2.2, Color(0.92, 0.88, 1.0))
+                        # anello runico inclinato che orbita
+                        var ring_t: float = float(anim_time) * 0.004
+                        draw_arc(local_pos + Vector2(sin(ring_t) * 3.0, cos(ring_t) * 2.0),
+                                6.5, ring_t, ring_t + PI * 1.4, 12,
+                                Color(0.85, 0.75, 1.0, 0.75), 1.2)
+                        # scia
+                        draw_line(local_pos - dir * 8.0, local_pos - dir * 2.0,
+                                Color(col.r, col.g, col.b, 0.35), 2.5)
                 GameConstants.RelicType.TWIN_DAGGERS:
-                        # Lama triangolare orientata al volo.
-                        var ang: float = dir.angle()
-                        var tip2: Vector2 = local_pos + dir * 5.0
-                        var perp: Vector2 = Vector2(-sin(ang), cos(ang)) * 2.2
-                        draw_colored_polygon(PackedVector2Array(
-                                        [tip2, local_pos + perp, local_pos - perp]), col)
+                        # TASK 23 (fix utente: "non sono pugnali"): PUGNALE
+                        # COMPLETO ruotato al volo — lama triangolare con
+                        # luccichio, guardia ad arco, impugnatura avvolta e
+                        # pomo rotondo. Distinguibile da qualunque spada.
+                        var blade_tip: Vector2 = local_pos + dir * 7.5
+                        var guard_c: Vector2 = local_pos + dir * 1.5
+                        # lama a doppio filo (2 triangoli specchiati)
+                        draw_colored_polygon(PackedVector2Array([
+                                blade_tip, guard_c + perp * 1.8, guard_c]),
+                                Color(0.72, 0.95, 0.90))
+                        draw_colored_polygon(PackedVector2Array([
+                                blade_tip, guard_c - perp * 1.8, guard_c]),
+                                Color(0.55, 0.85, 0.80))
+                        # riflesso della lama
+                        draw_line(guard_c + dir * 0.5, blade_tip - dir * 1.0,
+                                Color(0.95, 1.0, 0.98, 0.9), 0.8)
+                        # guardia ad arco (bronzo scuro)
+                        draw_arc(guard_c, 3.2, ang + PI * 0.35, ang - PI * 0.35 + TAU,
+                                8, Color(0.62, 0.48, 0.28), 1.6)
+                        # impugnatura avolta (2 fasce)
+                        var grip_a: Vector2 = local_pos - dir * 1.5
+                        var grip_b: Vector2 = local_pos - dir * 4.5
+                        draw_line(grip_a, grip_b, Color(0.30, 0.22, 0.14), 2.2)
+                        draw_line(grip_a - perp * 0.8, grip_b - perp * 0.8,
+                                Color(0.45, 0.33, 0.20), 0.9)
+                        # pomo rotondo
+                        draw_circle(grip_b - dir * 1.2, 1.4, Color(0.72, 0.58, 0.34))
+                        # scia di volo
+                        draw_line(local_pos - dir * 9.0, local_pos - dir * 4.0,
+                                Color(col.r, col.g, col.b, 0.30), 2.0)
                 GameConstants.RelicType.RANGER_BOW:
-                        # Freccia sottile con punta chiara.
-                        draw_line(local_pos - dir * 6.0, local_pos + dir * 6.0,
-                                col, 1.6)
-                        draw_circle(local_pos + dir * 6.0, 1.8, Color(0.95, 0.95, 0.75))
+                        # TASK 23: FRECCIA dettagliata — asta in frassino,
+                        # punta selce scura, impennaggio 3 penne verdi.
+                        var shaft_a: Vector2 = local_pos - dir * 7.0
+                        var shaft_b: Vector2 = local_pos + dir * 5.0
+                        draw_line(shaft_a, shaft_b, Color(0.78, 0.65, 0.40), 1.9)
+                        draw_line(shaft_a + perp * 0.4, shaft_b + perp * 0.4,
+                                Color(0.90, 0.80, 0.55), 0.7)
+                        # punta in selce
+                        draw_colored_polygon(PackedVector2Array([
+                                local_pos + dir * 8.5, local_pos + dir * 4.0 + perp * 1.7,
+                                local_pos + dir * 4.0 - perp * 1.7]),
+                                Color(0.42, 0.40, 0.36))
+                        # impennaggio: 3 penne (2 visibili + 1 centrale)
+                        for fs in [-1.0, 1.0]:
+                                draw_colored_polygon(PackedVector2Array([
+                                        local_pos - dir * 3.0,
+                                        local_pos - dir * 7.0 + perp * 2.6 * fs,
+                                        local_pos - dir * 6.5]),
+                                        Color(0.35, 0.68, 0.30, 0.95))
+                        draw_line(local_pos - dir * 7.0, local_pos - dir * 3.0,
+                                Color(0.45, 0.75, 0.38, 0.9), 1.0)
                 GameConstants.RelicType.STORM_ROD:
-                        # Segmento di fulmine zigzag ciano.
-                        var prev: Vector2 = local_pos - dir * 8.0
-                        var zig: float = sin(float(anim_time) * 0.05) * 2.5
-                        var perp2: Vector2 = Vector2(-dir.y, dir.x) * zig
-                        var mid: Vector2 = local_pos + perp2
-                        draw_line(prev, mid, Color(0.75, 0.92, 1.0), 2.0)
-                        draw_line(mid, local_pos + dir * 8.0, col, 2.0)
-                        draw_circle(local_pos, 2.0, Color(1.0, 1.0, 1.0, 0.9))
+                        # TASK 23: segmento di fulmine più lungo e vivido:
+                        # zigzag a 3 gomiti + doppio tratto (alone + core
+                        # bianco) + scintille alle estremità.
+                        var zig1: float = sin(float(anim_time) * 0.05) * 3.0
+                        var p0: Vector2 = local_pos - dir * 11.0
+                        var p1: Vector2 = local_pos - dir * 4.0 + perp * zig1
+                        var p2: Vector2 = local_pos + dir * 4.0 - perp * zig1
+                        var p3: Vector2 = local_pos + dir * 11.0
+                        draw_polyline(PackedVector2Array([p0, p1, p2, p3]),
+                                Color(0.55, 0.78, 1.0, 0.45), 4.5)
+                        draw_polyline(PackedVector2Array([p0, p1, p2, p3]),
+                                Color(0.75, 0.92, 1.0), 2.0)
+                        draw_polyline(PackedVector2Array([p0, p1, p2, p3]),
+                                Color(1.0, 1.0, 1.0, 0.95), 0.9)
+                        draw_circle(p3, 1.8, Color(1.0, 1.0, 1.0, 0.9))
+                        draw_circle(p0, 1.4, Color(0.8, 0.95, 1.0, 0.8))
                 GameConstants.RelicType.ALCHEMIST_BOMBS:
-                        # Bomba nera con miccia accesa (scintilla animata).
-                        draw_circle(local_pos, 4.5, Color(0.16, 0.16, 0.18))
-                        draw_circle(local_pos - Vector2(1.2, 1.2), 1.5,
-                                Color(0.45, 0.45, 0.5))
+                        # TASK 23: bomba in ghisa con riflessi, fascia metallica,
+                        # miccia con scintilla + piccola scia di fumo.
+                        draw_circle(local_pos, 4.8, Color(0.14, 0.14, 0.16))
+                        draw_circle(local_pos - Vector2(1.3, 1.3), 1.6,
+                                Color(0.40, 0.40, 0.46))
+                        # fascia metallica orizzontale
+                        draw_line(local_pos - Vector2(3.6, -1.0), local_pos + Vector2(3.6, -1.0),
+                                Color(0.52, 0.50, 0.55), 1.1)
+                        # miccia
+                        draw_line(local_pos + Vector2(2.2, -3.8),
+                                local_pos + Vector2(4.2, -5.6), Color(0.55, 0.42, 0.25), 1.2)
                         var spark_t: float = fmod(float(anim_time) * 0.02, TAU)
-                        draw_circle(local_pos + Vector2(3.0, -4.5)
-                                + Vector2(cos(spark_t), sin(spark_t)) * 1.2, 1.6,
+                        draw_circle(local_pos + Vector2(4.2, -5.6)
+                                + Vector2(cos(spark_t), sin(spark_t)) * 1.6, 1.8,
                                 Color(1.0, 0.85, 0.3))
+                        draw_circle(local_pos + Vector2(4.2, -5.6)
+                                + Vector2(cos(spark_t), sin(spark_t)) * 1.6, 0.9,
+                                Color(1.0, 1.0, 0.7))
+                        # scia di fumo
+                        draw_circle(local_pos - dir * 6.0, 1.2, Color(0.35, 0.35, 0.38, 0.5))
+                        draw_circle(local_pos - dir * 9.0, 0.9, Color(0.35, 0.35, 0.38, 0.3))
                 GameConstants.RelicType.REFLECT_BOLT:
                         # Colpo riflesso delle Scaglie: dardo smeraldo con scia.
                         draw_line(local_pos - dir * 10.0, local_pos + dir * 5.0,
@@ -1945,17 +2056,95 @@ func _draw_relic_projectile(local_pos: Vector2, dir: Vector2, w_type: int) -> vo
                         draw_circle(local_pos, 2.5, col)
 
 
-## Visual del fendente in mischia: settore/cerchio/linea che sfuma.
+## Visual del fendente in mischia — TASK 23 (fix utente: "i colpi di spada
+## non fanno vedere la spada che fa un arco ma si vede soltanto un'ellisse"):
+## ora SI VEDE L'ARMA VERA (PNG ruotata) che percorre l'arco del fendente,
+## con scia multi-banda che ne marca la traiettoria.
+##   * "sector" (Spadone/Ascia/Lama): il PNG ruota da un bordo all'altro
+##     dell'arco (ease-out) attorno al player;
+##   * "circle" (Mazza/Martello): il PNG compie un giro completo attorno al
+##     player (rotazione 360°);
+##   * "line" (Alabarda): il PNG scatta in avanti lungo la direzione (thrust).
+## Se il PNG manca: fallback alla sola scia procedurale potenziata.
 func _draw_melee_fx() -> void:
         var rdef: Dictionary = melee_fx_def
         if rdef.is_empty():
                 return
         var col: Color = rdef.get("color", Color.WHITE)
         var life: float = clampf(float(melee_fx_timer_ms) / float(MELEE_FX_DURATION_MS), 0.0, 1.0)
+        # progress = 0 -> 1 nel corso del fendente (ease-out per lo scatto
+        # iniziale tipico dei colpi in mischia).
+        var prog: float = 1.0 - life
+        var eased: float = 1.0 - pow(1.0 - prog, 2.2)
         var fade: float = 0.14 + 0.40 * life  # più tenue a fine fendente
         var radius: float = float(rdef.get("radius_px", 96.0)) * (1.15 - 0.15 * life)
         draw_set_transform(Vector2(0.0, -jump_offset))
         var shape: String = str(rdef.get("shape", "sector"))
+
+        # --- 1) L'ARMA (PNG) che percorre il fendente ---
+        var weapon_tex: Texture2D = RelicArt.get_icon_for_def(rdef)
+        if weapon_tex != null:
+                var tex_size: Vector2 = weapon_tex.get_size()
+                var shape_kind: String = shape
+                if shape_kind == "circle":
+                        # Mazza / Martello: giro completo attorno al player.
+                        var orbit_r: float = radius * 0.52
+                        var spin: float = eased * TAU
+                        var wp: Vector2 = Vector2(cos(spin), sin(spin)) * orbit_r
+                        var side_len: float = clampf(radius * 0.62, 34.0, 84.0)
+                        var wsc: float = side_len / maxf(tex_size.x, tex_size.y)
+                        # Il PNG punta verso l'esterno (verticale -> ruotato).
+                        # NOTA: draw_set_transform NON componga coi transform
+                        # precedenti → il jump offset va sommato a mano.
+                        draw_set_transform(wp + Vector2(0.0, -jump_offset), spin + PI * 0.5,
+                                        Vector2(wsc, wsc))
+                        draw_texture_rect(weapon_tex,
+                                Rect2(-tex_size * 0.5, tex_size), false)
+                        draw_set_transform(Vector2(0.0, -jump_offset))
+                elif shape_kind == "line":
+                        # Alabarda: thrust lineare avanti e indietro.
+                        var thrust: float = 12.0 + eased * radius * 0.78
+                        var wpos: Vector2 = melee_fx_dir * thrust
+                        var side_len2: float = clampf(radius * 0.6, 36.0, 92.0)
+                        var wsc2: float = side_len2 / maxf(tex_size.x, tex_size.y)
+                        var aim_ang: float = melee_fx_dir.angle()
+                        var flip2: float = -1.0 if melee_fx_dir.x < 0.0 else 1.0
+                        draw_set_transform(wpos + Vector2(0.0, -jump_offset), aim_ang + PI * 0.5,
+                                        Vector2(wsc2, wsc2 * flip2))
+                        draw_texture_rect(weapon_tex,
+                                Rect2(-tex_size * 0.5, tex_size), false)
+                        draw_set_transform(Vector2(0.0, -jump_offset))
+                else:
+                        # Spadone / Ascia / Lama: ARCO — l'arma ruota da un
+                        # bordo all'altro del settore orientato al facing.
+                        var center_a: float = melee_fx_dir.angle()
+                        var half_arc: float = deg_to_rad(float(rdef.get("arc_deg", 90.0))) * 0.5
+                        # leggera anticipazione oltre i bordi (follow-through)
+                        var start_a: float = center_a - half_arc - 0.18
+                        var end_a: float = center_a + half_arc + 0.18
+                        # Senso dello sweep: dall'alto verso il basso se si
+                        # mira in orizzontale, dal basso verso l'alto se si
+                        # mira in verticale (legge del colpo "naturale").
+                        var swing_a: float
+                        if melee_fx_dir.y <= 0.0:
+                                swing_a = start_a + (end_a - start_a) * eased
+                        else:
+                                swing_a = end_a - (end_a - start_a) * eased
+                        var pivot_off: Vector2 = melee_fx_dir * 6.0
+                        var side_len3: float = clampf(radius * 0.78, 40.0, 110.0)
+                        var wsc3: float = side_len3 / maxf(tex_size.x, tex_size.y)
+                        # l'arma è ancorata al player e punta in fuori lungo
+                        # l'angolo corrente dello sweep; centro immagine a ~60%
+                        var wcenter: Vector2 = Vector2(cos(swing_a), sin(swing_a)) \
+                                        * (side_len3 * 0.42) + pivot_off
+                        var flip3: float = -1.0 if cos(swing_a) < 0.0 else 1.0
+                        draw_set_transform(wcenter + Vector2(0.0, -jump_offset), swing_a + PI * 0.5,
+                                        Vector2(wsc3, wsc3 * flip3))
+                        draw_texture_rect(weapon_tex,
+                                Rect2(-tex_size * 0.5, tex_size), false)
+                        draw_set_transform(Vector2(0.0, -jump_offset))
+
+        # --- 2) Scia del fendente (multi-banda, con "fantasmi" del percorso) ---
         if shape == "circle":
                 # Mazza / Martello: anello a 360° + bagliore centrale.
                 draw_circle(Vector2.ZERO, radius * 0.55,
@@ -1973,14 +2162,27 @@ func _draw_melee_fx() -> void:
                         Color(1.0, 1.0, 1.0, fade * 0.6), 2.0)
         else:
                 # Spadone / Ascia / Lama: settore ad arco orientato al facing.
-                var center_a: float = melee_fx_dir.angle()
-                var half_arc: float = deg_to_rad(float(rdef.get("arc_deg", 90.0))) * 0.5
-                draw_arc(Vector2.ZERO, radius * 0.75, center_a - half_arc,
-                        center_a + half_arc, 24,
-                        Color(col.r, col.g, col.b, fade + 0.25), 5.0)
-                draw_arc(Vector2.ZERO, radius, center_a - half_arc * 0.8,
-                        center_a + half_arc * 0.8, 24,
+                var center_a2: float = melee_fx_dir.angle()
+                var half_arc2: float = deg_to_rad(float(rdef.get("arc_deg", 90.0))) * 0.5
+                # banda larga tenue (spazzata completa)
+                draw_arc(Vector2.ZERO, radius * 0.82, center_a2 - half_arc2,
+                        center_a2 + half_arc2, 26,
+                        Color(col.r, col.g, col.b, fade * 0.55), 9.0)
+                # banda stretta intensa (filo della lama)
+                draw_arc(Vector2.ZERO, radius * 0.86, center_a2 - half_arc2 * 0.9,
+                        center_a2 + half_arc2 * 0.9, 26,
+                        Color(col.r, col.g, col.b, fade + 0.25), 4.0)
+                # filo bianco interno
+                draw_arc(Vector2.ZERO, radius, center_a2 - half_arc2 * 0.75,
+                        center_a2 + half_arc2 * 0.75, 26,
                         Color(1.0, 1.0, 1.0, fade * 0.6), 2.0)
+                # "fantasmi" del percorso della lama (3 echì della posizione)
+                for g in 3:
+                        var gp: float = clampf(eased - 0.12 * float(g + 1), 0.0, 1.0)
+                        var ga: float = center_a2 - half_arc2 + (2.0 * half_arc2) * gp
+                        var ghost_pos: Vector2 = Vector2(cos(ga), sin(ga)) * radius * 0.84
+                        draw_circle(ghost_pos, 4.0 - float(g),
+                                Color(col.r, col.g, col.b, fade * (0.5 - 0.15 * float(g))))
                 draw_circle(melee_fx_dir * radius * 0.4, 6.0,
                         Color(col.r, col.g, col.b, fade * 0.5))
         draw_set_transform(Vector2.ZERO)
@@ -2477,14 +2679,24 @@ func _draw_wpoly(points: PackedVector2Array, col: Color, facing_right: bool) -> 
 
 
 # ===========================================================================
-# RELIC (Task 21): arma reliquia in mano (mischia = lama/manico con bagliore,
-# distanza = asta/lancia con nucleo luminoso). Colori dalla definizione.
+# RELIC (Task 21): arma reliquia in mano — TASK 23: PNG AD ALTA QUALITÀ
+# (RelicArt) ruotata verso la direzione di mira, con fallback alla grafica
+# procedurale storica se l'asset PNG manca. Il PNG rappresenta ESATTAMENTE
+# l'oggetto (spadone vero, martello vero, arco vero...) invece di forme
+# geometriche approssimative (fix utente: "spadone = tubo bianco",
+# "arco = bastone con palla", "martello non è un martello").
 # ===========================================================================
 func _draw_relic_weapon_in_hand(relic_type: int) -> void:
         var rdef: Dictionary = GameConstants.get_relic_def(relic_type)
         if rdef.is_empty():
                 return
         var col: Color = rdef.get("color", Color.WHITE)
+        # TASK 23: PNG dell'arma in mano (preferito: qualità molto superiore).
+        var relic_tex: Texture2D = RelicArt.get_icon_for_def(rdef)
+        if relic_tex != null:
+                _draw_relic_png_in_hand(relic_tex, col)
+                return
+        # ---- Fallback procedurale (PNG non generato / rollback) ----
         var y: float = -4.0 - jump_offset  # quota arma + sync arco salto
         var facing_right: bool = last_dx >= 0
         var x_sign: float = 1.0 if facing_right else -1.0
@@ -2529,3 +2741,32 @@ func _draw_relic_weapon_in_hand(relic_type: int) -> void:
                         Color(col.r, col.g, col.b, 0.30))
                 draw_circle(tip_pos, 3.0, col)
                 draw_circle(tip_pos, 1.4, Color(1.0, 1.0, 1.0, 0.9))
+
+
+## TASK 23: disegna il PNG dell'arma reliquia IN MANO al player, ruotato
+## verso la direzione di mira (last_dx/last_dy) e con flip verticale quando
+## mira a sinistra (l'oggetto non appare a testa in giù). Dimensione: lato
+## ~54px (leggibile e proporzionata al corpo 64x64 scalato 1.3).
+func _draw_relic_png_in_hand(tex: Texture2D, col: Color) -> void:
+        var aim: Vector2 = Vector2(float(last_dx), float(last_dy))
+        if aim == Vector2.ZERO:
+                aim = Vector2(1.0, 0.0)
+        aim = aim.normalized()
+        var hand: Vector2 = Vector2(10.0, -6.0 - jump_offset)
+        var rot: float = aim.angle() + PI * 0.5  # PNG "verticale": punta in alto
+        var side: float = 52.0  # lato del render (px)
+        var tex_size: Vector2 = tex.get_size()
+        var sc: float = side / maxf(tex_size.x, tex_size.y)
+        # flip verticale quando si mira a sinistra (mirror, non upside-down)
+        var flip_y: float = -1.0 if aim.x < 0.0 else 1.0
+        draw_set_transform(hand, rot, Vector2(sc, sc * flip_y))
+        # L'arma sporge dalla mano verso la mira: centro immagine spostato
+        # avanti lungo l'asse locale Y (il PNG punta in alto = -Y locale).
+        var center_local: Vector2 = Vector2(0.0, -side * 0.42)
+        draw_texture_rect(tex, Rect2(center_local - tex_size * 0.5, tex_size),
+                false, Color(1.0, 1.0, 1.0, 1.0))
+        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+        # Lieve bagliore color reliquia attorno alla mano (coerenza col tema).
+        var glow: float = 0.5 + 0.5 * sin(float(anim_time) * 0.005)
+        draw_circle(hand, 7.0 + glow * 2.0,
+                Color(col.r, col.g, col.b, 0.10 + 0.06 * glow))

@@ -156,6 +156,10 @@ func _on_name_confirmed(player_name: String) -> void:
                                         pos = i
                                         break
                 GameManager.hof_highlight_index = pos
+                # TASK 23 (sequenza fine partita): dopo il salvataggio dello
+                # score la Hall of Fame porterà ai CREDITS e poi al menu
+                # (congratulazioni -> salvataggio score -> credits -> menu).
+                GameManager.hof_from_win = true
                 GameManager.go_to_hall_of_fame()
 
 

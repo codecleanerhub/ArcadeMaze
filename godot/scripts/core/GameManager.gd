@@ -116,7 +116,27 @@ signal boss_defeated(boss_index: int)
 
 ## Continues remaining (max 3 in the C++ game). When the player runs out
 ## the LOSE screen is shown.
+## TASK 23: in 2P i crediti continue sono SEPARATI per player: `continues_left`
+## resta il contatore di P1 (usato dal flusso 1P scene-based e dalla
+## ContinuesScreen), `continues_left_p2` è il contatore di P2 (usato dal
+## ContinuesOverlay 2P). Se P1 consuma un credito, quello di P2 NON scende
+## e viceversa (richiesta utente).
 @export_range(0, 3) var continues_left: int = 3
+
+## TASK 23: crediti continue del GIOCATORE 2 (separati da quelli di P1).
+@export_range(0, 3) var continues_left_p2: int = 3
+
+## TASK 23: a quale player è rivolta la schermata continue APERTA
+## (1 o 2; 0 = nessuna). Usato dal ContinuesOverlay per il titolo e dal
+## flusso 2P per sapere chi deve riprendere.
+var continue_player_num: int = 0
+
+## TASK 23: true quando la Hall of Fame è raggiunta dal flusso di VITTORIA
+## (WinScreen -> tastiera -> HOF): a fine visualizzazione si prosegue verso
+## i CREDITS e poi il menu (sequenza richiesta dall'utente: congratulazioni
+## -> salvataggio score -> credits -> menu). Dal menu, invece, la HOF torna
+## al menu come prima.
+var hof_from_win: bool = false
 
 ## Countdown timer on the continues screen (10..0 seconds).
 @export var continues_timer: int = 10
@@ -346,6 +366,19 @@ func player_died(in_boss: bool = false) -> void:
                 go_to_lose()
 
 
+## TASK 23: crediti continue del player `player_num` (1 o 2). In 1P è il
+## contatore classico; in 2P i due contatori sono indipendenti.
+func continues_for(player_num: int) -> int:
+        return continues_left_p2 if player_num == 2 else continues_left
+
+## TASK 23: consuma UN credito continue del player `player_num`
+## (se P1 ne consuma uno, il contatore di P2 resta intatto e viceversa).
+func use_continue_for(player_num: int) -> void:
+        if player_num == 2:
+                continues_left_p2 = max(0, continues_left_p2 - 1)
+        else:
+                continues_left = max(0, continues_left - 1)
+
 ## Called by the continues screen when the player picks YES: consume a
 ## continue credit and resume the game (boss fight if died there, else
 ## restart the current level).
@@ -374,6 +407,10 @@ func give_up() -> void:
 func reset_run() -> void:
         current_level = 1
         continues_left = 3
+        # TASK 23: crediti continue separati per player (P1 e P2 = 3 ciascuno).
+        continues_left_p2 = 3
+        continue_player_num = 0
+        hof_from_win = false
         continues_timer = 10
         continues_choice = true
         died_in_boss = false

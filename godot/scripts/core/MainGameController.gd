@@ -22,6 +22,8 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 # FUOCO AMICO (Task 18): effetto corpo accasciato + anima che vola verso il
 # vincitore ricaricandogli l'energia.
 const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
+# TASK 23: arco di fulmine visibile per la Verga della Tempesta (catena).
+const LightningArcFx = preload("res://scripts/entities/LightningArcEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, tra proiettile-nemico 24.5 e miniboss 35).
 const FF_HIT_RADIUS_SQ: float = 625.0
@@ -75,6 +77,23 @@ var _pause_canvas: CanvasLayer = null
 var _pause_overlay: Control = null
 
 # ============================================================================
+# TASK 23: CONTINUE PER-PLAYER IN 2P (crediti separati P1/P2).
+# Quando un player (P1 o P2) perde l'ultima vita mentre l'altro è ancora
+# vivo, il gioco si congela e appare il ContinuesOverlay con IL SUO
+# contatore crediti. YES = consuma 1 credito del SUO contatore e riprende
+# con 3 vite/energia piena/invulnerabilità breve. NO/timeout = eliminato
+# (l'altro continua da solo). Se nessun player resta in gioco -> LOSE.
+# In 1P il flusso resta la ContinuesScreen scene-based (snapshot restore).
+# ============================================================================
+const ContinuesOverlayClass = preload("res://scripts/ui/ContinuesOverlay.gd")
+var _continue_overlay: CanvasLayer = null
+## Player a cui è aperta la schermata continue (1 o 2; 0 = nessuna).
+var _continue_pending_player: int = 0
+## Invulnerabilità di grazia dopo un continue (ms) — non si muore appena
+## ripresi mentre i nemici convergono sulla cella di respawn.
+const CONTINUE_RESPAWN_INVULN_MS: int = 2500
+
+# ============================================================================
 # FIX (meccanica "Hurry Up!" — mini boss immortale): quando TUTTI i nemici
 # del labirinto (compresi quelli respawnati dal portale) sono stati uccisi
 # e sono passati 10 secondi dall'ultimo tesoro raccolto, appare in alto
@@ -104,6 +123,11 @@ var scepter_active: bool = false
 var scepter_strikes_left: int = 0
 var scepter_timer_ms: int = 0
 var initial_enemy_count: int = 0
+
+# TASK 23 (respawn progressivo): conteggio dei nemici vivi al frame
+# precedente — quando scende, è stata registrata una KILL e il portale
+# progressivo (post-5° boss) riapre per far uscire altri 2 nemici.
+var _last_alive_enemies: int = -1
 
 # Items spawned per level
 var chalice_item: Node2D = null
@@ -790,6 +814,10 @@ func _process(delta: float) -> void:
 # Handle pause + ESC via _unhandled_input so they work even when the game
 # tree is paused (process_mode = PROCESS_MODE_ALWAYS on this node).
 func _unhandled_input(event: InputEvent) -> void:
+        # TASK 23: niente pausa/uscita mentre la schermata continue per-player
+        # è aperta (l'unico input ammesso è quello dell'overlay).
+        if _continue_pending_player != 0:
+                return
         # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
         # fase di uscita dalla scena. Usiamo una variabile locale con null check.
         if event.is_action_pressed("pause") and not event.is_echo():
@@ -838,6 +866,11 @@ func _exit_tree() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+        # TASK 23: continue per-player aperto — gioco CONGELATO (mirror della
+        # pausa: nessun update, nessun input di gameplay; l'overlay gira in
+        # PROCESS_MODE_ALWAYS e smette da solo alla scelta).
+        if _continue_pending_player != 0:
+                return
         if is_paused:
                 return
         var delta_ms: float = _delta * 1000.0
@@ -1284,9 +1317,9 @@ func _update_playing(delta_ms: float) -> void:
                         _check_enemy_projectiles_vs_player(player2)
 
         # (6) Melee enemy-player collisions
-        _check_melee_collisions(player)
+        _check_melee_collisions(player, delta_ms)
         if GameManager and GameManager.num_players == 2 and player2.visible:
-                _check_melee_collisions(player2)
+                _check_melee_collisions(player2, delta_ms)
 
         # (7) Invincibility burn (chalice effect)
         _update_invincible_burn(player, delta_ms)
@@ -1362,6 +1395,16 @@ func _update_playing(delta_ms: float) -> void:
         # FIX (sprite uno sopra l'altro): passa anche il check delle celle
         # occupate da collectible: portale, mini-boss e respawn non devono
         # MAI spuntare sopra mine/calice/scetturo/statua/pozione.
+        # TASK 23 (respawn progressivo): prima del trigger, rileva le KILL
+        # del frame (alive_count sceso) — nel post-5° boss ogni kill riapre
+        # il portale con 2 nemici finché il budget del livello non è esaurito.
+        if _last_alive_enemies >= 0:
+                var alive_now: int = spawner.alive_count()
+                if alive_now < _last_alive_enemies:
+                        spawner.notify_enemy_killed(maze)
+                _last_alive_enemies = spawner.alive_count()
+        else:
+                _last_alive_enemies = spawner.alive_count()
         spawner.trigger_portal_if_needed(maze, p_pos, _spawn_mini_boss,
                 _collectible_cell_free)
         spawner.update_portal(maze, int(delta_ms))
@@ -1724,6 +1767,8 @@ func _steer_relic_homing_projectiles(p: CharacterBody2D) -> void:
 
 # VERGA DELLA TEMPESTA: catena di fulmini — dal primo bersaglio colpito il
 # danno salta fino a `chain` nemici entro chain_radius_px (nessun re-hit).
+# TASK 23 (fix utente): la catena è VISIBILE — LightningArcEffect disegna il
+# fulmine che attraversa player → nemico1 → nemico2 → ... per ~340ms.
 func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
                 first_enemy: Node2D, first_pos: Vector2, fury: bool) -> void:
         var jumps_left: int = int(proj.get("chain", 0))
@@ -1732,6 +1777,7 @@ func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
         var radius: float = float(proj.get("chain_radius_px", 128.0))
         var chained: Array = [first_enemy]
         var type: int = int(proj.get("type", 0))
+        var arc_path: Array = [p.get_pixel_pos(), first_pos]
         for enemy in spawner.enemies:
                 if jumps_left <= 0:
                         break
@@ -1741,6 +1787,7 @@ func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
                                 < radius * radius:
                         enemy.take_weapon_hit(type, fury)
                         chained.append(enemy)
+                        arc_path.append(enemy.get_pixel_pos())
                         jumps_left -= 1
                         if EffectsManager:
                                 var spark := EffectsManager.spawn_sparks(
@@ -1751,6 +1798,11 @@ func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
                                 last_hit_enemy_timer_ms = 3000
                         if enemy.is_dead():
                                 _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+        # TASK 23: il fulmine SI VEDE attraversare i nemici (traiettoria).
+        if arc_path.size() >= 2:
+                var arc: Node2D = LightningArcFx.new()
+                arc.setup(arc_path)
+                add_child(arc)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
 
@@ -2012,7 +2064,7 @@ func _explode_mine(explode_pos: Vector2) -> void:
         screen_flash_timer_ms = 80
 
 
-func _check_melee_collisions(p: CharacterBody2D) -> void:
+func _check_melee_collisions(p: CharacterBody2D, delta_ms: float = 16.0) -> void:
         var p_pos: Vector2 = p.get_pixel_pos()
         if p.is_invulnerable() or p.is_jumping():
                 # Jump-over-enemy: grant speed boost
@@ -2028,6 +2080,26 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                 if enemy.is_dead():
                         continue
                 if p_pos.distance_squared_to(enemy.get_pixel_pos()) < 800.0:
+                        # TASK 23 (fix bug utente) — CORAZZA DI FUOCO: il
+                        # contatto con un nemico mentre l'aura è attiva
+                        # USTISCE IL NEMICO (danno frazione HP max, vedi
+                        # GameConstants.relic_aura_contact_damage), consuma
+                        # UNA carica dell'armatura e il player NON subisce il
+                        # colpo. Prima: il player prendeva danno, l'armatura
+                        # non calava e il nemico non subiva nulla.
+                        if p.armor_aura_contact_proc(delta_ms):
+                                var burn_dmg: int = C.relic_aura_contact_damage(
+                                                p.armor_relic, enemy.get_max_health())
+                                enemy.take_damage(burn_dmg)
+                                if enemy.is_dead():
+                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                                if EffectsManager:
+                                        var fb := EffectsManager.spawn_sparks(
+                                                        enemy.get_pixel_pos(), 8)
+                                        collectibles_node.add_child(fb)
+                                continue
                         # RELIC (Task 21) — OSSIDIANA DEL CREPUSCOLO: chi
                         # tocca il player in mischia prende 2 danni da
                         # spine (una carica per colpo inflitto, 5 in tutto).
@@ -2220,48 +2292,157 @@ func _nearest_alive_player(from_pos: Vector2) -> CharacterBody2D:
         return best
 
 
-# FIX (2P — eliminazione player): quando un player perde l'ultima vita ma
-# l'altro è ancora vivo, NON resta uno "zombie" giocabile (com'era prima:
-# continuava a girare con vite negative). Viene eliminato: non riceve più
-# input, non collide, non viene più preso di mira — e la scena si ricrea
-# con 3 vite per entrambi se si usa un continue. L'HUD conserva il suo
-# punteggio finale.
+# TASK 23: eliminazione + CONTINUE per-player in 2P. Quando un player
+# (P1 o P2) perde l'ultima vita mentre l'altro è ancora vivo:
+#   * con crediti > 0 nel SUO contatore → si congela il gioco e appare il
+#     ContinuesOverlay (PLAYER N CONTINUE? + crediti SUOI, separati);
+#   * senza crediti → eliminato subito (comportamento pre-esistente).
+# Chi viene eliminato NON è più uno "zombie" giocabile: non riceve input,
+# non collide, non viene più preso di mira. L'HUD conserva il suo punteggio
+# finale. Se nessun player resta in gioco → game over (LOSE).
+# In 1P il flusso continua a essere quello scene-based di _check_death().
 func _check_player_elimination() -> void:
-        if player2 == null or not is_instance_valid(player2) or not player2.visible:
+        if GameManager == null or GameManager.num_players != 2:
                 return
-        # FUOCO AMICO (Task 18): se P2 è morto per colpo del compagno e la
-        # sua anima sta ancora volando, l'eliminazione aspetta la fine del
-        # trasferimento (il respawn_after_soul la gestisce al frame dopo).
-        if player2.soul_pending:
+        # Una schermata continue alla volta: se è già aperta, la morte
+        # dell'altro player verrà gestita al frame dopo la risoluzione.
+        if _continue_pending_player != 0:
                 return
-        if player2.lives > 0 or player.lives <= 0:
-                return  # P2 vivo, oppure entrambi morti (game over via _check_death)
-        player2.visible = false
-        player2.set_direction(0, 0)
-        print("[2P] Player 2 eliminato (vite esaurite), P1 continua da solo")
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.visible:
+                        continue
+                # FUOCO AMICO (Task 18): se il player è morto per colpo del
+                # compagno e la sua anima sta ancora volando, l'eliminazione
+                # aspetta la fine del trasferimento (respawn_after_soul la
+                # gestisce al frame dopo).
+                if p.soul_pending:
+                        continue
+                if p.lives > 0:
+                        continue  # vivo
+                var pnum: int = 1 if p == player else 2
+                var credits: int = GameManager.continues_for(pnum)
+                if credits > 0:
+                        _open_continue_overlay(pnum, credits)
+                        return  # il gioco si congela al frame successivo
+                _eliminate_player(p)
+        _check_all_players_out()
+
+
+# TASK 23: apre l'overlay CONTINUE? per il player `pnum` con i SUOI crediti.
+func _open_continue_overlay(pnum: int, credits: int) -> void:
+        _continue_pending_player = pnum
+        if GameManager:
+                GameManager.continue_player_num = pnum
+        _continue_overlay = ContinuesOverlayClass.new()
+        _continue_overlay.setup(pnum, credits)
+        _continue_overlay.continue_chosen.connect(_on_continue_chosen)
+        add_child(_continue_overlay)
+        print("[Continue] schermata continue per PLAYER ", pnum,
+                        " (crediti suoi: ", credits, ")")
+
+
+# TASK 23: scelta sulla schermata continue del player `pnum`.
+# YES: consuma 1 credito del SUO contatore e riprende (3 vite, energia
+# piena, respawn, invulnerabilità breve). NO/timeout: eliminato; se non
+# resta nessun player → LOSE (game over).
+func _on_continue_chosen(pnum: int, yes: bool) -> void:
+        _continue_pending_player = 0
+        if GameManager:
+                GameManager.continue_player_num = 0
+        if _continue_overlay != null and is_instance_valid(_continue_overlay):
+                _continue_overlay.queue_free()
+        _continue_overlay = null
+        var p: CharacterBody2D = player if pnum == 1 else player2
+        if yes and p != null and is_instance_valid(p):
+                if GameManager:
+                        GameManager.use_continue_for(pnum)
+                p.lives = 3
+                p.energy = p.max_energy
+                p.reset_position()
+                p.damage_timer = CONTINUE_RESPAWN_INVULN_MS
+                p.visible = true
+                if EffectsManager:
+                        EffectsManager.screen_shake(4.0, 0.2)
+                        var burst := EffectsManager.spawn_pickup_burst(
+                                        p.get_pixel_pos(), Color(0.4, 0.9, 1.0))
+                        collectibles_node.add_child(burst)
+                # Musica di livello: era stata fermata dall'overlay.
+                if AudioManager and AudioManager.music_enabled \
+                                and not AudioManager._epic_playing:
+                        AudioManager.play_level_music(current_level, false)
+                print("[Continue] PLAYER ", pnum, " riprende con 3 vite (crediti suoi residui: ",
+                                GameManager.continues_for(pnum) if GameManager else 0, ")")
+        else:
+                _eliminate_player(p)
+                _check_all_players_out()
+
+
+# TASK 23: elimina `p` (vite esaurite e niente crediti / scelta NO).
+func _eliminate_player(p: CharacterBody2D) -> void:
+        if p == null or not is_instance_valid(p) or not p.visible:
+                return
+        var pnum: int = 1 if p == player else 2
+        p.visible = false
+        p.set_direction(0, 0)
+        print("[2P] Player ", pnum, " eliminato (vite esaurite)")
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
         # Effetto visivo sull'ultimo punto noto del player eliminato.
         if EffectsManager:
-                var burst := EffectsManager.spawn_explosion(player2.get_pixel_pos(),
+                var burst := EffectsManager.spawn_explosion(p.get_pixel_pos(),
                         Color(0.55, 0.65, 1.0), 18, 0.7)
                 collectibles_node.add_child(burst)
-        # Snapshot finale sull'HUD (il 2P resta mostrato con l'ultimo punteggio).
+        # Snapshot finale sull'HUD (il player eliminato resta mostrato con
+        # l'ultimo punteggio e 0 vite).
         if hud:
-                hud.set_player2_state({
-                        "score": player2.score,
+                var snap_d: Dictionary = {
+                        "score": p.score,
                         "lives": 0,
                         "energy": 0,
-                        "max_energy": player2.max_energy,
+                        "max_energy": p.max_energy,
                         "weapon_name": C.get_weapon_name(
-                                        int(player2.current_weapon.get("type", 0))),
-                        "weapon_color": Color.WHITE,
-                        "weapon_ammo": player2.current_weapon.get("ammo", 0),
-                        "weapon_max": player2.current_weapon.get("max_ammo", 15),
-                })
+                                        int(p.current_weapon.get("type", 0))),
+                        "weapon_color": C.get_weapon_color(
+                                        int(p.current_weapon.get("type", 0))),
+                        "weapon_ammo": p.current_weapon.get("ammo", 0),
+                        "weapon_max": p.current_weapon.get("max_ammo", 15),
+                }
+                if pnum == 1:
+                        hud.set_player_state(snap_d)
+                else:
+                        hud.set_player2_state(snap_d)
+
+
+# TASK 23: game over 2P — nessun player vivo né in attesa di continue.
+# Registra i punteggi finali (per la Hall of Fame) e va alla LOSE screen.
+func _check_all_players_out() -> void:
+        if not _alive_players().is_empty():
+                return
+        if _continue_pending_player != 0:
+                return  # c'è ancora una scelta continue in sospeso
+        if AudioManager:
+                AudioManager.stop_epic_music()
+                AudioManager.stop_ghost_music()
+        if GameManager:
+                # FIX (Hall of Fame): registra il punteggio finale prima della
+                # transizione. In 2P ogni player ha il PROPRIO punteggio.
+                var total_score_d: int = player.score
+                if player2 != null and is_instance_valid(player2):
+                        total_score_d += player2.score
+                GameManager.final_score = total_score_d
+                GameManager.final_score_p1 = player.score
+                GameManager.final_score_p2 = player2.score if \
+                                (player2 != null and is_instance_valid(player2)) else 0
+                GameManager.final_level = current_level
+                GameManager.give_up()
 
 
 func _check_death() -> void:
+        # TASK 23: in 2P la morte/gestione continue è del flusso per-player
+        # (_check_player_elimination + ContinuesOverlay): questo ramo
+        # scene-based (snapshot + ContinuesScreen) vale SOLO in 1P.
+        if GameManager and GameManager.num_players == 2:
+                return
         var p1_dead: bool = player.lives <= 0
         var p2_dead: bool = true
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -2873,6 +3054,9 @@ func _build_session_snapshot() -> Dictionary:
         snap["portal"] = portal_snap
         snap["portal_used"] = spawner.portal_used
         snap["portal_used_local"] = portal_used
+        # TASK 23 (respawn progressivo): anche il budget residuo del portale.
+        snap["respawn_budget"] = int(spawner.respawn_budget)
+        snap["progressive_respawn"] = bool(spawner.progressive_respawn)
         # --- Mini-boss (se vivo) ---
         var mb_snap: Dictionary = {}
         if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
@@ -3028,6 +3212,10 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
         # --- Spawner: portale e soglia del 50% ---
         spawner.initial_count = int(snap.get("initial_count", spawner.enemies.size()))
         spawner.portal_used = bool(snap.get("portal_used", false))
+        # TASK 23 (respawn progressivo): budget residuo del portale.
+        spawner.respawn_budget = int(snap.get("respawn_budget", 0))
+        spawner.progressive_respawn = bool(snap.get("progressive_respawn", false))
+        _last_alive_enemies = spawner.alive_count()
         var portal_snap: Dictionary = snap.get("portal", {})
         if not portal_snap.is_empty() and bool(portal_snap.get("active", false)):
                 spawner.magic_portal.pos = portal_snap.get("pos", Vector2.ZERO)
@@ -3659,8 +3847,12 @@ func _update_hurry_up(delta_ms: float, p_grid: Vector2i, p_pos: Vector2) -> void
         # "Tutti i nemici uccisi, respawn compresi": zero nemici vivi E il
         # portale non ha respawn in sospeso (se la coda è ancora aperta,
         # altri nemici stanno per uscire → la condizione non è ancora vera).
-        var portal_spawning: bool = spawner.magic_portal.active \
-                        and spawner.magic_portal.enemies_to_spawn > 0
+        # TASK 23: anche il budget del respawn progressivo conta come coda
+        # aperta (post-5° boss il portale ha sempre nemici da sfornare finché
+        # il budget non è esaurito).
+        var portal_spawning: bool = (spawner.magic_portal.active \
+                        and spawner.magic_portal.enemies_to_spawn > 0) \
+                        or spawner.respawn_pending()
         var all_dead: bool = initial_enemy_count > 0 \
                         and spawner.alive_count() == 0 \
                         and not portal_spawning
@@ -3672,6 +3864,9 @@ func _update_hurry_up(delta_ms: float, p_grid: Vector2i, p_pos: Vector2) -> void
 # FIX (2P): in due giocatori NON è uno ma DUE mini boss immortali, uno per
 # player, diversi solo nel colore (verde per P1, rosso per P2): entrambi
 # emergono dal portale (il secondo da una cella adiacente libera).
+# TASK 23 (fix utente): un fantasma per OGNI PLAYER VIVO — se in 2P un
+# player è già morto/eliminato e ne resta uno solo, dal portale esce UN
+# SOLO fantasma (prima ne uscivano due anche con un solo giocatore in vita).
 func _trigger_hurry_up(_p_pos: Vector2) -> void:
         hurry_up_active = true
         _hurry_up_time = 0.0
@@ -3689,34 +3884,47 @@ func _trigger_hurry_up(_p_pos: Vector2) -> void:
                 return  # maze degenere: niente fantasmi
         # Il portale si RIAPRE visivamente e i fantasmi emergono da lì.
         spawner.reopen_portal_for_ghost()
-        # 1P: un solo fantasma VERDE. 2P: DUE fantasmi (verde -> P1,
-        # rosso -> P2), il secondo su una cella adiacente libera.
-        var two_players: bool = GameManager and GameManager.num_players == 2
-        var ghost := GhostReaperClass.new()
-        ghost.set("target_player_num", 1)
-        ghost.setup(spawn_col, spawn_row)
-        ghost.laughed.connect(_on_ghost_laughed)
-        add_child(ghost)
-        ghost_reapers.append(ghost)
-        if two_players:
-                var g2_cell: Vector2i = _find_free_cell_near(spawn_col, spawn_row, 0, 2)
-                var spawn2_col: int = spawn_col
-                var spawn2_row: int = spawn_row
-                if g2_cell.x >= 0:
-                        spawn2_col = g2_cell.x
-                        spawn2_row = g2_cell.y
-                var ghost2 := GhostReaperClass.new()
-                ghost2.set("target_player_num", 2)
-                ghost2.set("is_red_variant", true)
-                ghost2.setup(spawn2_col, spawn2_row)
-                ghost2.laughed.connect(_on_ghost_laughed)
-                add_child(ghost2)
-                ghost_reapers.append(ghost2)
+        # TASK 23: un fantasma per player VIVO (verde -> P1, rosso -> P2).
+        var p1_alive: bool = player != null and is_instance_valid(player) \
+                        and player.lives > 0 and not player.soul_pending
+        var p2_alive: bool = GameManager and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2) \
+                        and player2.visible and player2.lives > 0 \
+                        and not player2.soul_pending
+        var next_cell: Vector2i = Vector2i(spawn_col, spawn_row)
+        if p1_alive:
+                next_cell = _spawn_ghost_at(1, false, next_cell)
+        if p2_alive:
+                next_cell = _spawn_ghost_at(2, true, next_cell)
         print("[HurryUp] Fantasmi immortali spawnati dal portale a cell (",
                         spawn_col, ",", spawn_row, ") x", ghost_reapers.size())
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
                 AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+
+
+# TASK 23: spawna UN fantasma (target_player_num, eventuale variante rossa)
+# su `cell` o su una cella adiacente libera; ritorna la cella usata così il
+# secondo fantasma nasce accanto e non sopra il primo.
+func _spawn_ghost_at(target_num: int, red_variant: bool,
+                cell: Vector2i) -> Vector2i:
+        var col: int = cell.x
+        var row: int = cell.y
+        if ghost_reapers.size() > 0:
+                # Secondo fantasma: cella adiacente libera (non sopra il primo).
+                var g2_cell: Vector2i = _find_free_cell_near(col, row, 0, 2)
+                if g2_cell.x >= 0:
+                        col = g2_cell.x
+                        row = g2_cell.y
+        var ghost := GhostReaperClass.new()
+        ghost.set("target_player_num", target_num)
+        if red_variant:
+                ghost.set("is_red_variant", true)
+        ghost.setup(col, row)
+        ghost.laughed.connect(_on_ghost_laughed)
+        add_child(ghost)
+        ghost_reapers.append(ghost)
+        return Vector2i(col, row)
 
 
 # FIX (2P): il bersaglio del fantasma. Ogni fantasma ha il SUO player

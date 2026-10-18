@@ -94,6 +94,15 @@ func _go_back() -> void:
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         if GameManager:
+                # TASK 23 (sequenza fine partita richiesta dall'utente):
+                # congratulazioni -> salvataggio score -> CREDITS -> menu.
+                # Se la HOF è stata raggiunta dal flusso di VITTORIA, dopo la
+                # classifica si va ai CREDITS (e da lì al menu); dal menu o
+                # dallo standby il comportamento resta go_to_menu().
+                if GameManager.hof_from_win:
+                        GameManager.hof_from_win = false
+                        GameManager.go_to_credits()
+                        return
                 GameManager.go_to_menu()
 
 

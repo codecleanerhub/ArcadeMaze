@@ -1,9 +1,10 @@
 ## test_stamina_weapons.gd — Test funzionale runtime (headless) delle nuove
 ## meccaniche richieste:
-##   A. STAMINA (salti): max 3 salti consecutivi; ogni salto consuma 1/3;
-##      il 4° salto ravvicinato è BLOCCATO (click a vuoto); dopo il 3° la
-##      barra è vuota ("stanco") e non si salta finché non è piena; con
-##      pause distese i salti riescono; al respawn barra piena.
+##   A. STAMINA (salti): max 2 SALTI CONSECUTIVI (TASK 23: richiesto
+##      dall'utente — prima erano 3); ogni salto consuma 1/2; il 3° salto
+##      ravvicinato è BLOCCATO (click a vuoto); dopo il 2° la barra è vuota
+##      ("stanco") e non si salta finché non è piena; con pause distese i
+##      salti riescono; al respawn barra piena.
 ##   B. POZIONE VERDE: durata 9s (5+4 richiesti): timer e fine effetto.
 ##   C. BOSS ROOM ARMI: con P1 a zero munizioni e armi a terra finite appare
 ##      UN ALTRO SET (e si ripete: "finché il boss non è terminato").
@@ -68,7 +69,7 @@ func _physics_process(delta: float) -> void:
                                         _fail("A1: player già esausto all'avvio?!")
                                 phase = 1
                 1:
-                        # --- A2: catena di 3 salti ravvicinati ---
+                        # --- A2: catena di 2 salti ravvicinati (TASK 23) ---
                         # Salta appena atterra (stesso frame/frames ravvicinati):
                         # è la condizione "salti consecutivi".
                         if not _ready_main():
@@ -77,24 +78,24 @@ func _physics_process(delta: float) -> void:
                         if not p.is_jumping():
                                 var res: bool = p.activate_jump()
                                 chain_results.append(res)
-                        if chain_results.size() >= 3 and not p.is_jumping() and t > 2.0:
-                                # --- A3: verifica dei 3 salti consecutivi ---
-                                if not chain_results[0] or not chain_results[1] or not chain_results[2]:
+                        if chain_results.size() >= 2 and not p.is_jumping() and t > 2.0:
+                                # --- A3: verifica dei 2 salti consecutivi ---
+                                if not chain_results[0] or not chain_results[1]:
                                         _fail("A3: salti consecutivi rifiutati: " + str(chain_results))
                                 elif p.stamina > 0.0001:
-                                        _fail("A3: dopo 3 salti la barra non è vuota: " + str(p.stamina))
+                                        _fail("A3: dopo 2 salti la barra non è vuota: " + str(p.stamina))
                                 elif not p.stamina_exhausted:
-                                        _fail("A3: dopo 3 salti consecutivi il player non è 'stanco'")
+                                        _fail("A3: dopo 2 salti consecutivi il player non è 'stanco'")
                                 else:
-                                        print("[TEST] OK A3: 3 salti consecutivi OK, barra vuota, player stanco")
-                                # --- A4: 4° salto immediato BLOCCATO ---
+                                        print("[TEST] OK A3: 2 salti consecutivi OK, barra vuota, player stanco")
+                                # --- A4: 3° salto immediato BLOCCATO (TASK 23) ---
                                 var blocked: bool = p.activate_jump()
                                 if blocked:
-                                        _fail("A4: il 4° salto consecutivo è partito (doveva essere bloccato)")
+                                        _fail("A4: il 3° salto consecutivo è partito (doveva essere bloccato)")
                                 elif p.is_jumping():
-                                        _fail("A4: il 4° salto bloccato ha comunque avviato il salto")
+                                        _fail("A4: il 3° salto bloccato ha comunque avviato il salto")
                                 else:
-                                        print("[TEST] OK A4: 4° salto bloccato (click a vuoto), player fermo")
+                                        print("[TEST] OK A4: 3° salto bloccato (click a vuoto), player fermo")
                                 recharge_t0 = t
                                 phase = 2
                 2:
@@ -115,9 +116,9 @@ func _physics_process(delta: float) -> void:
                                 p.stamina = 0.2
                                 p.stamina_exhausted = false
                                 if p.activate_jump():
-                                        _fail("A5: salto partito con stamina 0.2 (< 1/3)")
+                                        _fail("A5: salto partito con stamina 0.2 (< 1/2)")
                                 else:
-                                        print("[TEST] OK A5: con 0.2 di barra (< 1/3) il salto è rifiutato")
+                                        print("[TEST] OK A5: con 0.2 di barra (< 1/2) il salto è rifiutato")
                                 p.stamina = 1.0
                                 # --- A6: dopo la ricarica si salta di nuovo ---
                                 if not p.activate_jump():

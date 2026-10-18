@@ -21,6 +21,14 @@ const Boss = preload("res://scripts/bosses/Boss.gd")
 const Projectile = preload("res://scripts/items/Projectile.gd")
 # FIX (pausa P senza feedback visivo): overlay PAUSE (mirror MainGame).
 const PauseOverlayClass = preload("res://scripts/ui/PauseOverlay.gd")
+const ContinuesOverlayClass = preload("res://scripts/ui/ContinuesOverlay.gd")
+
+# TASK 23: CONTINUE PER-PLAYER IN 2P anche in boss room (crediti separati
+# P1/P2). Mirror di MainGameController: il player che perde l'ultima vita
+# con l'altro ancora vivo congela il fight e sceglie dal SUO contatore.
+var _continue_overlay: CanvasLayer = null
+var _continue_pending_player: int = 0
+const CONTINUE_RESPAWN_INVULN_MS: int = 2500
 # FUOCO AMICO (Task 18): effetto corpo accasciato + anima che vola verso il
 # vincitore ricaricandogli l'energia (mirror MainGameController).
 const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
@@ -167,6 +175,10 @@ func _ready() -> void:
 # il toggle vive in _unhandled_input, che continua a girare con il tree in
 # pausa grazie a process_mode = PROCESS_MODE_ALWAYS (riga 60).
 func _unhandled_input(event: InputEvent) -> void:
+        # TASK 23: niente pausa/uscita mentre la schermata continue per-player
+        # è aperta (l'unico input ammesso è quello dell'overlay).
+        if _continue_pending_player != 0:
+                return
         # RELIC (Task 21): niente pausa mentre la schermata bonus è aperta
         # (la fase è già un congelamento controllato del fight).
         if _bonus_active:
@@ -197,6 +209,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+        # TASK 23: continue per-player aperto — fight CONGELATO.
+        if _continue_pending_player != 0:
+                return
         if is_paused:
                 return
         var delta_ms: float = _delta * 1000.0
@@ -508,42 +523,133 @@ func _nearest_alive_player(from_pos: Vector2) -> CharacterBody2D:
         return best
 
 
-# FIX (2P — eliminazione player in boss room): quando P2 perde l'ultima
-# vita ma P1 è ancora vivo, P2 viene eliminato (non più "zombie"), come
-# nel labirinto. La scena si ricrea con 3 vite per entrambi usando un
-# continue.
+# TASK 23: eliminazione + CONTINUE per-player in 2P (mirror del
+# MainGameController). Il player senza vite e senza crediti viene eliminato
+# e l'altro continua da solo; con crediti → ContinuesOverlay col SUO
+# contatore (separato). Se non resta nessuno → LOSE.
 func _check_player2_elimination() -> void:
-        if player2 == null or not is_instance_valid(player2) or not player2.visible:
+        if GameManager == null or GameManager.num_players != 2:
                 return
-        # FUOCO AMICO (Task 18): se P2 è morto per colpo del compagno e la
-        # sua anima sta ancora volando, l'eliminazione aspetta la fine del
-        # trasferimento (respawn_after_soul + frame successivo).
-        if player2.soul_pending:
+        if _continue_pending_player != 0:
                 return
-        if player2.lives > 0 or player.lives <= 0:
-                return  # P2 vivo, oppure entrambi morti (game over via _check_boss_death)
-        player2.visible = false
-        player2.set_direction(0, 0)
-        print("[2P] Player 2 eliminato nella boss room (vite esaurite)")
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.visible:
+                        continue
+                if p.soul_pending:
+                        continue
+                if p.lives > 0:
+                        continue
+                var pnum: int = 1 if p == player else 2
+                var credits: int = GameManager.continues_for(pnum)
+                if credits > 0:
+                        _open_continue_overlay(pnum, credits)
+                        return
+                _eliminate_player(p)
+        _check_all_players_out()
+
+
+# TASK 23: apre l'overlay CONTINUE? per il player `pnum` (crediti SUOI).
+func _open_continue_overlay(pnum: int, credits: int) -> void:
+        _continue_pending_player = pnum
+        if GameManager:
+                GameManager.continue_player_num = pnum
+        _continue_overlay = ContinuesOverlayClass.new()
+        _continue_overlay.setup(pnum, credits)
+        _continue_overlay.continue_chosen.connect(_on_continue_chosen)
+        add_child(_continue_overlay)
+        print("[Continue] boss room: schermata continue per PLAYER ", pnum,
+                        " (crediti suoi: ", credits, ")")
+
+
+# TASK 23: scelta continue del player `pnum` (YES = riprende con 3 vite e
+# invulnerabilità breve, il boss CONSERVA gli HP; NO = eliminato).
+func _on_continue_chosen(pnum: int, yes: bool) -> void:
+        _continue_pending_player = 0
+        if GameManager:
+                GameManager.continue_player_num = 0
+        if _continue_overlay != null and is_instance_valid(_continue_overlay):
+                _continue_overlay.queue_free()
+        _continue_overlay = null
+        var p: CharacterBody2D = player if pnum == 1 else player2
+        if yes and p != null and is_instance_valid(p):
+                if GameManager:
+                        GameManager.use_continue_for(pnum)
+                p.lives = 3
+                p.energy = p.max_energy
+                p.reset_position()
+                p.damage_timer = CONTINUE_RESPAWN_INVULN_MS
+                p.visible = true
+                # RELIC (Task 21): il continue in boss room NON tocca le
+                # reliquie (relic_infinite_shots resta valido).
+                if EffectsManager:
+                        EffectsManager.screen_shake(4.0, 0.2)
+                        var burst := EffectsManager.spawn_pickup_burst(
+                                        p.get_pixel_pos(), Color(0.4, 0.9, 1.0))
+                        boss_projectiles_node.add_child(burst)
+                if AudioManager and GameManager and GameManager.music_enabled:
+                        AudioManager.play_level_music(current_level, true)
+                print("[Continue] boss room: PLAYER ", pnum, " riprende (boss HP ",
+                                int(boss.health) if boss != null else 0, ")")
+        else:
+                _eliminate_player(p)
+                _check_all_players_out()
+
+
+# TASK 23: elimina `p` (mirror del MainGameController, effetti su
+# boss_projectiles_node).
+func _eliminate_player(p: CharacterBody2D) -> void:
+        if p == null or not is_instance_valid(p) or not p.visible:
+                return
+        var pnum: int = 1 if p == player else 2
+        p.visible = false
+        p.set_direction(0, 0)
+        print("[2P] Player ", pnum, " eliminato nella boss room (vite esaurite)")
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
         if EffectsManager:
-                var p := EffectsManager.spawn_explosion(player2.get_pixel_pos(),
+                var burst := EffectsManager.spawn_explosion(p.get_pixel_pos(),
                         Color(0.55, 0.65, 1.0), 18, 0.7)
-                boss_projectiles_node.add_child(p)
+                boss_projectiles_node.add_child(burst)
         if hud:
-                hud.set_player2_state({
-                        "score": player2.score,
+                var snap_d: Dictionary = {
+                        "score": p.score,
                         "lives": 0,
                         "energy": 0,
-                        "max_energy": player2.max_energy,
+                        "max_energy": p.max_energy,
                         "weapon_name": C.get_weapon_name(
-                                        int(player2.current_weapon.get("type", 0))),
+                                        int(p.current_weapon.get("type", 0))),
                         "weapon_color": C.get_weapon_color(
-                                        int(player2.current_weapon.get("type", 0))),
-                        "weapon_ammo": player2.current_weapon.get("ammo", 0),
-                        "weapon_max": player2.current_weapon.get("max_ammo", 15),
-                })
+                                        int(p.current_weapon.get("type", 0))),
+                        "weapon_ammo": p.current_weapon.get("ammo", 0),
+                        "weapon_max": p.current_weapon.get("max_ammo", 15),
+                }
+                if pnum == 1:
+                        hud.set_player_state(snap_d)
+                else:
+                        hud.set_player2_state(snap_d)
+
+
+# TASK 23: game over 2P in boss room — punteggi finali + LOSE.
+func _check_all_players_out() -> void:
+        var any_alive: bool = false
+        for p in [player, player2]:
+                if p != null and is_instance_valid(p) and p.visible and p.lives > 0:
+                        any_alive = true
+        if any_alive or _continue_pending_player != 0:
+                return
+        if AudioManager:
+                AudioManager.stop_epic_music()
+                AudioManager.stop_ghost_music()
+        if GameManager:
+                var total_score_b: int = player.score
+                if player2 != null and is_instance_valid(player2):
+                        total_score_b += player2.score
+                GameManager.final_score = total_score_b
+                GameManager.final_score_p1 = player.score
+                GameManager.final_score_p2 = player2.score if \
+                                (player2 != null and is_instance_valid(player2)) else 0
+                GameManager.final_level = current_level
+                GameManager.give_up()
 
 
 func _advance_boss_projectiles(_delta_ms: float) -> void:
@@ -774,57 +880,58 @@ func _check_softlock() -> void:
 
 
 func _check_boss_death() -> void:
-        # Player death -> continues
-        var p1_dead: bool = player.lives <= 0
-        var p2_dead: bool = true
-        if GameManager and GameManager.num_players == 2 and player2.visible:
-                p2_dead = player2.lives <= 0
-        if p1_dead and p2_dead:
-                # FIX (musica calice alla morte): ferma il loop epic del
-                # calice prima di passare alle schermate CONTINUES/LOSE.
-                if AudioManager:
-                        AudioManager.stop_epic_music()
-                if GameManager:
-                        # FIX (Hall of Fame 2P): registra i punteggi finali SINGOLI
-                        # dei due player (ognuno salva il proprio in classifica);
-                        # final_score resta la somma per la schermata di game over.
-                        var total_score_b: int = player.score
-                        if GameManager.num_players == 2 and player2.visible:
-                                total_score_b += player2.score
-                        GameManager.final_score = total_score_b
-                        GameManager.final_score_p1 = player.score
-                        GameManager.final_score_p2 = player2.score if \
-                                        (GameManager.num_players == 2 and player2.visible) else 0
-                        GameManager.final_level = current_level
-                        # FIX (continue = sessione ESATTA — ROOT CAUSE del bug
-                        # segnalato dall'utente): qui si chiamava
-                        # GameManager.player_died() SENZA argomento, e player_died()
-                        # SOVRASCRIVEVA died_in_boss = in_boss = FALSE, Azzerando
-                        # il flag "died_in_boss = true" impostato subito prima.
-                        # Risultato: use_continue() vedeva died_in_boss = false e
-                        # invece di tornare nella BOSS ROOM rimetteva il player
-                        # nel LABIRINTO (livello maze). Ora si passa TRUE.
-                        # FIX (snapshot boss): salva anche HP del boss e stato
-                        # dei player, così il continue riprende LO STESSO
-                        # scontro (stesso HP del boss, stessi punteggi/armi).
-                        GameManager.session_snapshot = {
-                                "kind": "boss",
-                                "level": current_level,
-                                "boss_health": int(boss.health) if (boss != null and is_instance_valid(boss)) else 0,
-                                "p1": {
-                                        "score": player.score,
-                                        "weapon": player.current_weapon.duplicate(),
-                                },
-                                "p2": {
-                                        "score": player2.score,
-                                        "weapon": player2.current_weapon.duplicate(),
-                                } if (GameManager.num_players == 2 and player2.visible) else {},
-                        }
-                        if GameManager.continues_left > 0:
-                                GameManager.player_died(true)
-                        else:
-                                GameManager.give_up()
-                return
+        # TASK 23: in 2P la morte/gestione continue è del flusso per-player
+        # (_check_player2_elimination + ContinuesOverlay). Questo ramo
+        # scene-based (snapshot + ContinuesScreen) vale SOLO in 1P.
+        if not (GameManager and GameManager.num_players == 2):
+                # Player death -> continues (1P, flusso scene-based storico)
+                var p1_dead_1p: bool = player.lives <= 0
+                if p1_dead_1p:
+                        # FIX (musica calice alla morte): ferma il loop epic del
+                        # calice prima di passare alle schermate CONTINUES/LOSE.
+                        if AudioManager:
+                                AudioManager.stop_epic_music()
+                        if GameManager:
+                                # FIX (Hall of Fame 2P): registra i punteggi finali SINGOLI
+                                # dei due player (ognuno salva il proprio in classifica);
+                                # final_score resta la somma per la schermata di game over.
+                                var total_score_b: int = player.score
+                                if GameManager.num_players == 2 and player2.visible:
+                                        total_score_b += player2.score
+                                GameManager.final_score = total_score_b
+                                GameManager.final_score_p1 = player.score
+                                GameManager.final_score_p2 = player2.score if \
+                                                (GameManager.num_players == 2 and player2.visible) else 0
+                                GameManager.final_level = current_level
+                                # FIX (continue = sessione ESATTA — ROOT CAUSE del bug
+                                # segnalato dall'utente): qui si chiamava
+                                # GameManager.player_died() SENZA argomento, e player_died()
+                                # SOVRASCRIVEVA died_in_boss = in_boss = FALSE, Azzerando
+                                # il flag "died_in_boss = true" impostato subito prima.
+                                # Risultato: use_continue() vedeva died_in_boss = false e
+                                # invece di tornare nella BOSS ROOM rimetteva il player
+                                # nel LABIRINTO (livello maze). Ora si passa TRUE.
+                                # FIX (snapshot boss): salva anche HP del boss e stato
+                                # dei player, così il continue riprende LO STESSO
+                                # scontro (stesso HP del boss, stessi punteggi/armi).
+                                GameManager.session_snapshot = {
+                                        "kind": "boss",
+                                        "level": current_level,
+                                        "boss_health": int(boss.health) if (boss != null and is_instance_valid(boss)) else 0,
+                                        "p1": {
+                                                "score": player.score,
+                                                "weapon": player.current_weapon.duplicate(),
+                                        },
+                                        "p2": {
+                                                "score": player2.score,
+                                                "weapon": player2.current_weapon.duplicate(),
+                                        } if (GameManager.num_players == 2 and player2.visible) else {},
+                                }
+                                if GameManager.continues_left > 0:
+                                        GameManager.player_died(true)
+                                else:
+                                        GameManager.give_up()
+                        return
 
         # Boss death -> next level
         if boss and boss.is_dead():

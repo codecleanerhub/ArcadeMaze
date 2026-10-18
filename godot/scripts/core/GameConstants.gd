@@ -771,51 +771,63 @@ const RELIC_MELEE: Array[Dictionary] = [
         {
                 "id": "sword", "type": RelicType.SWORD, "family": "mischia",
                 "name": "Spadone del Cavaliere", "short": "SPADONE",
+                "name_en": "Knight's Greatsword", "short_en": "GREATSWORD",
                 "color": Color(0.82, 0.86, 0.94), "power": 3, "hits": 2,
                 "shots": 25, "shape": "sector", "radius_px": 128.0,
                 "arc_deg": 120.0, "fire_cd": 320,
                 "desc": "Arco ampio (2 celle): fende tutti i nemici davanti a te.",
+                "desc_en": "Wide arc (2 tiles): cleaves every enemy in front of you.",
         },
         {
                 "id": "axe", "type": RelicType.AXE, "family": "mischia",
                 "name": "Ascia del Berserker", "short": "ASCIA",
+                "name_en": "Berserker Axe", "short_en": "AXE",
                 "color": Color(0.90, 0.35, 0.20), "power": 5, "hits": 2,
                 "shots": 15, "shape": "sector", "radius_px": 96.0,
                 "arc_deg": 90.0, "fire_cd": 380, "splash_px": 64.0,
                 "splash_hits": 4,
                 "desc": "Colpo devastante + scheggia ad area attorno al bersaglio.",
+                "desc_en": "Devastating strike + area shrapnel around the target.",
         },
         {
                 "id": "mace", "type": RelicType.MACE, "family": "mischia",
                 "name": "Mazza Ferrata", "short": "MAZZA",
+                "name_en": "Flanged Mace", "short_en": "MACE",
                 "color": Color(0.72, 0.72, 0.78), "power": 2, "hits": 3,
                 "shots": 12, "shape": "circle", "radius_px": 96.0,
                 "arc_deg": 360.0, "fire_cd": 340, "stun_ms": 1000,
                 "desc": "Rotazione 360°: colpisce attorno e STORDISCE i nemici.",
+                "desc_en": "360° spin: strikes all around and STUNS enemies.",
         },
         {
                 "id": "halberd", "type": RelicType.HALBERD, "family": "mischia",
                 "name": "Alabarda della Guardia Reale", "short": "ALABARDA",
+                "name_en": "Royal Guard Halberd", "short_en": "HALBERD",
                 "color": Color(0.86, 0.78, 0.40), "power": 3, "hits": 3,
                 "shots": 18, "shape": "line", "radius_px": 192.0,
                 "arc_deg": 0.0, "fire_cd": 340,
                 "desc": "Lunga (3 celle): infilza tutti i nemici in linea davanti.",
+                "desc_en": "Long reach (3 tiles): skewers every enemy in a line.",
         },
         {
                 "id": "vampire_blade", "type": RelicType.VAMPIRE_BLADE, "family": "mischia",
                 "name": "Lama del Vampiro", "short": "LAMA",
+                "name_en": "Vampire Blade", "short_en": "VAMP BLADE",
                 "color": Color(0.85, 0.20, 0.35), "power": 2, "hits": 3,
                 "shots": 20, "shape": "sector", "radius_px": 96.0,
                 "arc_deg": 90.0, "fire_cd": 300, "vampiric": true,
                 "desc": "Ogni nemico colpito ti CURA 1 energia.",
+                "desc_en": "Every enemy hit HEALS you 1 energy.",
         },
         {
                 "id": "golem_hammer", "type": RelicType.GOLEM_HAMMER, "family": "mischia",
                 "name": "Martello del Golem", "short": "MARTELLO",
+                "name_en": "Golem Hammer", "short_en": "HAMMER",
                 "color": Color(0.65, 0.55, 0.45), "power": 4, "hits": 2,
                 "shots": 10, "shape": "circle", "radius_px": 64.0,
                 "arc_deg": 360.0, "fire_cd": 400, "stun_ms": 500,
                 "desc": "Slam pesante attorno ai piedi: scossa + stordimento breve.",
+                "desc_en": "Heavy ground slam: shockwave + brief stun.",
         },
 ]
 
@@ -830,45 +842,57 @@ const RELIC_RANGED: Array[Dictionary] = [
         {
                 "id": "crossbow", "type": RelicType.CROSSBOW, "family": "distanza",
                 "name": "Balestra d'Argento", "short": "BALESTRA",
+                "name_en": "Silver Crossbow", "short_en": "CROSSBOW",
                 "color": Color(0.90, 0.92, 0.98), "power": 3, "hits": 2,
                 "shots": 30, "fire_cd": 160, "pierce_max": 3,
                 "desc": "Dardo perforante: attraversa fino a 3 nemici.",
+                "desc_en": "Piercing bolt: punches through up to 3 enemies.",
         },
         {
                 "id": "arcane_orb", "type": RelicType.ARCANE_ORB, "family": "distanza",
                 "name": "Bastone dell'Arcimago", "short": "BASTONE",
+                "name_en": "Archmage Staff", "short_en": "STAFF",
                 "color": Color(0.55, 0.40, 0.95), "power": 2, "hits": 3,
                 "shots": 24, "fire_cd": 200, "homing": true,
                 "desc": "Sfera arcana a ricerca: insegue il nemico piu' vicino.",
+                "desc_en": "Homing arcane orb: seeks out the nearest enemy.",
         },
         {
                 "id": "twin_daggers", "type": RelicType.TWIN_DAGGERS, "family": "distanza",
                 "name": "Pugnali Gemelli", "short": "PUGNALI",
+                "name_en": "Twin Daggers", "short_en": "DAGGERS",
                 "color": Color(0.45, 0.90, 0.85), "power": 2, "hits": 4,
                 "shots": 20, "fire_cd": 220, "fan": 3, "fan_spread_deg": 18.0,
                 "desc": "Ventaglio di 3 lame per salve: copre un ampio fronte.",
+                "desc_en": "Fan of 3 blades per volley: covers a wide front.",
         },
         {
                 "id": "ranger_bow", "type": RelicType.RANGER_BOW, "family": "distanza",
                 "name": "Arco del Ranger", "short": "ARCO",
+                "name_en": "Ranger Bow", "short_en": "BOW",
                 "color": Color(0.55, 0.85, 0.35), "power": 1, "hits": 4,
                 "shots": 40, "fire_cd": 90,
                 "desc": "Tiro rapido: frecce leggere ma frecce a raffica.",
+                "desc_en": "Rapid fire: light arrows in quick volleys.",
         },
         {
                 "id": "storm_rod", "type": RelicType.STORM_ROD, "family": "distanza",
                 "name": "Verga della Tempesta", "short": "VERGA",
+                "name_en": "Storm Rod", "short_en": "STORM ROD",
                 "color": Color(0.55, 0.80, 1.00), "power": 2, "hits": 3,
                 "shots": 15, "fire_cd": 200, "chain": 2, "chain_radius_px": 128.0,
                 "desc": "Fulmine a catena: salta fino a 2 nemici vicini.",
+                "desc_en": "Chain lightning: arcs to up to 2 nearby enemies.",
         },
         {
                 "id": "alchemist_bombs", "type": RelicType.ALCHEMIST_BOMBS, "family": "distanza",
                 "name": "Bombe dell'Alchimista", "short": "BOMBE",
+                "name_en": "Alchemist Bombs", "short_en": "BOMBS",
                 "color": Color(1.00, 0.60, 0.15), "power": 4, "hits": 2,
                 "shots": 12, "fire_cd": 250, "lob_px": 160.0,
                 "radius_px": 96.0,
                 "desc": "Bomba a parabola: esplode ad area dopo 2 celle e mezza.",
+                "desc_en": "Lobbed bomb: explodes in an area after 2.5 tiles.",
         },
 ]
 
@@ -880,41 +904,54 @@ const RELIC_ARMORS: Array[Dictionary] = [
         {
                 "id": "golden", "kind": "absorb", "family": "armatura",
                 "name": "Corazza d'Oro", "short": "CORAZZA",
+                "name_en": "Golden Cuirass", "short_en": "GOLD ARMOR",
                 "color": Color(1.00, 0.80, 0.25), "charges": 10,
                 "desc": "Assorbe i colpi con una riserva doppia della vita (10 cariche).",
+                "desc_en": "Absorbs hits with a reserve twice your life (10 charges).",
         },
         {
                 "id": "dragon", "kind": "reflect", "family": "armatura",
                 "name": "Scaglie del Drago", "short": "SCAGLIE",
+                "name_en": "Dragon Scales", "short_en": "SCALES",
                 "color": Color(0.25, 0.85, 0.55), "charges": 4,
                 "desc": "Riflette 4 proiettili: il colpo rimbalza e colpisce il boss col tuo danno migliore.",
+                "desc_en": "Reflects 4 projectiles: the shot bounces back at the boss with your best damage.",
         },
         {
                 "id": "obsidian", "kind": "thorns", "family": "armatura",
                 "name": "Ossidiana del Crepuscolo", "short": "OSSIDIANA",
+                "name_en": "Twilight Obsidian", "short_en": "OBSIDIAN",
                 "color": Color(0.70, 0.35, 0.95), "charges": 5,
                 "thorn_damage": 2,
                 "desc": "Spine: chi ti tocca in mischia prende 2 danni (5 cariche).",
+                "desc_en": "Thorns: melee attackers take 2 damage (5 charges).",
         },
         {
                 "id": "archmage", "kind": "regen", "family": "armatura",
                 "name": "Veste dell'Arcimago", "short": "VESTE",
+                "name_en": "Archmage Robe", "short_en": "ROBE",
                 "color": Color(0.45, 0.55, 0.95), "charges": 12,
                 "regen_ms": 5000,
                 "desc": "Rigenera 1 energia ogni 5 secondi (12 volte).",
+                "desc_en": "Regenerates 1 energy every 5 seconds (12 times).",
         },
         {
                 "id": "fire", "kind": "aura", "family": "armatura",
                 "name": "Corazza di Fuoco", "short": "FUOCO",
+                "name_en": "Fire Armor", "short_en": "FIRE",
                 "color": Color(1.00, 0.45, 0.20), "charges": 20,
                 "aura_ms": 2000, "aura_radius_px": 64.0, "aura_damage": 1,
+                "contact_hits": 2,
                 "desc": "Aura ustionante: i nemici vicini bruciano (20 pulsazioni).",
+                "desc_en": "Scorching aura: nearby enemies burn (20 pulses). Touching an enemy burns it instead of you.",
         },
         {
                 "id": "fury", "kind": "fury", "family": "armatura",
                 "name": "Corazza del Furore", "short": "FURORE",
+                "name_en": "Fury Cuirass", "short_en": "FURY ARMOR",
                 "color": Color(0.90, 0.20, 0.25), "charges": 30,
                 "desc": "I tuoi colpi colpiscono piu' a fondo (+1 grado): 30 colpi poi si spegne.",
+                "desc_en": "Your hits strike one grade deeper: 30 shots, then it fades.",
         },
 ]
 
@@ -1058,6 +1095,16 @@ static func relic_melee_flat_damage(def: Dictionary, fury: bool = false) -> int:
 ## colpo del player = max(potenza base ROCKET 5, potenza dell'arma corrente).
 static func reflect_bolt_power(current_weapon: Dictionary) -> int:
         return maxi(5, int(current_weapon.get("power", 1)))
+
+
+## TASK 23 (fix bug corazza di fuoco): danno da CONTATTO di un nemico con la
+## Corazza di Fuoco equipaggiata. Frazione degli HP max del nemico definita
+## da "contact_hits" (default 2: due tocchi per uccidere, coerente con la
+## regola "nessuna arma one-shot").
+static func relic_aura_contact_damage(armor: Dictionary,
+                target_max_health: int) -> int:
+        var hits: int = maxi(2, int(armor.get("contact_hits", 2)))
+        return maxi(1, int(ceil(float(target_max_health) / float(hits))))
 
 
 ## Nome corto dell'armatura per la HUD ("" se nessuna armatura equipaggiata).

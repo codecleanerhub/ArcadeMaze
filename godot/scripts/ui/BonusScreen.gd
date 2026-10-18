@@ -5,14 +5,20 @@
 ## reliquie offerte (una per famiglia: MISCHIA / DISTANZA / ARMATURA —
 ## tutte le famiglie sempre disponibili, decisione utente).
 ##
-## Rotazione schermate A -> B -> C -> A (dopo il boss 1 la A, boss 2 la B,
-## boss 3 la C, boss 4 di nuovo A...): GameConstants.get_bonus_screen_id().
+## TASK 23 (richiesta utente):
+##   * TUTTO il testo è in INGLESE (era italiano).
+##   * NON compare più il nome della schermata ("SCHERMATA BONUS A"):
+##     il titolo è generico ("CHOOSE YOUR RELIC").
+##   * Sfondo DEDICATO a tema fucina/armeria (bg_bonus.png, stile degli
+##     altri sfondi) — fallback al velo scuro se l'asset manca.
+##   * Ogni reliquia è rappresentata dal suo PNG ad alta qualità
+##     (RelicArt) con fallback all'icona procedurale se il PNG manca.
+##
 ## L'offerta ruota internamente alle famiglie (cursori sfasati) così in 17
 ## incontri compaiono tutte le 18 reliquie: GameConstants.get_bonus_offering().
 ##
 ## In 2P OGNI player sceglie la SUA reliquia (una per player): prima P1,
-## poi P2 (turni consecutivi sulla stessa offerta). Nessuna "rapina" via
-## fuoco amico: le reliquie esistono SOLO qui.
+## poi P2 (turni consecutivi sulla stessa offerta).
 ##
 ## Pure-code CanvasLayer (pattern PauseOverlay): nessun .tscn, il controller
 ## lo crea con BonusScreen.new(), chiama setup() e ascolta bonus_completed.
@@ -24,10 +30,10 @@ extends CanvasLayer
 signal bonus_completed
 
 const C = preload("res://scripts/core/GameConstants.gd")
+const RelicArt = preload("res://scripts/core/RelicArt.gd")
 
 # --- Stato ---
-var screen_id: int = 0           # 0=A, 1=B, 2=C
-var screen_letter: String = "A"
+var screen_id: int = 0           # 0=A, 1=B, 2=C (SOLO per l'offerta: NON mostrato)
 var offerings: Array[Dictionary] = []   # le 3 reliquie offerte
 var choosers: Array = []                # players che scelgono (vivi)
 var chooser_idx: int = 0                # chi sta scegliendo ora
@@ -58,7 +64,6 @@ var _prev_joy_btns: Dictionary = {}
 func setup(level: int, players: Array) -> void:
         level_of_bonus = level
         screen_id = C.get_bonus_screen_id(level)
-        screen_letter = ["A", "B", "C"][screen_id]
         offerings = C.get_bonus_offering(level)
         choosers = players.duplicate()
         chooser_idx = 0
@@ -205,9 +210,9 @@ func _apply_choice(def: Dictionary) -> void:
                 chooser.current_weapon = C.make_relic_weapon(def)
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
-        _last_choice_text = "GIOCATORE %d ha scelto: %s" % [
+        _last_choice_text = "PLAYER %d CHOSE: %s" % [
                         int(chooser.player_num),
-                        str(def.get("name", "?"))]
+                        str(def.get("name_en", def.get("name", "?")))]
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         _advance_chooser()
@@ -231,18 +236,13 @@ func _finish() -> void:
 
 
 # ============================================================================
-# Rendering
+# Rendering — TASK 23: tutto in INGLESE, NESSUN nome di schermata,
+# icone PNG ad alta qualità (fallback procedurale), sfondo fucina dedicato.
 # ============================================================================
 const FAMILY_LABEL := {
-        "mischia": "MISCHIA",
-        "distanza": "DISTANZA",
-        "armatura": "ARMATURA",
-}
-
-const SCREEN_SUBTITLES := {
-        0: "IL BOTTEGHINO DEL CAVALIERE",
-        1: "L'ARSENALE DELL'ARCIMAGO",
-        2: "IL RELIQUIARIO DEL CREPUSCOLO",
+        "mischia": "MELEE",
+        "distanza": "RANGED",
+        "armatura": "ARMOR",
 }
 
 
@@ -251,15 +251,25 @@ func _draw_screen(p: Control) -> void:
         var font: Font = ThemeDB.fallback_font
         if font == null:
                 return
-        # Sfondo: velo scuro full-screen (il fight congela sotto).
-        p.draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.01, 0.05, 0.86))
+        # TASK 23: sfondo DEDICATO a tema fucina/armeria (stile degli altri
+        # sfondi) + velo scuro per la leggibilità; fallback velo pieno.
+        var bg: Texture2D = RelicArt.get_bonus_background()
+        if bg != null:
+                var tex_size: Vector2 = bg.get_size()
+                var scale_val: float = max(vp.x / tex_size.x, vp.y / tex_size.y)
+                var draw_size: Vector2 = tex_size * scale_val
+                var draw_pos: Vector2 = (vp - draw_size) / 2.0
+                p.draw_texture_rect(bg, Rect2(draw_pos, draw_size), false)
+                p.draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.01, 0.05, 0.62), true)
+        else:
+                p.draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.01, 0.05, 0.86))
         var cx: float = vp.x * 0.5
 
-        # --- Titolo: SCHERMATA BONUS <A|B|C> ---
-        var title: String = "SCHERMATA BONUS " + screen_letter
+        # TASK 23: titolo generico SENZA nome/lettera di schermata.
         var gold: Color = Color(1.0, 0.84, 0.25)
-        _draw_text_centered(p, font, title, Vector2(cx, 140.0), 44, gold)
-        _draw_text_centered(p, font, SCREEN_SUBTITLES.get(screen_id, ""),
+        _draw_text_centered(p, font, "CHOOSE YOUR RELIC",
+                Vector2(cx, 140.0), 44, gold)
+        _draw_text_centered(p, font, "A LEGENDARY TREASURE FROM THE FORGE",
                 Vector2(cx, 190.0), 18, Color(0.85, 0.75, 0.55))
         # Cornice decorativa a doppia linea sotto il titolo.
         p.draw_line(Vector2(cx - 420.0, 215.0), Vector2(cx + 420.0, 215.0),
@@ -268,10 +278,10 @@ func _draw_screen(p: Control) -> void:
                 Color(gold.r, gold.g, gold.b, 0.25), 1.0)
 
         if completed:
-                # Schermata completata: riepilogo scelte + countdown uscita.
+                # Schermata completata: riepilogo scelte + saluto finale.
                 _draw_text_centered(p, font, _last_choice_text,
                         Vector2(cx, vp.y * 0.5 - 20.0), 26, Color(0.9, 0.95, 1.0))
-                _draw_text_centered(p, font, "IN BOCCA AL LUPO, EROI!",
+                _draw_text_centered(p, font, "GOOD LUCK, HEROES!",
                         Vector2(cx, vp.y * 0.5 + 30.0), 20, gold)
                 return
 
@@ -282,7 +292,7 @@ func _draw_screen(p: Control) -> void:
         if chooser != null:
                 pnum = int(chooser.player_num)
         var who_col: Color = Color(0.39, 0.78, 1.0) if pnum == 1 else Color(1.0, 0.59, 0.39)
-        _draw_text_centered(p, font, "GIOCATORE %d — SCEGLI LA TUA RELIQUIA" % pnum,
+        _draw_text_centered(p, font, "PLAYER %d — CHOOSE YOUR RELIC" % pnum,
                 Vector2(cx, 250.0), 26, who_col)
         if _last_choice_text != "" and _wait_ms > 0.0:
                 _draw_text_centered(p, font, _last_choice_text,
@@ -300,12 +310,12 @@ func _draw_screen(p: Control) -> void:
                         Rect2(x0 + float(i) * (card_w + gap), card_y, card_w, card_h),
                         i == selection, i)
 
-        # --- Istruzioni comandi ---
+        # --- Istruzioni comandi (inglese) ---
         var hint: String
         if pnum == 1:
-                hint = "FRECCE / D-PAD: scegli    Z o INVIO (tasto FUOCO): conferma"
+                hint = "ARROWS / D-PAD: select    Z or ENTER (FIRE button): confirm"
         else:
-                hint = "A / D: scegli    INVIO o tasto FUOCO P2: conferma"
+                hint = "A / D: select    ENTER or P2 FIRE button: confirm"
         _draw_text_centered(p, font, hint,
                 Vector2(cx, card_y + card_h + 46.0), 18, Color(0.75, 0.75, 0.8))
 
@@ -314,8 +324,9 @@ func _draw_relic_card(p: Control, font: Font, def: Dictionary,
                 rect: Rect2, selected: bool, idx: int) -> void:
         var col: Color = def.get("color", Color.WHITE)
         var pulse: float = 0.5 + 0.5 * sin(_t * 4.0)
-        # Sfondo carta.
-        p.draw_rect(rect, Color(0.07, 0.06, 0.10, 0.96), true)
+        # Sfondo carta (leggermente più trasparente per far respirare lo
+        # sfondo-forgia TASK 23, resta comunque leggibile).
+        p.draw_rect(rect, Color(0.07, 0.06, 0.10, 0.92), true)
         # Bordo: selezione = colore reliquia pulsante + doppia cornice.
         if selected:
                 p.draw_rect(rect, Color(col.r, col.g, col.b, 0.65 + 0.35 * pulse), false, 4.0)
@@ -328,25 +339,26 @@ func _draw_relic_card(p: Control, font: Font, def: Dictionary,
                 p.draw_rect(rect, Color(0.35, 0.32, 0.40, 0.9), false, 2.0)
 
         var cx: float = rect.position.x + rect.size.x * 0.5
-        # Etichetta famiglia in alto.
-        var fam: String = FAMILY_LABEL.get(str(def.get("family", "")), "RELIQUIA")
+        # Etichetta famiglia in alto (inglese).
+        var fam: String = FAMILY_LABEL.get(str(def.get("family", "")), "RELIC")
         _draw_text_centered(p, font, fam,
                 Vector2(cx, rect.position.y + 34.0), 17,
                 Color(0.78, 0.72, 0.60))
-        # Icona procedurale della reliquia (anteprima stilizzata).
-        _draw_relic_icon(p, def, Vector2(cx, rect.position.y + 130.0), selected)
-        # Nome (2 righe se lungo).
-        var name_s: String = str(def.get("name", "?"))
+        # TASK 23: icona PNG ad alta qualità della reliquia (fallback
+        # procedurale se l'asset non c'è). Area icona ~200x210.
+        _draw_relic_icon(p, def, Vector2(cx, rect.position.y + 140.0), selected)
+        # Nome (inglese; 2 righe se lungo).
+        var name_s: String = str(def.get("name_en", def.get("name", "?")))
         var name_size: int = 24 if name_s.length() <= 22 else 20
         _draw_text_centered(p, font, name_s,
-                Vector2(cx, rect.position.y + 220.0), name_size, col)
-        # Statistiche principali.
+                Vector2(cx, rect.position.y + 262.0), name_size, col)
+        # Statistiche principali (inglese).
         var stats: String = _relic_stats_line(def)
         _draw_text_centered(p, font, stats,
-                Vector2(cx, rect.position.y + 258.0), 17, Color(0.95, 0.9, 0.7))
-        # Descrizione (a capo automatico grossolano).
-        var desc_y: float = rect.position.y + 310.0
-        for line in _wrap_text(str(def.get("desc", "")), 34):
+                Vector2(cx, rect.position.y + 298.0), 17, Color(0.95, 0.9, 0.7))
+        # Descrizione (inglese, a capo automatico).
+        var desc_y: float = rect.position.y + 348.0
+        for line in _wrap_text(str(def.get("desc_en", def.get("desc", ""))), 38):
                 _draw_text_centered(p, font, line, Vector2(cx, desc_y), 15,
                         Color(0.82, 0.82, 0.88))
                 desc_y += 22.0
@@ -360,10 +372,29 @@ func _draw_relic_card(p: Control, font: Font, def: Dictionary,
                         Color(col.r, col.g, col.b, 0.9))
 
 
-## Anteprima stilizzata della reliquia sulla carta (procedurale).
+## TASK 23: icona della reliquia sulla carta. PRIMA il PNG ad alta qualità
+## (centrato, contenuto in ~200px, lieve glow pulsante se selezionata);
+## SE il PNG manca ricade sull'anteprima procedurale storica.
 func _draw_relic_icon(p: Control, def: Dictionary, center: Vector2,
                 selected: bool) -> void:
         var col: Color = def.get("color", Color.WHITE)
+        var tex: Texture2D = RelicArt.get_icon_for_def(def)
+        if tex != null:
+                var pulse_glow: float = 0.5 + 0.5 * sin(_t * 3.0)
+                var glow_r: float = 88.0 + (6.0 if selected else 0.0) * pulse_glow
+                p.draw_circle(center, glow_r,
+                        Color(col.r, col.g, col.b, 0.10 + 0.08 * pulse_glow))
+                # Fit-and-center dentro un box 190x190 (mantiene aspetto).
+                var tex_size: Vector2 = tex.get_size()
+                var fit: float = min(190.0 / tex_size.x, 190.0 / tex_size.y)
+                var draw_size: Vector2 = tex_size * fit
+                # Lieve fluttuazione verticale ("appesa" nella vetrina).
+                var bob: float = 3.0 * sin(_t * 1.6)
+                p.draw_texture_rect(tex,
+                        Rect2(center - draw_size * 0.5 + Vector2(0.0, bob),
+                                draw_size), false)
+                return
+        # ---- Fallback procedurale (asset non generato / rollback) ----
         var glow: float = 0.35 + 0.25 * sin(_t * 3.0)
         p.draw_circle(center, 44.0, Color(col.r, col.g, col.b, 0.12 + (0.08 if selected else 0.0)))
         var family: String = str(def.get("family", ""))
@@ -401,27 +432,27 @@ func _draw_relic_icon(p: Control, def: Dictionary, center: Vector2,
                         center + Vector2(0, 8)]), Color(1, 1, 1, 0.65))
 
 
-## riga statistiche compatta per la carta.
+## riga statistiche compatta per la carta (INGLESE — TASK 23).
 func _relic_stats_line(def: Dictionary) -> String:
         if str(def.get("family", "")) == "armatura":
-                return "cariche: %d   energia max: +2" % int(def.get("charges", 0))
+                return "charges: %d   max energy: +2" % int(def.get("charges", 0))
         var parts: Array[String] = []
-        parts.append("colpi: %d" % int(def.get("shots", 0)))
-        parts.append("potenza: %d" % int(def.get("power", 1)))
+        parts.append("shots: %d" % int(def.get("shots", 0)))
+        parts.append("power: %d" % int(def.get("power", 1)))
         if def.has("pierce_max"):
-                parts.append("perforante")
+                parts.append("piercing")
         if bool(def.get("homing", false)):
-                parts.append("ricerca")
+                parts.append("homing")
         if def.has("fan"):
-                parts.append("ventaglio x%d" % int(def["fan"]))
+                parts.append("fan x%d" % int(def["fan"]))
         if def.has("chain"):
-                parts.append("catena")
+                parts.append("chain")
         if def.has("lob_px"):
-                parts.append("ad area")
+                parts.append("area")
         if def.has("stun_ms"):
-                parts.append("stordisce")
+                parts.append("stuns")
         if bool(def.get("vampiric", false)):
-                parts.append("vampirica")
+                parts.append("vampiric")
         return "  ·  ".join(parts)
 
 
