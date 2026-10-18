@@ -2078,6 +2078,8 @@ func _draw_melee_fx() -> void:
         var eased: float = 1.0 - pow(1.0 - prog, 2.2)
         var fade: float = 0.14 + 0.40 * life  # più tenue a fine fendente
         var radius: float = float(rdef.get("radius_px", 96.0)) * (1.15 - 0.15 * life)
+        # Il pivot del fendente sporge leggermente verso il facing (la mano).
+        var pivot_off: Vector2 = melee_fx_dir * 6.0
         draw_set_transform(Vector2(0.0, -jump_offset))
         var shape: String = str(rdef.get("shape", "sector"))
 
@@ -2086,31 +2088,47 @@ func _draw_melee_fx() -> void:
         if weapon_tex != null:
                 var tex_size: Vector2 = weapon_tex.get_size()
                 var shape_kind: String = shape
+                # TASK 24: orientamento dal MANICO (png_grip_deg): la parte
+                # utile (lama/testa) sta dall'altra parte e punta IN FUORI
+                # lungo la direzione corrente del fendente. Il manico resta
+                # ancorato al player (centro immagine a ~0.42*side lungo la
+                # direzione: il manico, a meta' lunghezza, ricade sul pivot).
+                # FIX utente: prima la rotazione era +90 gradi fissa e le armi
+                # con elsa in alto (spadone/pugnali) colpivano col MANICO.
+                var business_rad: float = deg_to_rad(
+                                float(rdef.get("png_grip_deg", 90.0)) + 180.0)
                 if shape_kind == "circle":
-                        # Mazza / Martello: giro completo attorno al player.
-                        var orbit_r: float = radius * 0.52
+                        # Mazza / Martello: giro completo attorno al player,
+                        # testa in fuori lungo il raggio corrente. Dimensione
+                        # TASK 24: testa entro ~1 cella dal centro (64px) per
+                        # non compenetrare i muri adiacenti.
                         var spin: float = eased * TAU
-                        var wp: Vector2 = Vector2(cos(spin), sin(spin)) * orbit_r
-                        var side_len: float = clampf(radius * 0.62, 34.0, 84.0)
+                        var spin_dir: Vector2 = Vector2(cos(spin), sin(spin))
+                        var side_len: float = clampf(radius * 0.45, 26.0, 48.0)
                         var wsc: float = side_len / maxf(tex_size.x, tex_size.y)
-                        # Il PNG punta verso l'esterno (verticale -> ruotato).
+                        # La mano orbita leggermente attorno al player.
+                        var pivot: Vector2 = spin_dir * (radius * 0.12) + pivot_off
+                        var wcenter: Vector2 = pivot + spin_dir * (side_len * 0.42)
                         # NOTA: draw_set_transform NON componga coi transform
                         # precedenti → il jump offset va sommato a mano.
-                        draw_set_transform(wp + Vector2(0.0, -jump_offset), spin + PI * 0.5,
-                                        Vector2(wsc, wsc))
+                        draw_set_transform(wcenter + Vector2(0.0, -jump_offset),
+                                        spin - business_rad, Vector2(wsc, wsc))
                         draw_texture_rect(weapon_tex,
                                 Rect2(-tex_size * 0.5, tex_size), false)
                         draw_set_transform(Vector2(0.0, -jump_offset))
                 elif shape_kind == "line":
-                        # Alabarda: thrust lineare avanti e indietro.
-                        var thrust: float = 12.0 + eased * radius * 0.78
-                        var wpos: Vector2 = melee_fx_dir * thrust
-                        var side_len2: float = clampf(radius * 0.6, 36.0, 92.0)
+                        # Alabarda: thrust lineare avanti e indietro (la punta
+                        # resta entro il raggio d'effetto dichiarato). TASK 24:
+                        # lunge ridotto — prima scattava di ~160px e la shaft
+                        # compenetrava vistosamente i muri.
+                        var thrust: float = 8.0 + eased * radius * 0.22
+                        var side_len2: float = clampf(radius * 0.42, 36.0, 72.0)
                         var wsc2: float = side_len2 / maxf(tex_size.x, tex_size.y)
                         var aim_ang: float = melee_fx_dir.angle()
-                        var flip2: float = -1.0 if melee_fx_dir.x < 0.0 else 1.0
-                        draw_set_transform(wpos + Vector2(0.0, -jump_offset), aim_ang + PI * 0.5,
-                                        Vector2(wsc2, wsc2 * flip2))
+                        var wpos: Vector2 = melee_fx_dir \
+                                        * (thrust + side_len2 * 0.42) + pivot_off
+                        draw_set_transform(wpos + Vector2(0.0, -jump_offset),
+                                        aim_ang - business_rad, Vector2(wsc2, wsc2))
                         draw_texture_rect(weapon_tex,
                                 Rect2(-tex_size * 0.5, tex_size), false)
                         draw_set_transform(Vector2(0.0, -jump_offset))
@@ -2130,16 +2148,16 @@ func _draw_melee_fx() -> void:
                                 swing_a = start_a + (end_a - start_a) * eased
                         else:
                                 swing_a = end_a - (end_a - start_a) * eased
-                        var pivot_off: Vector2 = melee_fx_dir * 6.0
-                        var side_len3: float = clampf(radius * 0.78, 40.0, 110.0)
+                        # TASK 24: dimensione corporea (prima fino a 110px =
+                        # piu' alta del player -> "spada enorme" che entrava
+                        # nei muri). La SCIA marca comunque tutto il raggio
+                        # d'effetto; l'arma fisica resta ~1 cella.
+                        var side_len3: float = clampf(radius * 0.58, 36.0, 72.0)
                         var wsc3: float = side_len3 / maxf(tex_size.x, tex_size.y)
-                        # l'arma è ancorata al player e punta in fuori lungo
-                        # l'angolo corrente dello sweep; centro immagine a ~60%
-                        var wcenter: Vector2 = Vector2(cos(swing_a), sin(swing_a)) \
-                                        * (side_len3 * 0.42) + pivot_off
-                        var flip3: float = -1.0 if cos(swing_a) < 0.0 else 1.0
-                        draw_set_transform(wcenter + Vector2(0.0, -jump_offset), swing_a + PI * 0.5,
-                                        Vector2(wsc3, wsc3 * flip3))
+                        var swing_dir: Vector2 = Vector2(cos(swing_a), sin(swing_a))
+                        var wcenter: Vector2 = swing_dir * (side_len3 * 0.42) + pivot_off
+                        draw_set_transform(wcenter + Vector2(0.0, -jump_offset),
+                                        swing_a - business_rad, Vector2(wsc3, wsc3))
                         draw_texture_rect(weapon_tex,
                                 Rect2(-tex_size * 0.5, tex_size), false)
                         draw_set_transform(Vector2(0.0, -jump_offset))
@@ -2692,9 +2710,13 @@ func _draw_relic_weapon_in_hand(relic_type: int) -> void:
                 return
         var col: Color = rdef.get("color", Color.WHITE)
         # TASK 23: PNG dell'arma in mano (preferito: qualità molto superiore).
+        # TASK 24: durante il fendente (250ms) l'arma è GIÀ disegnata dal
+        # _draw_melee_fx che la fa roteare: evita il doppio disegno (arma
+        # statica in mano + arma che fende = "spada gigante doppia").
         var relic_tex: Texture2D = RelicArt.get_icon_for_def(rdef)
         if relic_tex != null:
-                _draw_relic_png_in_hand(relic_tex, col)
+                if melee_fx_timer_ms <= 0:
+                        _draw_relic_png_in_hand(relic_tex, col, rdef)
                 return
         # ---- Fallback procedurale (PNG non generato / rollback) ----
         var y: float = -4.0 - jump_offset  # quota arma + sync arco salto
@@ -2743,28 +2765,54 @@ func _draw_relic_weapon_in_hand(relic_type: int) -> void:
                 draw_circle(tip_pos, 1.4, Color(1.0, 1.0, 1.0, 0.9))
 
 
-## TASK 23: disegna il PNG dell'arma reliquia IN MANO al player, ruotato
-## verso la direzione di mira (last_dx/last_dy) e con flip verticale quando
-## mira a sinistra (l'oggetto non appare a testa in giù). Dimensione: lato
-## ~54px (leggibile e proporzionata al corpo 64x64 scalato 1.3).
-func _draw_relic_png_in_hand(tex: Texture2D, col: Color) -> void:
+## TASK 23: disegna il PNG dell'arma reliquia IN MANO al player.
+## TASK 24 (fix utente: "spada impugnata dalla parte della lama e colpisce
+## col manico"): l'orientamento NON e' piu' hardcoded su "PNG verticale
+## con punta in alto" — ogni reliquia dichiara in GameConstants dove sta
+## l'impugnatura nell'icona:
+##   * png_grip_deg (armi "impugnate"): la parte OPPOSTA (lama/testa)
+##     viene allineata alla mira e il MANICO resta sulla mano (il centro
+##     immagine avanza di ~0.42*side lungo la mira: il manico, a meta'
+##     lunghezza dal centro, ricade sulla mano stessa);
+##   * png_point_deg (arco/balestra, impugnatura centrale): l'asse di
+##     tiro dell'icona (freccia/saetta) viene allineato alla mira;
+##   * nessun metadato (bombe, simmetriche): verticale, centrato sulla mano.
+## FIX aggiuntivo TASK 24: l'offset del centro era in UNITA' TEXTURE (~512px)
+## e non in px a schermo -> l'arma restava centrata sulla mano (mano in
+## mezzo alla lama). Ora il centro e' posizionato in coordinate MONDO.
+func _draw_relic_png_in_hand(tex: Texture2D, col: Color, rdef: Dictionary) -> void:
         var aim: Vector2 = Vector2(float(last_dx), float(last_dy))
         if aim == Vector2.ZERO:
                 aim = Vector2(1.0, 0.0)
         aim = aim.normalized()
         var hand: Vector2 = Vector2(10.0, -6.0 - jump_offset)
-        var rot: float = aim.angle() + PI * 0.5  # PNG "verticale": punta in alto
-        var side: float = 52.0  # lato del render (px)
+        var side: float = 48.0  # lato del render (px a schermo)
         var tex_size: Vector2 = tex.get_size()
         var sc: float = side / maxf(tex_size.x, tex_size.y)
-        # flip verticale quando si mira a sinistra (mirror, non upside-down)
-        var flip_y: float = -1.0 if aim.x < 0.0 else 1.0
-        draw_set_transform(hand, rot, Vector2(sc, sc * flip_y))
-        # L'arma sporge dalla mano verso la mira: centro immagine spostato
-        # avanti lungo l'asse locale Y (il PNG punta in alto = -Y locale).
-        var center_local: Vector2 = Vector2(0.0, -side * 0.42)
-        draw_texture_rect(tex, Rect2(center_local - tex_size * 0.5, tex_size),
-                false, Color(1.0, 1.0, 1.0, 1.0))
+        var rot: float
+        var center_world: Vector2
+        if rdef.has("png_grip_deg"):
+                # La direzione "utile" (dal manico verso lama/testa) e' l'OPPOSTO
+                # del grip: allineiamola alla mira. rot = mira - business.
+                var business_rad: float = deg_to_rad(
+                                float(rdef.get("png_grip_deg", 90.0)) + 180.0)
+                rot = aim.angle() - business_rad
+                # Centro immagine avanti lungo la mira: il manico ricade
+                # sulla mano (a ~meta' lunghezza dal centro, lato player).
+                center_world = hand + aim * (side * 0.42)
+        elif rdef.has("png_point_deg"):
+                # Arco/balestra: la mano tiene il CENTRO; l'asse di fuoco
+                # dell'icona viene allineato alla mira (la freccia/saetta
+                # punta dove spara il player).
+                rot = aim.angle() - deg_to_rad(float(rdef.get("png_point_deg", 0.0)))
+                center_world = hand + aim * 6.0
+        else:
+                # Oggetto simmetrico (bombe): verticale, appena avanti.
+                rot = aim.angle() + PI * 0.5
+                center_world = hand + aim * (side * 0.20)
+        draw_set_transform(center_world, rot, Vector2(sc, sc))
+        draw_texture_rect(tex, Rect2(-tex_size * 0.5, tex_size), false,
+                        Color(1.0, 1.0, 1.0, 1.0))
         draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
         # Lieve bagliore color reliquia attorno alla mano (coerenza col tema).
         var glow: float = 0.5 + 0.5 * sin(float(anim_time) * 0.005)

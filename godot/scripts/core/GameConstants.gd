@@ -767,6 +767,11 @@ static func get_weapon_color(type: int) -> Color:
 ##   splash_px / splash_hits: solo ASCIA — danno ad area attorno al bersaglio
 ##   stun_ms: nemici STUNNATI (congelati) per N ms
 ##   vampiric: cura 1 energia per nemico colpito
+##   png_grip_deg: TASK 24 — dove sta l'IMPUGNATURA nell'icona PNG (gradi
+##           nello spazio immagine, y verso il basso, 0=destra, 90=basso,
+##           -90=alto): il rendering in mano/al fendente allinea la parte
+##           OPPOSTA (lama/testa) alla mira e tiene il manico sulla mano.
+##           Es. spadone: elsa in alto -> -90.
 const RELIC_MELEE: Array[Dictionary] = [
         {
                 "id": "sword", "type": RelicType.SWORD, "family": "mischia",
@@ -775,6 +780,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "color": Color(0.82, 0.86, 0.94), "power": 3, "hits": 2,
                 "shots": 25, "shape": "sector", "radius_px": 128.0,
                 "arc_deg": 120.0, "fire_cd": 320,
+                "png_grip_deg": -90.0,
                 "desc": "Arco ampio (2 celle): fende tutti i nemici davanti a te.",
                 "desc_en": "Wide arc (2 tiles): cleaves every enemy in front of you.",
         },
@@ -785,7 +791,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "color": Color(0.90, 0.35, 0.20), "power": 5, "hits": 2,
                 "shots": 15, "shape": "sector", "radius_px": 96.0,
                 "arc_deg": 90.0, "fire_cd": 380, "splash_px": 64.0,
-                "splash_hits": 4,
+                "splash_hits": 4, "png_grip_deg": 45.0,
                 "desc": "Colpo devastante + scheggia ad area attorno al bersaglio.",
                 "desc_en": "Devastating strike + area shrapnel around the target.",
         },
@@ -796,6 +802,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "color": Color(0.72, 0.72, 0.78), "power": 2, "hits": 3,
                 "shots": 12, "shape": "circle", "radius_px": 96.0,
                 "arc_deg": 360.0, "fire_cd": 340, "stun_ms": 1000,
+                "png_grip_deg": 90.0,
                 "desc": "Rotazione 360°: colpisce attorno e STORDISCE i nemici.",
                 "desc_en": "360° spin: strikes all around and STUNS enemies.",
         },
@@ -805,7 +812,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name_en": "Royal Guard Halberd", "short_en": "HALBERD",
                 "color": Color(0.86, 0.78, 0.40), "power": 3, "hits": 3,
                 "shots": 18, "shape": "line", "radius_px": 192.0,
-                "arc_deg": 0.0, "fire_cd": 340,
+                "arc_deg": 0.0, "fire_cd": 340, "png_grip_deg": 90.0,
                 "desc": "Lunga (3 celle): infilza tutti i nemici in linea davanti.",
                 "desc_en": "Long reach (3 tiles): skewers every enemy in a line.",
         },
@@ -816,6 +823,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "color": Color(0.85, 0.20, 0.35), "power": 2, "hits": 3,
                 "shots": 20, "shape": "sector", "radius_px": 96.0,
                 "arc_deg": 90.0, "fire_cd": 300, "vampiric": true,
+                "png_grip_deg": 225.0,
                 "desc": "Ogni nemico colpito ti CURA 1 energia.",
                 "desc_en": "Every enemy hit HEALS you 1 energy.",
         },
@@ -826,6 +834,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "color": Color(0.65, 0.55, 0.45), "power": 4, "hits": 2,
                 "shots": 10, "shape": "circle", "radius_px": 64.0,
                 "arc_deg": 360.0, "fire_cd": 400, "stun_ms": 500,
+                "png_grip_deg": 90.0,
                 "desc": "Slam pesante attorno ai piedi: scossa + stordimento breve.",
                 "desc_en": "Heavy ground slam: shockwave + brief stun.",
         },
@@ -838,6 +847,12 @@ const RELIC_MELEE: Array[Dictionary] = [
 ##   fire_cd: cooldown di fuoco dedicato (Arco = rapido)
 ##   chain: catena di fulmini che salta ai nemici vicini (Verga)
 ##   lob_px: parabola che esplode dopo N px (Bombe, AoE radius_px)
+##   png_grip_deg: TASK 24 — come per la mischia (bastone/verga: manico in
+##           basso, parte utile in alto; pugnali: elsa in alto).
+##   png_point_deg: TASK 24 — SOLO armi a impugnatura CENTRALE (arco,
+##           balestra): direzione in cui l'icona PUNTA/SCOCCA (gradi nello
+##           spazio immagine, y in giu'). Il rendering allinea quest'asse
+##           alla mira e tiene il centro sulla mano.
 const RELIC_RANGED: Array[Dictionary] = [
         {
                 "id": "crossbow", "type": RelicType.CROSSBOW, "family": "distanza",
@@ -845,6 +860,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name_en": "Silver Crossbow", "short_en": "CROSSBOW",
                 "color": Color(0.90, 0.92, 0.98), "power": 3, "hits": 2,
                 "shots": 30, "fire_cd": 160, "pierce_max": 3,
+                "png_point_deg": 135.0,
                 "desc": "Dardo perforante: attraversa fino a 3 nemici.",
                 "desc_en": "Piercing bolt: punches through up to 3 enemies.",
         },
@@ -854,6 +870,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name_en": "Archmage Staff", "short_en": "STAFF",
                 "color": Color(0.55, 0.40, 0.95), "power": 2, "hits": 3,
                 "shots": 24, "fire_cd": 200, "homing": true,
+                "png_grip_deg": 90.0,
                 "desc": "Sfera arcana a ricerca: insegue il nemico piu' vicino.",
                 "desc_en": "Homing arcane orb: seeks out the nearest enemy.",
         },
@@ -863,6 +880,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name_en": "Twin Daggers", "short_en": "DAGGERS",
                 "color": Color(0.45, 0.90, 0.85), "power": 2, "hits": 4,
                 "shots": 20, "fire_cd": 220, "fan": 3, "fan_spread_deg": 18.0,
+                "png_grip_deg": -90.0,
                 "desc": "Ventaglio di 3 lame per salve: copre un ampio fronte.",
                 "desc_en": "Fan of 3 blades per volley: covers a wide front.",
         },
@@ -872,6 +890,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name_en": "Ranger Bow", "short_en": "BOW",
                 "color": Color(0.55, 0.85, 0.35), "power": 1, "hits": 4,
                 "shots": 40, "fire_cd": 90,
+                "png_point_deg": 0.0,
                 "desc": "Tiro rapido: frecce leggere ma frecce a raffica.",
                 "desc_en": "Rapid fire: light arrows in quick volleys.",
         },
@@ -881,6 +900,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name_en": "Storm Rod", "short_en": "STORM ROD",
                 "color": Color(0.55, 0.80, 1.00), "power": 2, "hits": 3,
                 "shots": 15, "fire_cd": 200, "chain": 2, "chain_radius_px": 128.0,
+                "png_grip_deg": 90.0,
                 "desc": "Fulmine a catena: salta fino a 2 nemici vicini.",
                 "desc_en": "Chain lightning: arcs to up to 2 nearby enemies.",
         },

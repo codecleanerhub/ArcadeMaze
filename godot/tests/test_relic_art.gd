@@ -8,6 +8,8 @@
 ##      ("SCHERMATA BONUS A/B/C" rimosso).
 ##   D. Il rendering della schermata bonus gira senza errori di script
 ##      (draw con PNG + sfondo) per un paio di secondi.
+##   E. (TASK 24) Le 12 armi dichiarano i metadati di orientamento del PNG
+##      (png_grip_deg / png_point_deg): guardia del fix "impugnata per la lama".
 extends Node
 
 const MainGameScene = preload("res://scenes/MainGame.tscn")
@@ -50,6 +52,7 @@ func _physics_process(delta: float) -> void:
                                 _phaseA_icons()
                                 _phaseB_background()
                                 _phaseC_english()
+                                _phaseE_orientation()
                                 phase = 1
                 1:
                         # D: apri una BonusScreen reale e lasciala girare
@@ -94,6 +97,37 @@ func _phaseA_icons() -> void:
                 _fail("A: icone non quadrate: " + ", ".join(bad_alpha))
         else:
                 _ok("A: 18 icone PNG caricate (" + str(all_ids.size()) + " id, fallback null OK)")
+
+
+func _phaseE_orientation() -> void:
+        ## E (TASK 24): metadati di orientamento del PNG per le 12 ARMI:
+        ## ogni arma dichiara png_grip_deg (impugnatura) OPPURE png_point_deg
+        ## (asse di tiro per arco/balestra) o nessuno dei due SOLO se
+        ## simmetrica (bombe). Guardia anti-regressione del fix "spada
+        ## impugnata per la lama".
+        var no_meta: Array = []
+        var bad_val: Array = []
+        var symmetric_ok: Array = ["alchemist_bombs"]
+        for d in GameConstants.RELIC_MELEE + GameConstants.RELIC_RANGED:
+                var rid: String = str(d.get("id", "?"))
+                var has_grip: bool = d.has("png_grip_deg")
+                var has_point: bool = d.has("png_point_deg")
+                if not has_grip and not has_point and not symmetric_ok.has(rid):
+                        no_meta.append(rid)
+                        continue
+                if has_grip and has_point:
+                        no_meta.append(rid + " (entrambi!)")
+                        continue
+                if has_grip and absf(float(d.get("png_grip_deg", 0.0))) > 360.0:
+                        bad_val.append(rid)
+                if has_point and absf(float(d.get("png_point_deg", 0.0))) > 360.0:
+                        bad_val.append(rid)
+        if not no_meta.is_empty():
+                _fail("E: armi senza orientamento PNG: " + ", ".join(no_meta))
+        elif not bad_val.is_empty():
+                _fail("E: gradi fuori range: " + ", ".join(bad_val))
+        else:
+                _ok("E: 12 armi con metadati orientamento PNG (grip/point) OK")
 
 
 func _phaseB_background() -> void:
