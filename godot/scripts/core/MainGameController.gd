@@ -4482,10 +4482,18 @@ func _draw_decals() -> void:
 func _update_hud() -> void:
         if not hud:
                 return
-        # FIX (HUD weapon name sempre "PISTOL"): il Dictionary dell'arma non ha
-        # la chiave "name" (ha type/power/ammo), quindi il fallback "PISTOL"
-        # veniva usato SEMPRE, anche con fucile/razzo/laser. Ora il nome è
-        # derivato dal type con la mappa ufficiale delle armi.
+        # FIX (HUD 2P invisibile): hud.set_num_players() non veniva MAI
+        # chiamato da nessuno in tutto il codebase → _num_players restava 1
+        # → _draw() usava sempre il layout 1P e la sezione P2 (energia,
+        # stamina, vite, arma, punteggio) non veniva mai DISEGNATA, pur
+        # ricevendo regolarmente i dati via set_player2_state(). Sincronizzato
+        # qui ogni frame: il layout si auto-corregge in ogni flusso (nuova
+        # partita, continue, restore sessione, ritorno dalla boss room).
+        if GameManager != null:
+                hud.set_num_players(GameManager.num_players)
+        # NOTE (HUD weapon name): il Dictionary dell'arma non ha la chiave
+        # "name" (ha type/power/ammo) → il nome è derivato dal type con la
+        # mappa ufficiale (C.get_weapon_name), mai hardcoded "PISTOL".
         var p1_snap: Dictionary = {
                 "score": player.score,
                 "lives": player.lives,

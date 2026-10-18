@@ -1019,6 +1019,11 @@ func _toggle_pause() -> void:
 func _update_hud() -> void:
         if not hud:
                 return
+        # FIX (HUD 2P invisibile): mirror di MainGameController._update_hud —
+        # set_num_players() non veniva mai chiamato → la sezione P2 non veniva
+        # mai disegnata nemmeno in boss room. Sincronizzato ogni frame.
+        if GameManager != null:
+                hud.set_num_players(GameManager.num_players)
         var p1_snap: Dictionary = {
                 "score": player.score,
                 "lives": player.lives,

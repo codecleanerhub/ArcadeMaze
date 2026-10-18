@@ -305,6 +305,11 @@ func _draw_1p() -> void:
 
 
 # --- 2-player layout (mirror UI::render two-player) ------------------------
+# FIX (layout 2P su schermo intero): il layout originale era pensato per una
+# finestra ~900px (P2 a x=560): su 1920px la sezione P2 restava pigiata al
+# centro-sinistra con oltre metà schermo vuota. Ora il layout è a tutta
+# larghezza e SPECULARE: P1 a sinistra, tesori al centro, P2 a destra
+# (ogni giocatore ha "il suo angolo" leggibile con la coda dell'occhio).
 func _draw_2p() -> void:
         # === PLAYER 1 (left) ===
         _draw_label_colored("P1", 10, 10, color_p1_label)
@@ -321,24 +326,26 @@ func _draw_2p() -> void:
         _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
 
-        # === TREASURES (center) — FIX: label inglese ===
-        _draw_label("Treasures remaining:", 470, 10)
-        _draw_label_int(_remaining_treasures, 470, 30, color_score)
+        # === TREASURES (center) — centrata su schermo 1920px. x=800: il
+        # testo (~170px, fino a ~970) NON collide con la barra "last hit
+        # enemy" che parte da x=1010 (margine 40px) ===
+        _draw_label("Treasures remaining:", 800, 10)
+        _draw_label_int(_remaining_treasures, 800, 30, color_score)
 
-        # === PLAYER 2 (right) ===
-        _draw_label_colored("P2", 560, 10, color_p2_label)
-        _draw_label_int(_p2.score, 560, 30, color_score)
-        _draw_label("LIFE", 640, 10)
+        # === PLAYER 2 (right, speculare a P1) ===
+        _draw_label_colored("P2", 1560, 10, color_p2_label)
+        _draw_label_int(_p2.score, 1560, 30, color_score)
+        _draw_label("LIFE", 1630, 10)
         for i in _p2.lives:
-                _draw_heart(650 + i * 16, 35, 6.0)
-        _draw_label("EN", 740, 10)
-        _draw_energy_bar(740, 32, 60, 14,
+                _draw_heart(1640 + i * 16, 35, 6.0)
+        _draw_label("EN", 1730, 10)
+        _draw_energy_bar(1730, 32, 60, 14,
                 float(_p2.energy) / float(_p2.max_energy))
         # FIX (stamina salti): barra STAMINA verde sotto la vita (P2).
-        _draw_stamina_bar(740, 50, 60, 8,
+        _draw_stamina_bar(1730, 50, 60, 8,
                 _p2.stamina, _p2.stamina_exhausted)
-        _draw_label_colored(_p2.weapon_name, 820, 10, _p2.weapon_color)
-        _draw_label_int(_p2.weapon_ammo, 820, 30, color_score)
+        _draw_label_colored(_p2.weapon_name, 1800, 10, _p2.weapon_color)
+        _draw_label_int(_p2.weapon_ammo, 1800, 30, color_score)
 
 
 # ----------------------------------------------------------------------------
