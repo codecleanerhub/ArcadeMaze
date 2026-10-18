@@ -18,6 +18,33 @@
 class_name GameConstants
 
 # ============================================================================
+# 0. TASK 22 — POTENZIAMENTO GRAFICO XHD (facilmente reversibile)
+# ============================================================================
+# Tre interruttori indipendenti. Per tornare AL 100% alla grafica precedente
+# basta mettere uno (o tutti) a `false`: i file originali non sono mai stati
+# toccati, gli sheet XHD vivono in `assets/sprites/xhd/` e ogni loader ha
+# il fallback identico al codice legacy. (In alternativa: git revert del
+# singolo commit del Task 22.)
+#   SPRITE_XHD_ENABLED     -> player + ruota selezione + boss usano gli sheet
+#                             4x (256px/frame) generati deterministicamente
+#                             dagli originali (stessa palette, stessa silhouette).
+#   BOSS_LIMB_ANIM_ENABLED -> animazioni procedurali del mesh del boss
+#                             (tentacoli/braccia/ali/volo, vedi DeformableSprite).
+#   BOSS_PROJ_THEMED_ENABLED -> proiettili boss con FORME tematiche distinte
+#                             (roccia/skull/ragnatela/globo di cristallo...).
+static var SPRITE_XHD_ENABLED: bool = true
+static var BOSS_LIMB_ANIM_ENABLED: bool = true
+static var BOSS_PROJ_THEMED_ENABLED: bool = true
+
+## Frame size (px) degli sheet XHD (4x del 64 originale).
+const SPRITE_XHD_FRAME_PX: int = 256
+
+## Percorso dello sheet XHD per id sprite (es. "player1", "boss_031",
+## "char_knight_walk2"). Ritorna null se l'id non ha senso.
+static func xhd_sheet_path(id: String) -> String:
+        return "res://assets/sprites/xhd/" + id + "_xhd_sheet.png"
+
+# ============================================================================
 # 1. WINDOW / GRID DIMENSIONS  (from Utils.h)
 # ============================================================================
 # FIX (labirinto esteso a tutto schermo): design space portato a 1920x1080

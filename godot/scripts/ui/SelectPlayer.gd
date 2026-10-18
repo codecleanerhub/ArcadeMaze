@@ -64,15 +64,26 @@ func _ready() -> void:
         # Preload all character textures
         _char_textures.clear()
         for i in CHARACTER_COUNT:
-                var path := "res://assets/sprites/" + CHARACTERS[i] + "_sheet.png"
                 var tex = null
-                # FIX (regressione): usa Image.load() per bypassare import.
-                # FIX (log noise): file_exists() silenzi l'ERROR se manca.
-                var abs_path: String = ProjectSettings.globalize_path(path)
-                if FileAccess.file_exists(abs_path):
-                        var img := Image.new()
-                        if img.load(abs_path) == OK:
-                                tex = ImageTexture.create_from_image(img)
+                # TASK 22 — priorità sheet XHD 4x (256px/frame): stessa arte,
+                # bordi lisci a ~2-3x di ingrandimento nella ruota (era 64px
+                # gonfiato a 128-192px => pixel visibili). Fallback SD intatto.
+                if C.SPRITE_XHD_ENABLED:
+                        var xhd_path: String = C.xhd_sheet_path(CHARACTERS[i])
+                        var xhd_abs: String = ProjectSettings.globalize_path(xhd_path)
+                        if FileAccess.file_exists(xhd_abs):
+                                var xhd_img := Image.new()
+                                if xhd_img.load(xhd_abs) == OK:
+                                        tex = ImageTexture.create_from_image(xhd_img)
+                if tex == null:
+                        var path := "res://assets/sprites/" + CHARACTERS[i] + "_sheet.png"
+                        # FIX (regressione): usa Image.load() per bypassare import.
+                        # FIX (log noise): file_exists() silenzi l'ERROR se manca.
+                        var abs_path: String = ProjectSettings.globalize_path(path)
+                        if FileAccess.file_exists(abs_path):
+                                var img := Image.new()
+                                if img.load(abs_path) == OK:
+                                        tex = ImageTexture.create_from_image(img)
                 _char_textures.append(tex)
         # Preload the AI-generated crypt/ruderi background.
         # FIX (regressione): usa Image.load() per bypassare import.
@@ -287,10 +298,12 @@ func _draw() -> void:
                         # per renderli visibili e dettagliati nella ruota.
                         var char_size: float = 128.0 * p.scale
                         var draw_rect := Rect2(p.x - char_size / 2.0, p.y - char_size, char_size, char_size)
-                        # AtlasTexture for first frame (64x64)
+                        # TASK 22 — frame size adattiva: sheet XHD = frame
+                        # 256px (sheet 1024x256); sheet SD = frame 64px.
+                        var fpx: int = 256 if tex.get_width() >= 1024 else 64
                         var at := AtlasTexture.new()
                         at.atlas = tex
-                        at.region = Rect2(0, 0, 64, 64)
+                        at.region = Rect2(0, 0, fpx, fpx)
                         draw_texture_rect(at, draw_rect, false)
                 else:
                         # Fallback: colored circle

@@ -559,6 +559,36 @@ func load_character_sprite() -> void:
         var base: String = CHARACTER_SPRITE_BASE.get(character_type, CHARACTER_SPRITE_BASE[CharacterType.HERO_M])
         var path := base + "_sheet.png"
         if ResourceLoader.exists(path) and sprite:
+                # TASK 22 — priorità sheet XHD 4x (256px/frame): stessa palette,
+                # stessa silhouette, stessi frame — solo bordi più lisci e
+                # definizione maggiore. Flag di rollback: GameConstants.SPRITE_XHD_ENABLED.
+                # Con XHD attivo la texture 256px viene disegnata con scala
+                # 1/4 => dimensione A SCHERMO identica (64*1.3=83px).
+                var xhd_tex: Texture2D = _try_load_xhd_texture(base.get_file())
+                if xhd_tex != null:
+                        _character_sheet_texture = xhd_tex
+                        _character_sheet_path = base
+                        _frame_px = GameConstants.SPRITE_XHD_FRAME_PX
+                        sprite.modulate = tint
+                        sprite.flip_h = false
+                        # Walk/jump dedicati in variante XHD (fallback: null,
+                        # il ciclo walk usa comunque il main sheet).
+                        _walk_sheet_textures.resize(4)
+                        for i in 4:
+                                _walk_sheet_textures[i] = _try_load_xhd_texture(
+                                        "%s_walk%d" % [base.get_file(), i])
+                        _jump_sheet_texture = _try_load_xhd_texture(base.get_file() + "_jump")
+                        _apply_character_frame(0)
+                        sprite_loaded = true
+                        var px_scale: float = 1.3 * (64.0 / float(_frame_px))
+                        sprite.scale = Vector2(px_scale, px_scale)
+                        sprite.centered = true
+                        # Enhancement shader invariato (funziona su qualunque
+                        # risoluzione: sharpening + rim light a runtime).
+                        if CharacterArt and sprite:
+                                CharacterArt.apply_enhancement(sprite, false)
+                        return
+                _frame_px = 64
                 var tex := load(path)
                 if tex is Texture2D:
                         # Store the full sheet; _update_sprite() will set the
@@ -608,15 +638,33 @@ func load_character_sprite() -> void:
                 sprite_loaded = false
 
 
+# TASK 22 — Carica uno sheet XHD (assets/sprites/xhd/<id>_xhd_sheet.png)
+# via Image.load() runtime (bypassa l'import, pattern già usato da
+# SpriteManager per gli hd/). Ritorna null se il flag è spento o il file
+# manca => il chiamante ricade sul percorso SD legacy intatto.
+func _try_load_xhd_texture(id: String) -> Texture2D:
+        if not GameConstants.SPRITE_XHD_ENABLED:
+                return null
+        var xhd_path: String = GameConstants.xhd_sheet_path(id)
+        var abs_path: String = ProjectSettings.globalize_path(xhd_path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img := Image.new()
+        if img.load(abs_path) != OK:
+                return null
+        return ImageTexture.create_from_image(img)
+
+
 # Apply a specific frame index from the character sheet to the Sprite2D.
-# The main sheet is 256x64 = 4 frames of 64x64.
+# The main sheet is 256x64 = 4 frames of 64x64 (SD) oppure 1024x256 = 4 frame
+# di 256x256 (XHD Task 22): la larghezza frame è _frame_px.
 # FIX: re-apply tint after every texture change (P2 bluish tint was lost
 # when _apply_character_frame set sprite.texture = at).
 func _apply_character_frame(frame_idx: int) -> void:
         if _character_sheet_texture == null or sprite == null:
                 return
-        var fw: int = 64
-        var fh: int = 64
+        var fw: int = _frame_px
+        var fh: int = _frame_px
         var cols: int = 4
         var idx: int = clampi(frame_idx, 0, cols - 1)
         var at := AtlasTexture.new()
@@ -638,6 +686,8 @@ func _apply_character_dedicated_texture(tex: Texture2D) -> void:
 var _character_sheet_texture: Texture2D = null
 var _character_sheet_path: String = ""
 var sprite_loaded: bool = false
+# TASK 22 — dimensione frame della sheet corrente (64 SD / 256 XHD).
+var _frame_px: int = 64
 # Dedicated per-frame sheets (loaded once at character-switch time).
 # walk0..3 = walk cycle; jump = jump pose. Each is a single 64x64 frame.
 # Any entry that's null means the dedicated sheet wasn't found on disk; we
@@ -1522,7 +1572,11 @@ func _update_sprite() -> void:
         # Apply jump arc as a vertical offset (sprite only, not the Node2D).
         # In C++ the sprite is drawn at pos.y + 24 - jumpOffset; here we shift
         # the sprite by -jumpOffset relative to its anchor.
-        sprite.offset = Vector2(0, -jump_offset)
+        # TASK 22: sprite.offset è in unità LOCALI (pre-scala): con la texture
+        # XHD (scala 1/4) va compensato perché l'arco di salto resti identico
+        # a schermo (jump_offset px reali).
+        var off_scale: float = float(_frame_px) / 64.0
+        sprite.offset = Vector2(0, -jump_offset * off_scale)
 
         # FIX (pozione magica): il player fantasma è EVANESCENTE — sprite
         # semitrasparente con tinta eterea ciano e pulsazione lenta. Quando

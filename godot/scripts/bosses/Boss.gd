@@ -27,6 +27,8 @@
 extends Node2D
 class_name Boss
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # ---- Boss types (mirrors C++ enum BossType) ----
 enum Type {
         BOSS_GOLEM, BOSS_LICH, BOSS_DEMON, BOSS_SPIDER,
@@ -74,6 +76,33 @@ var deform_loaded: bool = false
 
 # Sprite ID (e.g. "boss_031" for the GOLEM).
 var sprite_id: String = ""
+
+# TASK 22 — frame size della sorgente (64 SD legacy / 256 XHD).
+var _frame_px: int = 64
+
+# TASK 22 — mappa tipo boss -> profilo animazione arti (DeformableSprite).
+# LP_* vedi DeformableSprite.LimbProfile. LP_NONE = solo respirazione/idle
+# classico (comportamento pre-Task 22).
+static func get_limb_profile(t: int) -> int:
+        match t:
+                Type.BOSS_GOLEM:           return DeformableSprite.LimbProfile.LP_ARMS
+                Type.BOSS_LICH:            return DeformableSprite.LimbProfile.LP_HOVER
+                Type.BOSS_DEMON:           return DeformableSprite.LimbProfile.LP_WINGS
+                Type.BOSS_SPIDER:          return DeformableSprite.LimbProfile.LP_ARMS
+                Type.BOSS_ABOMINATION:     return DeformableSprite.LimbProfile.LP_TENTACLES
+                Type.BOSS_KRAKEN:          return DeformableSprite.LimbProfile.LP_TENTACLES
+                Type.BOSS_DRAGON:          return DeformableSprite.LimbProfile.LP_WINGS
+                Type.BOSS_WRAITH_LORD:     return DeformableSprite.LimbProfile.LP_HOVER
+                Type.BOSS_VAMPIRE:         return DeformableSprite.LimbProfile.LP_HOVER
+                Type.BOSS_BEHOLDER:        return DeformableSprite.LimbProfile.LP_STALKS
+                Type.BOSS_GHOUL_LORD:      return DeformableSprite.LimbProfile.LP_ARMS
+                Type.BOSS_SPECTRAL_ALPHA:  return DeformableSprite.LimbProfile.LP_HOVER
+                Type.BOSS_CULT_HERALD:     return DeformableSprite.LimbProfile.LP_HOVER
+                Type.BOSS_COLOSSAL_MIMIC:  return DeformableSprite.LimbProfile.LP_NONE
+                Type.BOSS_RAT_KING:        return DeformableSprite.LimbProfile.LP_ARMS
+                Type.BOSS_SUPREME_WITCH:   return DeformableSprite.LimbProfile.LP_HOVER
+                Type.BOSS_TWILIGHT_KNIGHT: return DeformableSprite.LimbProfile.LP_ARMS
+        return DeformableSprite.LimbProfile.LP_NONE
 
 # Signals emitted to the Game.
 signal shoot(projectile: Projectile)
@@ -245,9 +274,19 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                 var mode := DeformableSprite.AnimMode.IDLE
                 if attacking_timer_ms > 0:
                         mode = DeformableSprite.AnimMode.ATTACK
-                var scale_val := size / 64.0
-                var draw_x := pos.x - 32.0 * scale_val
-                var draw_y := (pos.y - size * 0.25) - 32.0 * scale_val
+                # TASK 22: profilo arti procedurale (tentacoli/braccia/ali/volo)
+                # attivo solo col flag di rollback attivo.
+                if C.BOSS_LIMB_ANIM_ENABLED:
+                        deform_sprite.limb_profile = get_limb_profile(boss_type)
+                else:
+                        deform_sprite.limb_profile = DeformableSprite.LimbProfile.LP_NONE
+                # TASK 22: scala relativa al frame sorgente (64 SD / 256 XHD):
+                # a parità di `size` lo sprite a schermo è IDENTICO, cambia solo
+                # la densità di texel (definizione).
+                var scale_val := size / float(_frame_px)
+                var half_frame := float(_frame_px) * 0.5
+                var draw_x := pos.x - half_frame * scale_val
+                var draw_y := (pos.y - size * 0.25) - half_frame * scale_val
                 deform_sprite.position = Vector2(draw_x, draw_y) - pos  # local offset
                 deform_sprite.update(anim_time, mode, scale_val, false)
 
@@ -417,10 +456,34 @@ func _shoot_pattern(player_x: float, player_y: float, out: Array) -> void:
 func _draw() -> void:
         # Lazy-load the DeformableSprite's texture.
         if not deform_loaded and sprite_id != "" and deform_sprite != null:
-                var path := "res://assets/sprites/" + sprite_id + "_sheet.png"
-                deform_loaded = deform_sprite.load_subrect(path, 0, 0, 64, 64)
-                if deform_loaded:
-                        deform_sprite.set_grid_size(8, 8)
+                # TASK 22 — priorità XHD 4x (256px/frame, palette identica):
+                # carica da assets/sprites/xhd/ SE il flag è attivo e il file
+                # esiste. Grid 12x12 (invece di 8x8) per deformazioni arti più
+                # fluide sui frame 256px. Fallback = sheet SD legacy identico
+                # a prima (64px, grid 8x8, filtro NEAREST).
+                var loaded := false
+                if C.SPRITE_XHD_ENABLED:
+                        var xhd_path := C.xhd_sheet_path(sprite_id)
+                        var xhd_abs: String = ProjectSettings.globalize_path(xhd_path)
+                        if FileAccess.file_exists(xhd_abs):
+                                loaded = deform_sprite.load_subrect(xhd_path, 0, 0,
+                                        C.SPRITE_XHD_FRAME_PX, C.SPRITE_XHD_FRAME_PX)
+                                if loaded:
+                                        _frame_px = C.SPRITE_XHD_FRAME_PX
+                                        deform_sprite.set_grid_size(12, 12)
+                if not loaded:
+                        _frame_px = 64
+                        var path := "res://assets/sprites/" + sprite_id + "_sheet.png"
+                        loaded = deform_sprite.load_subrect(path, 0, 0, 64, 64)
+                        if loaded:
+                                deform_sprite.set_grid_size(8, 8)
+                deform_loaded = loaded
+                # TASK 22: applica subito il profilo arti (update_step lo
+                # rinnova ogni frame; qui copre il primo frame di vita).
+                if deform_loaded and deform_sprite != null:
+                        deform_sprite.limb_profile = get_limb_profile(boss_type) \
+                                        if C.BOSS_LIMB_ANIM_ENABLED \
+                                        else DeformableSprite.LimbProfile.LP_NONE
 
         # Draw the deformable sprite (it's a child node, draws itself).
         # If not loaded, fall back to procedural primitives drawn in this node's _draw.

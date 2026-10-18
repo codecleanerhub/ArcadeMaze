@@ -22,9 +22,31 @@ class_name DeformableSprite
 
 enum AnimMode { IDLE, WALK, ATTACK }
 
+## TASK 22 — Profili di animazione proceduale degli arti (per boss).
+## Aggiungono spostamenti sinusoidali localizzati (tentacoli in basso,
+## braccia ai lati, ali in alto, assetto fluttuante, stalke oculari in alto)
+## SENZA frame aggiuntivi: la stessa texture viene deformata sul mesh.
+## LP_NONE = comportamento identico al precedente (solo IDLE/WALK/ATTACK).
+enum LimbProfile {
+        LP_NONE,
+        LP_TENTACLES,   # Kraken, Abomination: onda travelling sugli appendici bassi
+        LP_ARMS,        # Golem, Spider, Ghoul: braccia/zampe laterali alternate
+        LP_WINGS,       # Demone, Drago: battito d'ali in alto ai lati
+        LP_HOVER,       # Lich, Wraith, Vampiro...: fluttuazione + scia veste
+        LP_STALKS,      # Beholder: stalke oculari in alto che ondeggiano
+}
+
 ## Default grid resolution (8x8 = 64 quads = 128 tris).
 const DEFAULT_GRID_W := 8
 const DEFAULT_GRID_H := 8
+
+## TASK 22 — profilo arti corrente (LP_NONE di default: identico al legacy).
+var limb_profile: int = LimbProfile.LP_NONE
+
+## TASK 22 — fattore di scala delle ampiezze di deformazione: tiene
+## l'entità dello spostamento A SCHERMO identica tra sheet 64px (unit=1)
+## e sheet XHD 256px (unit=4).
+var _unit: float = 1.0
 
 ## Sub-rect loaded from the source texture (defaults to the full texture).
 @export var sub_rect: Rect2 = Rect2(0, 0, 0, 0):
@@ -217,13 +239,19 @@ func _rebuild_mesh() -> void:
         # Apply texture via the mesh surface material.
         # In Godot 4.7, MeshInstance2D renders the ArrayMesh, and the material
         # must be set on the mesh surface itself.
+        # TASK 22: filtro adattivo — NEAREST per i frame 64px legacy (look
+        # identico a prima), LINEAR per i frame XHD 256px (bordi lisci).
         var mat := StandardMaterial3D.new()
         mat.albedo_texture = texture
-        mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+        mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST if sub_rect.size.x <= 64.0 \
+                        else BaseMaterial3D.TEXTURE_FILTER_LINEAR
         mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
         mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
         if _mesh.get_surface_count() > 0:
                 _mesh.surface_set_material(0, mat)
+
+        # TASK 22: ampiezze in "unità frame 64px" -> costanti a schermo.
+        _unit = maxf(sub_rect.size.x, sub_rect.size.y) / 64.0
 
 
 func _apply_deformation(time: float, mode: int) -> void:
@@ -288,6 +316,46 @@ func _transform_vertex(idx: int, mode: int, time: float,
                         off.x = pulse * atk_w
                         off.y = sin(time * 2.0) * 0.5 * wx
 
+        # TASK 22 — animazione proceduale degli arti (boss). Amplitude in
+        # unità-frame (moltiplicate per _unit = 4 sugli XHD) => a schermo è
+        # identica tra SD e XHD, e resta SUBTLE (~2-5% del lato dello sprite).
+        if limb_profile != LimbProfile.LP_NONE:
+                var u: float = float(gx) / float(gw)
+                var v: float = float(gy) / float(gh)
+                match limb_profile:
+                        LimbProfile.LP_TENTACLES:
+                                # onda travelling che cresce verso il basso
+                                var vw: float = clampf((v - 0.45) / 0.55, 0.0, 1.0)
+                                off.x += sin(time * 2.4 + v * 7.0 + u * 3.0) * 2.2 * vw
+                                off.y += cos(time * 3.1 + v * 9.0) * 0.8 * vw
+                        LimbProfile.LP_ARMS:
+                                # colonne laterali che oscillano in controfase
+                                var sw: float = clampf((absf(u - 0.5) - 0.18) / 0.32, 0.0, 1.0)
+                                var phase: float = PI if u < 0.5 else 0.0
+                                off.y += sin(time * 2.6 + phase) * 2.4 * sw
+                                off.x += cos(time * 2.6 + phase) * 1.0 * sw
+                        LimbProfile.LP_WINGS:
+                                # battito: alto+ai lati, ali che si aprono
+                                var top_w: float = clampf((0.55 - v) / 0.55, 0.0, 1.0)
+                                var sw2: float = clampf((absf(u - 0.5) - 0.18) / 0.32, 0.0, 1.0)
+                                var flap: float = sin(time * 3.4)
+                                off.y += flap * 3.2 * sw2 * top_w
+                                off.x += (flap * 1.6 + 0.8) * sw2 * top_w
+                        LimbProfile.LP_HOVER:
+                                # fluttuazione globale + scia della veste in basso
+                                off.y += sin(time * 1.7) * 1.8 * weight
+                                off.x += sin(time * 2.1 + v * 5.0) * 1.4 * v * v
+                        LimbProfile.LP_STALKS:
+                                # stalke oculari (in alto) che ondeggiano
+                                var tw2: float = clampf((0.5 - v) / 0.5, 0.0, 1.0)
+                                off.x += sin(time * 2.2 + (0.5 - v) * 8.0 + u * 2.5) * 2.0 * tw2
+                                off.y += cos(time * 2.8 + u * 3.0) * 1.2 * tw2
+
+        # TASK 22: tutte le ampiezze sono in "unità frame 64px"; su mesh XHD
+        # (256px) vanno moltiplicate per 4 per mantenere lo stesso spostamento
+        # A SCHERMO. Con sheet legacy 64px _unit = 1 -> output identico al
+        # codice precedente (bit per bit).
+        off *= _unit
         var pos: Vector2 = base + off
         pos.x *= scale
         pos.y *= scale
