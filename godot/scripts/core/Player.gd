@@ -187,6 +187,212 @@ var soul_pending: bool = false
 var _pre_soul_sprite_visible: bool = true
 var _pre_soul_weapon_visible: bool = true
 
+# ============================================================================
+# RELIC (Task 21) — LE RELIQUIE DELLE SCHERMATE BONUS POST-BOSS
+# ============================================================================
+# Arma reliquia: vive in current_weapon (Dictionary esteso con le chiavi
+# "relic"/"melee"/"max_ammo", vedi GameConstants.make_relic_weapon).
+# "ammo" = COLPI rimanenti: a 0 l'arma SI ROMPE e si torna alla PISTOL.
+# ALLA MORTE (perdita di una vita) arma reliquia E armatura si PERDONO.
+# Le armi a terra NON sovrascrivono una reliquia (guard in collect_weapon).
+# In boss room BossRoomController imposta relic_infinite_shots = true
+# (i colpi NON si consumano, coerente con le munizioni potenziate base).
+
+# True solo nella boss room: i colpi della reliquia non si consumano.
+var relic_infinite_shots: bool = false
+
+# MISCHIA: shoot() NON spawna proiettili — alza questo flag one-shot; il
+# controller (MainGame/BossRoom) lo consuma nello stesso frame applicando
+# il danno ad area ai nemici nella shape (pattern picked_weapon_this_frame).
+var melee_pending: bool = false
+var melee_pending_def: Dictionary = {}
+
+# Visual dell'attacco in mischia (arco/cerchio/linea) disegnato in _draw()
+# per ~250ms dopo il fendente.
+var melee_fx_timer_ms: int = 0
+var melee_fx_def: Dictionary = {}
+var melee_fx_dir: Vector2 = Vector2(1.0, 0.0)
+const MELEE_FX_DURATION_MS: int = 250
+
+# ARMATURA RELIQUIA (slot DEDICATO, non occupa l'arma). Dictionary = def
+# duplicata + "charges"/"max_charges" correnti. Vuota = nessuna armatura.
+# Tutte: +2 energia max (5 -> 7) e cura piena all'equip; durabilita' per
+# kind; si perde alla morte; outfit overlay procedurale in _draw().
+var armor_relic: Dictionary = {}
+const ARMOR_ENERGY_BONUS: int = 2
+# Timer interni: rigenerazione (Veste) e pulsazione aura (Fuoco).
+var _armor_regen_timer_ms: float = 0.0
+var _armor_aura_timer_ms: float = 0.0
+
+
+# ----------------------------------------------------------------
+# RELIC: API armature
+# ----------------------------------------------------------------
+## Equipaggia un'armatura reliquia (dalla schermata bonus): +2 energia max,
+## CURA PIENA, durabilita' piena. Sostituisce l'eventuale armatura corrente.
+func equip_relic_armor(def: Dictionary) -> void:
+        armor_relic = def.duplicate()
+        armor_relic["charges"] = int(def.get("charges", 5))
+        armor_relic["max_charges"] = int(def.get("charges", 5))
+        max_energy = 5 + ARMOR_ENERGY_BONUS
+        energy = max_energy  # cura piena all'equipaggiamento
+        _armor_regen_timer_ms = 0.0
+        _armor_aura_timer_ms = 0.0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+
+
+## Ripristina un'armatura dal carry tra scene (maze <-> boss room):
+## stesse cariche salvate, +2 energia max, energia piena (comportamento
+## standard dei player a inizio scena).
+func restore_relic_armor(saved: Dictionary) -> void:
+        if saved.is_empty():
+                return
+        armor_relic = saved.duplicate()
+        max_energy = 5 + ARMOR_ENERGY_BONUS
+        energy = max_energy
+        _armor_regen_timer_ms = 0.0
+        _armor_aura_timer_ms = 0.0
+
+
+func has_relic_armor() -> bool:
+        return not armor_relic.is_empty()
+
+
+func armor_kind() -> String:
+        return str(armor_relic.get("kind", ""))
+
+
+func armor_charges() -> int:
+        return int(armor_relic.get("charges", 0))
+
+
+## CORAZZA D'ORO (assorbimento): true se il colpo viene assorbito dalla
+## riserva (10 cariche = doppio della vita base). Chiamato DENTRO
+## take_damage() prima di scalare l'energia.
+func _try_absorb_with_golden_armor() -> bool:
+        if armor_kind() != "absorb":
+                return false
+        if armor_charges() <= 0:
+                return false
+        armor_relic["charges"] = armor_charges() - 1
+        if armor_charges() <= 0:
+                _break_relic_armor()
+        return true
+
+
+## SCAGLIE DEL DRAGO (riflessione): consuma una carica; true se il colpo
+## va riflesso. Il controller rimuove il proiettile nemico e spawna il
+## proiettile-rimbalzo del player verso il boss (danno = miglior colpo).
+func try_reflect_projectile() -> bool:
+        if armor_kind() != "reflect":
+                return false
+        if armor_charges() <= 0:
+                return false
+        armor_relic["charges"] = armor_charges() - 1
+        var broke: bool = armor_charges() <= 0
+        if broke:
+                _break_relic_armor()
+        return true
+
+
+## OSSIDIANA DEL CREPUSCOLO (spine): ritorna il danno delle spine (2) se
+## la carica scatta, 0 altrimenti. Il controller lo applica al nemico che
+## ha toccato il player (SOLO tocco in mischia, NON proiettili).
+func consume_thorn_charge() -> int:
+        if armor_kind() != "thorns":
+                return 0
+        if armor_charges() <= 0:
+                return 0
+        armor_relic["charges"] = armor_charges() - 1
+        var dmg: int = int(armor_relic.get("thorn_damage", 2))
+        if armor_charges() <= 0:
+                _break_relic_armor()
+        return dmg
+
+
+## CORAZZA DI FUOCO (aura): true quando scatta la pulsazione (ogni aura_ms);
+## il controller applica il danno a tutti i nemici nel raggio. La carica si
+## consuma a PULSAZIONE (non per nemico colpito).
+func armor_aura_pulse(delta_ms: float) -> bool:
+        if armor_kind() != "aura":
+                return false
+        _armor_aura_timer_ms += delta_ms
+        if _armor_aura_timer_ms < float(armor_relic.get("aura_ms", 2000)):
+                return false
+        _armor_aura_timer_ms = 0.0
+        armor_relic["charges"] = armor_charges() - 1
+        if armor_charges() <= 0:
+                _break_relic_armor()
+        return true
+
+
+## CORAZZA DEL FURORE: true mentre attiva — i colpi colpiscono come se
+## avessero 1 hit-to-kill in meno (floor 2) e +1 power flat vs boss.
+func is_fury_active() -> bool:
+        return armor_kind() == "fury" and armor_charges() > 0
+
+
+## Consuma una carica del Furore per colpo sparato (30 colpi totali).
+func _tick_fury_shot() -> void:
+        if armor_kind() != "fury":
+                return
+        armor_relic["charges"] = armor_charges() - 1
+        if armor_charges() <= 0:
+                _break_relic_armor()
+
+
+## L'armatura si rompe (durabilita' esaurita): slot liberato, energia max
+## torna a 5 (l'energia eccedente viene troncata).
+func _break_relic_armor() -> void:
+        armor_relic = {}
+        max_energy = 5
+        energy = mini(energy, 5)
+        _armor_regen_timer_ms = 0.0
+        _armor_aura_timer_ms = 0.0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
+
+
+## REGOLE DELLA MORTE (decisione utente Task 21): alla perdita di una vita
+## il player perde l'ARMA RELIQUIA (torna PISTOL) e l'ARMATURA. Vale per
+## la morte da nemico/boss (take_damage) e da fuoco amico (anima).
+func lose_relics_on_death() -> void:
+        if current_weapon.has("relic"):
+                current_weapon = _make_weapon(WeaponType.PISTOL)
+                projectiles.clear()
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
+        if not armor_relic.is_empty():
+                armor_relic = {}
+                max_energy = 5
+                energy = mini(energy, 5)
+                _armor_regen_timer_ms = 0.0
+                _armor_aura_timer_ms = 0.0
+        melee_pending = false
+        melee_fx_timer_ms = 0
+
+
+# ----------------------------------------------------------------
+# RELIC: API mischia (flag one-shot consumato dal controller)
+# ----------------------------------------------------------------
+func consume_melee_pending() -> Dictionary:
+        var def: Dictionary = melee_pending_def
+        melee_pending = false
+        melee_pending_def = {}
+        return def
+
+
+## Direzione di sparo/attacco corrente (dx se in movimento, altrimenti
+## l'ultima direzione non-zero; fallback destra). Usata da shoot() e dalla
+## mischia per orientare arco e linea.
+func _aim_dir() -> Vector2:
+        var adx: int = dx if dx != 0 else last_dx
+        var ady: int = dy if dy != 0 else last_dy
+        if adx == 0 and ady == 0:
+                adx = 1
+        return Vector2(float(adx), float(ady))
+
 # --- Character selection ----------------------------------------------------
 var character_type: int = CharacterType.HERO_M
 var player_num: int = 1
@@ -248,6 +454,10 @@ func reset() -> void:
         invincible_timer = 0
         # FIX (pozione magica): azzera lo stato fantasma
         _end_ghost_mode_now()
+        # RELIC (Task 21): nuova partita / continue = NESSUNA reliquia
+        # (arma e armatura si perdono alla morte, molto prima di qui).
+        lose_relics_on_death()
+        relic_infinite_shots = false
         # FUOCO AMICO (Task 18): safety net — un full reset (nuovo livello /
         # continue) NON deve mai ereditare un player congelato in attesa
         # dell'anima (l'effetto viene comunque liberato con la scena).
@@ -542,6 +752,22 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         if stamina_exhausted and stamina >= 1.0:
                 stamina_exhausted = false
 
+        # RELIC (Task 21) — VESTE DELL'ARCIMAGO (rigenerazione): 1 energia
+        # ogni regen_ms FINCHE' l'energia manca; ogni rigenerazione consuma
+        # una carica (12 in tutto), poi l'armatura si rompe. A energia
+        # piena il timer resta fermo (nessuno spreco).
+        if armor_kind() == "regen" and energy < max_energy:
+                _armor_regen_timer_ms += delta_ms
+                if _armor_regen_timer_ms >= float(armor_relic.get("regen_ms", 5000)):
+                        _armor_regen_timer_ms = 0.0
+                        energy = mini(max_energy, energy + 1)
+                        armor_relic["charges"] = armor_charges() - 1
+                        if armor_charges() <= 0:
+                                _break_relic_armor()
+        # RELIC (Task 21): decadimento del visual del fendente in mischia.
+        if melee_fx_timer_ms > 0:
+                melee_fx_timer_ms = maxi(0, melee_fx_timer_ms - int(delta_ms))
+
         # FIX (pozione magica): gestione della modalità fantasma.
         if _ghost_exiting:
                 # Uscita di sicurezza dal muro: scivola verso il centro della
@@ -668,21 +894,37 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
 
         # 5) Projectile advance: 8 px/frame, killed by walls (maze mode) or
         # out-of-bounds (always).
+        # RELIC (Task 21): le BOMBE dell'Alchimista sono proiettili "lob":
+        # dopo lob_px percorsi (o contro un muro) esplodono — restano nell'
+        # array con active=false + exploded=true finche' il CONTROLLER non
+        # consuma l'esplosione (danno ad area) e le rimuove.
         var alive: Array[Dictionary] = []
         for p in projectiles:
-                if not p.active:
+                if not p.active and not p.get("exploded", false):
                         continue
                 if not free_movement:
                         var p_col := int(p.pos.x / TILE_SIZE)
                         var p_row := int((p.pos.y - UI_HEIGHT) / TILE_SIZE)
                         if maze.is_wall(p_col, p_row):
                                 p.active = false
+                                if p.has("lob_px"):
+                                        p["exploded"] = true  # bomba: esplode sul muro
                                 continue
                 p.pos.x += p.dir.x * 8.0
                 p.pos.y += p.dir.y * 8.0
+                if p.has("lob_px"):
+                        p["traveled"] = float(p.get("traveled", 0.0)) + 8.0
+                        if float(p["traveled"]) >= float(p["lob_px"]):
+                                p.active = false
+                                p["exploded"] = true
+                                alive.append(p)
+                                continue
                 if p.pos.x < 0 or p.pos.x > WINDOW_WIDTH \
                                 or p.pos.y < UI_HEIGHT or p.pos.y > WINDOW_HEIGHT:
                         p.active = false
+                        if p.has("lob_px") and not p.get("exploded", false):
+                                p["exploded"] = true  # esplode anche al bordo
+                                alive.append(p)
                         continue
                 alive.append(p)
         projectiles = alive
@@ -716,6 +958,12 @@ func shoot() -> void:
         if shoot_dx == 0 and shoot_dy == 0:
                 shoot_dx = 1  # fallback: fire right
 
+        # RELIC (Task 21): le reliquie hanno il loro ramo di fuoco.
+        var rdef: Dictionary = GameConstants.get_relic_def(int(current_weapon.get("type", 0)))
+        if not rdef.is_empty() and int(current_weapon.get("type", 0)) != GameConstants.RelicType.REFLECT_BOLT:
+                _fire_relic(rdef, shoot_dx, shoot_dy)
+                return
+
         # Spawn position: muzzle end of the weapon (gun barrel).
         # Horizontal shots fire from +20 px on the axis; vertical shots from
         # a slightly offset position (weapon held to the right of the body).
@@ -735,8 +983,98 @@ func shoot() -> void:
                 "type": current_weapon.type,
         })
         current_weapon.ammo -= 1
+        _after_player_shot_fired()
         # Trigger attack animation for ~300 ms (6 frames at 50 ms).
         shoot_anim_timer = 300
+
+
+# ----------------------------------------------------------------------------
+# RELIC (Task 21): fuoco delle armi reliquia.
+# MISCHIA: niente proiettile — alza melee_pending (il controller applica il
+# danno ad area) + visual del fendente. DISTANZA: proiettili con flag di
+# comportamento (pierce/homing/fan/chain/lob). I colpi NON si consumano in
+# boss room (relic_infinite_shots); a 0 l'arma SI ROMPE -> PISTOL.
+# ----------------------------------------------------------------------------
+func _fire_relic(rdef: Dictionary, shoot_dx: int, shoot_dy: int) -> void:
+        var base_dir: Vector2 = Vector2(float(shoot_dx), float(shoot_dy))
+        var is_melee: bool = str(rdef.get("family", "")) == "mischia"
+
+        if is_melee:
+                # Fendente: flag one-shot per il controller + visual arco.
+                melee_pending = true
+                melee_pending_def = rdef
+                melee_fx_timer_ms = MELEE_FX_DURATION_MS
+                melee_fx_def = rdef
+                melee_fx_dir = base_dir
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MELEE_SWING)
+        else:
+                var shoot_pos: Vector2
+                if shoot_dx != 0:
+                        shoot_pos = Vector2(position.x + float(shoot_dx) * 20.0,
+                                                    position.y - 12.0)
+                else:
+                        shoot_pos = Vector2(position.x + 4.0,
+                                                    position.y - 12.0 + float(shoot_dy) * 16.0)
+                var proj_type: int = int(rdef.get("type", 0))
+                var fan_n: int = int(rdef.get("fan", 1))
+                if fan_n > 1:
+                        # Pugnali Gemelli: ventaglio di 3 lame (± spread).
+                        var spread: float = deg_to_rad(float(rdef.get("fan_spread_deg", 18.0)))
+                        for i in fan_n:
+                                var t: float = float(i) / float(fan_n - 1) - 0.5  # -0.5..0.5
+                                var d: Vector2 = base_dir.rotated(t * 2.0 * spread)
+                                projectiles.append(_make_relic_projectile(
+                                                shoot_pos, d, rdef, proj_type))
+                else:
+                        projectiles.append(_make_relic_projectile(
+                                        shoot_pos, base_dir, rdef, proj_type))
+
+        # Consumo colpi (in boss room: infiniti, come le munizioni potenziate).
+        if not relic_infinite_shots:
+                current_weapon.ammo -= 1
+        _after_player_shot_fired()
+        shoot_anim_timer = 300
+        # COLPI ESAURITI: la reliquia SI ROMPE e si torna alla PISTOL
+        # (richiesta utente: "le armi quando finiscono i colpi spariscono").
+        if int(current_weapon.get("ammo", 0)) <= 0 and not relic_infinite_shots:
+                current_weapon = _make_weapon(WeaponType.PISTOL)
+                melee_pending = false
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
+
+
+## Costruisce il Dictionary-proiettile di una reliquia a distanza, con le
+## flag di comportamento che il controller legge (pattern fuoco amico).
+func _make_relic_projectile(from: Vector2, dir: Vector2, rdef: Dictionary,
+                proj_type: int) -> Dictionary:
+        var p: Dictionary = {
+                "pos": from,
+                "dir": dir,
+                "power": int(rdef.get("power", 1)),
+                "active": true,
+                "type": proj_type,
+                "relic": str(rdef.get("id", "")),
+        }
+        if rdef.has("pierce_max"):
+                p["pierce_left"] = int(rdef["pierce_max"])
+                p["hit_ids"] = []  # nemici gia' colpiti da QUESTO dardo
+        if bool(rdef.get("homing", false)):
+                p["homing"] = true
+        if rdef.has("chain"):
+                p["chain"] = int(rdef["chain"])
+                p["chain_radius_px"] = float(rdef.get("chain_radius_px", 128.0))
+        if rdef.has("lob_px"):
+                p["lob_px"] = float(rdef["lob_px"])
+                p["traveled"] = 0.0
+                p["radius_px"] = float(rdef.get("radius_px", 96.0))
+        return p
+
+
+## Contabilita' post-colpo: Corazza del Furore (30 colpi poi si spegne).
+func _after_player_shot_fired() -> void:
+        if armor_kind() == "fury":
+                _tick_fury_shot()
 
 
 # ===========================================================================
@@ -753,6 +1091,10 @@ func take_damage() -> void:
                 return
         if is_jumping() or is_invulnerable():
                 return
+        # RELIC (Task 21) — CORAZZA D'ORO: il colpo viene assorbito dalla
+        # riserva (una carica per tocco/proiettile); l'energia NON cala.
+        if _try_absorb_with_golden_armor():
+                return
         energy -= 1
         damage_timer = 1000  # ~1 s of invulnerability after hit
         # Effetti Godot-native: screen shake + particelle danno
@@ -763,6 +1105,9 @@ func take_damage() -> void:
                         get_parent().add_child(p)
         if energy <= 0:
                 lives -= 1
+                # RELIC (Task 21): alla morte si perdono arma reliquia e
+                # armatura (decisione utente) PRIMA del respawn.
+                lose_relics_on_death()
                 energy = max_energy
                 reset_position()  # respawn
 
@@ -781,6 +1126,8 @@ func kill_by_friendly_fire() -> void:
         lives -= 1
         energy = max_energy
         damage_timer = 0
+        # RELIC (Task 21): la vittima perde reliquia e armatura (morte).
+        lose_relics_on_death()
         # Congela: nessun input, nessun danno, nessun rendering del player.
         soul_pending = true
         set_direction(0, 0)
@@ -815,7 +1162,14 @@ func respawn_after_soul() -> void:
 
 # collect_weapon(w): replace the current weapon (old one discarded).
 # `w` is expected to be a Dictionary {type: WeaponType, power: int, ammo: int}.
+# RELIC (Task 21): le armi a terra NON sovrascrivono una reliquia
+# equipaggiata (decisione utente: la reliquia si cambia SOLO nella
+# schermata bonus o quando si rompe).
 func collect_weapon(w: Dictionary) -> void:
+        # NOTA: la chiave "relic" contiene una STRINGA — cast bool() vietato
+        # (bool(String) non esiste come costruttore in GDScript).
+        if current_weapon.has("relic") and not w.has("relic"):
+                return  # arma base a terra ignorata: reliquia in mano
         current_weapon = w.duplicate()
 
 
@@ -1210,6 +1564,11 @@ func _draw() -> void:
                 # Convert world position to local (relative to player node)
                 var local_pos: Vector2 = p_pos - position
                 var w_type: int = proj.get("type", WeaponType.PISTOL)
+                # RELIC (Task 21): proiettili reliquia con forma dedicata.
+                if GameConstants.is_relic_weapon(w_type):
+                        _draw_relic_projectile(local_pos,
+                                        proj.get("dir", Vector2(1, 0)), w_type)
+                        continue
                 var col: Color = _projectile_color(w_type)
                 match w_type:
                         WeaponType.LASER:
@@ -1258,6 +1617,13 @@ func _draw() -> void:
                                 + Vector2(0.0, -jump_offset)
                 draw_circle(flash_pos, 3.0, Color(1.0, 0.3, 0.1, 0.9))
                 draw_circle(flash_pos, 1.5, Color(1.0, 0.9, 0.5, 1.0))
+
+        # RELIC (Task 21): visual del fendente in mischia (arco/cerchio/linea
+        # che sfuma in ~250ms) + outfit overlay dell'armatura equipaggiata.
+        if melee_fx_timer_ms > 0:
+                _draw_melee_fx()
+        if not armor_relic.is_empty():
+                _draw_armor_overlay()
 
         # Draw invincibility aura (chalice effect) - detailed fire aura:
         # spritesheet + 3 glow circles + 12 procedural flames + 8 sparks +
@@ -1456,6 +1822,178 @@ func _draw_ghost_aura() -> void:
                 draw_circle(Vector2(sin(st) * 4.0, 20.0 + float(i) * 1.2),
                         2.2 - float(i) * 0.3, Color(0.6, 0.95, 0.8, 0.30 - float(i) * 0.06))
         # Reset del transform: il resto del _draw() torna a quota terra.
+        draw_set_transform(Vector2.ZERO)
+
+
+# ===========================================================================
+# RELIC (Task 21) — rendering: proiettili, fendente mischia, outfit armatura
+# ===========================================================================
+
+## Proiettile reliquia: una forma per reliquia (colore dalla definizione).
+func _draw_relic_projectile(local_pos: Vector2, dir: Vector2, w_type: int) -> void:
+        var rdef: Dictionary = GameConstants.get_relic_def(w_type)
+        if rdef.is_empty():
+                draw_circle(local_pos, 2.5, Color.WHITE)
+                return
+        var col: Color = rdef.get("color", Color.WHITE)
+        match w_type:
+                GameConstants.RelicType.CROSSBOW:
+                        # Dardo d'argento allungato nella direzione di volo.
+                        var tip: Vector2 = local_pos + dir * 7.0
+                        var tail: Vector2 = local_pos - dir * 7.0
+                        draw_line(tail, tip, col, 2.5)
+                        draw_circle(tip, 2.0, Color(1.0, 1.0, 1.0))
+                GameConstants.RelicType.ARCANE_ORB:
+                        # Sfera arcana pulsante con nucleo luminoso.
+                        var pulse: float = 1.0 + 0.25 * sin(float(anim_time) * 0.02)
+                        draw_circle(local_pos, 6.0 * pulse,
+                                Color(col.r, col.g, col.b, 0.35))
+                        draw_circle(local_pos, 3.5, col)
+                        draw_circle(local_pos - dir * 2.0, 1.5, Color(0.9, 0.85, 1.0))
+                GameConstants.RelicType.TWIN_DAGGERS:
+                        # Lama triangolare orientata al volo.
+                        var ang: float = dir.angle()
+                        var tip2: Vector2 = local_pos + dir * 5.0
+                        var perp: Vector2 = Vector2(-sin(ang), cos(ang)) * 2.2
+                        draw_colored_polygon(PackedVector2Array(
+                                        [tip2, local_pos + perp, local_pos - perp]), col)
+                GameConstants.RelicType.RANGER_BOW:
+                        # Freccia sottile con punta chiara.
+                        draw_line(local_pos - dir * 6.0, local_pos + dir * 6.0,
+                                col, 1.6)
+                        draw_circle(local_pos + dir * 6.0, 1.8, Color(0.95, 0.95, 0.75))
+                GameConstants.RelicType.STORM_ROD:
+                        # Segmento di fulmine zigzag ciano.
+                        var prev: Vector2 = local_pos - dir * 8.0
+                        var zig: float = sin(float(anim_time) * 0.05) * 2.5
+                        var perp2: Vector2 = Vector2(-dir.y, dir.x) * zig
+                        var mid: Vector2 = local_pos + perp2
+                        draw_line(prev, mid, Color(0.75, 0.92, 1.0), 2.0)
+                        draw_line(mid, local_pos + dir * 8.0, col, 2.0)
+                        draw_circle(local_pos, 2.0, Color(1.0, 1.0, 1.0, 0.9))
+                GameConstants.RelicType.ALCHEMIST_BOMBS:
+                        # Bomba nera con miccia accesa (scintilla animata).
+                        draw_circle(local_pos, 4.5, Color(0.16, 0.16, 0.18))
+                        draw_circle(local_pos - Vector2(1.2, 1.2), 1.5,
+                                Color(0.45, 0.45, 0.5))
+                        var spark_t: float = fmod(float(anim_time) * 0.02, TAU)
+                        draw_circle(local_pos + Vector2(3.0, -4.5)
+                                + Vector2(cos(spark_t), sin(spark_t)) * 1.2, 1.6,
+                                Color(1.0, 0.85, 0.3))
+                GameConstants.RelicType.REFLECT_BOLT:
+                        # Colpo riflesso delle Scaglie: dardo smeraldo con scia.
+                        draw_line(local_pos - dir * 10.0, local_pos + dir * 5.0,
+                                Color(col.r, col.g, col.b, 0.5), 3.0)
+                        draw_circle(local_pos, 3.0, col)
+                        draw_circle(local_pos + dir * 4.0, 2.0,
+                                Color(0.85, 1.0, 0.9))
+                _:
+                        draw_circle(local_pos, 2.5, col)
+
+
+## Visual del fendente in mischia: settore/cerchio/linea che sfuma.
+func _draw_melee_fx() -> void:
+        var rdef: Dictionary = melee_fx_def
+        if rdef.is_empty():
+                return
+        var col: Color = rdef.get("color", Color.WHITE)
+        var life: float = clampf(float(melee_fx_timer_ms) / float(MELEE_FX_DURATION_MS), 0.0, 1.0)
+        var fade: float = 0.14 + 0.40 * life  # più tenue a fine fendente
+        var radius: float = float(rdef.get("radius_px", 96.0)) * (1.15 - 0.15 * life)
+        draw_set_transform(Vector2(0.0, -jump_offset))
+        var shape: String = str(rdef.get("shape", "sector"))
+        if shape == "circle":
+                # Mazza / Martello: anello a 360° + bagliore centrale.
+                draw_circle(Vector2.ZERO, radius * 0.55,
+                        Color(col.r, col.g, col.b, fade * 0.35))
+                draw_arc(Vector2.ZERO, radius * 0.8, 0.0, TAU, 40,
+                        Color(col.r, col.g, col.b, fade + 0.25), 4.0)
+                draw_arc(Vector2.ZERO, radius, 0.0, TAU, 40,
+                        Color(1.0, 1.0, 1.0, fade * 0.5), 2.0)
+        elif shape == "line":
+                # Alabarda: linea taglio lunga davanti al player.
+                var end: Vector2 = melee_fx_dir * radius
+                draw_line(melee_fx_dir * 14.0, end,
+                        Color(col.r, col.g, col.b, fade + 0.3), 5.0)
+                draw_line(melee_fx_dir * 18.0, end * 0.92,
+                        Color(1.0, 1.0, 1.0, fade * 0.6), 2.0)
+        else:
+                # Spadone / Ascia / Lama: settore ad arco orientato al facing.
+                var center_a: float = melee_fx_dir.angle()
+                var half_arc: float = deg_to_rad(float(rdef.get("arc_deg", 90.0))) * 0.5
+                draw_arc(Vector2.ZERO, radius * 0.75, center_a - half_arc,
+                        center_a + half_arc, 24,
+                        Color(col.r, col.g, col.b, fade + 0.25), 5.0)
+                draw_arc(Vector2.ZERO, radius, center_a - half_arc * 0.8,
+                        center_a + half_arc * 0.8, 24,
+                        Color(1.0, 1.0, 1.0, fade * 0.6), 2.0)
+                draw_circle(melee_fx_dir * radius * 0.4, 6.0,
+                        Color(col.r, col.g, col.b, fade * 0.5))
+        draw_set_transform(Vector2.ZERO)
+
+
+## Outfit overlay procedurale dell'armatura (adattato ai 9 personaggi:
+## anello-scutidato attorno al corpo + spallacci + tacche di durabilita').
+## Disegnato nel canvas del player (DIETRO lo sprite figlio): l'anello a
+## raggio 44+ sporge dal corpo 64x64 scalato 1.3 (~83px, semicorsa ~42).
+func _draw_armor_overlay() -> void:
+        var col: Color = armor_relic.get("color", Color.WHITE)
+        var kind: String = armor_kind()
+        var charges: int = armor_charges()
+        var max_charges: int = int(armor_relic.get("max_charges", charges))
+        var t: float = float(anim_time)
+        var breath: float = (sin(t * 0.004) + 1.0) * 0.5
+        draw_set_transform(Vector2(0.0, -jump_offset))
+        # Glow esterno tenue (tinta dell'armatura).
+        draw_circle(Vector2.ZERO, 46.0 + breath * 3.0,
+                Color(col.r, col.g, col.b, 0.05 + 0.03 * breath))
+        # Anello-scutidato: tacche = cariche residue (funzionale + elegante).
+        if max_charges > 0 and charges > 0:
+                var seg: int = mini(charges, 16)
+                var gap: float = deg_to_rad(7.0)
+                var span: float = TAU / float(mini(max_charges, 16))
+                for i in seg:
+                        var a0: float = float(i) * span + gap
+                        draw_arc(Vector2.ZERO, 44.0, a0, a0 + span - gap * 2.0, 8,
+                                Color(col.r, col.g, col.b, 0.85), 3.0)
+        else:
+                draw_arc(Vector2.ZERO, 44.0, 0.0, TAU, 40,
+                        Color(col.r, col.g, col.b, 0.5), 2.0)
+        # Spallacci (sporgono dai lati del corpo: "indossa" l'armatura).
+        draw_circle(Vector2(-26.0, -12.0), 7.0, Color(col.r, col.g, col.b, 0.9))
+        draw_circle(Vector2(26.0, -12.0), 7.0, Color(col.r, col.g, col.b, 0.9))
+        draw_circle(Vector2(-26.0, -12.0), 4.0,
+                Color(col.r * 0.6, col.g * 0.6, col.b * 0.6, 0.9))
+        draw_circle(Vector2(26.0, -12.0), 4.0,
+                Color(col.r * 0.6, col.g * 0.6, col.b * 0.6, 0.9))
+        # Sigillo per kind (piccola marca sopra la testa).
+        var sigil_col: Color = Color(1.0, 1.0, 1.0, 0.75)
+        match kind:
+                "absorb":
+                        draw_circle(Vector2(0.0, -34.0), 3.0, sigil_col)  # oro pieno
+                "reflect":
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-4.0, -34.0), Vector2(4.0, -34.0), Vector2(0.0, -28.0)]), sigil_col)
+                "thorns":
+                        for s in 3:
+                                draw_line(Vector2(-4.0 + float(s) * 4.0, -30.0),
+                                        Vector2(-4.0 + float(s) * 4.0, -36.0), sigil_col, 1.5)
+                "regen":
+                        draw_circle(Vector2(0.0, -34.0), 4.0, Color(0.4, 0.95, 0.6, 0.8))
+                        draw_circle(Vector2(0.0, -34.0), 2.0, sigil_col)
+                "aura":
+                        # Aura di fuoco: 6 fiammelle attorno.
+                        for i in 6:
+                                var fa: float = float(i) / 6.0 * TAU + t * 0.001
+                                var fx: float = cos(fa) * 36.0
+                                var fy: float = sin(fa) * 36.0
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(fx - 2.5, fy), Vector2(fx + 2.5, fy),
+                                        Vector2(fx, fy - 8.0 - sin(t * 0.01 + i) * 2.0)]),
+                                        Color(1.0, 0.5, 0.15, 0.55))
+                "fury":
+                        draw_circle(Vector2(0.0, -34.0), 3.0, Color(1.0, 0.3, 0.25, 0.9))
+                        draw_circle(Vector2(0.0, -38.0), 2.0, Color(1.0, 0.5, 0.3, 0.9))
         draw_set_transform(Vector2.ZERO)
 
 
@@ -1736,6 +2274,14 @@ func _draw_character_fallback() -> void:
 func _draw_equipped_weapon() -> void:
         if current_weapon.ammo <= 0:
                 return
+        # RELIC (Task 21): arma reliquia in mano — forma dedicata per
+        # mischia (lama/manico) e distanza (spara-lanci). In boss room, con
+        # colpi infiniti, ammo resta > 0 per costruzione.
+        var relic_type: int = int(current_weapon.get("type", 0))
+        if GameConstants.is_relic_weapon(relic_type) \
+                        and relic_type != GameConstants.RelicType.REFLECT_BOLT:
+                _draw_relic_weapon_in_hand(relic_type)
+                return
         # FIX (arma non visibile): prima y=-8 (sotto la testa, coperta dallo
         # sprite 64x64). Ora y=-4 e l'arma è più a destra (offset +14px)
         # così sporge dal corpo del player ed è sempre visibile.
@@ -1874,3 +2420,58 @@ func _draw_wpoly(points: PackedVector2Array, col: Color, facing_right: bool) -> 
         for i in points.size():
                 shifted[i] = Vector2(-points[i].x + offset_x, points[i].y)
         draw_colored_polygon(shifted, col)
+
+
+# ===========================================================================
+# RELIC (Task 21): arma reliquia in mano (mischia = lama/manico con bagliore,
+# distanza = asta/lancia con nucleo luminoso). Colori dalla definizione.
+# ===========================================================================
+func _draw_relic_weapon_in_hand(relic_type: int) -> void:
+        var rdef: Dictionary = GameConstants.get_relic_def(relic_type)
+        if rdef.is_empty():
+                return
+        var col: Color = rdef.get("color", Color.WHITE)
+        var y: float = -4.0 - jump_offset  # quota arma + sync arco salto
+        var facing_right: bool = last_dx >= 0
+        var x_sign: float = 1.0 if facing_right else -1.0
+        var glow: float = 0.5 + 0.5 * sin(float(anim_time) * 0.005)
+        if str(rdef.get("family", "")) == "mischia":
+                # Lama lunga con elsa e guardia (il colore distingue la reliquia).
+                # Bagliore etereo dietro la lama.
+                draw_circle(Vector2(_wxc(10.0, facing_right), y - 4), 10.0,
+                        Color(col.r, col.g, col.b, 0.10 + 0.08 * glow))
+                # Elsa (impugnatura scura 2 layer).
+                draw_rect(Rect2(_wxr(-6.0, 8.0, facing_right), y - 1, 8, 9),
+                        Color(0.22, 0.15, 0.08))
+                draw_rect(Rect2(_wxr(-5.0, 6.0, facing_right), y - 1, 6, 9),
+                        Color(0.38, 0.26, 0.14))
+                # Guardia trasversale.
+                draw_rect(Rect2(_wxr(-1.5, 12.0, facing_right), y - 8, 12, 4),
+                        Color(0.55, 0.45, 0.30))
+                # Lama (2 layer: base colorita + filo chiaro), lunghezza dalla
+                # definizione (Spadone lunga, Daggers corta...).
+                var blade_len: float = clampf(float(rdef.get("radius_px", 96.0)) * 0.16, 14.0, 26.0)
+                draw_rect(Rect2(_wxr(6.0, blade_len, facing_right), y - 7, blade_len, 5), col)
+                draw_rect(Rect2(_wxr(6.0, blade_len, facing_right), y - 7, blade_len, 2),
+                        Color(minf(col.r + 0.35, 1.0), minf(col.g + 0.35, 1.0), minf(col.b + 0.35, 1.0)))
+                # Punta triangolare.
+                _draw_wpoly(PackedVector2Array([
+                        Vector2(6.0 + blade_len, y - 7.0),
+                        Vector2(6.0 + blade_len, y - 2.0),
+                        Vector2(10.0 + blade_len, y - 4.5),
+                ]), col, facing_right)
+        else:
+                # Ista/lancia arcana: asta + anelli + nucleo luminoso in punta.
+                draw_rect(Rect2(_wxr(-8.0, 22.0, facing_right), y - 4, 22, 5),
+                        Color(0.28, 0.24, 0.34))
+                draw_rect(Rect2(_wxr(-8.0, 22.0, facing_right), y - 4, 22, 2),
+                        Color(0.45, 0.40, 0.55))
+                # Anelli decorativi lungo l'asta.
+                draw_rect(Rect2(_wxr(0.0, 2.0, facing_right), y - 6, 2, 9), col)
+                draw_rect(Rect2(_wxr(6.0, 2.0, facing_right), y - 6, 2, 9), col)
+                # Nucleo luminoso in punta (pulsante).
+                var tip_pos: Vector2 = Vector2(_wxc(16.0, facing_right), y - 1.5)
+                draw_circle(tip_pos, 5.0 + glow * 2.0,
+                        Color(col.r, col.g, col.b, 0.30))
+                draw_circle(tip_pos, 3.0, col)
+                draw_circle(tip_pos, 1.4, Color(1.0, 1.0, 1.0, 0.9))

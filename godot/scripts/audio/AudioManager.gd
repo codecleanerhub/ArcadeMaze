@@ -71,9 +71,17 @@ enum SoundType {
         # SOUL_RELEASE = whoosh etereo ascendente (separazione),
         # SOUL_ABSORB = scintillio arpeggiato (ricarica energia).
         SOUL_RELEASE,
-        SOUL_ABSORB
+        SOUL_ABSORB,
+        # RELIC (Task 21 — reliquie delle schermate bonus): equipaggiamento
+        # reliquia (campana cristallina), rottura reliquia/armatura (crepak
+        # + frantumazione), fendente in mischia (whoosh lama), rimbalzo delle
+        # Scaglie del Drago (ping metallico-eterico).
+        RELIC_PICKUP,
+        RELIC_BREAK,
+        MELEE_SWING,
+        REFLECT_BOLT
 }
-const SOUND_TYPE_COUNT: int = 33
+const SOUND_TYPE_COUNT: int = 37
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -469,6 +477,10 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.WALL_CRUMBLE:   s = _sfx_wall_crumble()
                 SoundType.SOUL_RELEASE:   s = _sfx_soul_release()
                 SoundType.SOUL_ABSORB:    s = _sfx_soul_absorb()
+                SoundType.RELIC_PICKUP:   s = _sfx_relic_pickup()
+                SoundType.RELIC_BREAK:    s = _sfx_relic_break()
+                SoundType.MELEE_SWING:    s = _sfx_melee_swing()
+                SoundType.REFLECT_BOLT:   s = _sfx_reflect_bolt()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -976,8 +988,102 @@ func _sfx_scepter_pickup() -> PackedFloat32Array:
 
 
 # ============================================================================
-# Music track synthesis (port of generateTrack(int) and its dispatchers)
+# RELIC (Task 21) — SFX delle reliquie
 # ============================================================================
+
+# --- RELIC_PICKUP: campana cristallina (equip reliquia), ~0.5s ----------------
+# Parziale armonica 660/1320/1980 Hz con decadimenti sfalsati + shimmer.
+func _sfx_relic_pickup() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.5)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                v += 0.40 * sin(TAU * 660.0 * t) * exp(-t * 5.0)
+                v += 0.25 * sin(TAU * 1320.0 * t) * exp(-t * 7.0)
+                v += 0.15 * sin(TAU * 1980.0 * t) * exp(-t * 10.0)
+                # Shimmer lento (battimento tra le due parziali superiori)
+                v += 0.10 * sin(TAU * 1316.0 * t) * exp(-t * 6.0)
+                s.append(3000.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# --- RELIC_BREAK: crepak + frantumazione (rotta reliquia/armatura), ~0.4s -----
+# Crack iniziale (rumore + 2 click), poi gragnola di frammenti che cade.
+func _sfx_relic_break() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.4)
+        var rng := RandomNumberGenerator.new()
+        rng.seed = 210321
+        var shards_left: int = 14
+        var next_shard_t: float = 0.02
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Crack iniziale secco
+                v += 0.55 * noise_gen() * exp(-t * 300.0)
+                v += 0.30 * sin(TAU * 900.0 * t) * exp(-t * 220.0)
+                v += 0.25 * sin(TAU * 300.0 * t) * exp(-t * 90.0)
+                # Gragnola di frammenti (click radi via via più distanziati)
+                if shards_left > 0 and t >= next_shard_t:
+                        v += 0.45 * (rng.randf() * 2.0 - 1.0)
+                        shards_left -= 1
+                        next_shard_t = t + rng.randf_range(0.006, 0.05) * (1.0 + t * 2.0)
+                # Coda di polvere
+                v += 0.18 * noise_gen() * exp(-t * 12.0) * float(shards_left) / 14.0
+                s.append(3000.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# --- MELEE_SWING: whoosh della lama (fendente reliquia), ~0.22s ---------------
+# Rumore passa-banda con risonanza che scende (lama che fende l'aria).
+func _sfx_melee_swing() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.22)
+        var rng := RandomNumberGenerator.new()
+        rng.seed = 421421
+        var lp: float = 0.0
+        var bp: float = 0.0
+        var bp_prev: float = 0.0
+        for i in n:
+                var t: float = float(i) / SR
+                var p: float = t / 0.22
+                var env: float = sin(PI * p)  # attacco morbido e chiusura morbida
+                # Risonanza che scivola da 1800 a 500 Hz
+                var res_f: float = 1800.0 - 1300.0 * p
+                var w: float = TAU * res_f / SR
+                var noise: float = rng.randf() * 2.0 - 1.0
+                lp += minf(1.0, TAU * (res_f * 0.6) / SR) * (noise - lp)
+                bp_prev = bp
+                bp += w * (lp - bp)
+                var v: float = 1.6 * (bp - bp_prev * 0.6)
+                # Soffio basso di accompagnamento
+                v += 0.20 * sin(TAU * (220.0 - 120.0 * p) * t) * env
+                s.append(2800.0 / 32767.0 * _soft_clip(v * env * 0.9))
+        return s
+
+
+# --- REFLECT_BOLT: ping metallico-eterico (rimbalzo Scaglie), ~0.3s -----------
+# Impulso inarmonico (880/1245/1560 Hz) che sale di un'ottava e svanisce.
+func _sfx_reflect_bolt() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.3)
+        for i in n:
+                var t: float = float(i) / SR
+                var p: float = t / 0.3
+                # Le parziali salgono di un'ottava nel primo quarto
+                var lift: float = 1.0 + p * 0.5
+                var v: float = 0.0
+                v += 0.40 * sin(TAU * 880.0 * lift * t) * exp(-t * 9.0)
+                v += 0.22 * sin(TAU * 1245.0 * lift * t) * exp(-t * 12.0)
+                v += 0.14 * sin(TAU * 1560.0 * lift * t) * exp(-t * 16.0)
+                # Transiente del rimbalzo (il colpo che "tocca" le scaglie)
+                if t < 0.02:
+                        v += 0.35 * noise_gen() * exp(-t * 400.0)
+                s.append(3000.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
 func _generate_track(track_idx: int) -> AudioStreamWAV:
         match track_idx:
                 TRACK_EPIC_CHALICE: return _samples_to_stream(_gen_epic_chalice())

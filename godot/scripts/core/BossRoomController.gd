@@ -27,6 +27,9 @@ const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, mirror MainGameController).
 const FF_HIT_RADIUS_SQ: float = 625.0
+# RELIC (Task 21): schermata bonus post-boss (scelta reliquia). Pure-code
+# CanvasLayer layer 30 (sopra HUD 10 e pausa 20), pattern PauseOverlay.
+const BonusScreenClass = preload("res://scripts/ui/BonusScreen.gd")
 
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
@@ -44,6 +47,12 @@ var grace_period_ms: int = 1000  # 1s delay before Space can kill boss
 var boss_room_weapons: Array = []  # [{weapon, pos}]
 var boss: Node2D = null
 var died_in_boss: bool = false
+
+# RELIC (Task 21): fase SCHERMATA BONUS. Quando il boss muore (e c'e' un
+# livello successivo) il fight si congela e il player sceglie la reliquia;
+# alla chiusura la transizione di livello prosegue normalmente.
+var _bonus_screen: CanvasLayer = null
+var _bonus_active: bool = false
 
 # FIX (pausa P): overlay PAUSE sopra tutto (CanvasLayer layer 20 > HUD 10).
 var _pause_canvas: CanvasLayer = null
@@ -81,6 +90,11 @@ func _ready() -> void:
                 player2.visible = true
         else:
                 player2.visible = false
+        # RELIC (Task 21): in boss room i colpi delle reliquie sono INFINITI
+        # (decisione utente, coerente con le munizioni potenziate delle armi
+        # base). Il flag si azzera da solo in Player.reset() nelle altre scene.
+        player.relic_infinite_shots = true
+        player2.relic_infinite_shots = true
         # FIX (punteggio perso tra le scene): ripristina lo stato dei player
         # portato dal labirinto (score/vite/soglia vita-extra). SOLO se NON e'
         # un restore da CONTINUE (usa session_snapshot; le vite restano le 3
@@ -113,9 +127,12 @@ func _ready() -> void:
                                 player.current_weapon = w1_b.duplicate()
                                 # Regola d'ingresso della boss room (già valida
                                 # per il primo ingresso): arma utilizzabile.
-                                player.current_weapon["power"] = 2
-                                player.current_weapon["ammo"] = maxi(
-                                                int(player.current_weapon.get("ammo", 0)), 30)
+                                # RELIC (Task 21): NON toccare un'arma reliquia
+                                # (le reliquie hanno i loro colpi/potenza).
+                                if not player.current_weapon.has("relic"):
+                                        player.current_weapon["power"] = 2
+                                        player.current_weapon["ammo"] = maxi(
+                                                        int(player.current_weapon.get("ammo", 0)), 30)
                 var p2_snap_b: Dictionary = snap.get("p2", {})
                 if not p2_snap_b.is_empty() and GameManager.num_players == 2:
                         player2.visible = true
@@ -123,9 +140,11 @@ func _ready() -> void:
                         var w2_b: Dictionary = p2_snap_b.get("weapon", {})
                         if not w2_b.is_empty():
                                 player2.current_weapon = w2_b.duplicate()
-                                player2.current_weapon["power"] = 2
-                                player2.current_weapon["ammo"] = maxi(
-                                                int(player2.current_weapon.get("ammo", 0)), 30)
+                                # RELIC (Task 21): NON toccare un'arma reliquia.
+                                if not player2.current_weapon.has("relic"):
+                                        player2.current_weapon["power"] = 2
+                                        player2.current_weapon["ammo"] = maxi(
+                                                        int(player2.current_weapon.get("ammo", 0)), 30)
                 print("[Continue] Sessione boss room ripristinata: HP boss ",
                                 boss.health if boss != null else "?", "/ ",
                                 boss.max_health if boss != null else "?")
@@ -148,6 +167,10 @@ func _ready() -> void:
 # il toggle vive in _unhandled_input, che continua a girare con il tree in
 # pausa grazie a process_mode = PROCESS_MODE_ALWAYS (riga 60).
 func _unhandled_input(event: InputEvent) -> void:
+        # RELIC (Task 21): niente pausa mentre la schermata bonus è aperta
+        # (la fase è già un congelamento controllato del fight).
+        if _bonus_active:
+                return
         if event.is_action_pressed("pause") and not event.is_echo():
                 _toggle_pause()
                 var vp: Viewport = get_viewport()
@@ -231,7 +254,9 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                 shoot_pressed = true
         if shoot_pressed and player.shoot_cooldown == 0:
                 player.shoot()
-                player.shoot_cooldown = 150
+                # RELIC (Task 21): cooldown dedicato per reliquia (Arco del
+                # Ranger = raffica 90ms; armi base restano a 150ms).
+                player.shoot_cooldown = C.relic_fire_cooldown(player.current_weapon)
 
         # P1 jump (keyboard OR joystick)
         var jump_pressed: bool = Input.is_action_pressed("jump")
@@ -308,7 +333,8 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                                 p2_shoot_pressed = true
                 if p2_shoot_pressed and player2.shoot_cooldown == 0:
                         player2.shoot()
-                        player2.shoot_cooldown = 150
+                        # RELIC (Task 21): cooldown dedicato per reliquia (P2).
+                        player2.shoot_cooldown = C.relic_fire_cooldown(player2.current_weapon)
                 var p2_jump_pressed: bool = Input.is_action_pressed("p2_jump")
                 if p2_joy_id >= 0:
                         var j2_jump: int = ConfigManager.joy2_jump() if ConfigManager else -1
@@ -343,10 +369,30 @@ func _handle_input(delta_ms: float = 16.0) -> void:
 # Boss fight update loop (STATE_BOSS)
 # ============================================================================
 func _update_boss(delta_ms: float) -> void:
+        # RELIC (Task 21): durante la SCHERMATA BONUS il fight è congelato —
+        # il boss è morto, i player stanno scegliendo. Si aggiorna solo la
+        # HUD (vita bonus già applicata, scelte visibili a schermo).
+        if _bonus_active:
+                _update_hud()
+                return
+
         # (1) Player update (free movement, FIX: passa delta_ms)
         player.update_player(null, true, delta_ms)
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 player2.update_player(null, true, delta_ms)
+
+        # (1b) RELIC (Task 21): passate reliquie — fendenti in mischia vs
+        # boss, sterzo dei proiettili a ricerca, esplosione delle bombe a
+        # parabola, pulsazioni dell'aura della Corazza di Fuoco.
+        _check_pending_relic_melee(player)
+        _steer_relic_homing_projectiles(player)
+        _consume_relic_bombs(player)
+        _tick_fire_armor(player, delta_ms)
+        if GameManager and GameManager.num_players == 2 and player2.visible:
+                _check_pending_relic_melee(player2)
+                _steer_relic_homing_projectiles(player2)
+                _consume_relic_bombs(player2)
+                _tick_fire_armor(player2, delta_ms)
 
         # (2) Boss update
         # FIX CRASH: boss.update_step si aspetta un Array come arg 4
@@ -544,7 +590,18 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                         continue
                 var proj_pos: Vector2 = proj.get("pos", Vector2.ZERO)
                 if proj_pos.distance_squared_to(boss.pos) < (boss.size / 2.0) ** 2:
-                        boss.take_damage(int(proj.get("power", 1)))
+                        # RELIC (Task 21): Corazza del Furore = +1 flat vs boss.
+                        var dmg: int = int(proj.get("power", 1)) \
+                                        + (1 if p.is_fury_active() else 0)
+                        boss.take_damage(dmg)
+                        # RELIC (Task 21): la bomba esplode al contatto col boss.
+                        if proj.has("lob_px"):
+                                if EffectsManager:
+                                        var boom := EffectsManager.spawn_explosion(
+                                                        proj_pos, Color(1.0, 0.6, 0.15), 24, 0.6)
+                                        boss_projectiles_node.add_child(boom)
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                         proj["active"] = false
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
@@ -556,11 +613,44 @@ func _check_boss_projectiles_vs_player(p: CharacterBody2D) -> void:
                 if not proj is Node2D or not proj.visible:
                         continue
                 if proj.position.distance_squared_to(p.get_pixel_pos()) < 600.0:
+                        # RELIC (Task 21) — SCAGLIE DEL DRAGO: il proiettile del
+                        # boss RIMBALZA: viene assorbito dalle scaglie e rispara-
+                        # to dal player VERSO IL BOSS col danno del suo MIGLIOR
+                        # colpo (max potenza base 5, ROCKET). Una carica a
+                        # rimbalzo; a 0 l'armatura si rompe.
+                        if p.try_reflect_projectile():
+                                proj.visible = false
+                                _spawn_reflected_bolt(p, proj.position)
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.REFLECT_BOLT)
+                                if EffectsManager:
+                                        EffectsManager.screen_shake(3.0, 0.15)
+                                break
                         p.take_damage()
                         proj.visible = false
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break
+
+
+# RELIC (Task 21): spawna il proiettile riflesso dalle Scaglie del Drago —
+# un proiettile DEL PLAYER (flag comportamento, pattern fuoco amico) diretto
+# verso il boss con la potenza del miglior colpo del player.
+func _spawn_reflected_bolt(p: CharacterBody2D, from_pos: Vector2) -> void:
+        if boss == null or not is_instance_valid(boss):
+                return
+        var dir: Vector2 = (boss.pos - from_pos).normalized()
+        if dir == Vector2.ZERO:
+                dir = Vector2(0.0, -1.0)
+        p.projectiles.append({
+                "pos": from_pos + dir * 20.0,
+                "dir": dir,
+                "power": C.reflect_bolt_power(p.current_weapon),
+                "active": true,
+                "type": C.RelicType.REFLECT_BOLT,
+                "relic": "reflect_bolt",
+        })
 
 
 # ============================================================================
@@ -738,6 +828,9 @@ func _check_boss_death() -> void:
 
         # Boss death -> next level
         if boss and boss.is_dead():
+                # RELIC (Task 21): fase bonus già attiva/chiusa → mai ri-trigger.
+                if _bonus_active or _bonus_screen != null:
+                        return
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
                 # Effetti Godot-native: screen shake forte + esplosione multipla
@@ -765,22 +858,148 @@ func _check_boss_death() -> void:
                                 GameManager.final_score_p2 = player2.score if \
                                                 (GameManager.num_players == 2 and player2.visible) else 0
                                 GameManager.final_level = current_level
-                        GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
-                        GameManager.current_level = current_level + 1
-                        if GameManager.game_mode == C.GameMode.STORY and \
-                           current_level + 1 > C.STORY_LEVELS_COUNT:
-                                # Win! -> go to WinScreen
+                                # Vittoria finale: NESSUNA schermata bonus (una
+                                # reliquia non servirebbe più oltre la fine della
+                                # campagna) — transizione diretta alla WinScreen.
+                                GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
+                                GameManager.current_level = current_level + 1
                                 GameManager.go_to_win()
                         else:
-                                # Back to maze
-                                # FIX (punteggio perso tra le scene): salva lo
-                                # stato dei player PRIMA del cambio scena — il
-                                # MainGame della prossima level istanzia nodi
-                                # Player NUOVI. Include la vita bonus (+1) appena
-                                # concessa da add_life() del boss sconfitto:
-                                # prima si PERDEVA al ritorno nel labirinto.
-                                GameManager.save_player_carry(player, player2)
-                                GameManager.go_to_maze()
+                                # RELIC (Task 21): c'è un livello successivo →
+                                # SCHERMATA BONUS. Il fight si congela e i player
+                                # scelgono la reliquia; la transizione di livello
+                                # avviene alla chiusura (_on_bonus_completed).
+                                _start_bonus_phase()
+                return
+
+
+# ============================================================================
+# RELIC (Task 21) — SCHERMATA BONUS post-boss
+# ============================================================================
+func _start_bonus_phase() -> void:
+        if _bonus_active or _bonus_screen != null:
+                return
+        _bonus_active = true
+        # Chi sceglie: P1 sempre (se vivo); P2 solo se in 2P e non eliminato.
+        var choosers: Array = [player]
+        if GameManager and GameManager.num_players == 2 and player2.visible \
+                        and player2.lives > 0:
+                choosers.append(player2)
+        _bonus_screen = BonusScreenClass.new()
+        _bonus_screen.setup(current_level, choosers)
+        _bonus_screen.bonus_completed.connect(_on_bonus_completed)
+        add_child(_bonus_screen)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.WIN)
+
+
+# Tutti i choosers hanno scelto: prosegui col flusso originale del livello
+# successivo (mirror del ramo "Back to maze" pre-Task-21, col carry esteso
+# alle reliquie appena scelte).
+func _on_bonus_completed() -> void:
+        _bonus_active = false
+        if _bonus_screen != null and is_instance_valid(_bonus_screen):
+                _bonus_screen.queue_free()
+        _bonus_screen = null
+        if GameManager:
+                GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
+                GameManager.current_level = current_level + 1
+                # FIX (punteggio perso tra le scene): salva lo stato dei player
+                # PRIMA del cambio scena — ora include anche reliquia e
+                # armatura (Task 21) così attraversano il cambio di scena.
+                GameManager.save_player_carry(player, player2)
+                GameManager.go_to_maze()
+
+
+# ============================================================================
+# RELIC (Task 21) — passate reliquie nella boss room
+# ============================================================================
+# Fendente in mischia: shoot() del player con arma mischia alza melee_pending;
+# qui si consuma e si applica il danno al boss se è nella shape del colpo.
+func _check_pending_relic_melee(p: CharacterBody2D) -> void:
+        if not p.melee_pending:
+                return
+        var def: Dictionary = p.consume_melee_pending()
+        if def.is_empty() or boss == null or not is_instance_valid(boss) \
+                        or boss.is_dead():
+                return
+        var aim: Vector2 = Vector2(
+                        float(p.dx if p.dx != 0 else p.last_dx),
+                        float(p.dy if p.dy != 0 else p.last_dy))
+        if aim == Vector2.ZERO:
+                aim = Vector2(1.0, 0.0)
+        if C.relic_melee_in_shape(def, aim, p.get_pixel_pos(), boss.pos):
+                boss.take_damage(C.relic_melee_flat_damage(def, p.is_fury_active()))
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                if EffectsManager:
+                        var hit_fx := EffectsManager.spawn_sparks(boss.pos, 14)
+                        boss_projectiles_node.add_child(hit_fx)
+
+
+# Sterzo dei proiettili a RICERCA (Bastone dell'Arcimago): la sfera insegue
+# il boss ruotando la direzione di un po' per frame (mirror homing boss).
+func _steer_relic_homing_projectiles(p: CharacterBody2D) -> void:
+        if boss == null or not is_instance_valid(boss) or boss.is_dead():
+                return
+        for proj in p.projectiles:
+                if not proj.get("active", false) or not proj.get("homing", false):
+                        continue
+                var to_boss: Vector2 = (boss.pos - proj.get("pos", Vector2.ZERO))
+                if to_boss.length_squared() < 1.0:
+                        continue
+                var desired: Vector2 = to_boss.normalized()
+                proj["dir"] = proj.get("dir", Vector2(1, 0)).lerp(desired, 0.09).normalized()
+
+
+# BOMBE dell'Alchimista: i proiettili "exploded" (parabola finita o muro)
+# esplodono ad area — in boss room l'area raggiunge il boss se è nel raggio.
+func _consume_relic_bombs(p: CharacterBody2D) -> void:
+        var to_remove: Array = []
+        for proj in p.projectiles:
+                if not (proj.get("exploded", false) and not proj.get("consumed", false)):
+                        continue
+                proj["consumed"] = true
+                to_remove.append(proj)
+                var blast_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                var radius: float = float(proj.get("radius_px", 96.0))
+                if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                        if blast_pos.distance_squared_to(boss.pos) \
+                                        < (radius + boss.size * 0.25) ** 2:
+                                boss.take_damage(int(proj.get("power", 4)) \
+                                                + (1 if p.is_fury_active() else 0))
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                if EffectsManager:
+                        var boom := EffectsManager.spawn_explosion(blast_pos,
+                                        Color(1.0, 0.6, 0.15), 30, 0.8)
+                        boss_projectiles_node.add_child(boom)
+                        EffectsManager.screen_shake(8.0, 0.3)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        for proj in to_remove:
+                p.projectiles.erase(proj)
+
+
+# CORAZZA DI FUOCO (aura): a ogni pulsazione tutti i nemici nel raggio
+# prendono 1 danno — in boss room "nemici" = il boss se è a contatto.
+func _tick_fire_armor(p: CharacterBody2D, delta_ms: float) -> void:
+        if not p.has_relic_armor():
+                return
+        if not p.armor_aura_pulse(delta_ms):
+                return
+        var radius: float = float(p.armor_relic.get("aura_radius_px", 64.0))
+        var aura_dmg: int = int(p.armor_relic.get("aura_damage", 1))
+        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                if p.get_pixel_pos().distance_squared_to(boss.pos) \
+                                < (radius + boss.size * 0.25) ** 2:
+                        boss.take_damage(aura_dmg)
+        if EffectsManager:
+                var ring := EffectsManager.spawn_explosion(p.get_pixel_pos(),
+                                Color(1.0, 0.45, 0.2), 12, 0.4)
+                boss_projectiles_node.add_child(ring)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
 
 
 # ============================================================================
@@ -830,10 +1049,13 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         if player.current_weapon == null or player.current_weapon.is_empty() \
                         or player.current_weapon.get("ammo", 0) <= 0:
                 player.current_weapon = {"type": 0, "power": 2, "ammo": 30}
-        else:
-                # Arma valida: potenzialala per il boss
+        elif not player.current_weapon.has("relic"):
+                # Arma base valida: potenzialala per il boss
                 player.current_weapon["ammo"] = maxi(player.current_weapon.get("ammo", 0), 30)
                 player.current_weapon["power"] = 2
+        # RELIC (Task 21): un'arma RELIQUIA (restore dal carry del labirinto)
+        # resta INTATTA: ha la sua potenza e in boss room spara a colpi
+        # infiniti (relic_infinite_shots = true in _ready).
 
         # Spawn the boss-room mine (1 per fight). Mirrors C++ Game.cpp
         # 2728-2843: a single bouncing mine at a random position in the
@@ -1036,6 +1258,11 @@ func _update_hud() -> void:
                 # FIX (stamina salti): barra verde sotto quella della vita.
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # RELIC (Task 21): stato armatura reliquia in HUD.
+                "armor_name": C.get_armor_short_name(player.armor_relic),
+                "armor_color": player.armor_relic.get("color", Color.WHITE),
+                "armor_charges": player.armor_charges(),
+                "armor_max": int(player.armor_relic.get("max_charges", 0)),
         }
         hud.set_player_state(p1_snap)
         if boss:
@@ -1053,6 +1280,11 @@ func _update_hud() -> void:
                         # FIX (stamina salti): barra verde sotto quella della vita (P2).
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        # RELIC (Task 21): stato armatura reliquia in HUD (P2).
+                        "armor_name": C.get_armor_short_name(player2.armor_relic),
+                        "armor_color": player2.armor_relic.get("color", Color.WHITE),
+                        "armor_charges": player2.armor_charges(),
+                        "armor_max": int(player2.armor_relic.get("max_charges", 0)),
                 }
                 hud.set_player2_state(p2_snap)
 

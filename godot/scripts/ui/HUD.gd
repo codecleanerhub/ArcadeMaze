@@ -75,6 +75,9 @@ var _p1: Dictionary = {
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra verde sotto quella della vita.
         "stamina": 1.0, "stamina_exhausted": false,
+        # RELIC (Task 21): stato armatura reliquia (nessuna = stringa vuota).
+        "armor_name": "", "armor_color": Color.WHITE,
+        "armor_charges": 0, "armor_max": 0,
 }
 # 2P snapshot (only used when _num_players == 2)
 var _p2: Dictionary = {
@@ -83,6 +86,9 @@ var _p2: Dictionary = {
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra verde sotto quella della vita (per P2).
         "stamina": 1.0, "stamina_exhausted": false,
+        # RELIC (Task 21): stato armatura reliquia (per P2).
+        "armor_name": "", "armor_color": Color.WHITE,
+        "armor_charges": 0, "armor_max": 0,
 }
 var _num_players: int = 1
 var _remaining_treasures: int = 0
@@ -299,6 +305,9 @@ func _draw_1p() -> void:
         # AMMO (numero colpi invece di barra)
         _draw_label("AMMO", 570, 10)
         _draw_label_int(_p1.weapon_ammo, 570, 30, color_ammo)
+        # RELIC (Task 21): stato ARMATURA nello slot libero tra AMMO e la
+        # barra del nemico (x=870..1010). Nessuna armatura = non disegna.
+        _draw_armor_status(_p1, 870, 10)
         # TRES — FIX: label in inglese "Treasures remaining: N"
         _draw_label("Treasures remaining:", 700, 10)
         _draw_label_int(_remaining_treasures, 700, 30, color_score)
@@ -325,6 +334,8 @@ func _draw_2p() -> void:
                 _p1.stamina, _p1.stamina_exhausted)
         _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
+        # RELIC (Task 21): stato ARMATURA di P1 (tra arma e tesori: x=330).
+        _draw_armor_status(_p1, 330, 10)
 
         # === TREASURES (center) — centrata su schermo 1920px. x=800: il
         # testo (~170px, fino a ~970) NON collide con la barra "last hit
@@ -346,6 +357,42 @@ func _draw_2p() -> void:
                 _p2.stamina, _p2.stamina_exhausted)
         _draw_label_colored(_p2.weapon_name, 1800, 10, _p2.weapon_color)
         _draw_label_int(_p2.weapon_ammo, 1800, 30, color_score)
+        # RELIC (Task 21): stato ARMATURA di P2 (riga bassa libera sotto
+        # vite/energia: x=1640, i rombi restano dentro la barra di 80px).
+        _draw_armor_status(_p2, 1640, 52)
+
+
+# ----------------------------------------------------------------------------
+# RELIC (Task 21): stato ARMATURA reliquia — nome corto colorato + cariche
+# come rombi (max 10 visibili; oltre si raggruppano x5). Nessuna armatura
+# = non disegna nulla.
+# ----------------------------------------------------------------------------
+func _draw_armor_status(snap: Dictionary, x: float, y: float) -> void:
+        var name_s: String = str(snap.get("armor_name", ""))
+        if name_s == "":
+                return
+        var col: Color = snap.get("armor_color", Color.WHITE)
+        var charges: int = int(snap.get("armor_charges", 0))
+        var armor_max: int = int(snap.get("armor_max", 0))
+        # Nome corto + cariche residue sulla stessa riga (stile WPN/AMMO).
+        _draw_label_colored(name_s + " " + str(charges), x, y, col)
+        # Tacche a rombo sotto il nome (durabilita' residua a colpo d'occhio;
+        # le cariche mancanti restano come fantasmi tenui).
+        var pips: int = mini(charges, 10)
+        var pip_total: int = mini(armor_max, 10)
+        for i in pip_total:
+                var px: float = x + 4.0 + float(i) * 8.0
+                var py: float = y + 20.0
+                if i < pips:
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(px, py - 3.0), Vector2(px + 3.0, py),
+                                Vector2(px, py + 3.0), Vector2(px - 3.0, py)]),
+                                Color(col.r, col.g, col.b, 0.9))
+                else:
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(px, py - 3.0), Vector2(px + 3.0, py),
+                                Vector2(px, py + 3.0), Vector2(px - 3.0, py)]),
+                                Color(col.r, col.g, col.b, 0.18))
 
 
 # ----------------------------------------------------------------------------

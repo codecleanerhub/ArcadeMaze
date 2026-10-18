@@ -592,12 +592,54 @@ static func make_random_weapon() -> Dictionary:
 # specifica utente.
 # ============================================================================
 
+# ============================================================================
+# RELIC (Task 21): i TYPE delle 12 armi reliquia (6 mischia + 6 distanza)
+# + il proiettile riflesso dalle Scaglie del Drago. Dichiarati QUI (prima
+# di WEAPON_HITS_TO_KILL) perche' i const si valutano IN ORDINE nel file.
+# ============================================================================
+enum RelicType {
+        # --- MISCHIA ---
+        SWORD = 101,           ## Spadone del Cavaliere
+        AXE = 102,             ## Ascia del Berserker
+        MACE = 103,            ## Mazza Ferrata
+        HALBERD = 104,          ## Alabarda della Guardia Reale
+        VAMPIRE_BLADE = 105,   ## Lama del Vampiro
+        GOLEM_HAMMER = 106,    ## Martello del Golem
+        # --- DISTANZA ---
+        CROSSBOW = 107,        ## Balestra d'Argento
+        ARCANE_ORB = 108,      ## Bastone dell'Arcimago
+        TWIN_DAGGERS = 109,    ## Pugnali Gemelli
+        RANGER_BOW = 110,      ## Arco del Ranger
+        STORM_ROD = 111,       ## Verga della Tempesta
+        ALCHEMIST_BOMBS = 112, ## Bombe dell'Alchimista
+        # --- SPECIALE ---
+        REFLECT_BOLT = 113,    ## Proiettile riflesso dalle Scaglie del Drago
+}
+
 ## Colpi necessari a uccidere un nemico, per tipo di arma equipaggiata.
+## RELIC (Task 21): incluse anche le 12 armi reliquia (tipi 101..112):
+## stessa filosofia "nessuna arma one-shot" (mai meno di 2 colpi).
 const WEAPON_HITS_TO_KILL: Dictionary = {
         WeaponType.PISTOL: 4,
         WeaponType.LASER: 3,
         WeaponType.SHOTGUN: 2,
         WeaponType.ROCKET: 2,
+        # --- Reliquie MISCHIA (101..106) ---
+        RelicType.SWORD: 2,
+        RelicType.AXE: 2,
+        RelicType.MACE: 3,
+        RelicType.HALBERD: 3,
+        RelicType.VAMPIRE_BLADE: 3,
+        RelicType.GOLEM_HAMMER: 2,
+        # --- Reliquie DISTANZA (107..112) ---
+        RelicType.CROSSBOW: 2,
+        RelicType.ARCANE_ORB: 3,
+        RelicType.TWIN_DAGGERS: 4,
+        RelicType.RANGER_BOW: 4,
+        RelicType.STORM_ROD: 3,
+        RelicType.ALCHEMIST_BOMBS: 2,
+        # --- Proiettile riflesso dalle Scaglie del Drago (113) ---
+        RelicType.REFLECT_BOLT: 2,
 }
 
 
@@ -605,8 +647,14 @@ const WEAPON_HITS_TO_KILL: Dictionary = {
 ## Ritorna sempre ALMENO 1, e per costruzione NON uccide mai in un colpo solo
 ## un nemico con HP >= 2 (gli HP base dei nemici sono scalati x4, vedi
 ## Enemy.gd ENEMY_HEALTH_SCALE: il piu' debole ha 4 HP -> 4 colpi di pistola).
-static func weapon_damage_for(weapon_type: int, target_max_health: int) -> int:
+## RELIC (Task 21): `fury` = true con la Corazza del Furore equipaggiata →
+## l'arma colpisce come se avesse 1 hit-to-kill in MENO (floor 2: la regola
+## "nessuna arma one-shot" resta sacra anche potenziata).
+static func weapon_damage_for(weapon_type: int, target_max_health: int,
+                fury: bool = false) -> int:
         var hits: int = int(WEAPON_HITS_TO_KILL.get(weapon_type, 4))
+        if fury:
+                hits = maxi(2, hits - 1)
         if hits < 2:
                 hits = 2  # sicurezza: mai one-shot per costruzione
         var dmg: int = int(ceil(float(target_max_health) / float(hits)))
@@ -619,8 +667,12 @@ static func hammer_damage_for(target_max_health: int) -> int:
         return maxi(1, int(round(float(target_max_health) * 0.5)))
 
 
-## Returns the human-readable name of a weapon type.
+## Returns the human-readable name of a weapon type (incluse le reliquie:
+## usa lo SHORT name per stare nella HUD; full name nella schermata bonus).
 static func get_weapon_name(type: int) -> String:
+        var relic: Dictionary = get_relic_def(type)
+        if not relic.is_empty():
+                return str(relic.get("short", "RELIQUIA"))
         match type:
                 WeaponType.PISTOL:
                         return "PISTOL"
@@ -634,8 +686,11 @@ static func get_weapon_name(type: int) -> String:
                         return "?"
 
 
-## Returns the UI color associated with a weapon type.
+## Returns the UI color associated with a weapon type (incluse le reliquie).
 static func get_weapon_color(type: int) -> Color:
+        var relic: Dictionary = get_relic_def(type)
+        if not relic.is_empty():
+                return relic.get("color", Color.WHITE)
         match type:
                 WeaponType.PISTOL:
                         return Color(0.78, 0.78, 0.20, 1.0)  # (200,200,50)
@@ -647,3 +702,339 @@ static func get_weapon_color(type: int) -> Color:
                         return Color(0.78, 0.20, 0.20, 1.0)  # (200,50,50)
                 _:
                         return Color.WHITE
+
+
+# ============================================================================
+# 8. RELIC (Task 21) — LE 18 RELIQUIE DELLE SCHERMATE BONUS POST-BOSS
+# ============================================================================
+# 6 MISCHIA + 6 DISTANZA + 6 ARMATURE. Il player le SCELGE nella schermata
+# bonus dopo ogni boss (rotazione A->B->C->A; TUTTE le famiglie disponibili
+# in OGNI schermata; in 2P una reliquia per player).
+#
+# REGOLE COMUNI (decisioni utente):
+#   * Armi reliquia a COLPI FINITI: esauriti i colpi l'arma SI ROMPE e si
+#     torna alla PISTOL. ALLA MORTE (perdita vita) reliquia arma E armatura
+#     si PERDONO (si torna a PISTOL / nessuna armatura).
+#   * Le armi a terra NON sovrascrivono una reliquia equipaggiata.
+#   * In BOSS ROOM i colpi della reliquia sono INFINITI (come le munizioni
+#     potenziate delle armi base).
+#   * Armature: tutte danno +2 energia max (5 -> 7) con CURA PIENA
+#     all'equipaggiamento + outfit overlay procedurale; si rompono per
+#     DURABILITA' (ognuna a modo suo) e si perdono alla morte.
+#   * Danno: labirinto = frazione degli HP max del nemico (WEAPON_HITS_TO_KILL,
+#     "hits"); boss room / mini-boss = danno FLAT ("power").
+#   * RIFLESSIONE Scaglie del Drago: il proiettile nemico rimbalza verso il
+#     boss come proiettile DEL PLAYER con il danno del MIGLIORE colpo del
+#     player (max potenza base = 5, ROCKET; sale se una reliquia piu' forte
+#     e' equipaggiata).
+# ============================================================================
+
+## MISCHIA — danno ad area istantaneo attorno al player (il controller
+## calcola i nemici nella shape e applica il danno; visual = arco/spinta
+## disegnato dal player per ~250ms).
+##   shape: "sector" (arco orientato al facing) | "circle" (360 gradi)
+##           "line" (linea perforante davanti al player)
+##   hits: colpi-per-uccidere nel labirinto (frazione HP max)
+##   power: danno FLAT vs boss / mini-boss
+##   shots: colpi totali (rotura a 0)
+##   splash_px / splash_hits: solo ASCIA — danno ad area attorno al bersaglio
+##   stun_ms: nemici STUNNATI (congelati) per N ms
+##   vampiric: cura 1 energia per nemico colpito
+const RELIC_MELEE: Array[Dictionary] = [
+        {
+                "id": "sword", "type": RelicType.SWORD, "family": "mischia",
+                "name": "Spadone del Cavaliere", "short": "SPADONE",
+                "color": Color(0.82, 0.86, 0.94), "power": 3, "hits": 2,
+                "shots": 25, "shape": "sector", "radius_px": 128.0,
+                "arc_deg": 120.0, "fire_cd": 320,
+                "desc": "Arco ampio (2 celle): fende tutti i nemici davanti a te.",
+        },
+        {
+                "id": "axe", "type": RelicType.AXE, "family": "mischia",
+                "name": "Ascia del Berserker", "short": "ASCIA",
+                "color": Color(0.90, 0.35, 0.20), "power": 5, "hits": 2,
+                "shots": 15, "shape": "sector", "radius_px": 96.0,
+                "arc_deg": 90.0, "fire_cd": 380, "splash_px": 64.0,
+                "splash_hits": 4,
+                "desc": "Colpo devastante + scheggia ad area attorno al bersaglio.",
+        },
+        {
+                "id": "mace", "type": RelicType.MACE, "family": "mischia",
+                "name": "Mazza Ferrata", "short": "MAZZA",
+                "color": Color(0.72, 0.72, 0.78), "power": 2, "hits": 3,
+                "shots": 12, "shape": "circle", "radius_px": 96.0,
+                "arc_deg": 360.0, "fire_cd": 340, "stun_ms": 1000,
+                "desc": "Rotazione 360°: colpisce attorno e STORDISCE i nemici.",
+        },
+        {
+                "id": "halberd", "type": RelicType.HALBERD, "family": "mischia",
+                "name": "Alabarda della Guardia Reale", "short": "ALABARDA",
+                "color": Color(0.86, 0.78, 0.40), "power": 3, "hits": 3,
+                "shots": 18, "shape": "line", "radius_px": 192.0,
+                "arc_deg": 0.0, "fire_cd": 340,
+                "desc": "Lunga (3 celle): infilza tutti i nemici in linea davanti.",
+        },
+        {
+                "id": "vampire_blade", "type": RelicType.VAMPIRE_BLADE, "family": "mischia",
+                "name": "Lama del Vampiro", "short": "LAMA",
+                "color": Color(0.85, 0.20, 0.35), "power": 2, "hits": 3,
+                "shots": 20, "shape": "sector", "radius_px": 96.0,
+                "arc_deg": 90.0, "fire_cd": 300, "vampiric": true,
+                "desc": "Ogni nemico colpito ti CURA 1 energia.",
+        },
+        {
+                "id": "golem_hammer", "type": RelicType.GOLEM_HAMMER, "family": "mischia",
+                "name": "Martello del Golem", "short": "MARTELLO",
+                "color": Color(0.65, 0.55, 0.45), "power": 4, "hits": 2,
+                "shots": 10, "shape": "circle", "radius_px": 64.0,
+                "arc_deg": 360.0, "fire_cd": 400, "stun_ms": 500,
+                "desc": "Slam pesante attorno ai piedi: scossa + stordimento breve.",
+        },
+]
+
+## DISTANZA — proiettili con flag di comportamento (pattern Task 18):
+##   pierce_max: il dardo attraversa fino a N nemici (Balestra)
+##   homing: il proiettile insegue il nemico piu' vicino (Bastone)
+##   fan: N proiettili a ventaglio per colpo (Pugnali)
+##   fire_cd: cooldown di fuoco dedicato (Arco = rapido)
+##   chain: catena di fulmini che salta ai nemici vicini (Verga)
+##   lob_px: parabola che esplode dopo N px (Bombe, AoE radius_px)
+const RELIC_RANGED: Array[Dictionary] = [
+        {
+                "id": "crossbow", "type": RelicType.CROSSBOW, "family": "distanza",
+                "name": "Balestra d'Argento", "short": "BALESTRA",
+                "color": Color(0.90, 0.92, 0.98), "power": 3, "hits": 2,
+                "shots": 30, "fire_cd": 160, "pierce_max": 3,
+                "desc": "Dardo perforante: attraversa fino a 3 nemici.",
+        },
+        {
+                "id": "arcane_orb", "type": RelicType.ARCANE_ORB, "family": "distanza",
+                "name": "Bastone dell'Arcimago", "short": "BASTONE",
+                "color": Color(0.55, 0.40, 0.95), "power": 2, "hits": 3,
+                "shots": 24, "fire_cd": 200, "homing": true,
+                "desc": "Sfera arcana a ricerca: insegue il nemico piu' vicino.",
+        },
+        {
+                "id": "twin_daggers", "type": RelicType.TWIN_DAGGERS, "family": "distanza",
+                "name": "Pugnali Gemelli", "short": "PUGNALI",
+                "color": Color(0.45, 0.90, 0.85), "power": 2, "hits": 4,
+                "shots": 20, "fire_cd": 220, "fan": 3, "fan_spread_deg": 18.0,
+                "desc": "Ventaglio di 3 lame per salve: copre un ampio fronte.",
+        },
+        {
+                "id": "ranger_bow", "type": RelicType.RANGER_BOW, "family": "distanza",
+                "name": "Arco del Ranger", "short": "ARCO",
+                "color": Color(0.55, 0.85, 0.35), "power": 1, "hits": 4,
+                "shots": 40, "fire_cd": 90,
+                "desc": "Tiro rapido: frecce leggere ma frecce a raffica.",
+        },
+        {
+                "id": "storm_rod", "type": RelicType.STORM_ROD, "family": "distanza",
+                "name": "Verga della Tempesta", "short": "VERGA",
+                "color": Color(0.55, 0.80, 1.00), "power": 2, "hits": 3,
+                "shots": 15, "fire_cd": 200, "chain": 2, "chain_radius_px": 128.0,
+                "desc": "Fulmine a catena: salta fino a 2 nemici vicini.",
+        },
+        {
+                "id": "alchemist_bombs", "type": RelicType.ALCHEMIST_BOMBS, "family": "distanza",
+                "name": "Bombe dell'Alchimista", "short": "BOMBE",
+                "color": Color(1.00, 0.60, 0.15), "power": 4, "hits": 2,
+                "shots": 12, "fire_cd": 250, "lob_px": 160.0,
+                "radius_px": 96.0,
+                "desc": "Bomba a parabola: esplode ad area dopo 2 celle e mezza.",
+        },
+]
+
+## ARMATURE — equipaggiabili (slot dedicato, NON occupano l'arma):
+##   kind: absorb | reflect | thorns | regen | aura | fury
+##   charges: durabilita' iniziale (si consuma secondo il kind)
+##   Tutte: +2 energia max (5 -> 7) + CURA PIENA all'equip + overlay outfit.
+const RELIC_ARMORS: Array[Dictionary] = [
+        {
+                "id": "golden", "kind": "absorb", "family": "armatura",
+                "name": "Corazza d'Oro", "short": "CORAZZA",
+                "color": Color(1.00, 0.80, 0.25), "charges": 10,
+                "desc": "Assorbe i colpi con una riserva doppia della vita (10 cariche).",
+        },
+        {
+                "id": "dragon", "kind": "reflect", "family": "armatura",
+                "name": "Scaglie del Drago", "short": "SCAGLIE",
+                "color": Color(0.25, 0.85, 0.55), "charges": 4,
+                "desc": "Riflette 4 proiettili: il colpo rimbalza e colpisce il boss col tuo danno migliore.",
+        },
+        {
+                "id": "obsidian", "kind": "thorns", "family": "armatura",
+                "name": "Ossidiana del Crepuscolo", "short": "OSSIDIANA",
+                "color": Color(0.70, 0.35, 0.95), "charges": 5,
+                "thorn_damage": 2,
+                "desc": "Spine: chi ti tocca in mischia prende 2 danni (5 cariche).",
+        },
+        {
+                "id": "archmage", "kind": "regen", "family": "armatura",
+                "name": "Veste dell'Arcimago", "short": "VESTE",
+                "color": Color(0.45, 0.55, 0.95), "charges": 12,
+                "regen_ms": 5000,
+                "desc": "Rigenera 1 energia ogni 5 secondi (12 volte).",
+        },
+        {
+                "id": "fire", "kind": "aura", "family": "armatura",
+                "name": "Corazza di Fuoco", "short": "FUOCO",
+                "color": Color(1.00, 0.45, 0.20), "charges": 20,
+                "aura_ms": 2000, "aura_radius_px": 64.0, "aura_damage": 1,
+                "desc": "Aura ustionante: i nemici vicini bruciano (20 pulsazioni).",
+        },
+        {
+                "id": "fury", "kind": "fury", "family": "armatura",
+                "name": "Corazza del Furore", "short": "FURORE",
+                "color": Color(0.90, 0.20, 0.25), "charges": 30,
+                "desc": "I tuoi colpi colpiscono piu' a fondo (+1 grado): 30 colpi poi si spegne.",
+        },
+]
+
+## Definizione reliquia per type ({} se non e' una reliquia). Ricerca
+## lineare nelle 12 armi + il proiettile riflesso: chiamata raramente e su
+## liste minuscole (niente dict costanti mutabili, vietate in GDScript).
+static func get_relic_def(type: int) -> Dictionary:
+        for def in RELIC_MELEE:
+                if int(def.get("type", 0)) == type:
+                        return def
+        for def in RELIC_RANGED:
+                if int(def.get("type", 0)) == type:
+                        return def
+        if type == RelicType.REFLECT_BOLT:
+                return REFLECT_BOLT_DEF
+        return {}
+
+
+## True se `type` e' un'arma reliquia (101..113).
+static func is_relic_weapon(type: int) -> bool:
+        return not get_relic_def(type).is_empty()
+
+
+## Lookup type -> definizione (armi reliquia + proiettile riflesso).
+## Il proiettile riflesso dalle Scaglie del Drago: danno del MIGLIORE colpo
+## del player. Base = ROCKET (5); sale se il player impugna una reliquia
+## con potenza flat maggiore (es. Ascia 5).
+const REFLECT_BOLT_DEF: Dictionary = {
+        "id": "reflect_bolt", "type": RelicType.REFLECT_BOLT, "family": "riflesso",
+        "name": "Colpo Riflesso", "short": "RIFLESSO",
+        "color": Color(0.30, 0.95, 0.70), "power": 5, "hits": 2,
+}
+
+
+## Costruisce il Dictionary-arma (compatibile con current_weapon:
+## {type, power, ammo}) esteso con le chiavi reliquia.
+static func make_relic_weapon(def: Dictionary) -> Dictionary:
+        return {
+                "type": int(def.get("type", 0)),
+                "power": int(def.get("power", 1)),
+                "ammo": int(def.get("shots", 10)),
+                "max_ammo": int(def.get("shots", 10)),
+                "relic": str(def.get("id", "")),
+                "melee": bool(def.get("family", "") == "mischia"),
+        }
+
+
+## Cooldown di fuoco per l'arma corrente: le reliquie hanno il loro
+## fire_cd (es. Arco del Ranger 90ms = raffica), le armi base 150ms.
+static func relic_fire_cooldown(weapon: Dictionary) -> int:
+        var def: Dictionary = get_relic_def(int(weapon.get("type", 0)))
+        if def.is_empty():
+                return 150
+        return int(def.get("fire_cd", 150))
+
+
+# ----------------------------------------------------------------------------
+# SCHERMATE BONUS — rotazione e offerta
+# ----------------------------------------------------------------------------
+## Indice dell'incontro bonus (0-based): dopo il boss del livello 4 -> 0,
+## dopo l'8 -> 1, ... dopo il 68 -> 16. In infinito continua a crescere.
+static func get_bonus_encounter(level: int) -> int:
+        return int(level / TOTAL_LEVELS_PER_BOSS) - 1
+
+
+## Quale schermata bonus tocca (0=A, 1=B, 2=C), rotazione fissa A->B->C->A
+## decisa dall'utente: dopo il boss 1 la A, boss 2 la B, boss 3 la C,
+## boss 4 di nuovo A... (A: boss 1,4,7,10,13,16 = 6 volte; B: 2,5,8,11,14,17
+## = 6; C: 3,6,9,12,15 = 5).
+static func get_bonus_screen_id(level: int) -> int:
+        return get_bonus_encounter(level) % 3
+
+
+## Le 3 reliquie offerte nella schermata bonus dopo il boss del `level`:
+## UNA per famiglia (mischia/distanza/armatura — tutte le famiglie sempre
+## disponibili) con cursori sfasati cosi' le offerte ruotano senza mai
+## ripetere lo stesso pezzo due volte di fila e in 17 incontri compaiono
+## tutte le 18 reliquie:
+##   mischia   = RELIC_MELEE  [e % 6]
+##   distanza  = RELIC_RANGED [(e + 2) % 6]
+##   armatura  = RELIC_ARMORS [(e + 4) % 6]
+static func get_bonus_offering(level: int) -> Array[Dictionary]:
+        var e: int = get_bonus_encounter(level)
+        if e < 0:
+                e = 0
+        return [
+                RELIC_MELEE[e % RELIC_MELEE.size()],
+                RELIC_RANGED[(e + 2) % RELIC_RANGED.size()],
+                RELIC_ARMORS[(e + 4) % RELIC_ARMORS.size()],
+        ]
+
+
+# ----------------------------------------------------------------------------
+# RELIC: geometria degli attacchi in MISCHIA (usata da entrambi i controller)
+# ----------------------------------------------------------------------------
+## True se `target_pos` cade nella shape del fendente `def` partito da
+## `from_pos` orientato come `aim_dir` (unitario):
+##   * "circle": chiunque entro radius_px (Mazza / Martello, 360 gradi)
+##   * "line":   entro radius_px davanti, con scarto perpendicolare <= 26 px
+##               (Alabarda: linea perforante)
+##   * "sector": entro radius_px e dentro il cono di arc_deg/2 attorno alla
+##               direzione del fendente (Spadone / Ascia / Lama)
+static func relic_melee_in_shape(def: Dictionary, aim_dir: Vector2,
+                from_pos: Vector2, target_pos: Vector2) -> bool:
+        var radius: float = float(def.get("radius_px", 96.0))
+        var d: Vector2 = target_pos - from_pos
+        var dist: float = d.length()
+        if dist > radius:
+                return false
+        if dist < 1.0:
+                return true  # addosso: colpito da qualunque shape
+        var shape: String = str(def.get("shape", "sector"))
+        if shape == "circle":
+                return true
+        if shape == "line":
+                var n: Vector2 = aim_dir.normalized()
+                var proj: float = d.dot(n)
+                if proj < -16.0:
+                        return false  # dietro il player
+                var perp: float = absf(d.x * -n.y + d.y * n.x)
+                return perp <= 26.0
+        # sector
+        var half_arc: float = deg_to_rad(float(def.get("arc_deg", 90.0))) * 0.5
+        var diff: float = absf(angle_difference(aim_dir.angle(), d.angle()))
+        return diff <= half_arc
+
+
+## Danno di un colpo di MISCHIA su un nemico del labirinto (frazione HP max,
+## come le armi da fuoco) con eventuale potenziamento Corazza del Furore.
+static func relic_melee_damage(def: Dictionary, target_max_health: int,
+                fury: bool = false) -> int:
+        return weapon_damage_for(int(def.get("type", 0)), target_max_health, fury)
+
+
+## Danno FLAT di mischia vs boss / mini-boss (+1 con la Corazza del Furore).
+static func relic_melee_flat_damage(def: Dictionary, fury: bool = false) -> int:
+        return maxi(1, int(def.get("power", 1)) + (1 if fury else 0))
+
+
+## Danno flat del proiettile RIFLESSO dalle Scaglie del Drago: il MIGLIORE
+## colpo del player = max(potenza base ROCKET 5, potenza dell'arma corrente).
+static func reflect_bolt_power(current_weapon: Dictionary) -> int:
+        return maxi(5, int(current_weapon.get("power", 1)))
+
+
+## Nome corto dell'armatura per la HUD ("" se nessuna armatura equipaggiata).
+static func get_armor_short_name(armor: Dictionary) -> String:
+        if armor.is_empty():
+                return ""
+        return str(armor.get("short", "ARMATURA"))

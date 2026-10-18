@@ -956,9 +956,11 @@ func _handle_input() -> void:
                                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                                 player.shoot()
                                 var ammo_after: int = player.current_weapon.get("ammo", 0)
-                                if ammo_after < ammo_before and AudioManager:
+                                if ammo_after < ammo_before and AudioManager \
+                                                and not bool(player.current_weapon.get("melee", false)):
                                         AudioManager.play_sound(AudioManager.SoundType.PISTOL)
-                                player.shoot_cooldown = 150
+                                player.shoot_cooldown = C.relic_fire_cooldown(
+                                                player.current_weapon)
         # FIX: rimossi i debug print ogni 60 frame ora che la config joystick
         # funziona correttamente (joy_jump/joy_shoot vengono caricati dal disco).
 
@@ -992,9 +994,13 @@ func _handle_input() -> void:
                         var ammo_before: int = player.current_weapon.get("ammo", 0)
                         player.shoot()
                         var ammo_after: int = player.current_weapon.get("ammo", 0)
-                        if ammo_after < ammo_before and AudioManager:
+                        if ammo_after < ammo_before and AudioManager \
+                                        and not bool(player.current_weapon.get("melee", false)):
                                 AudioManager.play_sound(AudioManager.SoundType.PISTOL)
-                        player.shoot_cooldown = 150
+                        # RELIC (Task 21): cooldown dedicato per reliquia
+                        # (Arco del Ranger = raffica 90ms).
+                        player.shoot_cooldown = C.relic_fire_cooldown(
+                                        player.current_weapon)
 
         # P1 keyboard jump (also works without joystick)
         # FIX (spazio fa jump invece di saltare livello in test mode):
@@ -1099,7 +1105,8 @@ func _handle_input() -> void:
                                         player2.shoot_cooldown = 300
                                 else:
                                         player2.shoot()
-                                        player2.shoot_cooldown = 150
+                                        player2.shoot_cooldown = C.relic_fire_cooldown(
+                                                        player2.current_weapon)
                 player2.set_direction(p2_dx, p2_dy)
                 if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
                         # FIX (dinamite del giocatore 2 — bug utente 2P): ramo
@@ -1113,7 +1120,9 @@ func _handle_input() -> void:
                                 player2.shoot_cooldown = 300
                         else:
                                 player2.shoot()
-                                player2.shoot_cooldown = 150
+                                # RELIC (Task 21): cooldown dedicato P2.
+                                player2.shoot_cooldown = C.relic_fire_cooldown(
+                                                player2.current_weapon)
                 if Input.is_action_just_pressed("p2_jump"):
                         # FIX (parità con P1): suono di salto anche da tastiera.
                         var was_jumping_2k: bool = player2.is_jumping()
@@ -1164,6 +1173,20 @@ func _update_playing(delta_ms: float) -> void:
                 _since_last_treasure_ms = 0.0
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+
+        # (1b) RELIC (Task 21): passate reliquie — fendenti in mischia (danno
+        # ad area ai nemici nella shape), sterzo dei proiettili a ricerca
+        # (Bastone dell'Arcimago), esplosione delle bombe a parabola
+        # (Alchimista) e pulsazioni dell'aura della Corazza di Fuoco.
+        _check_pending_relic_melee(player)
+        _steer_relic_homing_projectiles(player)
+        _consume_relic_bombs(player)
+        _tick_fire_armor(player, delta_ms)
+        if GameManager and GameManager.num_players == 2 and player2.visible:
+                _check_pending_relic_melee(player2)
+                _steer_relic_homing_projectiles(player2)
+                _consume_relic_bombs(player2)
+                _tick_fire_armor(player2, delta_ms)
 
         # (2) Enemies update
         # FIX (2P — nemici ignoravano P2): ogni nemico insegue il player VIVO
@@ -1440,14 +1463,26 @@ func _advance_projectiles(container: Node2D, _delta_ms: float) -> void:
 func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
         # Player.gd stores projectiles as Array[Dictionary] with keys:
         # pos, dir, power, active, type
+        # RELIC (Task 21): i proiettili reliquia passano dallo stesso flusso
+        # con le loro flag di comportamento:
+        #   * pierce_left/hit_ids (Balestra d'Argento): il dardo ATTRAVERSA
+        #     fino a 3 nemici (non si ferma sul primo, non rivolve lo stesso);
+        #   * chain (Verga della Tempesta): sul primo colpo il fulmine SALTA
+        #     fino a 2 nemici entro chain_radius_px dal bersaglio;
+        #   * Corazza del Furore: take_weapon_hit con fury=true (-1
+        #     hit-to-kill, floor 2) e +1 flat sul mini-boss.
+        var fury: bool = p.is_fury_active()
         for proj in p.projectiles:
                 if not proj.get("active", false):
                         continue
                 var proj_pos: Vector2 = proj.get("pos", Vector2.ZERO)
                 var hit_something: bool = false
+                var hit_ids: Array = proj.get("hit_ids", [])
                 for enemy in spawner.enemies:
                         if enemy.is_dead():
                                 continue
+                        if hit_ids.has(enemy):
+                                continue  # gia' colpito da QUESTO dardo perforante
                         var e_pos: Vector2 = enemy.get_pixel_pos()
                         if proj_pos.distance_squared_to(e_pos) < 600.0:
                                 # FIX (nessuna arma one-shot — richiesta utente):
@@ -1457,7 +1492,19 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 # 2). NESSUNA arma uccide con un colpo solo:
                                 # solo mina, dinamite e item magici
                                 # (calice/scettro) restano kill istantanei.
-                                enemy.take_weapon_hit(int(proj.get("type", 0)))
+                                enemy.take_weapon_hit(int(proj.get("type", 0)), fury)
+                                hit_ids.append(enemy)
+                                # RELIC (Task 21) — Verga della Tempesta: il
+                                # fulmine salta ai nemici vicini al bersaglio.
+                                if proj.has("chain"):
+                                        _apply_storm_chain(p, proj, enemy, e_pos, fury)
+                                # RELIC (Task 21) — Balestra d'Argento: il
+                                # dardo perfora fino a pierce_max nemici IN
+                                # TUTTO e PROSEGUE (pierce_left>1 = altri hit).
+                                var pierce_left: int = int(proj.get("pierce_left", 0))
+                                if pierce_left > 1:
+                                        proj["pierce_left"] = pierce_left - 1
+                                        continue
                                 proj["active"] = false
                                 # FIX (HUD last hit enemy): traccia il nemico colpito
                                 # SOLO nel labirinto (non boss room). Nella boss room
@@ -1466,13 +1513,7 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                         last_hit_enemy = enemy
                                         last_hit_enemy_timer_ms = 3000  # 3s di visibilità
                                 if enemy.is_dead():
-                                        p.add_score(5000)
-                                        if AudioManager:
-                                                AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
-                                                AudioManager.play_sound(AudioManager.SoundType.BLOOD_SPLAT)
-                                                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
-                                        _spawn_blood_stain(e_pos)
-                                        _spawn_fire_burst(e_pos, 1.0)
+                                        _on_relic_enemy_killed(p, e_pos)
                                 hit_something = true
                                 break
                 # FIX (mid-boss immune): controlla anche il mini-boss.
@@ -1483,7 +1524,9 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
                                 var mb_dist_sq: float = proj_pos.distance_squared_to(mb_pos)
                                 if mb_dist_sq < 1200.0:  # radius ~35px
-                                        var dmg: int = int(proj.get("power", 1))
+                                        # RELIC (Task 21): +1 flat col Furore.
+                                        var dmg: int = int(proj.get("power", 1)) \
+                                                        + (1 if fury else 0)
                                         mini_boss.take_damage(dmg)
                                         proj["active"] = false
                                         # FIX (HUD last hit enemy): traccia MiniBoss
@@ -1519,11 +1562,270 @@ func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
                         continue
                 var proj_pos: Vector2 = proj.position
                 if proj_pos.distance_squared_to(p.get_pixel_pos()) < 600.0:
+                        # RELIC (Task 21) — SCAGLIE DEL DRAGO: il proiettile
+                        # nemico RIMBALZA (assorbito e ri-sparato dal player
+                        # in direzione opposta col danno del suo miglior colpo).
+                        if _reflect_enemy_projectile_if_armored(p, proj, proj_pos):
+                                break
                         p.take_damage()
                         proj.visible = false
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break
+
+
+# RELIC (Task 21) — SCAGLIE DEL DRAGO (riflessione, mirror boss room): il
+# proiettile nemico che sta per colpire il player rimbalza — assorbito dalle
+# scaglie e ri-sparato dal player in direzione OPPOSTA (nel labirinto non
+# c'e' un boss da prendere di mira) col danno del suo MIGLIOR colpo (max 5).
+# Una carica a rimbalzo, 4 in tutto, poi l'armatura si rompe.
+func _reflect_enemy_projectile_if_armored(p: CharacterBody2D, proj: Node2D,
+                proj_pos: Vector2) -> bool:
+        if not p.try_reflect_projectile():
+                return false
+        proj.queue_free()
+        var back: Vector2 = -Vector2(proj.get_meta("velocity", Vector2(1.0, 0.0)))
+        if back.length_squared() < 0.001:
+                back = Vector2(1.0, 0.0)
+        back = back.normalized()
+        p.projectiles.append({
+                "pos": proj_pos + back * 20.0,
+                "dir": back,
+                "power": C.reflect_bolt_power(p.current_weapon),
+                "active": true,
+                "type": C.RelicType.REFLECT_BOLT,
+                "relic": "reflect_bolt",
+        })
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.REFLECT_BOLT)
+        if EffectsManager:
+                EffectsManager.screen_shake(3.0, 0.15)
+        return true
+
+
+# ============================================================================
+# RELIC (Task 21) — passate reliquie nel labirinto
+# ============================================================================
+
+# Kill-effects condivisi da tutte le fonti reliquia (mischia, bombe, catena,
+# aura, spine, dardi perforanti): punteggio + suoni + macchie + scoppio.
+func _on_relic_enemy_killed(p: CharacterBody2D, pos: Vector2) -> void:
+        p.add_score(5000)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
+                AudioManager.play_sound(AudioManager.SoundType.BLOOD_SPLAT)
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        _spawn_blood_stain(pos)
+        _spawn_fire_burst(pos, 1.0)
+
+
+# Fendente in mischia: shoot() con arma mischia alza melee_pending; qui si
+# consuma e si applica il danno a TUTTI i nemici (e al mini-boss) nella shape:
+#   * Spadone: settore 120 gradi raggio 2 celle;  * Ascia: settore + splash
+#     attorno al bersaglio;  * Mazza: cerchio + STORDIMENTO 1s;  * Alabarda:
+#     linea perforante 3 celle;  * Lama del Vampiro: cura 1 energia per colpo;
+#   * Martello del Golem: cerchio stretto + stun breve + scossa.
+func _check_pending_relic_melee(p: CharacterBody2D) -> void:
+        if not p.melee_pending:
+                return
+        var def: Dictionary = p.consume_melee_pending()
+        if def.is_empty():
+                return
+        var fury: bool = p.is_fury_active()
+        var aim: Vector2 = Vector2(
+                        float(p.dx if p.dx != 0 else p.last_dx),
+                        float(p.dy if p.dy != 0 else p.last_dy))
+        if aim == Vector2.ZERO:
+                aim = Vector2(1.0, 0.0)
+        var p_pos: Vector2 = p.get_pixel_pos()
+        var hits: int = 0
+        var primary_hits: Array = []
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                if not C.relic_melee_in_shape(def, aim, p_pos, e_pos):
+                        continue
+                enemy.take_damage(C.relic_melee_damage(def, enemy.max_health, fury))
+                primary_hits.append(enemy)
+                hits += 1
+                if def.get("stun_ms", 0) > 0 and not enemy.is_dead():
+                        enemy.apply_stun(int(def["stun_ms"]))
+                if not is_boss_state:
+                        last_hit_enemy = enemy
+                        last_hit_enemy_timer_ms = 3000
+                if enemy.is_dead():
+                        _on_relic_enemy_killed(p, e_pos)
+                # Lama del Vampiro: cura 1 energia per nemico colpito.
+                if bool(def.get("vampiric", false)) and not p.soul_pending:
+                        p.energy = mini(p.max_energy, p.energy + 1)
+        # Ascia del Berserker: scheggia ad area attorno a OGNI bersaglio primario.
+        if def.has("splash_px"):
+                var splash_px: float = float(def["splash_px"])
+                var splash_hits: int = int(def.get("splash_hits", 4))
+                for prim in primary_hits:
+                        if prim.is_dead():
+                                continue
+                        var prim_pos: Vector2 = prim.get_pixel_pos()
+                        for enemy2 in spawner.enemies:
+                                if enemy2.is_dead() or primary_hits.has(enemy2):
+                                        continue
+                                if prim_pos.distance_squared_to(enemy2.get_pixel_pos()) \
+                                                < splash_px * splash_px:
+                                        var splash_dmg: int = maxi(1, int(ceil(
+                                                        float(enemy2.max_health) / float(splash_hits))))
+                                        enemy2.take_damage(splash_dmg)
+                                        if enemy2.is_dead():
+                                                _on_relic_enemy_killed(p, enemy2.get_pixel_pos())
+        # Mini-boss nella shape: danno flat (+1 col Furore).
+        if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
+                if C.relic_melee_in_shape(def, aim, p_pos, mini_boss.get_pixel_pos()):
+                        mini_boss.take_damage(C.relic_melee_flat_damage(def, fury))
+                        hits += 1
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
+                        if mini_boss.is_dead():
+                                p.add_score(10000)
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+        # Scossa visiva del Martello del Golem (cerchio): il colpo pesante
+        # si FA sentire anche quando non prende nessuno.
+        if hits == 0 and str(def.get("shape", "")) == "circle" and EffectsManager:
+                EffectsManager.screen_shake(3.0, 0.12)
+
+
+# Sterzo dei proiettili a RICERCA (Bastone dell'Arcimago): la sfera insegue
+# il nemico (o mini-boss) VIVO piu' vicino alla sua posizione corrente.
+func _steer_relic_homing_projectiles(p: CharacterBody2D) -> void:
+        for proj in p.projectiles:
+                if not proj.get("active", false) or not proj.get("homing", false):
+                        continue
+                var proj_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                var target_pos: Vector2 = Vector2.INF
+                var best_d: float = INF
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        var d: float = proj_pos.distance_squared_to(enemy.get_pixel_pos())
+                        if d < best_d:
+                                best_d = d
+                                target_pos = enemy.get_pixel_pos()
+                if mini_boss != null and is_instance_valid(mini_boss) \
+                                and not mini_boss.is_dead():
+                        var dmb: float = proj_pos.distance_squared_to(mini_boss.get_pixel_pos())
+                        if dmb < best_d:
+                                best_d = dmb
+                                target_pos = mini_boss.get_pixel_pos()
+                if target_pos == Vector2.INF:
+                        continue
+                var desired: Vector2 = (target_pos - proj_pos).normalized()
+                proj["dir"] = proj.get("dir", Vector2(1, 0)).lerp(desired, 0.09).normalized()
+
+
+# VERGA DELLA TEMPESTA: catena di fulmini — dal primo bersaglio colpito il
+# danno salta fino a `chain` nemici entro chain_radius_px (nessun re-hit).
+func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
+                first_enemy: Node2D, first_pos: Vector2, fury: bool) -> void:
+        var jumps_left: int = int(proj.get("chain", 0))
+        if jumps_left <= 0 or first_enemy == null:
+                return
+        var radius: float = float(proj.get("chain_radius_px", 128.0))
+        var chained: Array = [first_enemy]
+        var type: int = int(proj.get("type", 0))
+        for enemy in spawner.enemies:
+                if jumps_left <= 0:
+                        break
+                if enemy.is_dead() or chained.has(enemy):
+                        continue
+                if first_pos.distance_squared_to(enemy.get_pixel_pos()) \
+                                < radius * radius:
+                        enemy.take_weapon_hit(type, fury)
+                        chained.append(enemy)
+                        jumps_left -= 1
+                        if EffectsManager:
+                                var spark := EffectsManager.spawn_sparks(
+                                                enemy.get_pixel_pos(), 10)
+                                collectibles_node.add_child(spark)
+                        if not is_boss_state:
+                                last_hit_enemy = enemy
+                                last_hit_enemy_timer_ms = 3000
+                        if enemy.is_dead():
+                                _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.LIGHTNING)
+
+
+# BOMBE dell'Alchimista: i proiettili "exploded" (parabola finita o muro o
+# bordo) esplodono AD AREA: tutti i nemici entro radius_px prendono il danno
+# (frazione HP come le armi), il mini-boss quello flat.
+func _consume_relic_bombs(p: CharacterBody2D) -> void:
+        var to_remove: Array = []
+        var fury: bool = p.is_fury_active()
+        for proj in p.projectiles:
+                if not (proj.get("exploded", false) and not proj.get("consumed", false)):
+                        continue
+                proj["consumed"] = true
+                to_remove.append(proj)
+                var blast_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                var radius: float = float(proj.get("radius_px", 96.0))
+                var type: int = int(proj.get("type", 0))
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        if blast_pos.distance_squared_to(enemy.get_pixel_pos()) \
+                                        < radius * radius:
+                                enemy.take_weapon_hit(type, fury)
+                                if enemy.is_dead():
+                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                if mini_boss != null and is_instance_valid(mini_boss) \
+                                and not mini_boss.is_dead():
+                        if blast_pos.distance_squared_to(mini_boss.get_pixel_pos()) \
+                                        < radius * radius:
+                                mini_boss.take_damage(int(proj.get("power", 4)) \
+                                                + (1 if fury else 0))
+                                if mini_boss.is_dead():
+                                        p.add_score(10000)
+                                        if AudioManager:
+                                                AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+                if EffectsManager:
+                        var boom := EffectsManager.spawn_explosion(blast_pos,
+                                        Color(1.0, 0.6, 0.15), 30, 0.8)
+                        collectibles_node.add_child(boom)
+                        EffectsManager.screen_shake(8.0, 0.3)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        for proj in to_remove:
+                p.projectiles.erase(proj)
+
+
+# CORAZZA DI FUOCO (aura): a ogni pulsazione (aura_ms) TUTTI i nemici entro
+# aura_radius_px prendono aura_damage flat; carica a pulsazione (20 in tutto).
+func _tick_fire_armor(p: CharacterBody2D, delta_ms: float) -> void:
+        if not p.has_relic_armor():
+                return
+        if not p.armor_aura_pulse(delta_ms):
+                return
+        var radius: float = float(p.armor_relic.get("aura_radius_px", 64.0))
+        var aura_dmg: int = int(p.armor_relic.get("aura_damage", 1))
+        var p_pos: Vector2 = p.get_pixel_pos()
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                if p_pos.distance_squared_to(enemy.get_pixel_pos()) < radius * radius:
+                        enemy.take_damage(aura_dmg)
+                        if enemy.is_dead():
+                                _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+        if mini_boss != null and is_instance_valid(mini_boss) \
+                        and not mini_boss.is_dead():
+                if p_pos.distance_squared_to(mini_boss.get_pixel_pos()) \
+                                < radius * radius:
+                        mini_boss.take_damage(aura_dmg)
+        if EffectsManager:
+                var ring := EffectsManager.spawn_explosion(p_pos,
+                                Color(1.0, 0.45, 0.2), 12, 0.4)
+                collectibles_node.add_child(ring)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
 
 
 # FIX (bomba non esplode all'impatto): controlla collisione tra la mine
@@ -1726,6 +2028,14 @@ func _check_melee_collisions(p: CharacterBody2D) -> void:
                 if enemy.is_dead():
                         continue
                 if p_pos.distance_squared_to(enemy.get_pixel_pos()) < 800.0:
+                        # RELIC (Task 21) — OSSIDIANA DEL CREPUSCOLO: chi
+                        # tocca il player in mischia prende 2 danni da
+                        # spine (una carica per colpo inflitto, 5 in tutto).
+                        var thorn_dmg: int = p.consume_thorn_charge()
+                        if thorn_dmg > 0:
+                                enemy.take_damage(thorn_dmg)
+                                if enemy.is_dead():
+                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos())
                         p.take_damage()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
@@ -2820,6 +3130,11 @@ func _update_hud_snapshot() -> void:
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # RELIC (Task 21): stato armatura reliquia in HUD.
+                "armor_name": C.get_armor_short_name(player.armor_relic),
+                "armor_color": player.armor_relic.get("color", Color.WHITE),
+                "armor_charges": player.armor_charges(),
+                "armor_max": int(player.armor_relic.get("max_charges", 0)),
         })
         if GameManager and GameManager.num_players == 2 and player2.visible:
                 hud.set_player2_state({
@@ -2833,6 +3148,11 @@ func _update_hud_snapshot() -> void:
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        # RELIC (Task 21): stato armatura reliquia in HUD (P2).
+                        "armor_name": C.get_armor_short_name(player2.armor_relic),
+                        "armor_color": player2.armor_relic.get("color", Color.WHITE),
+                        "armor_charges": player2.armor_charges(),
+                        "armor_max": int(player2.armor_relic.get("max_charges", 0)),
                 })
 
 
@@ -4506,6 +4826,11 @@ func _update_hud() -> void:
                 # FIX (stamina salti): barra verde sotto quella della vita.
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # RELIC (Task 21): stato armatura reliquia in HUD.
+                "armor_name": C.get_armor_short_name(player.armor_relic),
+                "armor_color": player.armor_relic.get("color", Color.WHITE),
+                "armor_charges": player.armor_charges(),
+                "armor_max": int(player.armor_relic.get("max_charges", 0)),
         }
         hud.set_player_state(p1_snap)
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -4521,6 +4846,11 @@ func _update_hud() -> void:
                         # FIX (stamina salti): barra verde sotto quella della vita (P2).
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        # RELIC (Task 21): stato armatura reliquia in HUD (P2).
+                        "armor_name": C.get_armor_short_name(player2.armor_relic),
+                        "armor_color": player2.armor_relic.get("color", Color.WHITE),
+                        "armor_charges": player2.armor_charges(),
+                        "armor_max": int(player2.armor_relic.get("max_charges", 0)),
                 }
                 hud.set_player2_state(p2_snap)
         hud.set_remaining_treasures(maze.get_remaining_treasures())

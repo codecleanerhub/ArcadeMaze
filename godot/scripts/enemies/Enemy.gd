@@ -213,6 +213,11 @@ var anim_time: int = 0          # NEVER reset for BFS (see Enemy.cpp:154)
 var shoot_cooldown: int = 0
 var attacking_timer: int = 0
 var dying_timer: int = 0
+
+# RELIC (Task 21 — Mazza Ferrata / Martello del Golem): stordimento.
+# Il nemico resta CONGELATO (nessun movimento/IA) finche' il timer non
+# scende a zero; gli altri timer continuano a girare (pattern burning).
+var stun_timer_ms: int = 0
 var burning_timer: int = 0
 var burn_anim_time: int = 0
 var burned_flag: bool = false
@@ -444,6 +449,17 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                         burning_timer = 0
                 burn_anim_time += 16
                 return  # no movement / no shooting while burning
+
+        # RELIC (Task 21): stordimento da Mazza/Martello — nemico congelato
+        # (pattern del burning: timer ticka, movimento fermo). Il danno
+        # continua ad arrivargli: e' solo "stordito", non invulnerabile.
+        if stun_timer_ms > 0:
+                if stun_timer_ms > int(delta_ms):
+                        stun_timer_ms -= int(delta_ms)
+                else:
+                        stun_timer_ms = 0
+                queue_redraw()
+                return  # nessun movimento mentre e' stordito
 
         # Dying animation in progress: freeze movement.
         if dying_timer > 0:
@@ -747,10 +763,19 @@ func take_damage(dmg: int) -> void:
 ## Danno per un colpo di arma da fuoco `weapon_type` ( Weapon.Type ) su
 ## questo nemico. Applica il danno internamente e RITORNA il danno inflitto
 ## (utile al chiamante per punteggio/HUD).
-func take_weapon_hit(weapon_type: int) -> int:
-        var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health)
+## RELIC (Task 21): `fury` = true con la Corazza del Furore — l'arma
+## colpisce come se avesse 1 hit-to-kill in meno (floor 2: mai one-shot).
+func take_weapon_hit(weapon_type: int, fury: bool = false) -> int:
+        var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health, fury)
         take_damage(dmg)
         return dmg
+
+
+## RELIC (Task 21): stordisce il nemico per `ms` millisecondi (Mazza
+## Ferrata 1s / Martello del Golem 0.5s). Cumulabile al massimo a 1.5s
+## per evitare stunlock infiniti sui nemici piu' lenti.
+func apply_stun(ms: int) -> void:
+        stun_timer_ms = mini(stun_timer_ms + ms, 1500)
 
 
 ## Danno del MARTELLO di Thor: 50% degli HP massimi (2 colpi per uccidere

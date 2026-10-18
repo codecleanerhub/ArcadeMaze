@@ -194,15 +194,30 @@ var carry_p1: Dictionary = {}
 var carry_p2: Dictionary = {}
 
 ## Snapshot dello stato di UN player da portare nella prossima scena.
+## RELIC (Task 21): include ANCHE l'arma reliquia e l'armatura — nel C++
+## originale l'oggetto Player era UNICO e sopravviveva a tutte le scene;
+## qui le reliquie devono attraversare labirinto -> boss room -> labirinto
+## esattamente come punteggio e vite (si perdono solo alla morte/rottura).
 static func make_player_carry(p: Node) -> Dictionary:
         if p == null or not is_instance_valid(p):
                 return {}
-        return {
+        var snap: Dictionary = {
                 "score": int(p.score),
                 "lives": int(p.lives),
                 "next_life_threshold": int(p.next_life_threshold),
                 "permanent_speed_boost": bool(p.permanent_speed_boost),
         }
+        # Arma reliquia (le armi base NON si portano: comportamento storico
+        # invariato — la boss room dà già la sua arma potenziata d'ingresso).
+        var w: Dictionary = p.current_weapon
+        # NOTA GDScript: la chiave "relic" contiene una STRINGA (l'id) —
+        # niente cast bool() (bool(String) non esiste come costruttore).
+        if w is Dictionary and w.has("relic"):
+                snap["relic_weapon"] = w.duplicate()
+        # Armatura reliquia (con le cariche correnti).
+        if p.has_method("has_relic_armor") and p.has_relic_armor():
+                snap["relic_armor"] = p.armor_relic.duplicate()
+        return snap
 
 ## Salva lo stato dei player di entrambe le scene di gioco (chiamato dai
 ## controller subito PRIMA di GameManager.start_boss_fight() /
@@ -229,6 +244,14 @@ func _apply_carry(p: Node, snap: Dictionary) -> void:
         p.lives = int(snap.get("lives", 3))
         p.next_life_threshold = int(snap.get("next_life_threshold", 100000))
         p.permanent_speed_boost = bool(snap.get("permanent_speed_boost", false))
+        # RELIC (Task 21): ripristina arma reliquia e armatura nella scena
+        # appena caricata (il player e' gia' passato da reset() = pulito).
+        var rw: Dictionary = snap.get("relic_weapon", {})
+        if not rw.is_empty() and p.has_method("collect_weapon"):
+                p.current_weapon = rw.duplicate()
+        var ra: Dictionary = snap.get("relic_armor", {})
+        if not ra.is_empty() and p.has_method("restore_relic_armor"):
+                p.restore_relic_armor(ra)
 
 
 # ============================================================================
