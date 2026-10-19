@@ -625,12 +625,13 @@ func _phaseG_boss_room() -> void:
                 _ok("G1: boss room = colpi reliquia infiniti (P1 e P2)")
 
         # G2: l'arma reliquia NON viene potenziata/sovrascritta all'ingresso
-        # (start_boss_fight la lascia intatta: power 3, colpi 25 dello Spadone).
+        # (start_boss_fight la lascia intatta: power 3 e i colpi "shots" dello
+        # Spadone — TASK 26: 33 dopo il +30% munizioni, letto dalla definizione).
         brp1.current_weapon = C.make_relic_weapon(C.RELIC_MELEE[0])
         boss_room.start_boss_fight(false)
         if int(brp1.current_weapon.get("type", 0)) != C.RelicType.SWORD:
                 _fail("G2: l'arma reliquia è stata sovrascritta dalla regola d'ingresso")
-        elif int(brp1.current_weapon.get("ammo", 0)) != 25 \
+        elif int(brp1.current_weapon.get("ammo", 0)) != int(C.RELIC_MELEE[0]["shots"]) \
                         or int(brp1.current_weapon.get("power", 0)) != 3:
                 _fail("G2: la reliquia è stata alterata (power/ammo)")
         else:
@@ -686,8 +687,7 @@ func _phaseG_boss_room() -> void:
                 if fams.size() != 3:
                         _fail("G5: offerte senza una-per-famiglia")
                 else:
-                        _ok("G5: 2P = 2 choosers; offerta 1-per-famiglia ("
-                                        + str(screen.screen_letter) + ")")
+                        _ok("G5: 2P = 2 choosers; offerta 1-per-famiglia")
 
         # G6: le scelte si applicano (P1 arma, P2 armatura) e completano.
         # (Il gestore del controller resta scollegato: niente cambio scena.)

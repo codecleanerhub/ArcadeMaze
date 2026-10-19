@@ -287,10 +287,11 @@ func _draw_1p() -> void:
         # SCORE
         _draw_label("SCORE", 10, 10)
         _draw_label_int(_p1.score, 10, 30, color_score)
-        # LIVES (hearts)
+        # LIVES (hearts) — TASK 26: oltre 5 cuori non si disegna la fila
+        # (si sovrapponeva a ENERGY/WPN): si mostra il numero con la "x"
+        # + UN solo simbolo di cuore (es. "6x ♥" = 6 vite).
         _draw_label("LIVES", 150, 10)
-        for i in _p1.lives:
-                _draw_heart(160 + i * 24, 35, 8.0)
+        _draw_lives_row(int(_p1.lives), 160.0, 35.0, 8.0, 24.0)
         # ENERGY (gradiente verde→arancione→rosso)
         _draw_label("ENERGY", 280, 10)
         _draw_energy_bar(280, 30, 100, 18,
@@ -299,9 +300,11 @@ func _draw_1p() -> void:
         # vita/energia (3 salti consecutivi; 1/3 consumato a ogni salto).
         _draw_stamina_bar(280, 52, 100, 10,
                 _p1.stamina, _p1.stamina_exhausted)
-        # WPN
+        # WPN — TASK 26: le armi speciali (reliquie) NON mostrano il nome
+        # (sovrapposizione coi cuori); resta l'header WPN + il contatore AMMO.
         _draw_label("WPN", 420, 10)
-        _draw_label_colored(_p1.weapon_name, 420, 30, _p1.weapon_color)
+        if not str(_p1.weapon_name).is_empty():
+                _draw_label_colored(_p1.weapon_name, 420, 30, _p1.weapon_color)
         # AMMO (numero colpi invece di barra)
         _draw_label("AMMO", 570, 10)
         _draw_label_int(_p1.weapon_ammo, 570, 30, color_ammo)
@@ -324,15 +327,15 @@ func _draw_2p() -> void:
         _draw_label_colored("P1", 10, 10, color_p1_label)
         _draw_label_int(_p1.score, 10, 30, color_score)
         _draw_label("LIFE", 80, 10)
-        for i in _p1.lives:
-                _draw_heart(90 + i * 16, 35, 6.0)
+        _draw_lives_row(int(_p1.lives), 90.0, 35.0, 6.0, 16.0)
         _draw_label("EN", 180, 10)
         _draw_energy_bar(180, 32, 60, 14,
                 float(_p1.energy) / float(_p1.max_energy))
         # FIX (stamina salti): barra STAMINA verde sotto la vita (P1).
         _draw_stamina_bar(180, 50, 60, 8,
                 _p1.stamina, _p1.stamina_exhausted)
-        _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
+        if not str(_p1.weapon_name).is_empty():
+                _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
         # RELIC (Task 21): stato ARMATURA di P1 (tra arma e tesori: x=330).
         _draw_armor_status(_p1, 330, 10)
@@ -347,15 +350,15 @@ func _draw_2p() -> void:
         _draw_label_colored("P2", 1560, 10, color_p2_label)
         _draw_label_int(_p2.score, 1560, 30, color_score)
         _draw_label("LIFE", 1630, 10)
-        for i in _p2.lives:
-                _draw_heart(1640 + i * 16, 35, 6.0)
+        _draw_lives_row(int(_p2.lives), 1640.0, 35.0, 6.0, 16.0)
         _draw_label("EN", 1730, 10)
         _draw_energy_bar(1730, 32, 60, 14,
                 float(_p2.energy) / float(_p2.max_energy))
         # FIX (stamina salti): barra STAMINA verde sotto la vita (P2).
         _draw_stamina_bar(1730, 50, 60, 8,
                 _p2.stamina, _p2.stamina_exhausted)
-        _draw_label_colored(_p2.weapon_name, 1800, 10, _p2.weapon_color)
+        if not str(_p2.weapon_name).is_empty():
+                _draw_label_colored(_p2.weapon_name, 1800, 10, _p2.weapon_color)
         _draw_label_int(_p2.weapon_ammo, 1800, 30, color_score)
         # RELIC (Task 21): stato ARMATURA di P2 (riga bassa libera sotto
         # vite/energia: x=1640, i rombi restano dentro la barra di 80px).
@@ -393,6 +396,30 @@ func _draw_armor_status(snap: Dictionary, x: float, y: float) -> void:
                                 Vector2(px, py - 3.0), Vector2(px + 3.0, py),
                                 Vector2(px, py + 3.0), Vector2(px - 3.0, py)]),
                                 Color(col.r, col.g, col.b, 0.18))
+
+
+# ----------------------------------------------------------------------------
+# TASK 26 — fila dei cuori delle vite: fino a 5 cuoricini singoli; oltre,
+# numero + "x" + UN solo cuore (es. "6x ♥" = 6 vite). Evita la sovrapposizione
+# con ENERGY/WPN quando le vite crescono (bonus boss + soglie punteggio).
+# ----------------------------------------------------------------------------
+func _draw_lives_row(lives: int, x: float, y: float, size: float,
+                spacing: float) -> void:
+        if lives <= 5:
+                for i in lives:
+                        _draw_heart(x + float(i) * spacing, y, size)
+                return
+        # Oltre 5: contatore "Nx" + simbolo singolo.
+        var txt: String = str(lives) + "x"
+        _draw_label_colored(txt, x, y - 12.0, color_heart_fill)
+        var font := get_theme_default_font()
+        if font == null:
+                font = ThemeDB.fallback_font
+        var txt_w: float = 34.0
+        if font != null:
+                txt_w = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT,
+                        -1, 16).x
+        _draw_heart(x + txt_w + size + 2.0, y, size)
 
 
 # ----------------------------------------------------------------------------

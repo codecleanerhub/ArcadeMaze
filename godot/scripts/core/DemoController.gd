@@ -121,6 +121,25 @@ func _physics_process(_delta: float) -> void:
                         enemy.update_enemy(maze, p_grid, p_pos, [])
         spawner.remove_dead()
 
+        # TASK 26 (fix segnalazione utente "il player non perdeva energia e
+        # nessuno si muoveva piu'"): danno da contatto nemico->player, come
+        # _check_melee_collisions del gioco vero. Nel demo mancava del tutto:
+        # i nemici raggiunta la cella del player si fermavano lì per sempre
+        # (caso A di update_enemy: stessa cella -> attesa del melee che non
+        # arrivava mai) e il player si incagliava a spingere contro il muro
+        # nella direzione del bersaglio sopra di lui. take_damage() è
+        # self-contained: -1 energia, 1s di invulnerabilità, a 0 energia perde
+        # una vita e RESPAWNA lontano dal mucchio (che così si scioglie).
+        if player.lives > 0 and not player.is_invulnerable() and not player.is_jumping():
+                for enemy in spawner.enemies:
+                        if enemy.is_dead():
+                                continue
+                        if p_pos.distance_squared_to(enemy.get_pixel_pos()) < 800.0:
+                                player.take_damage()
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+                                break
+
         # Player projectiles vs enemies
         for proj in player.projectiles:
                 if not proj.get("active", false):
@@ -149,7 +168,7 @@ func _physics_process(_delta: float) -> void:
                         "weapon_name": "PISTOL",
                         "weapon_color": Color.WHITE,
                         "weapon_ammo": player.current_weapon.get("ammo", 0),
-                        "weapon_max": 15,
+                        "weapon_max": 20,
                 })
                 hud.set_remaining_treasures(maze.get_remaining_treasures())
 
@@ -208,6 +227,11 @@ func _update_ai(delta_ms: float) -> void:
                         demo_ai_dir_p1 = 1 + randi() % 4
 
         # Apply direction
+        # TASK 26 (fix freeze): non spingere mai contro un muro — se la
+        # direzione scelta (bersaglio sopra il player, muro davanti) è
+        # bloccata, ruota in senso orario finché trova un'apertura. Il player
+        # demo resta SEMPRE in movimento anche in un vicolo cieco.
+        demo_ai_dir_p1 = _open_dir_around(demo_ai_dir_p1)
         match demo_ai_dir_p1:
                 1: player.set_direction(0, -1)  # up
                 2: player.set_direction(0, 1)   # down
@@ -234,6 +258,29 @@ func _update_ai(delta_ms: float) -> void:
         # Random jump (2% per frame)
         if randi() % 100 < 2:
                 player.activate_jump()
+
+
+# TASK 26 — direzione preferita se bloccata da un muro -> prima direzione
+# libera in rotazione oraria (1 su -> 2 giù -> 3 sinistra -> 4 destra).
+# Usa la STESSA cella e lo stesso check (maze.is_wall) di Player.try_move,
+# così la decisione dell'AI è sempre compatibile col movimento reale.
+func _open_dir_around(preferred: int) -> int:
+        var col := int(player.get_pixel_pos().x / C.TILE_SIZE)
+        var row := int((player.get_pixel_pos().y - C.UI_HEIGHT) / C.TILE_SIZE)
+        var d: int = preferred
+        for k in 4:
+                var ndx: int = 0
+                var ndy: int = 0
+                match d:
+                        1: ndy = -1
+                        2: ndy = 1
+                        3: ndx = -1
+                        4: ndx = 1
+                        _: return preferred
+                if not maze.is_wall(col + ndx, row + ndy):
+                        return d
+                d = 1 + (d % 4)
+        return preferred
 
 
 func _check_user_input() -> bool:

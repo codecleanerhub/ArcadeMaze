@@ -54,6 +54,30 @@ static var BOSS_PROJ_THEMED_ENABLED: bool = true
 static var BOSS_LIMB_ANIM_GAIN: float = 2.6
 static var ARMOR_OUTFIT_ENABLED: bool = true
 
+# ============================================================================
+# 0c. TASK 26 — ENHANCEMENT CANVAS DEI BOSS
+# ============================================================================
+#   BOSS_CANVAS_SHADER_ENABLED -> i boss ricevono lo shader enhancement
+#                          (boss_deform.gdshader) DIRETTAMENTE sul loro
+#                          DeformableSprite: sharpening + contrasto 1.2 +
+#                          saturazione 1.3 + fake-normal + rim, cioè la STESSA
+#                          pipeline dei player (CharacterArt._enhanced_strong).
+#                          Prima lo shader era applicato al nodo Boss ma i
+#                          materiali CanvasItem NON si propagano ai figli: il
+#                          mesh renderizzava col solo StandardMaterial3D ->
+#                          boss visivamente spenti/sbiaditi rispetto a player
+#                          e nemici (segnalazione utente). false = rendering
+#                          identico al pre-Task-26.
+static var BOSS_CANVAS_SHADER_ENABLED: bool = true
+
+#   BOSS_SHOOT_SFX_ENABLED -> SFX procedurali di sparo dei boss, UNO per tipo
+#                          di "munizione" (masso=tonfo di pietra, ragnatela=
+#                          fruscio di seta, fiamma=soffio, raggio=zap...):
+#                          AudioManager.play_boss_shoot(kind) chiamato da
+#                          Boss._shoot_pattern. false = nessun suono di sparo
+#                          (comportamento pre-Task-26).
+static var BOSS_SHOOT_SFX_ENABLED: bool = true
+
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
 
@@ -601,23 +625,31 @@ static func mirror_waypoint_after_wrap(wp: Vector2) -> Vector2:
 ## Returned Dictionary shape:
 ##   { "type": WeaponType.X, "power": int, "ammo": int }
 static func make_weapon(type: int) -> Dictionary:
+        # TASK 26 (richiesta utente): munizioni +30% su TUTTE le armi
+        # (ceil, mai meno del 30%: 15->20, 8->11, 20->26, 4->6).
         match type:
                 WeaponType.PISTOL:
-                        return {"type": type, "power": 1, "ammo": 15}
+                        return {"type": type, "power": 1, "ammo": 20}
                 WeaponType.SHOTGUN:
-                        return {"type": type, "power": 3, "ammo": 8}
+                        return {"type": type, "power": 3, "ammo": 11}
                 WeaponType.LASER:
-                        return {"type": type, "power": 2, "ammo": 20}
+                        return {"type": type, "power": 2, "ammo": 26}
                 WeaponType.ROCKET:
-                        return {"type": type, "power": 5, "ammo": 4}
+                        return {"type": type, "power": 5, "ammo": 6}
                 _:
-                        return {"type": WeaponType.PISTOL, "power": 1, "ammo": 15}
+                        return {"type": WeaponType.PISTOL, "power": 1, "ammo": 20}
 
 
 ## Returns a random weapon Dictionary.
 static func make_random_weapon() -> Dictionary:
         var t: int = randi() % 4
         return make_weapon(t)
+
+
+## TASK 26 — munizioni minime garantite dalla boss room (regola d'ingresso
+## "arma utilizzabile"): era 30, +30% -> 39 (ceil). Usata da
+## BossRoomController all'ingresso, sul potenziamento e nel restore-continue.
+const BOSS_ROOM_AMMO_MIN: int = 39
 
 
 # ============================================================================
@@ -712,12 +744,14 @@ static func hammer_damage_for(target_max_health: int) -> int:
         return maxi(1, int(round(float(target_max_health) * 0.5)))
 
 
-## Returns the human-readable name of a weapon type (incluse le reliquie:
-## usa lo SHORT name per stare nella HUD; full name nella schermata bonus).
+## Returns the human-readable name of a weapon type. TASK 26 (richiesta
+## utente): le ARMI SPECIALI (reliquie) restituiscono "" -> la HUD non
+## mostra il nome (resta il contatore AMMO); i nomi lunghi delle reliquie
+## si sovrapponevano ai cuori delle vite. I nomi completi restano nelle
+## schermate bonus (BonusScreen usa name/short delle definizioni).
 static func get_weapon_name(type: int) -> String:
-        var relic: Dictionary = get_relic_def(type)
-        if not relic.is_empty():
-                return str(relic.get("short", "RELIQUIA"))
+        if is_relic_weapon(type):
+                return ""
         match type:
                 WeaponType.PISTOL:
                         return "PISTOL"
@@ -791,12 +825,16 @@ static func get_weapon_color(type: int) -> Color:
 ##           OPPOSTA (lama/testa) alla mira e tiene il manico sulla mano.
 ##           Es. spadone: elsa in alto -> -90.
 const RELIC_MELEE: Array[Dictionary] = [
+        # TASK 26 (richiesta utente): "shots" = munizioni +30% rispetto ai
+        # valori originali (arrotondati PER ECCESSO, mai meno del +30%):
+        # 25->33, 15->20, 12->16, 18->24, 20->26, 10->13 (mischia) e
+        # 30->39, 24->32, 20->26, 40->52, 15->20, 12->16 (distanza).
         {
                 "id": "sword", "type": RelicType.SWORD, "family": "mischia",
                 "name": "Spadone del Cavaliere", "short": "SPADONE",
                 "name_en": "Knight's Greatsword", "short_en": "GREATSWORD",
                 "color": Color(0.82, 0.86, 0.94), "power": 3, "hits": 2,
-                "shots": 25, "shape": "sector", "radius_px": 128.0,
+                "shots": 33, "shape": "sector", "radius_px": 128.0,
                 "arc_deg": 120.0, "fire_cd": 320,
                 "png_grip_deg": -90.0,
                 "desc": "Arco ampio (2 celle): fende tutti i nemici davanti a te.",
@@ -807,7 +845,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Ascia del Berserker", "short": "ASCIA",
                 "name_en": "Berserker Axe", "short_en": "AXE",
                 "color": Color(0.90, 0.35, 0.20), "power": 5, "hits": 2,
-                "shots": 15, "shape": "sector", "radius_px": 96.0,
+                "shots": 20, "shape": "sector", "radius_px": 96.0,
                 "arc_deg": 90.0, "fire_cd": 380, "splash_px": 64.0,
                 "splash_hits": 4, "png_grip_deg": 45.0,
                 "desc": "Colpo devastante + scheggia ad area attorno al bersaglio.",
@@ -818,7 +856,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Mazza Ferrata", "short": "MAZZA",
                 "name_en": "Flanged Mace", "short_en": "MACE",
                 "color": Color(0.72, 0.72, 0.78), "power": 2, "hits": 3,
-                "shots": 12, "shape": "circle", "radius_px": 96.0,
+                "shots": 16, "shape": "circle", "radius_px": 96.0,
                 "arc_deg": 360.0, "fire_cd": 340, "stun_ms": 1000,
                 "png_grip_deg": 90.0,
                 "desc": "Rotazione 360°: colpisce attorno e STORDISCE i nemici.",
@@ -829,7 +867,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Alabarda della Guardia Reale", "short": "ALABARDA",
                 "name_en": "Royal Guard Halberd", "short_en": "HALBERD",
                 "color": Color(0.86, 0.78, 0.40), "power": 3, "hits": 3,
-                "shots": 18, "shape": "line", "radius_px": 192.0,
+                "shots": 24, "shape": "line", "radius_px": 192.0,
                 "arc_deg": 0.0, "fire_cd": 340, "png_grip_deg": 90.0,
                 "desc": "Lunga (3 celle): infilza tutti i nemici in linea davanti.",
                 "desc_en": "Long reach (3 tiles): skewers every enemy in a line.",
@@ -839,7 +877,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Lama del Vampiro", "short": "LAMA",
                 "name_en": "Vampire Blade", "short_en": "VAMP BLADE",
                 "color": Color(0.85, 0.20, 0.35), "power": 2, "hits": 3,
-                "shots": 20, "shape": "sector", "radius_px": 96.0,
+                "shots": 26, "shape": "sector", "radius_px": 96.0,
                 "arc_deg": 90.0, "fire_cd": 300, "vampiric": true,
                 "png_grip_deg": 225.0,
                 "desc": "Ogni nemico colpito ti CURA 1 energia.",
@@ -850,7 +888,7 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Martello del Golem", "short": "MARTELLO",
                 "name_en": "Golem Hammer", "short_en": "HAMMER",
                 "color": Color(0.65, 0.55, 0.45), "power": 4, "hits": 2,
-                "shots": 10, "shape": "circle", "radius_px": 64.0,
+                "shots": 13, "shape": "circle", "radius_px": 64.0,
                 "arc_deg": 360.0, "fire_cd": 400, "stun_ms": 500,
                 "png_grip_deg": 90.0,
                 "desc": "Slam pesante attorno ai piedi: scossa + stordimento breve.",
@@ -877,7 +915,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name": "Balestra d'Argento", "short": "BALESTRA",
                 "name_en": "Silver Crossbow", "short_en": "CROSSBOW",
                 "color": Color(0.90, 0.92, 0.98), "power": 3, "hits": 2,
-                "shots": 30, "fire_cd": 160, "pierce_max": 3,
+                "shots": 39, "fire_cd": 160, "pierce_max": 3,
                 "png_point_deg": 135.0,
                 "desc": "Dardo perforante: attraversa fino a 3 nemici.",
                 "desc_en": "Piercing bolt: punches through up to 3 enemies.",
@@ -887,7 +925,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name": "Bastone dell'Arcimago", "short": "BASTONE",
                 "name_en": "Archmage Staff", "short_en": "STAFF",
                 "color": Color(0.55, 0.40, 0.95), "power": 2, "hits": 3,
-                "shots": 24, "fire_cd": 200, "homing": true,
+                "shots": 32, "fire_cd": 200, "homing": true,
                 "png_grip_deg": 90.0,
                 "desc": "Sfera arcana a ricerca: insegue il nemico piu' vicino.",
                 "desc_en": "Homing arcane orb: seeks out the nearest enemy.",
@@ -897,7 +935,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name": "Pugnali Gemelli", "short": "PUGNALI",
                 "name_en": "Twin Daggers", "short_en": "DAGGERS",
                 "color": Color(0.45, 0.90, 0.85), "power": 2, "hits": 4,
-                "shots": 20, "fire_cd": 220, "fan": 3, "fan_spread_deg": 18.0,
+                "shots": 26, "fire_cd": 220, "fan": 3, "fan_spread_deg": 18.0,
                 "png_grip_deg": -90.0,
                 "desc": "Ventaglio di 3 lame per salve: copre un ampio fronte.",
                 "desc_en": "Fan of 3 blades per volley: covers a wide front.",
@@ -907,7 +945,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name": "Arco del Ranger", "short": "ARCO",
                 "name_en": "Ranger Bow", "short_en": "BOW",
                 "color": Color(0.55, 0.85, 0.35), "power": 1, "hits": 4,
-                "shots": 40, "fire_cd": 90,
+                "shots": 52, "fire_cd": 90,
                 "png_point_deg": 0.0,
                 "desc": "Tiro rapido: frecce leggere ma frecce a raffica.",
                 "desc_en": "Rapid fire: light arrows in quick volleys.",
@@ -917,7 +955,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name": "Verga della Tempesta", "short": "VERGA",
                 "name_en": "Storm Rod", "short_en": "STORM ROD",
                 "color": Color(0.55, 0.80, 1.00), "power": 2, "hits": 3,
-                "shots": 15, "fire_cd": 200, "chain": 2, "chain_radius_px": 128.0,
+                "shots": 20, "fire_cd": 200, "chain": 2, "chain_radius_px": 128.0,
                 "png_grip_deg": 90.0,
                 "desc": "Fulmine a catena: salta fino a 2 nemici vicini.",
                 "desc_en": "Chain lightning: arcs to up to 2 nearby enemies.",
@@ -927,7 +965,7 @@ const RELIC_RANGED: Array[Dictionary] = [
                 "name": "Bombe dell'Alchimista", "short": "BOMBE",
                 "name_en": "Alchemist Bombs", "short_en": "BOMBS",
                 "color": Color(1.00, 0.60, 0.15), "power": 4, "hits": 2,
-                "shots": 12, "fire_cd": 250, "lob_px": 160.0,
+                "shots": 16, "fire_cd": 250, "lob_px": 160.0,
                 "radius_px": 96.0,
                 "desc": "Bomba a parabola: esplode ad area dopo 2 celle e mezza.",
                 "desc_en": "Lobbed bomb: explodes in an area after 2.5 tiles.",

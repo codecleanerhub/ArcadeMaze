@@ -111,10 +111,11 @@ var last_dx: int = 1
 var last_dy: int = 0
 
 # Weapon / projectiles
+# TASK 26: munizioni iniziali +30% (15 -> 20, vedi GameConstants.make_weapon).
 var current_weapon: Dictionary = {
         "type": WeaponType.PISTOL,
         "power": 1,
-        "ammo": 15,
+        "ammo": 20,
 }
 # Each projectile is a Dictionary {pos: Vector2, dir: Vector2, power: int,
 # active: bool, type: WeaponType}. Erase-remove is done in update_player().

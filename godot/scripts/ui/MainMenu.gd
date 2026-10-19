@@ -100,7 +100,8 @@ var _footer_by: Label
 var _footer_name: Label
 var _hint_label: Label
 var _item_labels: Array[Label] = []
-var _panel: Panel
+var _panel: PanelContainer
+var _flame_node: Node2D = null
 var _char_preview_container: HBoxContainer
 # Preview sprites for the 8 characters.
 var _char_sprites: Array[TextureRect] = []
@@ -128,6 +129,9 @@ func _ready() -> void:
                 _game_mode = GameManager.game_mode
         _update_items_text()
         _update_character_wheel()
+        # TASK 26: primo collocamento del pannello al centro-destra dopo il
+        # layout iniziale (poi il segnale resized lo mantiene centrato).
+        _recenter_menu_panel.call_deferred()
         # Sync music state from GameManager and start menu music if enabled.
         if GameManager:
                 _music_enabled = GameManager.music_enabled
@@ -296,6 +300,29 @@ func _process(delta: float) -> void:
         # Hide unused warning
         pass # flicker variable used above
         queue_redraw()
+        # TASK 26 (fix fiamma invisibile): la fiamma della selezione vive su
+        # un nodo DEDICATO aggiunto per ultimo (il _draw del menu finisce
+        # SOTTO i figli come la TextureRect di sfondo: disegnandola lì era
+        # sempre coperta — bug latente pre-Task-26).
+        if _flame_node != null:
+                _flame_node.queue_redraw()
+
+
+# ----------------------------------------------------------------------------
+# TASK 26 — il pannello menu (PanelContainer auto-dimensionato sulle voci)
+# resta CENTRATO sul punto-ancora (75% larghezza, 50% altezza): dopo ogni
+# resize il centro del pannello coincide col centro della metà destra.
+# ----------------------------------------------------------------------------
+func _recenter_menu_panel() -> void:
+        if _panel == null or not is_instance_valid(_panel):
+                return
+        var sz: Vector2 = _panel.size
+        if sz.x <= 0.0 or sz.y <= 0.0:
+                return  # layout non ancora pronto
+        _panel.offset_left = -sz.x * 0.5
+        _panel.offset_right = sz.x * 0.5
+        _panel.offset_top = -sz.y * 0.5
+        _panel.offset_bottom = sz.y * 0.5
 
 
 func _draw() -> void:
@@ -324,23 +351,41 @@ func _draw() -> void:
                         Vector2(cx + dx - side * 4, orn_y),
                 ])
                 draw_colored_polygon(dpts, orn_gold)
-        # Flame icon next to the selected item (animated)
-        # Panel starts at y=300 (offset_top) + ~30px padding = ~330 for first item.
-        # Each item is ~24px font + 22px separation = ~46px per row.
-        _draw_flame(150.0, 350.0 + _menu_item_index * 46.0)
+        # TASK 26: la fiamma della selezione NON si disegna qui (il _draw del
+        # menu finisce sotto la TextureRect di sfondo a tutto schermo):
+        # la disegna il nodo dedicato _flame_node (aggiunto per ultimo),
+        # tramite draw_selection_flame() qui sotto.
 
 
-# Draws a small animated flame (aura + outer red + inner yellow) at (fx, fy).
-func _draw_flame(fx: float, fy: float) -> void:
+# Posizione della fiamma = bordo sinistro dell'etichetta selezionata
+# (coordinate locali del menu: l'etichetta vive nel PanelContainer, la
+# trasformazione affine copre ogni gerarchia senza assumptioni).
+func _selected_flame_pos() -> Vector2:
+        if _menu_item_index < 0 or _menu_item_index >= _item_labels.size():
+                return Vector2.INF
+        var lbl: Label = _item_labels[_menu_item_index]
+        if lbl == null or not lbl.visible:
+                return Vector2.INF
+        var inv := get_global_transform().affine_inverse()
+        var lp: Vector2 = inv * lbl.get_global_transform().origin
+        return Vector2(lp.x - 30.0, lp.y + lbl.size.y * 0.5)
+
+
+## TASK 26: la fiamma animata viene disegnata sul NODO DEDICATO _flame_node
+## (sopra lo sfondo): chiamata da FlameDrawer._draw().
+func draw_selection_flame(canvas: CanvasItem) -> void:
+        var fp: Vector2 = _selected_flame_pos()
+        if fp == Vector2.INF:
+                return
         var flicker: float = sin(_menu_time * 15.0) * 1.5
         # Aura
-        draw_circle(Vector2(fx, fy), 8.0,
+        canvas.draw_circle(Vector2(fp.x, fp.y), 8.0,
                 Color(1.0, 0.706, 0.235, 0.314))
         # Outer red flame
-        draw_circle(Vector2(fx - flicker, fy + flicker * 0.3), 4.0 + flicker,
+        canvas.draw_circle(Vector2(fp.x - flicker, fp.y + flicker * 0.3), 4.0 + flicker,
                 Color(0.863, 0.196, 0.078, 0.902))
         # Inner yellow flame
-        draw_circle(Vector2(fx - 2.5, fy + flicker * 0.2), 2.5,
+        canvas.draw_circle(Vector2(fp.x - 2.5, fp.y + flicker * 0.2), 2.5,
                 Color(1.0, 0.863, 0.392, 0.941))
 
 
@@ -429,21 +474,21 @@ func _build_ui() -> void:
         _title_label.add_theme_constant_override("shadow_outline_size", 3)
         add_child(_title_label)
 
-        # --- Parchment panel ---
-        # FIX: panel più piccolo e adattivo. Era offset_left=120, offset_right=-120
-        # (panel largo 1800px su schermo 1920). Ora offset_left=400, offset_right=-400
-        # (panel largo 1120px, più proporzionato alle 7 voci di menu).
-        # Altezza ridotta: offset_top=280, offset_bottom=-180 invece di 300/-100.
-        _panel = Panel.new()
+        # --- Parchment panel — TASK 26 (richiesta utente) ---
+        # PanelContainer: si dimensiona ESATTAMENTE intorno alle voci di menu
+        # (niente margini morti ai lati/sopra/sotto) e resta ricollocato al
+        # CENTRO-DESTRA dello schermo (ancore puntate a x=75%, y=50% con
+        # recentramento a ogni resize: il testo cambia col sottomenu OPTIONS).
+        _panel = PanelContainer.new()
         _panel.name = "MenuPanel"
-        _panel.anchor_left = 0.0
-        _panel.anchor_top = 0.0
-        _panel.anchor_right = 1.0
-        _panel.anchor_bottom = 1.0
-        _panel.offset_left = 400.0
-        _panel.offset_top = 280.0
-        _panel.offset_right = -400.0
-        _panel.offset_bottom = -180.0
+        _panel.anchor_left = 0.75
+        _panel.anchor_top = 0.5
+        _panel.anchor_right = 0.75
+        _panel.anchor_bottom = 0.5
+        _panel.offset_left = 0.0
+        _panel.offset_top = 0.0
+        _panel.offset_right = 0.0
+        _panel.offset_bottom = 0.0
         _panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _panel.grow_vertical = Control.GROW_DIRECTION_BOTH
         var stylebox := StyleBoxFlat.new()
@@ -451,25 +496,19 @@ func _build_ui() -> void:
         stylebox.border_color = color_parchment_border
         stylebox.set_border_width_all(6)
         stylebox.set_corner_radius_all(8)
-        stylebox.set_content_margin_all(12)
+        # TASK 26: margine contenuto minimo — il pannello abbraccia le voci.
+        stylebox.set_content_margin_all(14)
         _panel.add_theme_stylebox_override("panel", stylebox)
+        _panel.resized.connect(_recenter_menu_panel)
         add_child(_panel)
 
-        # --- 6 menu item labels inside the panel ---
-        # VBoxContainer filling the panel with 40px padding on each side.
-        # We create exactly MAIN_MENU_ITEMS labels (6): the main menu uses all 6,
+        # --- 7 menu item labels inside the panel (VBox gestito dal
+        # PanelContainer: larghezza = voce piu' larga, testo centrato) ---
+        # We create exactly MAIN_MENU_ITEMS labels (7): the main menu uses all 7,
         # the Options submenu uses the first OPTIONS_MENU_ITEMS (3) and the rest
         # are hidden via `visible = false` while _in_options == true.
         var items_container := VBoxContainer.new()
         items_container.name = "Items"
-        items_container.anchor_left = 0.0
-        items_container.anchor_top = 0.0
-        items_container.anchor_right = 1.0
-        items_container.anchor_bottom = 1.0
-        items_container.offset_left = 40.0
-        items_container.offset_top = 30.0
-        items_container.offset_right = -40.0
-        items_container.offset_bottom = -30.0
         items_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
         items_container.grow_vertical = Control.GROW_DIRECTION_BOTH
         items_container.alignment = BoxContainer.ALIGNMENT_BEGIN
@@ -577,6 +616,28 @@ func _build_ui() -> void:
         _hint_label.add_theme_font_size_override("font_size", 16)
         _hint_label.add_theme_color_override("font_color", color_hint)
         add_child(_hint_label)
+
+        # TASK 26: nodo fiamma della selezione — aggiunto per ULTIMO così
+        # disegna sopra sfondo e pannello (vedi draw_selection_flame).
+        _flame_node = _make_flame_node()
+        add_child(_flame_node)
+
+
+# ----------------------------------------------------------------------------
+# TASK 26 — fiamma della selezione su nodo dedicato (vedi _process).
+# ----------------------------------------------------------------------------
+class FlameDrawer extends Node2D:
+        var owner_menu: CanvasItem = null
+        func _draw() -> void:
+                if owner_menu != null and owner_menu.has_method("draw_selection_flame"):
+                        owner_menu.call("draw_selection_flame", self)
+
+
+func _make_flame_node() -> Node2D:
+        var fn := FlameDrawer.new()
+        fn.owner_menu = self
+        fn.name = "SelectionFlame"
+        return fn
 
 
 # Builds a gold-outlined stylebox for highlighting the selected character slot.

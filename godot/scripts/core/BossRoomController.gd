@@ -140,7 +140,7 @@ func _ready() -> void:
                                 if not player.current_weapon.has("relic"):
                                         player.current_weapon["power"] = 2
                                         player.current_weapon["ammo"] = maxi(
-                                                        int(player.current_weapon.get("ammo", 0)), 30)
+                                                        int(player.current_weapon.get("ammo", 0)), C.BOSS_ROOM_AMMO_MIN)
                 var p2_snap_b: Dictionary = snap.get("p2", {})
                 if not p2_snap_b.is_empty() and GameManager.num_players == 2:
                         player2.visible = true
@@ -152,7 +152,7 @@ func _ready() -> void:
                                 if not player2.current_weapon.has("relic"):
                                         player2.current_weapon["power"] = 2
                                         player2.current_weapon["ammo"] = maxi(
-                                                        int(player2.current_weapon.get("ammo", 0)), 30)
+                                                        int(player2.current_weapon.get("ammo", 0)), C.BOSS_ROOM_AMMO_MIN)
                 print("[Continue] Sessione boss room ripristinata: HP boss ",
                                 boss.health if boss != null else "?", "/ ",
                                 boss.max_health if boss != null else "?")
@@ -1155,10 +1155,10 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         # FIX (rinforzo check): controlla anche ammo == 0 (non solo null/empty)
         if player.current_weapon == null or player.current_weapon.is_empty() \
                         or player.current_weapon.get("ammo", 0) <= 0:
-                player.current_weapon = {"type": 0, "power": 2, "ammo": 30}
+                player.current_weapon = {"type": 0, "power": 2, "ammo": C.BOSS_ROOM_AMMO_MIN}
         elif not player.current_weapon.has("relic"):
                 # Arma base valida: potenzialala per il boss
-                player.current_weapon["ammo"] = maxi(player.current_weapon.get("ammo", 0), 30)
+                player.current_weapon["ammo"] = maxi(player.current_weapon.get("ammo", 0), C.BOSS_ROOM_AMMO_MIN)
                 player.current_weapon["power"] = 2
         # RELIC (Task 21): un'arma RELIQUIA (restore dal carry del labirinto)
         # resta INTATTA: ha la sua potenza e in boss room spara a colpi
@@ -1181,7 +1181,8 @@ func _spawn_boss_room_weapons() -> void:
         for i in range(3):
                 var w := WeaponClass.new()
                 w.generate_random()
-                w.ammo = 5
+                # TASK 26: munizioni armi a terra +30% (5 -> 7).
+                w.ammo = 7
                 var w_pos := Vector2(center_x + (float(i) - 1.0) * spacing, y_pos)
                 boss_room_weapons.append({"weapon": w, "pos": w_pos, "node": null})
 

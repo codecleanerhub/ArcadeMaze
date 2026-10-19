@@ -20,6 +20,30 @@
 extends MeshInstance2D
 class_name DeformableSprite
 
+## TASK 26 — enhancement canvas_item per i boss (fix "colori sbiaditi"):
+## shader boss_deform.gdshader campiona la texture via uniform esplicita
+## e replica la pipeline di character_enhanced (sharpening + contrasto +
+## saturazione + fake-normal + rim). Prima lo shader veniva applicato al
+## nodo Boss (apply_enhancement_to_canvas_item) ma i materiali CanvasItem
+## NON si propagano ai figli: il DeformableSprite renderizzava con il solo
+## StandardMaterial3D (nessun enhancement) -> boss visivamente PIU' SPENTI
+## di player/nemici. enable_canvas_enhancement() mette il materiale
+## direttamente su QUESTO nodo (validato con lab numerico: i colori seguono
+## esattamente la stessa pipeline dei player). Rollback: lasciare
+## disabilitato (o GameConstants.BOSS_CANVAS_SHADER_ENABLED = false).
+const BOSS_DEFORM_SHADER := preload("res://shaders/boss_deform.gdshader")
+
+## TASK 26 — true = il mesh viene disegnato con lo shader canvas di
+## enhancement (parametri in _enh_*). Il materiale di superficie
+## StandardMaterial3D resta creato come fallback (se il flag si spegne il
+## rendering torna identico al pre-Task-26).
+var _canvas_enhanced: bool = false
+var _enh_sharpness: float = 0.8
+var _enh_contrast: float = 1.2
+var _enh_saturation: float = 1.3
+var _enh_rim: float = 0.7
+var _enh_depth: float = 0.7
+
 enum AnimMode { IDLE, WALK, ATTACK }
 
 ## TASK 22 — Profili di animazione proceduale degli arti (per boss).
@@ -155,6 +179,51 @@ func set_grid_size(w: int, h: int) -> void:
         _rebuild_mesh()
 
 
+# -----------------------------------------------------------------------
+# TASK 26 — enhancement canvas (vedi commento in testa al file).
+# -----------------------------------------------------------------------
+## Attiva lo shader canvas di enhancement sul mesh. I default sono i
+## parametri "strong" dei boss (identici a CharacterArt._enhanced_strong).
+func enable_canvas_enhancement(sharp: float = 0.8, contrast: float = 1.2,
+                saturation: float = 1.3, rim: float = 0.7, depth: float = 0.7) -> void:
+        _canvas_enhanced = true
+        _enh_sharpness = sharp
+        _enh_contrast = contrast
+        _enh_saturation = saturation
+        _enh_rim = rim
+        _enh_depth = depth
+        if texture != null:
+                _apply_canvas_enhancement()
+
+
+## Spegne lo shader canvas (rendering = pre-Task-26, solo StandardMaterial3D).
+func disable_canvas_enhancement() -> void:
+        _canvas_enhanced = false
+        material = null
+
+
+func _apply_canvas_enhancement() -> void:
+        if texture == null:
+                return
+        var mat := ShaderMaterial.new()
+        mat.shader = BOSS_DEFORM_SHADER
+        mat.set_shader_parameter("src_tex", texture)
+        mat.set_shader_parameter("texel_size",
+                Vector2(1.0 / float(texture.get_width()),
+                        1.0 / float(texture.get_height())))
+        mat.set_shader_parameter("sharpness", _enh_sharpness)
+        mat.set_shader_parameter("contrast", _enh_contrast)
+        mat.set_shader_parameter("saturation", _enh_saturation)
+        mat.set_shader_parameter("rim_intensity", _enh_rim)
+        mat.set_shader_parameter("depth_strength", _enh_depth)
+        material = mat
+        # Filtro coerente col percorso legacy: NEAREST sui frame 64px
+        # (look pixel identico a prima), LINEAR sui frame XHD 256px (bordi
+        # lisci: fix "sgranati").
+        texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if sub_rect.size.x <= 64.0 \
+                        else CanvasItem.TEXTURE_FILTER_LINEAR
+
+
 ## Update the animation. `time` is in seconds (cumulative).
 ## `scale` is the final scale factor (e.g. boss size / 64).
 ## `flipped` mirrors the sprite horizontally.
@@ -257,6 +326,12 @@ func _rebuild_mesh() -> void:
 
         # TASK 22: ampiezze in "unità frame 64px" -> costanti a schermo.
         _unit = maxf(sub_rect.size.x, sub_rect.size.y) / 64.0
+
+        # TASK 26: se l'enhancement canvas è attivo, (ri)costruisci il
+        # materiale shader sul nodo (la texture è appena cambiata: il
+        # uniform src_tex e texel_size vanno aggiornati).
+        if _canvas_enhanced:
+                _apply_canvas_enhancement()
 
 
 func _apply_deformation(time: float, mode: int) -> void:

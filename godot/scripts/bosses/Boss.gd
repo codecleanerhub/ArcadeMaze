@@ -310,7 +310,38 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
 # ============================================================
 # Shooting patterns (per type)
 # ============================================================
+
+## TASK 26 — tipo di "munizione" primario del boss (BossProjKind): usato
+## per lo SFX di sparo COERENTE col proiettile (masso=tonfo, ragnatela=
+## fruscio, fiamma=soffio...). Mirror dei kind usati in _shoot_pattern.
+func _primary_projectile_kind() -> int:
+        match boss_type:
+                Type.BOSS_GOLEM:           return Projectile.BossProjKind.BP_BOULDER
+                Type.BOSS_LICH:            return Projectile.BossProjKind.BP_NECRO_BOLT
+                Type.BOSS_DEMON:           return Projectile.BossProjKind.BP_FIREBALL
+                Type.BOSS_SPIDER:          return Projectile.BossProjKind.BP_WEBSHOT
+                Type.BOSS_ABOMINATION:     return Projectile.BossProjKind.BP_FLESH_CHUNK
+                Type.BOSS_KRAKEN:          return Projectile.BossProjKind.BP_INK_SPRAY
+                Type.BOSS_DRAGON:          return Projectile.BossProjKind.BP_DRAGON_BREATH
+                Type.BOSS_WRAITH_LORD:     return Projectile.BossProjKind.BP_GHOST_BOLT
+                Type.BOSS_VAMPIRE:         return Projectile.BossProjKind.BP_BLOOD_BOLT
+                Type.BOSS_BEHOLDER:        return Projectile.BossProjKind.BP_EYE_RAY
+                Type.BOSS_GHOUL_LORD:      return Projectile.BossProjKind.BP_GHOUL_CLAW
+                Type.BOSS_SPECTRAL_ALPHA:  return Projectile.BossProjKind.BP_SPECTRAL_FANG
+                Type.BOSS_CULT_HERALD:     return Projectile.BossProjKind.BP_CULT_ORB
+                Type.BOSS_COLOSSAL_MIMIC:  return Projectile.BossProjKind.BP_MIMIC_GOO
+                Type.BOSS_RAT_KING:        return Projectile.BossProjKind.BP_RAT_SWARM
+                Type.BOSS_SUPREME_WITCH:   return Projectile.BossProjKind.BP_WITCH_HEX
+                Type.BOSS_TWILIGHT_KNIGHT: return Projectile.BossProjKind.BP_TWILIGHT_BLADE
+        return Projectile.BossProjKind.BP_NORMAL
+
+
 func _shoot_pattern(player_x: float, player_y: float, out: Array) -> void:
+        # TASK 26 (richiesta utente): SFX di sparo del boss COERENTE col tipo
+        # di munizione che sta per lanciare (AudioManager sintetizza un timbro
+        # per ogni BossProjKind; debounce dedicato 1000+kind).
+        if C.BOSS_SHOOT_SFX_ENABLED and AudioManager != null:
+                AudioManager.play_boss_shoot(_primary_projectile_kind())
         var dxp := player_x - pos.x
         var dyp := player_y - pos.y
         var dist := sqrt(dxp * dxp + dyp * dyp)
@@ -501,6 +532,14 @@ func _draw() -> void:
                                 deform_sprite.limb_gain = C.BOSS_LIMB_ANIM_GAIN
                         else:
                                 deform_sprite.limb_profile = DeformableSprite.LimbProfile.LP_NONE
+                        # TASK 26 (fix "boss sbiaditi/sgranati"): enhancement
+                        # canvas DIRETTAMENTE sul DeformableSprite (lo shader
+                        # sul nodo Boss non si propaga ai figli). Params
+                        # "strong" = CharacterArt._enhanced_strong.
+                        if C.BOSS_CANVAS_SHADER_ENABLED:
+                                deform_sprite.enable_canvas_enhancement()
+                        else:
+                                deform_sprite.disable_canvas_enhancement()
 
         # Draw the deformable sprite (it's a child node, draws itself).
         # If not loaded, fall back to procedural primitives drawn in this node's _draw.

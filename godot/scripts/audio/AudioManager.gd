@@ -98,6 +98,12 @@ const MUSIC_TRACK_COUNT:   int = 10
 # Sample rate (mono).
 const SR: int = 44100
 
+# TASK 26 — SFX DI SPARO DEI BOSS: numero di timbre (= BossProjKind di
+# Projectile.gd: BP_NORMAL + 17 tematici). Indicizzati per kind, NON per
+# SoundType (slot debounce separato 1000+kind).
+const BOSS_SHOOT_KIND_COUNT: int = 18
+var _boss_shoot_streams: Array[AudioStreamWAV] = []
+
 # Master volumes (mirror C++ setVolume calls).
 const VOLUME_SFX:     float = 0.9    # 90 / 100 (aumentato da 0.7)
 const VOLUME_MUSIC:   float = 0.8    # 80 / 100 (aumentato da 0.45)
@@ -182,6 +188,15 @@ func _ready() -> void:
         for i in SOUND_TYPE_COUNT:
                 _sfx_streams[i] = _generate_sfx(i as SoundType)
 
+        # TASK 26: pre-sintesi degli SFX di sparo dei boss (uno per tipo di
+        # munizione). Rollback: GameConstants.BOSS_SHOOT_SFX_ENABLED = false
+        # (nessuno stream generato e play_boss_shoot diventa no-op).
+        if GameConstants.BOSS_SHOOT_SFX_ENABLED:
+                _boss_shoot_streams.resize(BOSS_SHOOT_KIND_COUNT)
+                for i in BOSS_SHOOT_KIND_COUNT:
+                        _boss_shoot_streams[i] = _generate_boss_shoot(i)
+                        print("[AudioManager] boss shoot SFX %d/%d pronto" % [i + 1, BOSS_SHOOT_KIND_COUNT])
+
         _music_streams.resize(MUSIC_TRACK_COUNT)
         for i in MUSIC_TRACK_COUNT:
                 _music_streams[i] = _generate_track(i)
@@ -209,6 +224,28 @@ func play_sound(type: SoundType) -> void:
         if idx == _last_sfx_type and (now_ms - _last_sfx_time_ms) < SFX_DEBOUNCE_MS:
                 return
         _last_sfx_type = idx
+        _last_sfx_time_ms = now_ms
+        var voice := _find_free_voice()
+        voice.stream = stream
+        voice.play()
+
+
+# TASK 26 — suona lo sparo del boss per TIPO DI MUNIZIONE (BossProjKind).
+# Debounce SUO (slot 1000+kind, condivide la finestra SFX_DEBOUNCE_MS): il
+# boss spara ogni 1-2.5s, il debounce evita solo i raddoppi accidentali.
+func play_boss_shoot(kind: int) -> void:
+        if _boss_shoot_streams.is_empty():
+                return
+        if kind < 0 or kind >= _boss_shoot_streams.size():
+                kind = 0
+        var stream: AudioStreamWAV = _boss_shoot_streams[kind]
+        if stream == null:
+                return
+        var now_ms: int = Time.get_ticks_msec()
+        var slot: int = 1000 + kind
+        if slot == _last_sfx_type and (now_ms - _last_sfx_time_ms) < SFX_DEBOUNCE_MS:
+                return
+        _last_sfx_type = slot
         _last_sfx_time_ms = now_ms
         var voice := _find_free_voice()
         voice.stream = stream
@@ -1948,3 +1985,349 @@ func _gen_ghost_track() -> PackedFloat32Array:
         for i in total:
                 out[i] = _soft_clip(out[i] * gain)
         return out
+
+
+# ============================================================================
+# TASK 26 — SFX DI SPARO DEI BOSS: un timbro per ogni tipo di "munizione".
+# ============================================================================
+# Coerenza col proiettile visibile (Task 22, Projectile._draw_themed):
+#   0  BP_NORMAL         -> zap scuro generico (fallback)
+#   1  BP_BOULDER        -> TONFO di pietra: grave 90->45Hz + rumble frantumato
+#   2  BP_NECRO_BOLT     -> shimmer necro: sine detune 900->280 + coda eterea
+#   3  BP_FIREBALL       -> WHOOSH di fiamma: soffio filtrato + crepitio
+#   4  BP_WEBSHOT        -> fruscio di seta: doppi burst gate + sibilo corto
+#   5  BP_FLESH_CHUNK    -> squelch carne: wobble 95Hz + pops umidi
+#   6  BP_INK_SPRAY      -> spruzzo inchiostro: sibilo + bolle in salita
+#   7  BP_DRAGON_BREATH  -> soffio del drago: ruggito LP lungo + braci
+#   8  BP_GHOST_BOLT     -> bolt etereo: tremolo 440->660->330 con pseudo-echo
+#   9  BP_BLOOD_BOLT     -> bolt sangue: sweep 700->200 + gocciolio
+#  10  BP_EYE_RAY        -> raggio oculare: zap ascendente 180->1400 + hum
+#  11  BP_GHOUL_CLAW     -> raschiata ossea: 3 click + scrape 2kHz
+#  12  BP_SPECTRAL_FANG  -> morso spettrale: sibilo + doppio snap
+#  13  BP_CULT_ORB       -> orbo del culto: campana oscura 150Hz + armonici
+#  14  BP_MIMIC_GOO      -> goo appiccicoso: pop bagnato + coda gocciolante
+#  15  BP_RAT_SWARM      -> squittii: 5 chirp 1.8-2.6KHz scaglionati
+#  16  BP_WITCH_HEX      -> hex della strega: warble 300->800 vibrato 8Hz
+#  17  BP_TWILIGHT_BLADE -> shing metallico: inarmonici 2.1K/3.2K + frusta
+# Tutte deterministiche (rng seedato), 0.18-0.45s, peak <= 3000/32767.
+func _generate_boss_shoot(kind: int) -> AudioStreamWAV:
+        var s := PackedFloat32Array()
+        var rng := RandomNumberGenerator.new()
+        match kind:
+                1:
+                        # BP_BOULDER — masso del Golem.
+                        rng.seed = 26001
+                        var n: int = int(SR * 0.30)
+                        var ph: float = 0.0
+                        var lp: float = 0.0
+                        for i in n:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.30
+                                var env: float = exp(-t * 9.0)
+                                var f: float = 90.0 - 45.0 * p
+                                ph += TAU * f / SR
+                                var v: float = 0.85 * sin(ph)
+                                lp += 0.05 * (rng.randf() * 2.0 - 1.0 - lp)
+                                v += 0.85 * lp
+                                if i < 110:
+                                        v += 0.8 * (rng.randf() * 2.0 - 1.0) \
+                                                        * (1.0 - float(i) / 110.0)
+                                s.append(2900.0 / 32767.0 * _soft_clip(v * env))
+                2:
+                        # BP_NECRO_BOLT — bolt necro verde del Lich.
+                        rng.seed = 26002
+                        var n2: int = int(SR * 0.28)
+                        var ph1: float = 0.0
+                        var ph2: float = 0.0
+                        for i in n2:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.28
+                                var env: float = sin(PI * minf(p * 1.4, 1.0)) * exp(-t * 5.0)
+                                var f: float = 900.0 - 620.0 * p
+                                ph1 += TAU * f / SR
+                                ph2 += TAU * (f * 1.007 + 3.0 * sin(TAU * 6.0 * t)) / SR
+                                var v: float = 0.5 * sin(ph1) + 0.35 * sin(ph2)
+                                v += 0.18 * (rng.randf() * 2.0 - 1.0) * exp(-t * 10.0)
+                                s.append(2600.0 / 32767.0 * _soft_clip(v * env))
+                3:
+                        # BP_FIREBALL — palla di fuoco del Demone.
+                        rng.seed = 26003
+                        var n3: int = int(SR * 0.32)
+                        var lp3: float = 0.0
+                        var bp3: float = 0.0
+                        var bp3p: float = 0.0
+                        for i in n3:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.32
+                                var env: float = sin(PI * minf(p * 1.15, 1.0))
+                                var res_f: float = 900.0 - 500.0 * p
+                                var w: float = TAU * res_f / SR
+                                lp3 += 0.08 * (rng.randf() * 2.0 - 1.0 - lp3)
+                                bp3p = bp3
+                                bp3 += w * (lp3 - bp3)
+                                var v: float = 1.5 * (bp3 - bp3p * 0.55)
+                                v += 0.35 * sin(TAU * (110.0 - 50.0 * p) * t)
+                                if rng.randf() < 0.02:
+                                        v += 0.5 * (rng.randf() * 2.0 - 1.0)
+                                s.append(2700.0 / 32767.0 * _soft_clip(v * env))
+                4:
+                        # BP_WEBSHOT — sputo di ragnatela del Ragno.
+                        rng.seed = 26004
+                        var n4: int = int(SR * 0.18)
+                        var lp4: float = 0.0
+                        for i in n4:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.18
+                                # due burst "gate" (flick-flick) + sibilo di seta
+                                var gate: float = exp(-pow(maxf(p - 0.05, 0.0) * 9.0, 2.0)) \
+                                                + 0.8 * exp(-pow(maxf(p - 0.45, 0.0) * 9.0, 2.0))
+                                lp4 += 0.22 * (rng.randf() * 2.0 - 1.0 - lp4)
+                                var hiss: float = 1.8 * lp4
+                                var v: float = hiss * gate + 0.25 * sin(TAU * 2600.0 * t) * gate * 0.4
+                                s.append(2400.0 / 32767.0 * _soft_clip(v))
+                5:
+                        # BP_FLESH_CHUNK — brandello dell'Abominione.
+                        rng.seed = 26005
+                        var n5: int = int(SR * 0.25)
+                        var ph5: float = 0.0
+                        var lp5: float = 0.0
+                        for i in n5:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.25
+                                var env: float = exp(-t * 7.0)
+                                var f5: float = 95.0 + 28.0 * sin(TAU * 13.0 * t)
+                                ph5 += TAU * f5 / SR
+                                var v: float = 0.9 * sin(ph5)
+                                lp5 += 0.12 * (rng.randf() * 2.0 - 1.0 - lp5)
+                                v += 1.1 * lp5
+                                if rng.randf() < 0.012:
+                                        v += 0.9 * (rng.randf() * 2.0 - 1.0)
+                                s.append(2500.0 / 32767.0 * _soft_clip(v * env))
+                6:
+                        # BP_INK_SPRAY — spruzzo d'inchiostro del Kraken.
+                        rng.seed = 26006
+                        var n6: int = int(SR * 0.30)
+                        var lp6: float = 0.0
+                        var bub_t: float = -1.0
+                        var bub_f: float = 0.0
+                        for i in n6:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.30
+                                var env: float = sin(PI * minf(p * 1.2, 1.0))
+                                lp6 += 0.16 * (rng.randf() * 2.0 - 1.0 - lp6)
+                                var v: float = 1.2 * lp6
+                                if bub_t < 0.0 and rng.randf() < 0.004:
+                                        bub_t = t
+                                        bub_f = 300.0 + 500.0 * rng.randf()
+                                if bub_t >= 0.0:
+                                        var bt: float = t - bub_t
+                                        if bt < 0.05:
+                                                v += 0.6 * sin(TAU * bub_f * bt) \
+                                                                * exp(-bt * 60.0)
+                                        else:
+                                                bub_t = -1.0
+                                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+                7:
+                        # BP_DRAGON_BREATH — soffio del Drago.
+                        rng.seed = 26007
+                        var n7: int = int(SR * 0.45)
+                        var lp7: float = 0.0
+                        for i in n7:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.45
+                                var env: float = pow(sin(PI * p), 0.6)
+                                lp7 += 0.06 * (rng.randf() * 2.0 - 1.0 - lp7)
+                                var v: float = 1.6 * lp7
+                                v += 0.5 * sin(TAU * 70.0 * t) * (0.6 + 0.4 * sin(TAU * 11.0 * t))
+                                if rng.randf() < 0.015:
+                                        v += 0.6 * (rng.randf() * 2.0 - 1.0)
+                                s.append(2800.0 / 32767.0 * _soft_clip(v * env))
+                8:
+                        # BP_GHOST_BOLT — bolt etereo del Signore Spettrale.
+                        rng.seed = 26008
+                        var n8: int = int(SR * 0.30)
+                        var ph8: float = 0.0
+                        for i in n8:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.30
+                                var env: float = sin(PI * p)
+                                var f8: float = 440.0 + 220.0 * sin(PI * p * 2.0) - 110.0 * p
+                                ph8 += TAU * f8 / SR
+                                var trem: float = 0.55 + 0.45 * sin(TAU * 9.0 * t)
+                                var v: float = 0.85 * sin(ph8) * trem
+                                # pseudo-echo etereo (coda ritardata)
+                                if i > 2205:
+                                        var v8e: float = s[i - 2205] * 0.28
+                                        v += v8e
+                                s.append(2300.0 / 32767.0 * _soft_clip(v * env))
+                9:
+                        # BP_BLOOD_BOLT — bolt di sangue del Vampiro.
+                        rng.seed = 26009
+                        var n9: int = int(SR * 0.20)
+                        var ph9: float = 0.0
+                        var lp9: float = 0.0
+                        for i in n9:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.20
+                                var env: float = exp(-t * 11.0)
+                                var f9: float = 700.0 - 500.0 * p
+                                ph9 += TAU * f9 / SR
+                                var v: float = 0.9 * sin(ph9) + 0.3 * sin(ph9 * 2.0)
+                                lp9 += 0.30 * (rng.randf() * 2.0 - 1.0 - lp9)
+                                if p > 0.55:
+                                        v += 0.8 * lp9 * exp(-(p - 0.55) * 6.0)
+                                s.append(2500.0 / 32767.0 * _soft_clip(v * env))
+                10:
+                        # BP_EYE_RAY — raggio oculare del Beholder.
+                        rng.seed = 26010
+                        var n10: int = int(SR * 0.25)
+                        var ph10: float = 0.0
+                        for i in n10:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.25
+                                var env: float = minf(t / 0.015, 1.0) * exp(-t * 7.0)
+                                var f10: float = 180.0 + 1220.0 * pow(p, 0.65)
+                                ph10 += TAU * f10 / SR
+                                var v: float = 0.8 * sawtooth_wave(ph10) + 0.25 * sin(ph10 * 2.0)
+                                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+                11:
+                        # BP_GHOUL_CLAW — artigli ossei del Signore Ghoul.
+                        rng.seed = 26011
+                        var n11: int = int(SR * 0.20)
+                        var lp11: float = 0.0
+                        var bp11: float = 0.0
+                        var bp11p: float = 0.0
+                        for i in n11:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.20
+                                var env: float = exp(-t * 12.0)
+                                var w11: float = TAU * 2100.0 / SR
+                                lp11 += 0.30 * (rng.randf() * 2.0 - 1.0 - lp11)
+                                bp11p = bp11
+                                bp11 += w11 * (lp11 - bp11)
+                                var v: float = 1.3 * (bp11 - bp11p * 0.5)
+                                # tre click d'artiglio scaglionati
+                                for k in 3:
+                                        var tk: float = 0.012 + 0.055 * float(k)
+                                        if t >= tk and t < tk + 0.010:
+                                                v += 0.9 * (1.0 - (t - tk) / 0.010) \
+                                                                * sin(TAU * 1400.0 * (t - tk))
+                                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+                12:
+                        # BP_SPECTRAL_FANG — zanna dello Spettrale Alfa.
+                        rng.seed = 26012
+                        var n12: int = int(SR * 0.20)
+                        var lp12: float = 0.0
+                        for i in n12:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.20
+                                var env: float = sin(PI * p)
+                                lp12 += 0.24 * (rng.randf() * 2.0 - 1.0 - lp12)
+                                var v: float = 1.2 * lp12 * (0.4 + 0.6 * p)
+                                # doppio snap del morso
+                                for k in 2:
+                                        var tk: float = 0.06 + 0.06 * float(k)
+                                        if t >= tk and t < tk + 0.008:
+                                                v += 1.1 * (1.0 - (t - tk) / 0.008)
+                                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+                13:
+                        # BP_CULT_ORB — orbo oscuro dell'Araldo del Culto.
+                        rng.seed = 26013
+                        var n13: int = int(SR * 0.38)
+                        for i in n13:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.38
+                                var env: float = minf(t / 0.02, 1.0) * exp(-t * 4.5)
+                                # campana oscura: fondamentale + inarmonici
+                                var v: float = 0.7 * sin(TAU * 150.0 * t) \
+                                                + 0.35 * sin(TAU * 414.0 * t) \
+                                                + 0.22 * sin(TAU * 590.0 * t)
+                                # hum corale sotto (quinte)
+                                v += 0.25 * sin(TAU * 225.0 * t) * (0.5 + 0.5 * sin(TAU * 0.8 * t))
+                                s.append(2500.0 / 32767.0 * _soft_clip(v * env))
+                14:
+                        # BP_MIMIC_GOO — melma del Mimic Colossale.
+                        rng.seed = 26014
+                        var n14: int = int(SR * 0.30)
+                        var lp14: float = 0.0
+                        var ph14: float = 0.0
+                        for i in n14:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.30
+                                var env: float = exp(-t * 6.0)
+                                # pop bagnato d'attacco (bolla che scoppia)
+                                var f14: float = 260.0 * exp(-t * 18.0) + 60.0
+                                ph14 += TAU * f14 / SR
+                                var v: float = 0.9 * sin(ph14) * exp(-t * 14.0)
+                                lp14 += 0.10 * (rng.randf() * 2.0 - 1.0 - lp14)
+                                v += 0.9 * lp14 * (0.3 + 0.7 * p)
+                                # coda gocciolante
+                                if p > 0.5 and rng.randf() < 0.006:
+                                        v += 0.7
+                                s.append(2300.0 / 32767.0 * _soft_clip(v * env))
+                15:
+                        # BP_RAT_SWARM — topi del Re dei Ratti.
+                        rng.seed = 26015
+                        var n15: int = int(SR * 0.30)
+                        var chirp_t: float = -1.0
+                        var chirp_f: float = 0.0
+                        for i in n15:
+                                var t: float = float(i) / SR
+                                var v: float = 0.0
+                                if chirp_t < 0.0 and rng.randf() < 0.0035 * (0.4 + t):
+                                        chirp_t = t
+                                        chirp_f = 1800.0 + 800.0 * rng.randf()
+                                if chirp_t >= 0.0:
+                                        var ct: float = t - chirp_t
+                                        if ct < 0.045:
+                                                var f15: float = chirp_f * (1.0 + 0.35 * sin(TAU * 60.0 * ct))
+                                                v += 0.8 * sin(TAU * f15 * ct) * exp(-ct * 70.0)
+                                        else:
+                                                chirp_t = -1.0
+                                s.append(2200.0 / 32767.0 * _soft_clip(v))
+                16:
+                        # BP_WITCH_HEX — hex della Strega Suprema.
+                        rng.seed = 26016
+                        var n16: int = int(SR * 0.35)
+                        var ph16: float = 0.0
+                        var ph16b: float = 0.0
+                        for i in n16:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.35
+                                var env: float = sin(PI * minf(p * 1.1, 1.0))
+                                var f16: float = 300.0 + 500.0 * p
+                                ph16 += TAU * (f16 + 26.0 * sin(TAU * 8.0 * t)) / SR
+                                ph16b += TAU * (f16 * 1.5) / SR
+                                var v: float = 0.55 * sin(ph16) + 0.30 * sin(ph16b)
+                                s.append(2300.0 / 32767.0 * _soft_clip(v * env))
+                17:
+                        # BP_TWILIGHT_BLADE — lama d'ombra del Cavaliere Crepuscolare.
+                        rng.seed = 26017
+                        var n17: int = int(SR * 0.22)
+                        var lp17: float = 0.0
+                        for i in n17:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.22
+                                var env: float = minf(t / 0.008, 1.0) * exp(-t * 14.0)
+                                # shing: inarmonici metallici che svaniscono
+                                var v: float = 0.5 * sin(TAU * 2100.0 * t) \
+                                                + 0.35 * sin(TAU * 3160.0 * t) \
+                                                + 0.20 * sin(TAU * 4230.0 * t)
+                                # frusta d'aria (rumore che scende)
+                                lp17 += 0.34 * (rng.randf() * 2.0 - 1.0 - lp17)
+                                v += 0.7 * lp17 * (1.0 - p)
+                                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+                _:
+                        # 0 / BP_NORMAL — zap scuro generico.
+                        rng.seed = 26000
+                        var n0: int = int(SR * 0.16)
+                        var ph0: float = 0.0
+                        for i in n0:
+                                var t: float = float(i) / SR
+                                var p: float = t / 0.16
+                                var env: float = exp(-t * 16.0)
+                                var f0: float = 520.0 - 300.0 * p
+                                ph0 += TAU * f0 / SR
+                                var v: float = 0.8 * sawtooth_wave(ph0)
+                                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+        return _samples_to_stream(s)
