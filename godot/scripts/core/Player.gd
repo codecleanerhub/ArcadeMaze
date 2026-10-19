@@ -224,6 +224,13 @@ const ARMOR_ENERGY_BONUS: int = 2
 # Timer interni: rigenerazione (Veste) e pulsazione aura (Fuoco).
 var _armor_regen_timer_ms: float = 0.0
 var _armor_aura_timer_ms: float = 0.0
+# TASK 25 — outfit armatura: materiale shader attivo e hue del VESTIARIO
+# del personaggio (calcolata una volta per carattere dal frame 0 dello sheet;
+# -1.0 = nessun hue dominante -> solo tinta metallo).
+var _armor_outfit_on: bool = false
+var _cloth_hue: float = -1.0
+var _cloth_hue_valid: bool = false
+const _CLOTH_HUE_WINDOW: float = 0.09
 
 
 # ----------------------------------------------------------------
@@ -239,6 +246,9 @@ func equip_relic_armor(def: Dictionary) -> void:
         energy = max_energy  # cura piena all'equipaggiamento
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
+        # TASK 25: il vestito del player cambia colore (shader armor_outfit)
+        # oltre all'aura procedurale esistente.
+        _apply_armor_outfit_visual()
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
 
@@ -254,6 +264,8 @@ func restore_relic_armor(saved: Dictionary) -> void:
         energy = max_energy
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
+        # TASK 25: ri-applica l'outfit dopo il carry tra scene.
+        _apply_armor_outfit_visual()
 
 
 func has_relic_armor() -> bool:
@@ -375,8 +387,105 @@ func _break_relic_armor() -> void:
         energy = mini(energy, 5)
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
+        # TASK 25: il vestito torna al colore originale.
+        _revert_armor_outfit_visual()
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
+
+
+# ----------------------------------------------------------------
+# TASK 25 — OUTFIT ARMATURA: ricolor vestito (shader armor_outfit)
+# ----------------------------------------------------------------
+## Hue dominante del VESTIARIO del personaggio corrente, dal frame 0 dello
+## sheet (XHD o SD): istogramma a 24 bucket sui pixel opachi SATURI e NON
+## pelle. -1.0 se non c'e' un hue dominante (Golem di pietra ecc.): lo shader
+## applichera' solo la tinta metallo. Deterministico: stesso sheet, stesso hue.
+func _compute_cloth_hue() -> float:
+        if _character_sheet_texture == null:
+                return -1.0
+        var img: Image = null
+        if _character_sheet_texture is ImageTexture:
+                img = (_character_sheet_texture as ImageTexture).get_image()
+        else:
+                img = _character_sheet_texture.get_image()
+        if img == null:
+                return -1.0
+        # get_pixel vuole RGBA8: converti difensivamente (le texture caricate
+        # via load() possono essere compressed).
+        if img.get_format() != Image.FORMAT_RGBA8:
+                img = img.duplicate()
+                img.convert(Image.FORMAT_RGBA8)
+        var fw: int = mini(_frame_px, img.get_width())
+        var fh: int = mini(_frame_px, img.get_height())
+        var buckets: Array[int] = []
+        buckets.resize(24)
+        for i in 24:
+                buckets[i] = 0
+        var total_saturated: int = 0
+        # campionamento denso (~128x128 campioni): con step 5 il conteggio
+        # saturi cadeva sotto la soglia e l'eroe (cuoio rosso scuro) risultava
+        # senza vestito. Deterministico: stesso sheet, stesso istogramma.
+        var step_x: int = maxi(1, fw / 128)
+        var step_y: int = maxi(1, fh / 128)
+        for y in range(0, fh, step_y):
+                for x in range(0, fw, step_x):
+                        var c: Color = img.get_pixel(x, y)
+                        if c.a < 0.5:
+                                continue
+                        # Godot 4: h/s/v sono proprietà di Color
+                        var h: float = c.h
+                        var s: float = c.s
+                        var v: float = c.v
+                        if s < 0.28:
+                                continue
+                        # guardia PELLE: hue arancio-rossiccio + chiara (il
+                        # cuoio scuro v<0.4 resta ricolorabile come vestito)
+                        var hd: float = absf(h - 0.08)
+                        if hd > 0.5:
+                                hd = 1.0 - hd
+                        if hd < 0.06 and v > 0.4:
+                                continue
+                        var b: int = clampi(int(h * 24.0), 0, 23)
+                        buckets[b] += 1
+                        total_saturated += 1
+        if total_saturated < 60:
+                return -1.0
+        var best: int = 0
+        for i in 24:
+                if buckets[i] > buckets[best]:
+                        best = i
+        # il bucket dominante deve pesare almeno il 15% dei pixel saturi
+        if buckets[best] < total_saturated * 0.15:
+                return -1.0
+        return (float(best) + 0.5) / 24.0
+
+
+## Applica il materiale outfit: enhancement identico + vestito ricolorato
+## col colore dell'armatura + tinta metallo + rim colorato. No-op se il flag
+## di rollback e' spento o lo sprite non e' pronto (verra' ri-applicato dal
+## reload dello sprite).
+func _apply_armor_outfit_visual() -> void:
+        if not GameConstants.ARMOR_OUTFIT_ENABLED:
+                return
+        if armor_relic.is_empty() or sprite == null:
+                return
+        if CharacterArt == null:
+                return
+        if not _cloth_hue_valid:
+                _cloth_hue = _compute_cloth_hue()
+                _cloth_hue_valid = true
+        var col: Color = armor_relic.get("color", Color.WHITE)
+        CharacterArt.apply_armor_outfit(sprite, col, _cloth_hue, _CLOTH_HUE_WINDOW)
+        _armor_outfit_on = true
+
+
+## Ripristina l'enhancement standard quando l'armatura si rompe/viene persa.
+func _revert_armor_outfit_visual() -> void:
+        if not _armor_outfit_on:
+                return
+        if CharacterArt != null and sprite != null:
+                CharacterArt.remove_armor_outfit(sprite)
+        _armor_outfit_on = false
 
 
 ## REGOLE DELLA MORTE (decisione utente Task 21): alla perdita di una vita
@@ -394,6 +503,8 @@ func lose_relics_on_death() -> void:
                 energy = mini(energy, 5)
                 _armor_regen_timer_ms = 0.0
                 _armor_aura_timer_ms = 0.0
+                # TASK 25: vestito torna originale anche alla morte.
+                _revert_armor_outfit_visual()
         melee_pending = false
         melee_fx_timer_ms = 0
 
@@ -583,6 +694,9 @@ func set_character(ct: int, p_num: int) -> void:
 func load_character_sprite() -> void:
         var base: String = CHARACTER_SPRITE_BASE.get(character_type, CHARACTER_SPRITE_BASE[CharacterType.HERO_M])
         var path := base + "_sheet.png"
+        # TASK 25: l'hue del vestito dipende dal personaggio -> da ricalcolare.
+        _cloth_hue_valid = false
+        _cloth_hue = -1.0
         if ResourceLoader.exists(path) and sprite:
                 # TASK 22 — priorità sheet XHD 4x (256px/frame): stessa palette,
                 # stessa silhouette, stessi frame — solo bordi più lisci e
@@ -612,6 +726,11 @@ func load_character_sprite() -> void:
                         # risoluzione: sharpening + rim light a runtime).
                         if CharacterArt and sprite:
                                 CharacterArt.apply_enhancement(sprite, false)
+                        # TASK 25: apply_enhancement ha appena sostituito il
+                        # materiale: ri-applica l'outfit se c'e' un'armatura.
+                        _armor_outfit_on = false
+                        if has_relic_armor():
+                                _apply_armor_outfit_visual()
                         return
                 _frame_px = 64
                 var tex := load(path)
@@ -657,6 +776,10 @@ func load_character_sprite() -> void:
                         # (era 29 sprite × 750K ops con tutti i nemici).
                         if CharacterArt and sprite:
                                 CharacterArt.apply_enhancement(sprite, false)
+                        # TASK 25: ri-applica l'outfit dopo il reload (SD path).
+                        _armor_outfit_on = false
+                        if has_relic_armor():
+                                _apply_armor_outfit_visual()
                 else:
                         sprite_loaded = false
         else:

@@ -36,6 +36,24 @@ static var SPRITE_XHD_ENABLED: bool = true
 static var BOSS_LIMB_ANIM_ENABLED: bool = true
 static var BOSS_PROJ_THEMED_ENABLED: bool = true
 
+# ============================================================================
+# 0b. TASK 25 — VISIBILITÀ ANIMAZIONI BOSS + OUTFIT ARMATURE
+# ============================================================================
+#   BOSS_LIMB_ANIM_GAIN -> moltiplicatore delle ampiezze degli arti procedurali
+#                          (tentacoli/braccia/ali/vesto'). Il Task 22 le aveva
+#                          calibrate SUBTLE (~2-4% del lato dello sprite) e a
+#                          schermo risultavano impercettibili (segnalazione
+#                          utente: "non vedo animazioni nei boss"). 2.6 porta
+#                          lo spostamento tipico al 6-13% del lato: chiaro ma
+#                          senza strappare la silhouette. 1.0 = identico al
+#                          Task 22 (rollback immediato).
+#   ARMOR_OUTFIT_ENABLED -> le armature reliquia RICOLORANO il vestiario del
+#                          player (shader armor_outfit: hue del vestito ->
+#                          colore dell'armatura + tinta metallo + rim) oltre
+#                          all'aura procedurale esistente.
+static var BOSS_LIMB_ANIM_GAIN: float = 2.6
+static var ARMOR_OUTFIT_ENABLED: bool = true
+
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
 

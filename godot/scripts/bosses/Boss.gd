@@ -272,12 +272,26 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
         # Update the deformable sprite.
         if deform_loaded and deform_sprite != null:
                 var mode := DeformableSprite.AnimMode.IDLE
+                var prof: int = get_limb_profile(boss_type)
                 if attacking_timer_ms > 0:
                         mode = DeformableSprite.AnimMode.ATTACK
+                elif (dx != 0 or dy != 0) and (
+                                prof == DeformableSprite.LimbProfile.LP_ARMS
+                                or prof == DeformableSprite.LimbProfile.LP_TENTACLES
+                                or prof == DeformableSprite.LimbProfile.LP_WINGS):
+                        # TASK 25: il boss TERRESTRE che rimbalza per la stanza
+                        # CAMMINA (bob + dondolio zampe) invece di restare in
+                        # IDLE: prima l'unico movimento visibile era la lieve
+                        # respirazione. I fluttuanti (Lich/Wraith/Vampiro/
+                        # Beholder/Mimic) restano in IDLE: la loro animazione
+                        # e' il profilo arti (LP_HOVER/LP_STALKS).
+                        mode = DeformableSprite.AnimMode.WALK
                 # TASK 22: profilo arti procedurale (tentacoli/braccia/ali/volo)
                 # attivo solo col flag di rollback attivo.
+                # TASK 25: limb_gain amplifica le ampiezze (subtle -> visibili).
                 if C.BOSS_LIMB_ANIM_ENABLED:
-                        deform_sprite.limb_profile = get_limb_profile(boss_type)
+                        deform_sprite.limb_profile = prof
+                        deform_sprite.limb_gain = C.BOSS_LIMB_ANIM_GAIN
                 else:
                         deform_sprite.limb_profile = DeformableSprite.LimbProfile.LP_NONE
                 # TASK 22: scala relativa al frame sorgente (64 SD / 256 XHD):
@@ -480,10 +494,13 @@ func _draw() -> void:
                 deform_loaded = loaded
                 # TASK 22: applica subito il profilo arti (update_step lo
                 # rinnova ogni frame; qui copre il primo frame di vita).
+                # TASK 25: anche il gain, così il primo frame è già corretto.
                 if deform_loaded and deform_sprite != null:
-                        deform_sprite.limb_profile = get_limb_profile(boss_type) \
-                                        if C.BOSS_LIMB_ANIM_ENABLED \
-                                        else DeformableSprite.LimbProfile.LP_NONE
+                        if C.BOSS_LIMB_ANIM_ENABLED:
+                                deform_sprite.limb_profile = get_limb_profile(boss_type)
+                                deform_sprite.limb_gain = C.BOSS_LIMB_ANIM_GAIN
+                        else:
+                                deform_sprite.limb_profile = DeformableSprite.LimbProfile.LP_NONE
 
         # Draw the deformable sprite (it's a child node, draws itself).
         # If not loaded, fall back to procedural primitives drawn in this node's _draw.

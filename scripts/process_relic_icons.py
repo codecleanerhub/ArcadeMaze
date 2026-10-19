@@ -37,7 +37,12 @@ RELIC_IDS = [
 ]
 
 ## Chiave CIANO per gli oggetti con tinte nella famiglia vino/magenta.
-CYAN_KEY = {"fury", "arcane_orb", "fire"}
+## TASK 25 (LEZIONE — manici spezzati): anche i manici con CUOIO ROSSO /
+## fasce crimson (ascia, lama vampiro) e le aste con decorazioni rosse
+## (alabarda) cadono nella famiglia magenta e il flood li FRAMMENTA:
+## rigenarati su sfondo ciano diventano a componente singola (100%).
+CYAN_KEY = {"fury", "arcane_orb", "fire", "axe", "vampire_blade",
+                "halberd", "mace", "ranger_bow"}
 
 FINAL_SIDE = 512
 MARGIN_FRAC = 0.06

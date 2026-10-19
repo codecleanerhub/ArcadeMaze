@@ -43,6 +43,11 @@ const DEFAULT_GRID_H := 8
 ## TASK 22 — profilo arti corrente (LP_NONE di default: identico al legacy).
 var limb_profile: int = LimbProfile.LP_NONE
 
+## TASK 25 — guadagno delle ampiezze degli arti procedurali (1.0 = identico
+## al Task 22). Il boss/mini-boss lo imposta da GameConstants.BOSS_LIMB_ANIM_GAIN:
+## le ampiezze "subtle" originali (~2-4% del lato) erano invisibili a schermo.
+var limb_gain: float = 1.0
+
 ## TASK 22 — fattore di scala delle ampiezze di deformazione: tiene
 ## l'entità dello spostamento A SCHERMO identica tra sheet 64px (unit=1)
 ## e sheet XHD 256px (unit=4).
@@ -322,34 +327,35 @@ func _transform_vertex(idx: int, mode: int, time: float,
         if limb_profile != LimbProfile.LP_NONE:
                 var u: float = float(gx) / float(gw)
                 var v: float = float(gy) / float(gh)
+                var lg: float = limb_gain
                 match limb_profile:
                         LimbProfile.LP_TENTACLES:
                                 # onda travelling che cresce verso il basso
                                 var vw: float = clampf((v - 0.45) / 0.55, 0.0, 1.0)
-                                off.x += sin(time * 2.4 + v * 7.0 + u * 3.0) * 2.2 * vw
-                                off.y += cos(time * 3.1 + v * 9.0) * 0.8 * vw
+                                off.x += sin(time * 2.4 + v * 7.0 + u * 3.0) * 2.2 * vw * lg
+                                off.y += cos(time * 3.1 + v * 9.0) * 0.8 * vw * lg
                         LimbProfile.LP_ARMS:
                                 # colonne laterali che oscillano in controfase
                                 var sw: float = clampf((absf(u - 0.5) - 0.18) / 0.32, 0.0, 1.0)
                                 var phase: float = PI if u < 0.5 else 0.0
-                                off.y += sin(time * 2.6 + phase) * 2.4 * sw
-                                off.x += cos(time * 2.6 + phase) * 1.0 * sw
+                                off.y += sin(time * 2.6 + phase) * 2.4 * sw * lg
+                                off.x += cos(time * 2.6 + phase) * 1.0 * sw * lg
                         LimbProfile.LP_WINGS:
                                 # battito: alto+ai lati, ali che si aprono
                                 var top_w: float = clampf((0.55 - v) / 0.55, 0.0, 1.0)
                                 var sw2: float = clampf((absf(u - 0.5) - 0.18) / 0.32, 0.0, 1.0)
                                 var flap: float = sin(time * 3.4)
-                                off.y += flap * 3.2 * sw2 * top_w
-                                off.x += (flap * 1.6 + 0.8) * sw2 * top_w
+                                off.y += flap * 3.2 * sw2 * top_w * lg
+                                off.x += (flap * 1.6 + 0.8) * sw2 * top_w * lg
                         LimbProfile.LP_HOVER:
                                 # fluttuazione globale + scia della veste in basso
-                                off.y += sin(time * 1.7) * 1.8 * weight
-                                off.x += sin(time * 2.1 + v * 5.0) * 1.4 * v * v
+                                off.y += sin(time * 1.7) * 1.8 * weight * lg
+                                off.x += sin(time * 2.1 + v * 5.0) * 1.4 * v * v * lg
                         LimbProfile.LP_STALKS:
                                 # stalke oculari (in alto) che ondeggiano
                                 var tw2: float = clampf((0.5 - v) / 0.5, 0.0, 1.0)
-                                off.x += sin(time * 2.2 + (0.5 - v) * 8.0 + u * 2.5) * 2.0 * tw2
-                                off.y += cos(time * 2.8 + u * 3.0) * 1.2 * tw2
+                                off.x += sin(time * 2.2 + (0.5 - v) * 8.0 + u * 2.5) * 2.0 * tw2 * lg
+                                off.y += cos(time * 2.8 + u * 3.0) * 1.2 * tw2 * lg
 
         # TASK 22: tutte le ampiezze sono in "unità frame 64px"; su mesh XHD
         # (256px) vanno moltiplicate per 4 per mantenere lo stesso spostamento
