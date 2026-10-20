@@ -50,7 +50,7 @@ func _process(delta: float) -> void:
                         var open_chasms: int = 0
                         var cracked: int = 0
                         for h in hz.hazard_list:
-                                var kind: String = ["QUICKSAND", "TRAP", "CHASM", "WALL"][h["type"]]
+                                var kind: String = ["QUICKSAND", "TRAP", "CHASM", "WALL", "BARREL"][h["type"]]
                                 var extra: String = ""
                                 if h["type"] == 2:
                                         if h["state"] == 2:

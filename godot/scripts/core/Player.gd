@@ -1365,6 +1365,10 @@ func take_damage() -> void:
 func take_hazard_damage(dmg: int) -> void:
         if soul_pending:
                 return
+        # GHOST (pozione): il fantasma fluttua sopra ogni pericolo (spec
+        # Task 30) — niente danni ambientali.
+        if ghost_mode:
+                return
         if is_jumping() or is_invulnerable():
                 return
         energy -= dmg

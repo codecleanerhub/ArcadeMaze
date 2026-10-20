@@ -90,9 +90,12 @@ enum SoundType {
         HAZARD_RUMBLE,
         HAZARD_COLLAPSE,
         HAZARD_GRIND,
-        HAZARD_THUD
+        HAZARD_THUD,
+        # TASK 31 — barile esplosivo: botto profondo con frana di legno e
+        # metallo (piu' grande e piu' lungo del tonfo del muro).
+        BARREL_EXPLODE
 }
-const SOUND_TYPE_COUNT: int = 43
+const SOUND_TYPE_COUNT: int = 44
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -535,6 +538,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.HAZARD_COLLAPSE: s = _sfx_hazard_collapse()
                 SoundType.HAZARD_GRIND:    s = _sfx_hazard_grind()
                 SoundType.HAZARD_THUD:     s = _sfx_hazard_thud()
+                SoundType.BARREL_EXPLODE:  s = _sfx_barrel_explode()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1280,6 +1284,35 @@ func _sfx_hazard_thud() -> PackedFloat32Array:
                 if t > 0.05:
                         v += 0.15 * noise_gen() * exp(-(t - 0.05) * 14.0)
                 s.append(3400.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# _sfx_barrel_explode(): TASK 31 — ESPLOSIONE del barile: detonazione
+# profonda (sub-basso con pitch drop) + scoppio di schegge di legno e
+# cerchi di metallo (rumo medio + tintinni sparsi) + coda di fumo.
+func _sfx_barrel_explode() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.7)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Detonazione: sub che decade con pitch drop (40Hz -> 22Hz)
+                var freq: float = 40.0 * exp(-t * 5.0) + 22.0
+                v += 0.90 * sin(TAU * freq * t) * exp(-t * 11.0)
+                v += 0.30 * sin(TAU * freq * 2.0 * t) * exp(-t * 20.0)
+                # Scoppio iniziale (rumo largo, il legno che cede)
+                if t < 0.06:
+                        v += 0.75 * noise_gen() * exp(-t * 90.0)
+                # Schegge di legno (rumo medio con decadimento a 2 stadi)
+                v += 0.30 * noise_gen() * (exp(-t * 26.0) + 0.5 * exp(-t * 7.0))
+                # Tintinnio dei cerchi metallici (3 eventi deterministici)
+                for k in 3:
+                        var start: float = 0.05 + 0.09 * k
+                        if t >= start and t < start + 0.06:
+                                var ring_f: float = 1400.0 + 600.0 * k
+                                v += 0.18 * sin(TAU * ring_f * (t - start)) \
+                                                * exp(-(t - start) * 60.0)
+                s.append(3600.0 / 32767.0 * _soft_clip(v))
         return s
 
 

@@ -42,7 +42,7 @@ class_name MazeHazards
 
 const C = preload("res://scripts/core/GameConstants.gd")
 
-enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL }
+enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL }
 
 # Stati per tipo:
 # QUICKSAND: nessuno stato (sempre attiva).
@@ -64,6 +64,21 @@ var controller: Node = null
 ## ROCK_WALL: phase, phase_ms, axis ("h" passaggio orizzontale / "v"),
 ##            slab_a/slab_b (Sprite2D), off_a/off_b (offset attuali px).
 var hazard_list: Array[Dictionary] = []
+
+# --- TASK 31: stato del terremoto -----------------------------------------
+# INACTIVE: nessun evento in programma (timer al prossimo scade).
+# TELEGRAPH: rombo + scrollamento di avviso.
+# DROPPING: i massi dell'evento cadono (boulder_list in giro).
+enum QuakeState { INACTIVE, TELEGRAPH, DROPPING }
+var quake_state: int = QuakeState.INACTIVE
+var quake_timer_ms: float = 0.0
+var quake_events_left: int = 0
+var quake_level: int = 1
+var quake_shake_accum: float = 0.0
+
+## Massi in volo/segmentati: {cell, state (0=MARK,1=FALL), timer_ms,
+## delay_ms, sprite (Sprite2D del masso o crepa), fall_from (Vector2)}.
+var boulder_list: Array[Dictionary] = []
 
 var _rng := RandomNumberGenerator.new()
 var _time := 0.0
@@ -94,7 +109,9 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
         controller = ctrl
         clear(maze)
         var count: int = C.hazard_count_for_level(level)
-        if count <= 0:
+        var barrels: int = C.barrel_count_for_level(level)
+        if count <= 0 and barrels <= 0:
+                _init_quake(level)
                 return
         _rng.seed = hash("hazards_v1_%d" % level)
 
@@ -117,6 +134,26 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
                 _spawn_rock_wall(cell, maze)
                 used.append(cell)
 
+        # TASK 31: barili esplosivi (celle pavimento, stesso gap minimo).
+        for _i in barrels:
+                var cell := _pop_cell(floor_cells, used, maze)
+                if cell == Vector2i(-1, -1):
+                        break
+                _spawn_barrel(cell)
+                used.append(cell)
+
+        _init_quake(level)
+
+
+## TASK 31: programma il terremoto del livello (se il livello lo prevede).
+func _init_quake(level: int) -> void:
+        quake_level = level
+        quake_events_left = C.quake_events_for_level(level)
+        quake_state = QuakeState.INACTIVE
+        quake_timer_ms = float(_rng.randi_range(
+                C.QUAKE_FIRST_MIN_MS, C.QUAKE_FIRST_MAX_MS))
+        quake_shake_accum = 0.0
+
 
 ## Rimuove tutto e ripristina lo stato di Maze/BG.
 func clear(maze: Node) -> void:
@@ -127,6 +164,13 @@ func clear(maze: Node) -> void:
                         if is_instance_valid(h.get(key)):
                                 h[key].queue_free()
         hazard_list.clear()
+        # TASK 31: via anche massi/macerie e stato terremoto.
+        for b in boulder_list:
+                if is_instance_valid(b.get("sprite")):
+                        b["sprite"].queue_free()
+        boulder_list.clear()
+        quake_state = QuakeState.INACTIVE
+        quake_events_left = 0
         if maze != null:
                 maze.dynamic_walls.clear()
 
@@ -276,6 +320,29 @@ func _spawn_floor_hazard(t: int, cell: Vector2i, maze: Node) -> void:
                         h["state"] = ChasmState.DORMANT
                         h["timer_ms"] = float(_rng.randi_range(500, 6000))
                         h["sprite"] = null  # sprite creato al CRACK
+                HazardType.BARREL:
+                        _spawn_barrel(cell)
+                        return
+        hazard_list.append(h)
+
+
+# --- TASK 31: barili esplosivi ----------------------------------------------
+
+## Barile: oggetto piazzato a terra. Un PROIETTILE del player sulla sua
+## cella accende la miccia (istantanea); l'esplosione uccide i nemici nel
+## raggio, ferisce il player troppo vicino e innesca gli altri barili.
+## stati: 0 = integro, 1 = in esplosione (fuse per la catena).
+enum BarrelState { INTACT, FUSE }
+
+func _spawn_barrel(cell: Vector2i) -> void:
+        var h: Dictionary = {
+                "type": HazardType.BARREL,
+                "cell": cell,
+                "state": BarrelState.INTACT,
+                "timer_ms": 0.0,
+        }
+        h["sprite"] = _make_sprite(
+                "res://assets/sprites/hazards/barrel.png", cell, 54.0)
         hazard_list.append(h)
 
 
@@ -339,7 +406,7 @@ func _apply_wall_offsets(h: Dictionary) -> void:
 ## e PRIMA di quello dei nemici: le celle occupate sono fresche, i flag
 ## held_by_wall sono gia' validi per il movimento nemico del frame stesso.
 func update_hazards(delta_ms: float, maze: Node) -> void:
-        if not C.HAZARDS_ENABLED or hazard_list.is_empty():
+        if not C.HAZARDS_ENABLED and not C.BARRELS_ENABLED and not C.QUAKE_ENABLED:
                 _reset_players_flags()
                 return
         _time += delta_ms / 1000.0
@@ -355,6 +422,8 @@ func update_hazards(delta_ms: float, maze: Node) -> void:
                                 _update_chasm(h, delta_ms, players, maze)
                         HazardType.ROCK_WALL:
                                 _update_rock_wall(h, delta_ms, maze)
+                        HazardType.BARREL:
+                                _update_barrel(h, delta_ms, players)
 
         # Mjolnir: se la cella muro non e' piu' WALL (spezzata), il muro di
         # roccia si sgretola e despawna.
@@ -366,6 +435,7 @@ func update_hazards(delta_ms: float, maze: Node) -> void:
                         hazard_list.remove_at(i)
 
         _update_players_slow(players, maze)
+        _update_quake(delta_ms, maze, players)
 
 
 func _reset_players_flags() -> void:
@@ -672,9 +742,10 @@ func _close_wall(h: Dictionary, maze: Node) -> void:
                         controller.collectibles_node.add_child(dust)
 
         # player nella cella alla chiusura: danno 66% (se non airborne) e
-        # imprigionamento fino alla riapertura
+        # imprigionamento fino alla riapertura. GHOST: il fantasma fluttua
+        # sopra tutto (spec Task 30) — niente danno, niente tenuta.
         for p in _active_players():
-                if _player_cell(p) == cell:
+                if _player_cell(p) == cell and not p.is_ghost():
                         p.held_by_wall = true
                         var dmg: int = maxi(1, int(round(
                                 p.max_energy * C.HAZARD_WALL_PLAYER_DAMAGE_PCT)))
@@ -760,6 +831,265 @@ func _poof_wall(h: Dictionary) -> void:
                 var dust := EffectsManager.spawn_explosion(
                         _cell_center(h["cell"]), Color(0.4, 0.35, 0.3), 14, 0.5)
                 controller.collectibles_node.add_child(dust)
+
+
+# ===========================================================================
+# TASK 31 — BARILI: update + esplosione
+# ===========================================================================
+
+func _update_barrel(h: Dictionary, delta_ms: float, players: Array) -> void:
+        match h["state"]:
+                BarrelState.INTACT:
+                        # un proiettile del player sulla cella accende la
+                        # miccia (il colpo viene consumato)
+                        if _projectile_in_cell(h["cell"], players):
+                                _explode_barrel(h)
+                BarrelState.FUSE:
+                        # reazione a catena: brevissimo fuse poi boom
+                        h["timer_ms"] -= delta_ms
+                        # lampeggio di avviso mentre la miccia brucia
+                        if h["sprite"] != null:
+                                h["sprite"].modulate.r = 1.0 \
+                                                + 0.6 * sin(_time * 40.0)
+                        if h["timer_ms"] <= 0.0:
+                                _explode_barrel(h)
+
+
+func _explode_barrel(h: Dictionary) -> void:
+        var center: Vector2 = _cell_center(h["cell"])
+        # rimuovi subito il barile (niente doppie esplosioni)
+        var idx: int = hazard_list.find(h)
+        if idx >= 0:
+                hazard_list.remove_at(idx)
+        if is_instance_valid(h.get("sprite")):
+                h["sprite"].queue_free()
+        # VFX + SFX
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.BARREL_EXPLODE)
+        if EffectsManager:
+                EffectsManager.screen_shake(9.0, 0.45)
+                var boom := EffectsManager.spawn_explosion(
+                        center, Color(1.0, 0.55, 0.15), 34, 0.7)
+                var smoke := EffectsManager.spawn_explosion(
+                        center + Vector2(0.0, -10.0), Color(0.25, 0.22, 0.2), 16, 1.0)
+                if controller != null:
+                        controller.collectibles_node.add_child(boom)
+                        controller.collectibles_node.add_child(smoke)
+        # nemici nel raggio: uccisione istantanea (come la mina) + punti
+        # standard al player vivo piu' vicino
+        if controller != null:
+                for e in controller.spawner.enemies:
+                        if e == null or not is_instance_valid(e) or e.is_dead():
+                                continue
+                        if e.position.distance_to(center) <= C.BARREL_EXPLOSION_RADIUS:
+                                e.take_damage(99999)
+                                if e.is_dead():
+                                        var winner := _nearest_player(e.position)
+                                        if winner != null:
+                                                winner.add_score(C.BARREL_KILL_POINTS)
+                                        if EffectsManager:
+                                                var blood := EffectsManager.spawn_blood(
+                                                        e.position, 14)
+                                                controller.collectibles_node.add_child(blood)
+        # player nel raggio (grounded): danno ambientale 33% energia max —
+        # saltare al momento giusto salva (skill!)
+        for p in _active_players():
+                if p.is_ghost() or p.is_jumping():
+                        continue
+                if p.position.distance_to(center) <= C.BARREL_EXPLOSION_RADIUS:
+                        var dmg: int = maxi(1, int(round(
+                                p.max_energy * C.BARREL_PLAYER_DAMAGE_PCT)))
+                        p.take_hazard_damage(dmg)
+        # reazione a catena: gli altri barili nel raggio accendono la miccia
+        for other in hazard_list:
+                if other["type"] == HazardType.BARREL \
+                                and other["state"] == BarrelState.INTACT \
+                                and _cell_center(other["cell"]).distance_to(center) \
+                                                <= C.BARREL_EXPLOSION_RADIUS:
+                        other["state"] = BarrelState.FUSE
+                        other["timer_ms"] = float(C.BARREL_CHAIN_DELAY_MS)
+
+
+# ===========================================================================
+# TASK 31 — TERREMOTO: macchina a stati + massi
+# ===========================================================================
+
+func _update_quake(delta_ms: float, maze: Node, players: Array) -> void:
+        if quake_events_left <= 0 and quake_state == QuakeState.INACTIVE:
+                return
+        match quake_state:
+                QuakeState.INACTIVE:
+                        quake_timer_ms -= delta_ms
+                        if quake_timer_ms <= 0.0:
+                                quake_state = QuakeState.TELEGRAPH
+                                quake_timer_ms = float(C.QUAKE_TELEGRAPH_MS)
+                                quake_shake_accum = 0.0
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                AudioManager.SoundType.HAZARD_RUMBLE)
+                QuakeState.TELEGRAPH:
+                        # scrollamento continuo per tutta la durata del rombo
+                        quake_timer_ms -= delta_ms
+                        quake_shake_accum += delta_ms
+                        if quake_shake_accum >= 280.0 and EffectsManager:
+                                EffectsManager.screen_shake(3.0, 0.22)
+                                quake_shake_accum = 0.0
+                        if quake_timer_ms <= 0.0:
+                                _quake_start_dropping(maze)
+                QuakeState.DROPPING:
+                        # i massi vivono in boulder_list; l'evento finisce
+                        # quando sono caduti (o svaniti) tutti
+                        if boulder_list.is_empty():
+                                quake_state = QuakeState.INACTIVE
+                                quake_events_left -= 1
+                                if quake_events_left > 0:
+                                        # secondo evento del livello (20+)
+                                        quake_timer_ms = float(_rng.randi_range(
+                                                        15000, 25000))
+        # update dei singoli massi (mark -> fall -> rubble)
+        for i in range(boulder_list.size() - 1, -1, -1):
+                var b: Dictionary = boulder_list[i]
+                _update_boulder(b, delta_ms, players)
+                if b.get("done", false):
+                        boulder_list.remove_at(i)
+
+
+## Sceglie le celle bersaglio dei massi e crea i marker (crepa pulsante).
+func _quake_start_dropping(maze: Node) -> void:
+        quake_state = QuakeState.DROPPING
+        var n: int = C.quake_boulder_count(quake_level)
+        var cells: Array[Vector2i] = []
+        for r in range(1, C.MAZE_ROWS - 1):
+                for c in range(1, C.MAZE_COLS - 1):
+                        if maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                continue
+                        # niente massi addosso allo spawn (grace 2 celle)
+                        if max(absi(c - 1), absi(r - 1)) < 2:
+                                continue
+                        cells.append(Vector2i(c, r))
+        for _i in n:
+                if cells.is_empty():
+                        break
+                var idx: int = _rng.randi_range(0, cells.size() - 1)
+                var cell: Vector2i = cells[idx]
+                cells.remove_at(idx)
+                var b: Dictionary = {
+                        "cell": cell,
+                        "state": 0,  # 0 = MARK (crepa), 1 = FALL
+                        "timer_ms": float(C.QUAKE_MARK_MS),
+                        # scaglione: i massi non cadono tutti insieme
+                        "delay_ms": float(_rng.randi_range(0, 1200)),
+                        "sprite": _make_sprite(
+                                "res://assets/sprites/hazards/chasm_crack.png",
+                                cell, 58.0),
+                        "fall_sprite": null,
+                }
+                b["sprite"].modulate = Color(1.0, 0.85, 0.7, 0.9)
+                boulder_list.append(b)
+
+
+func _update_boulder(b: Dictionary, delta_ms: float, players: Array) -> void:
+        if b["delay_ms"] > 0.0:
+                b["delay_ms"] -= delta_ms
+                if b["sprite"] != null:
+                        b["sprite"].modulate.a = 0.15  # marker nascosto pre-drop
+                return
+        match b["state"]:
+                0:  # MARK: crepa pulsante — tempo di scansarsi
+                        b["timer_ms"] -= delta_ms
+                        if b["sprite"] != null:
+                                b["sprite"].modulate.a = 0.5 \
+                                                + 0.4 * sin(_time * 16.0)
+                        if b["timer_ms"] <= 0.0:
+                                b["state"] = 1
+                                b["timer_ms"] = float(C.QUAKE_FALL_MS)
+                                # il masso parte da sopra lo schermo
+                                if b["sprite"] != null:
+                                        b["sprite"].queue_free()
+                                        b["sprite"] = null
+                                b["fall_sprite"] = _make_sprite(
+                                        "res://assets/sprites/hazards/boulder.png",
+                                        b["cell"], 58.0)
+                                b["fall_from"] = _cell_center(b["cell"]) \
+                                                + Vector2(0.0, -420.0)
+                                b["fall_sprite"].position = b["fall_from"]
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                AudioManager.SoundType.HAZARD_GRIND)
+                1:  # FALL: discesa rapida verso il centro cella
+                        b["timer_ms"] -= delta_ms
+                        var target: Vector2 = _cell_center(b["cell"])
+                        var k: float = 1.0 - clampf(
+                                b["timer_ms"] / float(C.QUAKE_FALL_MS), 0.0, 1.0)
+                        if b["fall_sprite"] != null:
+                                b["fall_sprite"].position = b["fall_from"].lerp(target, k)
+                                b["fall_sprite"].rotation += 0.35 * delta_ms / 100.0
+                        if b["timer_ms"] <= 0.0:
+                                _boulder_impact(b, players)
+                2:  # RUBBLE: macerie che svaniscono
+                        b["rubble_ms"] -= delta_ms
+                        if b["sprite"] != null:
+                                # dissolvenza nell'ultimo secondo
+                                b["sprite"].modulate.a = clampf(
+                                                b["rubble_ms"] / 1000.0, 0.0, 1.0)
+                        if b["rubble_ms"] <= 0.0:
+                                if b["sprite"] != null:
+                                        b["sprite"].queue_free()
+                                        b["sprite"] = null
+                                b["done"] = true
+
+
+func _boulder_impact(b: Dictionary, players: Array) -> void:
+        var cell: Vector2i = b["cell"]
+        var center: Vector2 = _cell_center(cell)
+        # il masso si frantuma: resta solo il mucchio di macerie
+        if b["fall_sprite"] != null:
+                b["fall_sprite"].queue_free()
+                b["fall_sprite"] = null
+        b["sprite"] = _make_sprite(
+                "res://assets/sprites/hazards/rubble.png", cell, 52.0)
+        b["rubble_ms"] = float(C.QUAKE_RUBBLE_MS)
+        b["state"] = 2  # RUBBLE: svanira' da solo
+        b["done"] = false
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_THUD)
+        if EffectsManager:
+                EffectsManager.screen_shake(6.0, 0.3)
+                var dust := EffectsManager.spawn_explosion(
+                        center, Color(0.42, 0.38, 0.32), 20, 0.6)
+                if controller != null:
+                        controller.collectibles_node.add_child(dust)
+        # danni da impatto: chi sta SULLA cella al momento del tonfo
+        for p in players:
+                if p.is_ghost() or p.is_jumping():
+                        continue
+                if _player_cell(p) == cell:
+                        var pdmg: int = maxi(1, int(round(
+                                p.max_energy * C.QUAKE_PLAYER_DAMAGE_PCT)))
+                        p.take_hazard_damage(pdmg)
+        if controller != null:
+                for e in controller.spawner.enemies:
+                        if e == null or not is_instance_valid(e) or e.is_dead():
+                                continue
+                        var ecell := Vector2i(
+                                int(e.position.x / C.TILE_SIZE),
+                                int((e.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                        if ecell != cell:
+                                continue
+                        var edmg: int = maxi(1, int(round(
+                                e.get_max_health() * C.QUAKE_ENEMY_DAMAGE_PCT)))
+                        e.take_damage(edmg)
+                        if e.is_dead():
+                                var winner := _nearest_player(e.position)
+                                if winner != null:
+                                        winner.add_score(C.QUAKE_KILL_POINTS)
+        # il masso innesca un eventuale barile sulla cella (combo!)
+        for other in hazard_list:
+                if other["type"] == HazardType.BARREL \
+                                and other["cell"] == cell \
+                                and other["state"] == BarrelState.INTACT:
+                        other["state"] = BarrelState.FUSE
+                        other["timer_ms"] = 1.0
 
 
 # ===========================================================================

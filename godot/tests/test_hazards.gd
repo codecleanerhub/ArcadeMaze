@@ -436,7 +436,11 @@ func _phaseF_quicksand() -> void:
 # G — ROLLBACK GLOBALE
 # ===========================================================================
 func _phaseG_rollback() -> void:
+        # TASK 31: barili e terremoto sono sistemi SEPARATI (flag propri):
+        # per il rollback degli hazard del Task 30 si spegne anche BARRELS
+        # perche' i barili vivono nella stessa hazard_list.
         C.HAZARDS_ENABLED = false
+        C.BARRELS_ENABLED = false
         main.start_level(7)
         if not main.hazards.hazard_list.is_empty():
                 _fail("G: HAZARDS_ENABLED=false ma hazard generati comunque")
@@ -445,6 +449,7 @@ func _phaseG_rollback() -> void:
         else:
                 _ok("G: rollback globale — nessun hazard, registro pulito")
         C.HAZARDS_ENABLED = true
+        C.BARRELS_ENABLED = true
 
 
 func _finish() -> void:

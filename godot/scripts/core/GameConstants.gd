@@ -759,6 +759,100 @@ static func hazard_count_for_level(level: int) -> int:
 
 
 # ============================================================================
+# TASK 31 — BARILI ESPLOSIVI + TERREMOTO CON ROCCE DAL SOFFITTO
+# ============================================================================
+# Due eventi ambientali supplementari (approvati dall'utente insieme agli
+# hazard del Task 30; respinte invece casse-mimico, piastrelle crollanti
+# e leve co-op):
+#   * BARILI ESPLOSIVI — barili di legno piazzati a caso nei corridoi: un
+#     colpo di proiettile li fa esplodere. L'esplosione (raggio 1.5 celle)
+#     UCCIDE all'istante i nemici coinvolti (come la mina) e ferisce il
+#     player che sta troppo vicino (-33% energia max, salto/ghost/calice
+#     salvano). Gli altri barili nel raggio esplodono a catena (breve
+#     ritardo). Kill da barile = punti standard (5000) al player vivo
+#     piu' vicino.
+#   * TERREMOTO — evento periodico casuale: 1.5s di rombo + scrollamento
+#     (telegrafo), poi N massi cadono dal soffitto su celle casuali
+#     (avvisate da una crepa pulsante ~0.9s prima). L'impatto ferisce
+#     chi si trova sulla cella: player -33% energia, nemici -60% HP max.
+#     Un masso che colpisce un barile lo innesca. Restano macerie
+#     decorative per 3s. Max 1 evento per livello (2 dal livello 20).
+# Rollback: GameConstants.BARRELS_ENABLED / QUAKE_ENABLED = false.
+# ============================================================================
+
+## Flag di rollback: false = nessun barile generato e le esplosioni no-op.
+static var BARRELS_ENABLED: bool = true
+
+## Flag di rollback: false = nessun terremoto programmato.
+static var QUAKE_ENABLED: bool = true
+
+## Primo livello con i barili (stesso grace period degli hazard).
+const BARREL_GRACE_LEVEL: int = 4
+
+## Massimo barili per livello.
+const BARREL_MAX_PER_LEVEL: int = 6
+
+## Raggio dell'esplosione in pixel (1.5 celle circa).
+const BARREL_EXPLOSION_RADIUS: float = 100.0
+
+## Danno al player caught nell'esplosione (frazione dell'energia max).
+const BARREL_PLAYER_DAMAGE_PCT: float = 0.33
+
+## Ritardo della reazione a catena tra barili.
+const BARREL_CHAIN_DELAY_MS: int = 220
+
+## Punti per un nemico ucciso dall'esplosione di un barile (valore standard).
+const BARREL_KILL_POINTS: int = 5000
+
+## Barili per livello: 2 al grace level, +1 ogni 6 livelli, cap 6.
+static func barrel_count_for_level(level: int) -> int:
+        if not BARRELS_ENABLED or level < BARREL_GRACE_LEVEL:
+                return 0
+        var n: int = 2 + int((level - BARREL_GRACE_LEVEL) / 6)
+        return mini(n, BARREL_MAX_PER_LEVEL)
+
+
+## Primo livello col terremoto (un po' dopo gli hazard: prima si imparano
+## le trappole, poi il dungeon stesso si scatena).
+const QUAKE_GRACE_LEVEL: int = 6
+
+## Quando parte il primo terremoto del livello (finestra casuale, ms).
+const QUAKE_FIRST_MIN_MS: int = 18000
+const QUAKE_FIRST_MAX_MS: int = 30000
+
+## Durata del telegrafo del terremoto (rombo + scrollamento).
+const QUAKE_TELEGRAPH_MS: int = 1500
+
+## Eventi terremoto per livello: 1, oppure 2 dal livello 20.
+static func quake_events_for_level(level: int) -> int:
+        if not QUAKE_ENABLED or level < QUAKE_GRACE_LEVEL:
+                return 0
+        return 2 if level >= 20 else 1
+
+## Massi per evento: 4 base, +1 ogni 6 livelli, cap 10.
+static func quake_boulder_count(level: int) -> int:
+        return mini(4 + int(level / 6), 10)
+
+## Quanto a lungo la cella bersaglio resta SEGNAALATA prima che il masso
+## colpisca (crepa pulsante: tempo di scansarsi).
+const QUAKE_MARK_MS: int = 900
+
+## Durata della caduta del masso (dall'alto verso il centro cella).
+const QUAKE_FALL_MS: int = 260
+
+## Danni da impatto del masso (frazioni: player su energia max, nemico su
+## HP max — il sasso che ti becca fa MALE).
+const QUAKE_PLAYER_DAMAGE_PCT: float = 0.33
+const QUAKE_ENEMY_DAMAGE_PCT: float = 0.6
+
+## Le macerie restano a terra per questo tempo prima di svanire.
+const QUAKE_RUBBLE_MS: int = 3000
+
+## Punti per un nemico ucciso da un masso (valore standard).
+const QUAKE_KILL_POINTS: int = 5000
+
+
+# ============================================================================
 # RELIC (Task 21): i TYPE delle 12 armi reliquia (6 mischia + 6 distanza)
 # + il proiettile riflesso dalle Scaglie del Drago. Dichiarati QUI (prima
 # di WEAPON_HITS_TO_KILL) perche' i const si valutano IN ORDINE nel file.
