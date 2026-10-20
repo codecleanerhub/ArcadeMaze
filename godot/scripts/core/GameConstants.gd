@@ -677,6 +677,88 @@ const BOSS_ROOM_AMMO_MIN: int = 39
 # ============================================================================
 
 # ============================================================================
+# TASK 30 — HAZARD AMBIENTALI DEL LABIRINTO
+# ============================================================================
+# Quattro pericoli ambientali che appaiono nel labirinto a partire dal
+# livello HAZARD_GRACE_LEVEL, in quantita' crescente ogni 3 livelli e con
+# un MASSIMO di HAZARD_MAX_PER_TYPE per tipo in ogni livello:
+#   * SABBIE MOBILI  — rallentano il player del 50% (i nemici passano
+#                      indenni); si superano con un salto.
+#   * GANASCE        — trappola dentata: intrappola il player e toglie il
+#                      33% dell'energia max (morte se l'energia residua non
+#                      basta). Mashare i tasti accorcia la tenuta; un colpo
+#                      di proiettile la fa scattare a vuoto (disarmo).
+#   * VORAGINI       — crepa telegrafica (1.2s) poi si aprono in modo
+#                      permanente: chi vi cade dentro perde una vita; si
+#                      saltano con un salto.
+#   * MURI DI ROCCIA — celle muro che si aprono/chiudono (3s + 0.5s di
+#                      vibrazione pre-chiusura): scorciatoia per player e
+#                      nemici; chi resta imprigionato prende il 66%
+#                      dell'energia max (player) o il 33% (nemico, che
+#                      resta bloccato fino alla riapertura). Un nemico
+#                      ucciso dal muro vale il Doppio dei punti.
+# I danni ambientali BYPASSANO le armature-reliquia (vanno dritti
+# all'energia): le cariche armatura restano per il combattimento.
+# Rollback globale: GameConstants.HAZARDS_ENABLED = false.
+# ============================================================================
+
+## Flag di rollback: false = nessun hazard generato e tutti i check no-op.
+static var HAZARDS_ENABLED: bool = true
+
+## Primo livello con hazard (i precedenti sono "grace period" tutorial).
+const HAZARD_GRACE_LEVEL: int = 4
+
+## Massimo elementi dello STESSO tipo per livello (specifiche utente).
+const HAZARD_MAX_PER_TYPE: int = 5
+
+## Ogni 3 livelli (dal grace level) gli hazard per tipo aumentano di 1.
+const HAZARD_GROWTH_EVERY: int = 3
+
+## Quicksand: fattore di rallentamento del player sulla cella.
+const HAZARD_QUICKSAND_SLOW: float = 0.5
+
+## Ganasce: danno in frazione dell'energia max, durata della tenuta,
+## riduzione per mash, minimo irriducibile e cooldown di riarmo (dopo
+## scatto a vuoto o cattura rilasciata).
+const HAZARD_TRAP_DAMAGE_PCT: float = 0.33
+const HAZARD_TRAP_HOLD_MS: int = 1500
+const HAZARD_TRAP_MASH_REDUCE_MS: int = 250
+const HAZARD_TRAP_HOLD_MIN_MS: int = 600
+const HAZARD_TRAP_REARM_MS: int = 5000
+const HAZARD_TRAP_DISARM_REARM_MS: int = 4000
+
+## Voragine: durata del telegrafo (crepa + rumble) prima dell'apertura.
+const HAZARD_CHASM_TELEGRAPH_MS: int = 1200
+
+## Muro di roccia: durata dei tre stadi del ciclo.
+const HAZARD_WALL_OPEN_MS: int = 3000
+const HAZARD_WALL_WARN_MS: int = 500
+const HAZARD_WALL_CLOSED_MS: int = 3000
+
+## Danni del muro in frazione: player (energia max player) e nemico
+## (HP max del nemico).
+const HAZARD_WALL_PLAYER_DAMAGE_PCT: float = 0.66
+const HAZARD_WALL_ENEMY_DAMAGE_PCT: float = 0.33
+
+## Punti per un nemico ucciso dal muro di roccia (2x il valore standard).
+const HAZARD_WALL_KILL_POINTS: int = 10000
+
+## Distanza minima (Chebyshev, in celle) dallo spawn del player (1,1).
+const HAZARD_MIN_SPAWN_DIST: int = 3
+
+## Distanza minima (Manhattan, in celle) tra due hazard qualsiasi.
+const HAZARD_MIN_GAP: int = 2
+
+## Numero di hazard per tipo al livello dato (0 sotto il grace level,
+## poi 1 + un elemento ogni 3 livelli, cap HAZARD_MAX_PER_TYPE).
+static func hazard_count_for_level(level: int) -> int:
+        if not HAZARDS_ENABLED or level < HAZARD_GRACE_LEVEL:
+                return 0
+        var n: int = 1 + int((level - HAZARD_GRACE_LEVEL) / HAZARD_GROWTH_EVERY)
+        return mini(n, HAZARD_MAX_PER_TYPE)
+
+
+# ============================================================================
 # RELIC (Task 21): i TYPE delle 12 armi reliquia (6 mischia + 6 distanza)
 # + il proiettile riflesso dalle Scaglie del Drago. Dichiarati QUI (prima
 # di WEAPON_HITS_TO_KILL) perche' i const si valutano IN ORDINE nel file.

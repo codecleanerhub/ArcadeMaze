@@ -79,9 +79,20 @@ enum SoundType {
         RELIC_PICKUP,
         RELIC_BREAK,
         MELEE_SWING,
-        REFLECT_BOLT
+        REFLECT_BOLT,
+        # TASK 30 — hazard ambientali del labirinto: scatto delle ganasce
+        # sulla vittima (snap metallico), scatto a vuoto per disarmo (molla
+        # che rilascia), rombo sordo della crepa (telegrafo voragine),
+        # crollo dell'apertura (crack + frana), sfregamento delle lastre
+        # di roccia (apertura/chiusura) e tonfo finale della chiusura.
+        HAZARD_SNAP,
+        HAZARD_DISARM,
+        HAZARD_RUMBLE,
+        HAZARD_COLLAPSE,
+        HAZARD_GRIND,
+        HAZARD_THUD
 }
-const SOUND_TYPE_COUNT: int = 37
+const SOUND_TYPE_COUNT: int = 43
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -518,6 +529,12 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.RELIC_BREAK:    s = _sfx_relic_break()
                 SoundType.MELEE_SWING:    s = _sfx_melee_swing()
                 SoundType.REFLECT_BOLT:   s = _sfx_reflect_bolt()
+                SoundType.HAZARD_SNAP:     s = _sfx_hazard_snap()
+                SoundType.HAZARD_DISARM:   s = _sfx_hazard_disarm()
+                SoundType.HAZARD_RUMBLE:   s = _sfx_hazard_rumble()
+                SoundType.HAZARD_COLLAPSE: s = _sfx_hazard_collapse()
+                SoundType.HAZARD_GRIND:    s = _sfx_hazard_grind()
+                SoundType.HAZARD_THUD:     s = _sfx_hazard_thud()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1118,6 +1135,151 @@ func _sfx_reflect_bolt() -> PackedFloat32Array:
                 if t < 0.02:
                         v += 0.35 * noise_gen() * exp(-t * 400.0)
                 s.append(3000.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# ============================================================================
+# TASK 30 — SFX DEGLI HAZARD AMBIENTALI
+# ============================================================================
+# _sfx_hazard_snap(): GANASCE che scattano sulla vittima — impatto
+# metallico secco (le mascelle che si chiudono) + rattle della molla che
+# vibra. Due fasi: crack iniziale (5ms) e oscillazione della lama che si
+# spegne in ~150ms.
+func _sfx_hazard_snap() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.22)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Crack metallico: rumore filtrato alto con decadimento rapido
+                if t < 0.03:
+                        v += 0.85 * noise_gen() * exp(-t * 260.0)
+                # Vibrazione della lama (quasi-ottava metallica ~520Hz con
+                # leggero detune tra le due mascelle: battimento)
+                v += 0.30 * sin(TAU * 520.0 * t) * exp(-t * 22.0)
+                v += 0.22 * sin(TAU * 548.0 * t) * exp(-t * 26.0)
+                v += 0.12 * sin(TAU * 1560.0 * t) * exp(-t * 40.0)
+                # Rattle finale della molla
+                if t > 0.06:
+                        v += 0.10 * noise_gen() * exp(-(t - 0.06) * 30.0) \
+                                        * sin(TAU * 90.0 * t)
+                s.append(3200.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# _sfx_hazard_disarm(): scatto a VUOTO (disarmo da proiettile) — molla che
+# rilascia e lama che sbatte senza carico: piu' corto e piu' acuto dello
+# snap sulla vittima, con "twang" elastico invece del rattle.
+func _sfx_hazard_disarm() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.15)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Click del meccanismo che rilascia
+                if t < 0.015:
+                        v += 0.7 * noise_gen() * exp(-t * 500.0)
+                # Twang elastico della molla (pitch che scende)
+                var freq: float = 700.0 - 240.0 * (t / 0.15)
+                v += 0.35 * sin(TAU * freq * t) * exp(-t * 30.0)
+                v += 0.10 * sin(TAU * freq * 2.7 * t) * exp(-t * 45.0)
+                s.append(2400.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# _sfx_hazard_rumble(): ROMBO della crepa (telegrafo della voragine, dura
+# quanto il telegrafo: 1.2s circa, qui sintetizziamo ~0.7s percettibili) —
+# sub-basso che pulsa + rumore di pietra che si sgretola in sottofondo,
+# volume crescente (il pavimento sta per cedere).
+func _sfx_hazard_rumble() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.7)
+        for i in n:
+                var t: float = float(i) / SR
+                var p: float = t / 0.7
+                # Crescita del volume: la crepa si allarga
+                var swell: float = 0.25 + 0.75 * p
+                var v: float = 0.0
+                # Sub-borso pulsante (~36Hz con battimento a 43Hz)
+                v += 0.55 * sin(TAU * 36.0 * t) * (0.6 + 0.4 * sin(TAU * 7.0 * t))
+                v += 0.30 * sin(TAU * 43.0 * t)
+                # Polvere che gratta (rumo basso-bandlimited via campionamento)
+                v += 0.18 * noise_gen() * (0.5 + 0.5 * sin(TAU * 11.0 * t + 1.3))
+                s.append(2800.0 / 32767.0 * _soft_clip(v * swell))
+        return s
+
+
+# _sfx_hazard_collapse(): CROLLO della voragine — crack iniziale secco,
+# frana (rumore che scivola giu' con pitch discendente) e coda di rombo
+# che si spegne. Curva di volume: IMPATTO -> frana -> silenzio.
+func _sfx_hazard_collapse() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.9)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Crack del pavimento che cede
+                if t < 0.04:
+                        v += 0.9 * noise_gen() * exp(-t * 180.0)
+                # Frana: rumore con ampiezza decrescente e grain via via piu'
+                # radi (i massi piu' grossi cadono piu' tardi)
+                var grain: float = 0.55 + 0.45 * sin(TAU * 5.0 * t)
+                v += 0.40 * noise_gen() * grain * exp(-t * 4.5)
+                # Massi che rotolano (tonfi bassi via via piu' radi)
+                var rock_t: float = fmod(t, 0.14)
+                v += 0.30 * sin(TAU * 60.0 * rock_t) * exp(-rock_t * 45.0) \
+                                * exp(-t * 3.0)
+                # Coda di rombo
+                v += 0.25 * sin(TAU * 40.0 * t) * exp(-t * 3.5)
+                s.append(3200.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# _sfx_hazard_grind(): SFREGAMENTO delle lastre di roccia (apertura e
+# pre-chiusura) — rumore di pietra su pietra con "wobble" lento (la lastra
+# gratta in modo irregolare) e qualche scricchiolio acuto sparso.
+func _sfx_hazard_grind() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.5)
+        for i in n:
+                var t: float = float(i) / SR
+                # Wobble: la pressione della lastra non e' costante
+                var wobble: float = 0.55 + 0.45 * sin(TAU * 9.0 * t + 0.7)
+                var v: float = 0.0
+                # Grattare principale (rumo con modulazione)
+                v += 0.45 * noise_gen() * wobble
+                # Risonanza della pietra (~140Hz)
+                v += 0.20 * sin(TAU * 140.0 * t) * wobble
+                # Scricchioli acuti irregolari (3 eventi deterministici)
+                for k in 3:
+                        var start: float = 0.06 + 0.16 * k
+                        if t >= start and t < start + 0.03:
+                                v += 0.30 * noise_gen() * exp(-(t - start) * 200.0)
+                # Fade in/out (la lastra parte e si ferma)
+                var fade: float = minf(t / 0.06, 1.0) * minf((0.5 - t) / 0.08, 1.0)
+                fade = clampf(fade, 0.0, 1.0)
+                s.append(2600.0 / 32767.0 * _soft_clip(v * fade))
+        return s
+
+
+# _sfx_hazard_thud(): TONFO della chiusura — impatto sordo e profondo
+# (le due lastre che si incastrano): sub-basso con attacco istantaneo e
+# coda corta, piu' un tocco di polvere (rumo basso) subito dopo.
+func _sfx_hazard_thud() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.4)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # Impatto: 55Hz che decade in ~120ms con pitch drop
+                var freq: float = 55.0 * exp(-t * 6.0) + 28.0
+                v += 0.85 * sin(TAU * freq * t) * exp(-t * 18.0)
+                # Corpo del tonfo (2a armonica)
+                v += 0.25 * sin(TAU * freq * 2.0 * t) * exp(-t * 26.0)
+                # Polvere che ricade dopo l'impatto
+                if t > 0.05:
+                        v += 0.15 * noise_gen() * exp(-(t - 0.05) * 14.0)
+                s.append(3400.0 / 32767.0 * _soft_clip(v))
         return s
 
 

@@ -125,6 +125,20 @@ var projectiles: Array[Dictionary] = []
 # Game::update consumes it via consume_picked_weapon() to play the load SFX.
 var picked_weapon_this_frame: bool = false
 
+# ===========================================================================
+# TASK 30 (hazard ambientali): stato del player verso i pericoli del
+# labirinto. I flag di TENUTA (ganasce/muri di roccia) bloccano il
+# movimento ma lasciano tickare i timer; hazard_slow e' il fattore di
+# velocita' impostato dal MazeHazards ogni frame (sabbie mobili = 0.5,
+# annullato dagli stivali); input_mash_count conta le pressioni di
+# salto/sparo (anche a vuoto) mentre e' trattenuto: il MazeHazards lo
+# consuma per accorciare la tenuta delle ganasce.
+# ===========================================================================
+var held_by_trap: bool = false
+var held_by_wall: bool = false
+var hazard_slow: float = 1.0
+var input_mash_count: int = 0
+
 # --- Timers (simulated ms; -16 per frame @ 60 FPS, floored at 0) -----------
 var jump_timer: int = 0       # >0 = airborne (immune to damage)
 var max_jump_time: int = 40   # frames the jump lasts (Player.h:138)
@@ -644,6 +658,12 @@ func reset_position() -> void:
         # FIX (pozione magica): il respawn azzera lo stato fantasma (il player
         # torna solido nella cella di partenza, che è sempre percorribile).
         _end_ghost_mode_now()
+        # TASK 30 (hazard): nessuna trattenuta oltre la morte/respawn e
+        # nessun rallentamento residuo (le sabbie sono lontane dallo spawn).
+        held_by_trap = false
+        held_by_wall = false
+        hazard_slow = 1.0
+        input_mash_count = 0
         # FUOCO AMICO (Task 18): il respawn classico (perdita vita da nemico,
         # cambio livello) scongela sempre il player dall'attesa anima.
         if soul_pending:
@@ -989,9 +1009,27 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         if ghost_mode and ghost_timer_ms <= 0:
                 _end_ghost_mode(maze)
 
+        # TASK 30 (hazard): trattenuto da ganasce o muro di roccia chiuso —
+        # niente movimento per tutto il frame (i timer continuano a scorrere:
+        # la tenuta scade anche stando fermi, il mash di salto/sparo la
+        # accorcia). Sparare resta possibile (disarma altre ganasce).
+        if held_by_trap or held_by_wall:
+                dx = 0
+                dy = 0
+
         # Effective speed: base 2, +1 if any boost active (permanent or temp).
         var boosted: bool = permanent_speed_boost or speed_boost_timer > 0
         var effective_speed: int = speed + 1 if boosted else speed
+        # TASK 30 (sabbie mobili): il fattore hazard_slow (0.5 sulle sabbie,
+        # imposto dal MazeHazards) scala la velocita' di marcia. Solo gli
+        # STIVALI ALATI (boost permanente) lo annullano: anche il MazeHazards
+        # lo azzera per chi li calza, quindi qui e' doppia sicurezza. Il
+        # boost TEMPORANEO post-salto NON protegge: si corre comunque nella
+        # sabbia (spec: solo gli stivali). Salto e ghost sono gestiti dal
+        # MazeHazards (slow=1 mentre si e' a mezz'aria/evanescenti).
+        var move_speed: float = float(effective_speed)
+        if not permanent_speed_boost:
+                move_speed *= hazard_slow
 
         if free_movement:
                 # --- Boss-room mode: free pixel movement ---
@@ -1006,8 +1044,8 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                         # No input pressed -> stop immediately (fix: prevent drift).
                         dx = 0
                         dy = 0
-                position.x += dx * effective_speed
-                position.y += dy * effective_speed
+                position.x += dx * move_speed
+                position.y += dy * move_speed
                 # Clamp to screen bounds (16 px margin so half the sprite stays visible).
                 position.x = clamp(position.x, 16, WINDOW_WIDTH - 16)
                 position.y = clamp(position.y, UI_HEIGHT + 16, WINDOW_HEIGHT - 16)
@@ -1052,8 +1090,8 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                 # FIX (pozione magica): limite dello schermo sempre attivo
                 # anche da fantasma (mai uscire dall'area di gioco). Durante
                 # il fantasma i muri NON bloccano, i bordi sì.
-                position.x += dx * effective_speed
-                position.y += dy * effective_speed
+                position.x += dx * move_speed
+                position.y += dy * move_speed
                 if ghost_mode:
                         var ghost_margin: float = 8.0
                         # FIX (tunnel Pac-Man): dentro le gallerie il clamp NON
@@ -1149,6 +1187,9 @@ func shoot() -> void:
         # FUOCO AMICO (Task 18): il player morto-in-attesa-anima non spara.
         if soul_pending:
                 return
+        # TASK 30 (hazard): sparare mentre si e' trattenuti conta come mash
+        # (il proiettile parte comunque e puo' disarmare altre ganasce).
+        input_mash_count += 1
         if current_weapon.ammo <= 0:
                 return
 
@@ -1311,6 +1352,51 @@ func take_damage() -> void:
                 reset_position()  # respawn
 
 
+# take_hazard_damage(dmg): TASK 30 — danno AMBIENTALE del labirinto
+# (ganasce, muro di roccia che si chiude). Differenze da take_damage():
+#   * scala PIU' punti energia in un colpo solo (33%/66% del massimo,
+#     calcolati dal MazeHazards);
+#   * BYPASSA la Corazza d'Oro (decisione utente: le cariche armatura
+#     valgono per il combattimento, il dungeon colpisce a prescindere);
+#   * calice invincibile, salto in corso e invulnerabilita' post-colpo
+#     (damage_timer) proteggono come per qualunque altro danno.
+# A energia esaurita: vita persa, reliquie perse, respawn (pattern della
+# morte standard).
+func take_hazard_damage(dmg: int) -> void:
+        if soul_pending:
+                return
+        if is_jumping() or is_invulnerable():
+                return
+        energy -= dmg
+        damage_timer = 1000
+        if EffectsManager:
+                EffectsManager.screen_shake(6.0, 0.25)
+                var p := EffectsManager.spawn_sparks(get_pixel_pos(), 10)
+                if get_parent():
+                        get_parent().add_child(p)
+        if energy <= 0:
+                lives -= 1
+                lose_relics_on_death()
+                energy = max_energy
+                reset_position()
+
+
+# fall_into_chasm(): TASK 30 — il player e' caduto nella voragine aperta:
+# perde una vita (reliquie incluse, e' una morte) e respawna alla cella
+# di partenza. Il salto e la ghost mode rendono immuni (il MazeHazards
+# chiama questa funzione solo per player grounded sulla cella aperta).
+func fall_into_chasm() -> void:
+        if soul_pending:
+                return
+        lives -= 1
+        lose_relics_on_death()
+        energy = max_energy
+        damage_timer = 0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
+        reset_position()
+
+
 # ===========================================================================
 # FUOCO AMICO (Task 18) — morte per colpo del compagno + rinascita
 # ===========================================================================
@@ -1404,6 +1490,13 @@ func add_life() -> void:
 func activate_jump() -> bool:
         # FUOCO AMICO (Task 18): il player morto-in-attesa-anima non salta.
         if soul_pending:
+                return false
+        # TASK 30 (hazard): trattenuto da ganasce o muro di roccia chiuso —
+        # il salto non parte, ma la PRESSIONE conta come mash per accorciare
+        # la tenuta delle ganasce (input_mash_count e' consumato dal
+        # MazeHazards a ogni frame).
+        if held_by_trap or held_by_wall:
+                input_mash_count += 1
                 return false
         if jump_timer > 0:
                 return false  # già in salto

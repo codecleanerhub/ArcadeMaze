@@ -65,6 +65,15 @@ var _grid: Array = []
 
 ## Wall color for the current palette (read by external renderers).
 var wall_color: Color = Color(0.29, 0.27, 0.25, 1.0)
+
+## TASK 30 (muri di roccia mobili): registro delle celle WALL che un
+## muro di roccia del MazeHazards apre/chiude ciclicamente.
+## Chiave "c,r" -> true = muro CHIUSO, false = muro APERTO (attraversabile).
+## is_wall() consulta il registro PRIMA del tipo statico: la scorciatoia
+## e' percorsibile da player/proiettili/BFS solo mentre e' aperta, e il
+## rendering la disegna come pavimento (le due lastre di roccia che
+## scorrono sono la parete visibile). Popolato/ripulito dal MazeHazards.
+var dynamic_walls: Dictionary = {}
 ## Floor color for the current palette.
 var bg_color: Color = Color(0.11, 0.09, 0.07, 1.0)
 
@@ -295,6 +304,11 @@ func _render_wall_decorations() -> void:
                                 continue
                         if cell_type != C.CellType.WALL:
                                 continue
+                        # TASK 30 (muri di roccia mobili): niente torce sopra le
+                        # lastre che scorrono (la fiamma seguirebbe il muro e la
+                        # PointLight2D resterebbe sospesa a vuoto sul passaggio).
+                        if dynamic_walls.has("%d,%d" % [c, r]):
+                                continue
                         # FIX (luci senza lanterne): l'utente vedeva le PointLight2D
                         # sui muri senza il disegno della torcia (era commentato).
                         # Disegnamo la torcia procedurale SOLO dove c'è una
@@ -466,6 +480,9 @@ func _spawn_torch_lights() -> void:
                         if light_count >= max_lights:
                                 break
                         if not is_wall(c, r):
+                                continue
+                        # TASK 30: niente torce sulle lastre di roccia mobili.
+                        if dynamic_walls.has("%d,%d" % [c, r]):
                                 continue
                         var h: int = (c * 73856093) ^ (r * 19349663) ^ (level * 83492791)
                         var hash_val: int = abs(h) % 100
@@ -792,6 +809,13 @@ static func _is_far_enough(candidate: Vector2i, positions: Array, min_dist: int)
 func is_wall(col: int, row: int) -> bool:
         if col < 0 or col >= C.MAZE_COLS or row < 0 or row >= C.MAZE_ROWS:
                 return not C.is_tunnel_virtual_cell(col, row)
+        # TASK 30 (muri di roccia mobili): la cella e' governata dal registro
+        # dinamico — chiusa = muro pieno, aperta = passaggio libero. Il tipo
+        # statico resta WALL (il Mjolnir puo' comunque spezzare il muro e il
+        # MazeHazards sgretola le lastre di conseguenza).
+        var dyn_key := "%d,%d" % [col, row]
+        if dynamic_walls.has(dyn_key):
+                return dynamic_walls[dyn_key]
         return _get_cell_type(col, row) == C.CellType.WALL
 
 
@@ -972,7 +996,15 @@ func _render_cell(c: int, r: int) -> void:
 
         match cell_type:
                 C.CellType.WALL:
-                        _render_wall_cell(c, r, px, py, size)
+                        # TASK 30 (muri di roccia mobili): la cella del muro che
+                        # si apre/chiude si disegna come PAVIMENTO — le due lastre
+                        # di roccia del MazeHazards sono la parete visibile, cosi'
+                        # da aperta si vede davvero la scorciatoia (e le lastre
+                        # ritratte spuntano dai muri adiacenti).
+                        if dynamic_walls.has("%d,%d" % [c, r]):
+                                _render_floor_decorations(c, r, px, py, size)
+                        else:
+                                _render_wall_cell(c, r, px, py, size)
                 C.CellType.TREASURE:
                         _render_treasure_cell(px, py, size, _get_cell_treasure(c, r))
                 C.CellType.WEAPON:

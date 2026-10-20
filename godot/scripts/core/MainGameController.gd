@@ -36,6 +36,11 @@ const FF_HIT_RADIUS_SQ: float = 625.0
 @onready var projectiles_node: Node2D = $Projectiles
 @onready var enemy_projectiles_node: Node2D = $EnemyProjectiles
 @onready var collectibles_node: Node2D = $Collectibles
+
+## TASK 30 (hazard ambientali): nodo che genera e aggiorna sabbie mobili,
+## ganasce, voragini e muri di roccia. Inserito in MainGame.tscn tra Maze
+## e Player (draw order: pavimento -> hazard -> entita').
+@onready var hazards: Node2D = $Hazards
 @onready var hud: Control = $HUDLayer/HUD
 
 # --- Game state ---
@@ -1220,6 +1225,13 @@ func _update_playing(delta_ms: float) -> void:
                 _steer_relic_homing_projectiles(player2)
                 _consume_relic_bombs(player2)
                 _tick_fire_armor(player2, delta_ms)
+
+        # (1c) TASK 30 — HAZARD AMBIENTALI: update DOPO i player (le celle
+        # occupate sono fresche) e PRIMA dei nemici (i flag held_by_wall e
+        # hazard_slow sono gia' validi per il movimento nemico del frame).
+        # Internamente: telegrafo/apertura voragini, ciclo dei muri di
+        # roccia, cattura/mash delle ganasce, rallentamento sabbie.
+        hazards.update_hazards(delta_ms, maze)
 
         # (2) Enemies update
         # FIX (2P — nemici ignoravano P2): ogni nemico insegue il player VIVO
@@ -2837,6 +2849,9 @@ func _update_exit_door(delta_ms: float) -> void:
                                 "anim_timer_ms": 1400,
                                 "glow_pulse": 0.0,
                         }
+                        # TASK 30 (hazard): la porta deve essere pulita — via
+                        # eventuali sabbie/ganasce/voragini sulla cella scelta.
+                        hazards.clear_at(door_cell, maze)
                         # FIX (portone di pietra): suono DOOR_OPEN quando appare
                         # il portone (prima usava il suono TREASURE, già sentito
                         # a ogni tesoro raccolto).
@@ -2994,6 +3009,12 @@ func start_level(lvl: int) -> void:
                 # morte (i tesori raccolti NON riappaiono: la griglia e' gia'
                 # stata ripristinata da maze.restore_state).
                 _restore_session_from_snapshot(restore)
+        # TASK 30 — HAZARD AMBIENTALI: generati DOPO i collectible (le celle
+        # occupate da item sono escluse dal placement). RNG seedato sul
+        # livello: al continue gli hazard tornano negli stessi punti con
+        # stati freschi (le voragini ri-partono dal telegrafo). generate()
+        # ripulisce prima tutto (sprite + registro dynamic_walls del Maze).
+        hazards.generate(current_level, maze, self)
         # Play level music
         # FIX (musica calice tra livelli): se l'effetto del calice è ancora
         # attivo (player uscito dal livello mentre era invincibile) la

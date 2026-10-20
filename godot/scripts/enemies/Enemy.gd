@@ -230,6 +230,12 @@ var last_pos: Vector2 = Vector2.ZERO
 var flee_mode: bool = false
 var prev_flee_mode: bool = false
 
+## TASK 30 (muro di roccia): true mentre il nemico e' imprigionato nella
+## cella di un muro di roccia CHIUSO (il flag e' rinfrescato ogni frame dal
+## MazeHazards). Il nemico resta fermo finche' il muro non si riapre; se la
+## chiusura lo ha ucciso, il flag non conta piu' (dying_timer > 0).
+var held_by_wall: bool = false
+
 # Sprite reference (assigned in scene or via load_sprite).
 @onready var sprite: Sprite2D = $Sprite2D if has_node("Sprite2D") else null
 
@@ -463,6 +469,16 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
 
         # Dying animation in progress: freeze movement.
         if dying_timer > 0:
+                return
+
+        # TASK 30 (muro di roccia): imprigionato nel muro chiuso — fermo
+        # finche' il MazeHazards non riapre il passaggio (il flag e'
+        # per-frame, non accumula mai stato stale). Zero input di direzione
+        # cosi' alla riapertura il BFS ricalcola da fermo, senza scatti.
+        if held_by_wall:
+                dx = 0
+                dy = 0
+                queue_redraw()
                 return
 
         var col := int(position.x / TILE_SIZE)
