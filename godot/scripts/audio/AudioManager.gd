@@ -93,9 +93,13 @@ enum SoundType {
         HAZARD_THUD,
         # TASK 31 — barile esplosivo: botto profondo con frana di legno e
         # metallo (piu' grande e piu' lungo del tonfo del muro).
-        BARREL_EXPLODE
+        BARREL_EXPLODE,
+        # TASK 32 — nube di pipistrelli: stridio (chittering di squittii acuti
+        # in rapida successione) e battito d'ali (soffici soffiate d'aria).
+        BAT_SCREECH,
+        BAT_FLAP
 }
-const SOUND_TYPE_COUNT: int = 44
+const SOUND_TYPE_COUNT: int = 46
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -539,6 +543,8 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.HAZARD_GRIND:    s = _sfx_hazard_grind()
                 SoundType.HAZARD_THUD:     s = _sfx_hazard_thud()
                 SoundType.BARREL_EXPLODE:  s = _sfx_barrel_explode()
+                SoundType.BAT_SCREECH:     s = _sfx_bat_screech()
+                SoundType.BAT_FLAP:        s = _sfx_bat_flap()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1313,6 +1319,55 @@ func _sfx_barrel_explode() -> PackedFloat32Array:
                                 v += 0.18 * sin(TAU * ring_f * (t - start)) \
                                                 * exp(-(t - start) * 60.0)
                 s.append(3600.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# _sfx_bat_screech(): TASK 32 — STRIDIO dei pipistrelli: raffica di
+# squittii acuti (chirp discendenti 5.2kHz -> 2.8kHz) con interlezioni
+# irregolari, come uno sciame agitato. Breve (0.35s) per il debounce.
+func _sfx_bat_screech() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.35)
+        # 6 chirp a intervalli irregolari deterministici
+        var starts: Array[float] = [0.0, 0.045, 0.10, 0.16, 0.235, 0.29]
+        var freqs: Array[float] = [5200.0, 4600.0, 5000.0, 4200.0, 4900.0, 3900.0]
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                for k in starts.size():
+                        var st: float = starts[k]
+                        if t >= st and t < st + 0.03:
+                                # chirp discendente con vibrato
+                                var dt: float = t - st
+                                var f: float = freqs[k] * (1.0 - 0.45 * dt / 0.03) \
+                                                * (1.0 + 0.06 * sin(TAU * 130.0 * dt))
+                                v += 0.65 * sin(TAU * f * dt) * (1.0 - dt / 0.03)
+                # soffio d'aria dello sciame sotto gli squittii
+                v += 0.10 * noise_gen() * (0.5 + 0.5 * sin(TAU * 23.0 * t))
+                s.append(2600.0 / 32767.0 * _soft_clip(v))
+        return s
+
+
+# _sfx_bat_flap(): TASK 32 — BATTITO D'ALI: due/tre soffici soffiate
+# d'aria a bassa frequenza (ali di cuoio che battono), cadenza da volo
+# in picchiata (~11 battiti/s nel reale, qui 3 per one-shot).
+func _sfx_bat_flap() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.3)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                # 3 battiti: each = whoosh con attacco morbido
+                for k in 3:
+                        var st: float = 0.02 + 0.10 * k
+                        var dt: float = t - st
+                        if dt >= 0.0 and dt < 0.07:
+                                # soffio: rumo modulato da un inviluppo
+                                # a campana (giu'-su dell'ala)
+                                var bell: float = sin(PI * dt / 0.07)
+                                v += 0.45 * noise_gen() * bell
+                                v += 0.15 * sin(TAU * 90.0 * dt) * bell
+                s.append(2200.0 / 32767.0 * _soft_clip(v))
         return s
 
 

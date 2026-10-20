@@ -110,6 +110,13 @@ const CONTINUE_RESPAWN_INVULN_MS: int = 2500
 # poi scompare e riappare al livello labirinto successivo allo stesso modo.
 # ============================================================================
 const GhostReaperClass = preload("res://scripts/entities/GhostReaper.gd")
+
+## TASK 32 — nube di pipistrelli: evento casuale per livello.
+const BatCloudClass = preload("res://scripts/entities/BatCloud.gd")
+var bat_cloud: Node2D = null
+var bat_events_left: int = 0
+var bat_event_timer_ms: float = 0.0
+var _bat_rng := RandomNumberGenerator.new()
 # FIX (2P): in modalità due giocatori il mini boss immortale NON è uno ma
 # DUE, uno per player, e si differenziano SOLO nel colore: quello che
 # insegue P1 è VERDE, quello che insegue P2 è ROSSO. In 1P resta il
@@ -1233,6 +1240,11 @@ func _update_playing(delta_ms: float) -> void:
         # roccia, cattura/mash delle ganasce, rallentamento sabbie.
         hazards.update_hazards(delta_ms, maze)
 
+        # (1d) TASK 32 — NUBE DI PIPISTRELLI: spawn programmato, caccia,
+        # morsi e abbattimento (lo sciame vola sopra i muri: niente
+        # interazione col maze, solo con player e proiettili).
+        _update_bat_cloud(delta_ms)
+
         # (2) Enemies update
         # FIX (2P — nemici ignoravano P2): ogni nemico insegue il player VIVO
         # più VICINO a sé (P1 o P2). Prima passavamo solo la posizione di P1:
@@ -2283,6 +2295,63 @@ func _alive_players() -> Array:
         return out
 
 
+# ============================================================================
+# TASK 32 — NUBE DI PIPISTRELLI (evento casuale per livello)
+# ============================================================================
+
+## Scheduling + update dello sciame: spawn alla scadenza del timer, caccia
+## fino a morte/dispersione, poi (se restano eventi) riarmo del timer.
+func _update_bat_cloud(delta_ms: float) -> void:
+        if not C.BATS_ENABLED:
+                return
+        if bat_cloud != null and is_instance_valid(bat_cloud):
+                var players: Array = _alive_players()
+                bat_cloud.set_players_ref(players)
+                bat_cloud.update_cloud(delta_ms, players)
+                if bat_cloud.is_gone():
+                        bat_cloud.queue_free()
+                        bat_cloud = null
+                        if bat_events_left > 0:
+                                bat_event_timer_ms = float(_bat_rng.randi_range(
+                                        C.BAT_CLOUD_SECOND_MIN_MS,
+                                        C.BAT_CLOUD_SECOND_MAX_MS))
+                return
+        if bat_events_left <= 0:
+                return
+        bat_event_timer_ms -= delta_ms
+        if bat_event_timer_ms <= 0.0:
+                bat_events_left -= 1
+                _spawn_bat_cloud()
+
+
+## Spawna lo sciame in un punto casuale dell'area di gioco, lontano da
+## OGNI player vivo (min ~6 celle): nessun morso a tradimento.
+func _spawn_bat_cloud() -> void:
+        var players: Array = _alive_players()
+        if players.is_empty():
+                # nessun player vivo: evento rimandato (non consumato)
+                bat_events_left += 1
+                bat_event_timer_ms = 5000.0
+                return
+        var pos: Vector2 = Vector2.ZERO
+        for _attempt in 60:
+                pos = Vector2(
+                        float(_bat_rng.randi_range(80, int(C.WINDOW_WIDTH) - 80)),
+                        float(_bat_rng.randi_range(int(C.UI_HEIGHT) + 90,
+                                        int(C.WINDOW_HEIGHT) - 70)))
+                var far_enough: bool = true
+                for p in players:
+                        if p.position.distance_to(pos) < C.BAT_CLOUD_MIN_SPAWN_DIST:
+                                far_enough = false
+                                break
+                if far_enough:
+                        break
+        bat_cloud = BatCloudClass.new()
+        bat_cloud.position = pos
+        bat_cloud.set_players_ref(players)
+        add_child(bat_cloud)
+
+
 # FIX (2P): il player VIVO più vicino a `from_pos` (P1 o P2), oppure null se
 # non ce ne sono. Usato dal targeting di nemici, miniboss e boss room: in 2P
 # l'IA preme su chi è più vicino invece di ignorare completamente P2.
@@ -3015,6 +3084,16 @@ func start_level(lvl: int) -> void:
         # stati freschi (le voragini ri-partono dal telegrafo). generate()
         # ripulisce prima tutto (sprite + registro dynamic_walls del Maze).
         hazards.generate(current_level, maze, self)
+        # TASK 32 — NUBE DI PIPISTRELLI: programma gli eventi del livello
+        # (1 dal livello 5, 2 dal 31) e rimuove l'eventuale sciame del
+        # livello precedente.
+        if bat_cloud != null and is_instance_valid(bat_cloud):
+                bat_cloud.queue_free()
+                bat_cloud = null
+        _bat_rng.seed = hash("bats_v1_%d" % current_level)
+        bat_events_left = C.bat_events_for_level(current_level)
+        bat_event_timer_ms = float(_bat_rng.randi_range(
+                C.BAT_CLOUD_FIRST_MIN_MS, C.BAT_CLOUD_FIRST_MAX_MS))
         # Play level music
         # FIX (musica calice tra livelli): se l'effetto del calice è ancora
         # attivo (player uscito dal livello mentre era invincibile) la

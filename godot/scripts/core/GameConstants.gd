@@ -853,6 +853,66 @@ const QUAKE_KILL_POINTS: int = 5000
 
 
 # ============================================================================
+# TASK 32 — NUBI DI PIPISTRELLI (evento casuale)
+# ============================================================================
+# Uno sciame di pipistrelli spawna in un punto casuale del labirinto (lontano
+# dal player) e VOLA LIBERO sopra i muri inseguendo il player piu' vicino.
+#   * MORSO: -20% dell'energia max (danno ambientale: bypassa le armature;
+#     salto/ghost/calice proteggono). Dopo un morso lo sciame rimbalza via
+#     per ~0.9s prima di riprendere la caccia (niente drain istantaneo).
+#   * DIFESA: DUE colpi di proiettile disperdono lo sciame (+5000 punti);
+#     al primo colpo perde un pipistrello (feedback visivo + squittio).
+#   * FREQUENZA: 1 evento per livello (dal livello 5), DUE eventi dal
+#     livello 31 in poi, a momenti casuali. Se non viene ucciso, lo sciame
+#     svolazza via da solo dopo 20s.
+#   * AUDIO: battito d'ali periodico mentre caccia + stridio al morso,
+#     al colpo subito e alla dispersione.
+# Rollback: GameConstants.BATS_ENABLED = false.
+# ============================================================================
+
+## Flag di rollback: false = nessun evento pipistrelli programmato.
+static var BATS_ENABLED: bool = true
+
+## Primo livello con le nubi di pipistrelli.
+const BAT_CLOUD_GRACE_LEVEL: int = 5
+
+## Finestra casuale di primo spawn (ms dall'inizio livello).
+const BAT_CLOUD_FIRST_MIN_MS: int = 10000
+const BAT_CLOUD_FIRST_MAX_MS: int = 26000
+
+## Finestra del SECONDO evento (livelli 31+), dopo il primo concluso.
+const BAT_CLOUD_SECOND_MIN_MS: int = 22000
+const BAT_CLOUD_SECOND_MAX_MS: int = 40000
+
+## Eventi per livello: 0 sotto il grace, 1 fino al livello 30, 2 dal 31.
+static func bat_events_for_level(level: int) -> int:
+        if not BATS_ENABLED or level < BAT_CLOUD_GRACE_LEVEL:
+                return 0
+        return 2 if level >= 31 else 1
+
+## Velocita' di volo (px/frame a 60fps): il player corre a 2 — seminare
+## lo sciame in linea retra e' possibile, ma gli angoli costano cari.
+const BAT_CLOUD_SPEED: float = 1.7
+
+## Cooldown tra i morsi (ms) e durata del rimbalzo post-morso.
+const BAT_CLOUD_BITE_CD_MS: int = 900
+const BAT_CLOUD_FLEE_MS: int = 900
+
+## Danno del morso (frazione dell'energia max).
+const BAT_CLOUD_PLAYER_DAMAGE_PCT: float = 0.2
+
+## Colpi di proiettile per disperdere lo sciame e punti bonus.
+const BAT_CLOUD_HITS_TO_DIE: int = 2
+const BAT_CLOUD_KILL_POINTS: int = 5000
+
+## Vita massima dello sciame se nessuno lo abbatte (poi vola via).
+const BAT_CLOUD_LIFETIME_MS: int = 20000
+
+## Distanza minima di spawn da OGNI player vivo (px, ~6 celle).
+const BAT_CLOUD_MIN_SPAWN_DIST: float = 384.0
+
+
+# ============================================================================
 # RELIC (Task 21): i TYPE delle 12 armi reliquia (6 mischia + 6 distanza)
 # + il proiettile riflesso dalle Scaglie del Drago. Dichiarati QUI (prima
 # di WEAPON_HITS_TO_KILL) perche' i const si valutano IN ORDINE nel file.
