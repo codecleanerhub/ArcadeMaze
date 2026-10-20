@@ -64,6 +64,17 @@ enum LimbProfile {
 const DEFAULT_GRID_W := 8
 const DEFAULT_GRID_H := 8
 
+## TASK 28 — rete di sicurezza anti-glitch: offset massimo (in "unita' frame
+## 64px") di OGNI componente dello spostamento vertice. Il gain 2.6 del
+## Task 25 portava gli arti a 6-13% del lato dello sprite: la mesh (UV statici
+## su vertici in movimento) si LACERAVA -> smearing, doppie immagini, sagome
+## che escono dal corpo ("boss glitchati/confusi"). Con il clamp lo
+## spostamento resta <= ~3.9% del lato (2.5px su frame SD 64px, 10px su XHD
+## 256px): animazione visibile MA integrita' dello sprite garantita per
+## qualunque valore di limb_gain (anche futuro). I modalita' IDLE/WALK/ATTACK
+## e i nemici/miniboss (offset <= 2.0) NON sono toccati.
+const MAX_LIMB_OFFSET_UNITS := 2.5
+
 ## TASK 22 — profilo arti corrente (LP_NONE di default: identico al legacy).
 var limb_profile: int = LimbProfile.LP_NONE
 
@@ -432,10 +443,15 @@ func _transform_vertex(idx: int, mode: int, time: float,
                                 off.x += sin(time * 2.2 + (0.5 - v) * 8.0 + u * 2.5) * 2.0 * tw2 * lg
                                 off.y += cos(time * 2.8 + u * 3.0) * 1.2 * tw2 * lg
 
-        # TASK 22: tutte le ampiezze sono in "unità frame 64px"; su mesh XHD
+        # TASK 28: tutte le ampiezze sono in "unità frame 64px"; su mesh XHD
         # (256px) vanno moltiplicate per 4 per mantenere lo stesso spostamento
         # A SCHERMO. Con sheet legacy 64px _unit = 1 -> output identico al
         # codice precedente (bit per bit).
+        # TASK 28: CLAMP di integrita' (vedi MAX_LIMB_OFFSET_UNITS): qualunque
+        # combinazione di gain/profilo non puo' spostare un vertice oltre
+        # ~3.9% del lato -> niente smearing/lacerazioni della texture.
+        off.x = clampf(off.x, -MAX_LIMB_OFFSET_UNITS, MAX_LIMB_OFFSET_UNITS)
+        off.y = clampf(off.y, -MAX_LIMB_OFFSET_UNITS, MAX_LIMB_OFFSET_UNITS)
         off *= _unit
         var pos: Vector2 = base + off
         pos.x *= scale

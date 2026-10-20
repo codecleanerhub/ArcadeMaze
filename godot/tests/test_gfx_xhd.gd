@@ -188,8 +188,8 @@ func _phase_e_boss_xhd() -> void:
                 if b.deform_sprite.sub_rect.size.x != 256.0:
                         _fail("boss tipo %d: sub_rect XHD errata %s"
                                         % [t, b.deform_sprite.sub_rect.size])
-                if b.deform_sprite.grid_w != 12:
-                        _fail("boss tipo %d: grid XHD attesa 12, avuta %d"
+                if b.deform_sprite.grid_w != 16:
+                        _fail("boss tipo %d: grid XHD attesa 16 (Task 28), avuta %d"
                                         % [t, b.deform_sprite.grid_w])
                 var prof: int = BossScript.get_limb_profile(b.boss_type)
                 if C.BOSS_LIMB_ANIM_ENABLED and b.deform_sprite.limb_profile != prof:

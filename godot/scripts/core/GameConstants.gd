@@ -43,15 +43,22 @@ static var BOSS_PROJ_THEMED_ENABLED: bool = true
 #                          (tentacoli/braccia/ali/vesto'). Il Task 22 le aveva
 #                          calibrate SUBTLE (~2-4% del lato dello sprite) e a
 #                          schermo risultavano impercettibili (segnalazione
-#                          utente: "non vedo animazioni nei boss"). 2.6 porta
-#                          lo spostamento tipico al 6-13% del lato: chiaro ma
-#                          senza strappare la silhouette. 1.0 = identico al
-#                          Task 22 (rollback immediato).
+#                          utente: "non vedo animazioni nei boss"). 2.6 (Task 25)
+#                          portava lo spostamento al 6-13% del lato: VISO a
+#                          schermo ma STRAPPAVA la mesh (smearing/doppie
+#                          immagini: "grafica glitchata/confusa", Task 28).
+#                          TASK 28: 1.15 = movimento chiaramente visibile (~4%
+#                          del lato) SENZA lacerazioni; DeformableSprite
+#                          clampa comunque ogni offset a MAX_LIMB_OFFSET_UNITS
+#                          (rete di sicurezza anti-glitch per qualunque gain).
+#                          1.0 = identico al Task 22 (rollback immediato).
+#                          I boss fluttuanti (LP_HOVER) ricevono ANCHE il bob
+#                          di nodo (Boss.update_step): animazione pulita.
 #   ARMOR_OUTFIT_ENABLED -> le armature reliquia RICOLORANO il vestiario del
 #                          player (shader armor_outfit: hue del vestito ->
 #                          colore dell'armatura + tinta metallo + rim) oltre
 #                          all'aura procedurale esistente.
-static var BOSS_LIMB_ANIM_GAIN: float = 2.6
+static var BOSS_LIMB_ANIM_GAIN: float = 1.15
 static var ARMOR_OUTFIT_ENABLED: bool = true
 
 # ============================================================================

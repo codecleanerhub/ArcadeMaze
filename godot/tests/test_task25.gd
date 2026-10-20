@@ -1,9 +1,10 @@
-## test_task25.gd — TASK 25: animazioni boss visibili + outfit armature.
-## Verifica nel runtime REALE (headless):
-##   A. DeformableSprite.limb_gain: la deformazione degli arti e' LINEARE
-##      nel gain (v(2.6)-v(0) == 2.6*(v(1)-v(0))) e con gain 2.6 lo
-##      spostamento tipico supera il 4% del lato dello sprite (soglia di
-##      visibilita' che il Task 22 non raggiungeva).
+## test_task25.gd — TASK 25 (aggiornato TASK 28): animazioni boss visibili
+## + outfit armature. Verifica nel runtime REALE (headless):
+##   A. DeformableSprite.limb_gain: LINEARITA' sotto il clamp (v(0.5)-v(0)
+##      == 0.5*(v(1)-v(0))), CLAMP di integrita' a gain estremo (10.0:
+##      ogni componente <= MAX_LIMB_OFFSET_UNITS) e VISIBILITA' col gain di
+##      gioco (max spostamento arti > 3% del lato e <= ~4%: visibile MA
+##      senza lacerazioni — Task 28: il gain 2.6 strappava la mesh).
 ##   B. Boss: il boss TERRESTRE in movimento usa la modalità WALK della
 ##      mesh (bob + dondolio zampe); i fluttuanti (Lich) restano in IDLE.
 ##   C. Boss: deform_sprite.limb_gain viene impostato da update_step al
@@ -76,60 +77,91 @@ func _physics_process(delta: float) -> void:
                                 _verdict()
 
 
-# ---------------- A. limb_gain: linearita' + visibilita' ----------------
+# ---------------- A. limb_gain: linearita' + clamp + visibilita' ----------------
 func _phaseA_limb_gain() -> void:
-        print("\n[TEST] FASE A — limb_gain (linearita' + ampiezza visibile)")
+        print("\n[TEST] FASE A — limb_gain (linearita' sotto clamp, clamp estremo, visibilita')")
         var ds := DeformableSpriteScript.new()
         add_child(ds)
-        ds.load_subrect("res://assets/sprites/boss_021_sheet.png", 0, 0, 64, 64)
+        # TASK 28: il gioco usa i frame XHD (256px, _unit=4): i test di
+        # visibilita' vanno misurati su quel percorso (a schermo 2.5 unita'
+        # = 10px = ~4% del lato).
+        ds.load_subrect("res://assets/sprites/xhd/boss_021_xhd_sheet.png", 0, 0, 256, 256)
         if not ds.loaded:
-                _fail("A: deform sprite non caricato")
+                _fail("A: deform sprite XHD non caricato")
                 return
-        ds.set_grid_size(8, 8)
+        ds.set_grid_size(16, 16)
         ds.limb_profile = DeformableSpriteScript.LimbProfile.LP_TENTACLES
+        var gw := 16
+        var gh := 16
         # vertice in basso al centro: peso tentacolo massimo
-        var idx: int = 8 * (8 + 1) + 4
+        var idx: int = gh * (gw + 1) + gw / 2
         var t_probe: float = 2.0
         ds.limb_gain = 0.0
         var v0: Vector2 = ds._transform_vertex(idx, DeformableSpriteScript.AnimMode.IDLE,
-                        t_probe, 8, 8, 1.0, false, 64.0, 64.0)
+                        t_probe, gw, gh, 1.0, false, 256.0, 256.0)
         ds.limb_gain = 1.0
         var v1: Vector2 = ds._transform_vertex(idx, DeformableSpriteScript.AnimMode.IDLE,
-                        t_probe, 8, 8, 1.0, false, 64.0, 64.0)
-        ds.limb_gain = 2.6
-        var v26: Vector2 = ds._transform_vertex(idx, DeformableSpriteScript.AnimMode.IDLE,
-                        t_probe, 8, 8, 1.0, false, 64.0, 64.0)
+                        t_probe, gw, gh, 1.0, false, 256.0, 256.0)
+        ds.limb_gain = 0.5
+        var v05: Vector2 = ds._transform_vertex(idx, DeformableSpriteScript.AnimMode.IDLE,
+                        t_probe, gw, gh, 1.0, false, 256.0, 256.0)
+        # 1) linearita' SOTTO il clamp (0.5 e 1.0 ampiamente dentro il limite)
         var lp_vec: Vector2 = v1 - v0
         if lp_vec.length() < 0.5:
                 _fail("A: vertice campione senza movimento arti (%.3f)" % lp_vec.length())
         else:
-                var expect: Vector2 = v0 + lp_vec * 2.6
-                var err: float = (v26 - expect).length()
-                if err < 0.001:
-                        _ok("A: linearita' gain OK (v(2.6) == v(0)+2.6*(v(1)-v(0)), err %.4f)" % err)
+                var expect: Vector2 = v0 + lp_vec * 0.5
+                var err: float = (v05 - expect).length()
+                if err < 0.05:
+                        _ok("A: linearita' gain sotto clamp OK (v(0.5) == v(0)+0.5*(v(1)-v(0)), err %.4f)" % err)
                 else:
-                        _fail("A: linearita' gain VIOLATA (err %.4f)" % err)
-        # ampiezza a schermo con gain 2.6: media su tutti i vertici bassi
-        var acc: float = 0.0
-        var n: int = 0
-        for gx in range(9):
-                var i2: int = 8 * 9 + gx
-                var b0: Vector2 = ds._transform_vertex(i2, DeformableSpriteScript.AnimMode.IDLE,
-                                t_probe, 8, 8, 1.0, false, 64.0, 64.0)
-                ds.limb_gain = 0.0
-                b0 = ds._transform_vertex(i2, DeformableSpriteScript.AnimMode.IDLE,
-                                t_probe, 8, 8, 1.0, false, 64.0, 64.0)
-                ds.limb_gain = 2.6
-                var b26: Vector2 = ds._transform_vertex(i2, DeformableSpriteScript.AnimMode.IDLE,
-                                t_probe, 8, 8, 1.0, false, 64.0, 64.0)
-                acc += (b26 - b0).length()
-                n += 1
-        var mean_amp: float = acc / float(n)
-        if mean_amp > 64.0 * 0.04:
-                _ok("A: ampiezza media bordo basso con gain 2.6 = %.1fpx (> 4%% del lato 64px)"
-                                % mean_amp)
+                        _fail("A: linearita' gain VIOLATA sotto clamp (err %.4f)" % err)
+        # 2) clamp di integrita' a gain estremo: ogni componente <= 2.5 unita'
+        #    (= 10px XHD ~ 3.9% del lato): MAI lacerazioni per qualunque gain
+        ds.limb_gain = 10.0
+        var max_comp: float = 0.0
+        for gy in range(gh + 1):
+                for gx in range(gw + 1):
+                        var i: int = gy * (gw + 1) + gx
+                        var vv: Vector2 = ds._transform_vertex(i, DeformableSpriteScript.AnimMode.IDLE,
+                                        t_probe, gw, gh, 1.0, false, 256.0, 256.0)
+                        max_comp = maxf(maxf(max_comp, absf(vv.x - float(gx) * 16.0)),
+                                        absf(vv.y - float(gy) * 16.0))
+        var lim: float = DeformableSpriteScript.MAX_LIMB_OFFSET_UNITS * 4.0 + 0.1
+        if max_comp <= lim:
+                _ok("A: clamp integrita' OK (gain 10.0 -> max componente %.2fpx <= %.1fpx)"
+                                % [max_comp, lim])
         else:
-                _fail("A: ampiezza media %.2fpx sotto la soglia di visibilita' (2.56px)" % mean_amp)
+                _fail("A: clamp VIOLATO a gain 10.0 (max %.2fpx > %.1fpx)" % [max_comp, lim])
+        # 3) visibilita' col gain di gioco: max spostamento arti sul bordo
+        #    basso in 2s di animazione > 3% del lato (7.7px), e ogni
+        #    componente dentro il limite anti-lacerazione (il clamp e'
+        #    PER COMPONENTE: la lunghezza puo' arrivare a ~sqrt(2)x limite)
+        ds.limb_gain = GameConstants.BOSS_LIMB_ANIM_GAIN
+        var max_amp: float = 0.0
+        var max_comp_game: float = 0.0
+        for k in range(40):
+                var tt: float = 0.05 * float(k)
+                for gx in range(gw + 1):
+                        var i2: int = gh * (gw + 1) + gx
+                        ds.limb_gain = 0.0
+                        var vv0: Vector2 = ds._transform_vertex(i2, DeformableSpriteScript.AnimMode.IDLE,
+                                        tt, gw, gh, 1.0, false, 256.0, 256.0)
+                        ds.limb_gain = GameConstants.BOSS_LIMB_ANIM_GAIN
+                        var vv1: Vector2 = ds._transform_vertex(i2, DeformableSpriteScript.AnimMode.IDLE,
+                                        tt, gw, gh, 1.0, false, 256.0, 256.0)
+                        var dvec: Vector2 = vv1 - vv0
+                        max_amp = maxf(max_amp, dvec.length())
+                        max_comp_game = maxf(maxf(max_comp_game, absf(dvec.x)), absf(dvec.y))
+        if max_amp > 256.0 * 0.03 and max_comp_game <= lim:
+                _ok("A: visibilita' OK (max ampiezza arti %.1fpx su lato 256px = %.1f%%,"
+                                % [max_amp, max_amp / 256.0 * 100.0]
+                                + " max componente %.1fpx <= limite %.1fpx)" % [max_comp_game, lim])
+        elif max_comp_game > lim:
+                _fail("A: componente %.1fpx OLTRE il limite anti-glitch (%.1fpx)"
+                                % [max_comp_game, lim])
+        else:
+                _fail("A: ampiezza %.1fpx sotto la soglia di visibilita' (7.7px)" % max_amp)
         remove_child(ds)
         ds.queue_free()
 

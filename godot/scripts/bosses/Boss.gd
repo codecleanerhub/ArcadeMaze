@@ -301,6 +301,16 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                 var half_frame := float(_frame_px) * 0.5
                 var draw_x := pos.x - half_frame * scale_val
                 var draw_y := (pos.y - size * 0.25) - half_frame * scale_val
+                # TASK 28: i boss fluttuanti (LP_HOVER: Lich/Wraith/Vampiro/
+                # SPECTRAL_ALPHA/CULT_HERALD/Supreme Witch) si animano ANCHE
+                # via trasformo di NODO (bob verticale + deriva orizzontale in
+                # controfase): movimento chiaramente visibile e PRIVO di
+                # artefatti perche' non tocca la mesh (la veste continua a
+                # ondeggiare via profilo LP_HOVER col gain calibrato + clamp).
+                if C.BOSS_LIMB_ANIM_ENABLED \
+                                and prof == DeformableSprite.LimbProfile.LP_HOVER:
+                        draw_x += sin(anim_time * 0.8) * 4.0
+                        draw_y += sin(anim_time * 1.6) * 7.0
                 deform_sprite.position = Vector2(draw_x, draw_y) - pos  # local offset
                 deform_sprite.update(anim_time, mode, scale_val, false)
 
@@ -515,7 +525,11 @@ func _draw() -> void:
                                         C.SPRITE_XHD_FRAME_PX, C.SPRITE_XHD_FRAME_PX)
                                 if loaded:
                                         _frame_px = C.SPRITE_XHD_FRAME_PX
-                                        deform_sprite.set_grid_size(12, 12)
+                                        # TASK 28: grid 16x16 (era 12x12): celle
+                                        # piu' piccole = gradienti di
+                                        # deformazione piu' lisci, meno shear
+                                        # visibile tra celle adiacenti.
+                                        deform_sprite.set_grid_size(16, 16)
                 if not loaded:
                         _frame_px = 64
                         var path := "res://assets/sprites/" + sprite_id + "_sheet.png"

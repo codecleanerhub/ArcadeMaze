@@ -123,7 +123,7 @@ func _phase_abcd() -> void:
         # --- C: enhancement canvas del boss ---
         var ds := DeformableSprite.new()
         ds.load_subrect("res://assets/sprites/xhd/boss_031_xhd_sheet.png", 0, 0, 256, 256)
-        ds.set_grid_size(12, 12)
+        ds.set_grid_size(16, 16)   # TASK 28: grid XHD aggiornata 12->16
         if ds.material is ShaderMaterial:
                 _fail("C: materiale canvas attivo PRIMA di enable (rollback rotto)")
         ds.enable_canvas_enhancement()
