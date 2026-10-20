@@ -1344,22 +1344,44 @@ static func get_bonus_screen_id(level: int) -> int:
         return get_bonus_encounter(level) % 3
 
 
+## TASK 33 — ORDINE DI POTENZA CRESCENTE (richiesta utente: "le armi che
+## fanno piu' danno vengono date piu' avanti nei livelli rispetto a quelle
+## che fanno meno danni — ordinamento per potenza crescente, prima le piu'
+## scarse"). Indici nelle liste RELIC_MELEE / RELIC_RANGED / RELIC_ARMORS,
+## dal piu' debole al piu' forte. La scelta tiene conto di POTENZA (power),
+## colpi-per-uccidere (hits: meno colpi = piu' danno) ed effetti speciali:
+##   MISCHIA:  Mazza (p2, 3 colpi, solo stun) < Lama del Vampiro (p2, 3
+##     colpi, risucchio) < Alabarda (p3, 3 colpi, linea perforante) <
+##     Spadone (p3, 2 colpi, settore largo) < Martello del Golem (p4, 2
+##     colpi, 360 gradi + stun) < Ascia (p5, 2 colpi, settore + splash).
+##   DISTANZA: Arco (p1, 4 colpi) < Pugnali (p2, ventaglio) < Bastone (p2,
+##     a ricerca) < Verga (p2, fulmine a catena) < Balestra (p3,
+##     perforante x3) < Bombe (p4, esplosione ad area).
+##   ARMATURE: Ossidiana (spine, situazionale) < Scaglie (riflesso, solo
+##     contro chi spara) < Veste (rigenerazione lenta) < Corazza d'Oro
+##     (assorbimento diretto) < Fuoco (aura + immunita' al contatto) <
+##     Furore (+1 grado a OGNI colpo).
+const RELIC_POWER_ORDER_MELEE: Array[int] = [2, 4, 3, 0, 5, 1]
+const RELIC_POWER_ORDER_RANGED: Array[int] = [3, 2, 1, 4, 0, 5]
+const RELIC_POWER_ORDER_ARMOR: Array[int] = [2, 1, 3, 0, 4, 5]
+
+
 ## Le 3 reliquie offerte nella schermata bonus dopo il boss del `level`:
 ## UNA per famiglia (mischia/distanza/armatura — tutte le famiglie sempre
-## disponibili) con cursori sfasati cosi' le offerte ruotano senza mai
-## ripetere lo stesso pezzo due volte di fila e in 17 incontri compaiono
-## tutte le 18 reliquie:
-##   mischia   = RELIC_MELEE  [e % 6]
-##   distanza  = RELIC_RANGED [(e + 2) % 6]
-##   armatura  = RELIC_ARMORS [(e + 4) % 6]
+## disponibili). TASK 33: le famiglie camminano in PARALLELO sull'ordine
+## di POTENZA CRESCENTE (stesso "tier" per tutte e tre): i primi boss
+## offrono le reliquie piu' scarse, i boss piu' avanti quelle piu' forti.
+## Con 17 incontri e 6 pezzi per famiglia il ciclo 6+6+5 fa comparire
+## tutte le 18 reliquie, e nessun pezzo si ripete due volte di fila.
 static func get_bonus_offering(level: int) -> Array[Dictionary]:
         var e: int = get_bonus_encounter(level)
         if e < 0:
                 e = 0
+        var tier: int = e % RELIC_POWER_ORDER_MELEE.size()
         return [
-                RELIC_MELEE[e % RELIC_MELEE.size()],
-                RELIC_RANGED[(e + 2) % RELIC_RANGED.size()],
-                RELIC_ARMORS[(e + 4) % RELIC_ARMORS.size()],
+                RELIC_MELEE[RELIC_POWER_ORDER_MELEE[tier]],
+                RELIC_RANGED[RELIC_POWER_ORDER_RANGED[tier]],
+                RELIC_ARMORS[RELIC_POWER_ORDER_ARMOR[tier]],
         ]
 
 

@@ -198,11 +198,33 @@ func _phaseAB() -> bool:
                 prev_melee_id = str(offer[0].get("id"))
         if all_ids.size() != 18:
                 _fail("B3: offerte totali != 18 reliquie (" + str(all_ids.size()) + ")")
+        # B5 (TASK 33): ordinamento di POTENZA CRESCENTE — il primo boss
+        # offre le piu' scarse (Mazza / Arco / Ossidiana), il sesto le piu'
+        # forti (Ascia / Bombe / Furore), e la potenza non cala mai dentro
+        # il ciclo per mischia e distanza (campo "power").
+        var first: Array[Dictionary] = C.get_bonus_offering(4)
+        if str(first[0].get("id")) != "mace" or str(first[1].get("id")) != "ranger_bow" \
+                        or str(first[2].get("id")) != "obsidian":
+                _fail("B5: incontro 1 non offre le piu' scarse (%s/%s/%s)"
+                                % [first[0].get("id"), first[1].get("id"), first[2].get("id")])
+        var sixth: Array[Dictionary] = C.get_bonus_offering(24)
+        if str(sixth[0].get("id")) != "axe" or str(sixth[1].get("id")) != "alchemist_bombs" \
+                        or str(sixth[2].get("id")) != "fury":
+                _fail("B5: incontro 6 non offre le piu' forti (%s/%s/%s)"
+                                % [sixth[0].get("id"), sixth[1].get("id"), sixth[2].get("id")])
+        for e in range(5):
+                var lo: Array[Dictionary] = C.get_bonus_offering((e + 1) * 4)
+                var hi: Array[Dictionary] = C.get_bonus_offering((e + 2) * 4)
+                if int(lo[0].get("power", 0)) > int(hi[0].get("power", 0)):
+                        _fail("B5: potenza mischia non crescente al tier %d" % e)
+                if int(lo[1].get("power", 0)) > int(hi[1].get("power", 0)):
+                        _fail("B5: potenza distanza non crescente al tier %d" % e)
         # B4: encounters/levels chiavi.
         if C.get_bonus_encounter(4) != 0 or C.get_bonus_encounter(68) != 16:
                 _fail("B4: encounter 4->0 / 68->16 sbagliati")
         if failures.is_empty():
-                _ok("A/B: costanti (18 reliquie, tipi, hits, furore) e rotazione 6/6/5")
+                _ok("A/B: costanti (18 reliquie, tipi, hits, furore), rotazione 6/6/5"
+                                + " e ordine potenza crescente (Task 33)")
         return true
 
 
