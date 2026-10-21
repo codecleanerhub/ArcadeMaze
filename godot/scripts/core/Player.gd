@@ -1504,7 +1504,7 @@ func activate_jump() -> bool:
                 return false
         if jump_timer > 0:
                 return false  # già in salto
-        # Gate di stamina: ci vuole almeno 1/3 di barra per un salto.
+        # Gate di stamina: ci vuole almeno 1/2 barra per un salto.
         if stamina_exhausted or stamina < STAMINA_JUMP_COST - 0.0001:
                 # Click "a vuoto": tenendo premuto il tasto di salto il
                 # suono non si mitraglia (cooldown interno + debounce SFX).

@@ -163,6 +163,34 @@ func _physics_process(delta: float) -> void:
                                                 _fail("A8: dopo respawn la stamina non è piena")
                                         else:
                                                 print("[TEST] OK A8: al respawn la stamina è piena")
+                                        # --- A9: colori barra stamina (Task 37) ---
+                                        # ROSA piena (2 salti disponibili), ARANCIONE
+                                        # dopo il 1° salto (1 disponibile), ROSSA dopo
+                                        # il 2° (0 disponibili). Colore = salti usati.
+                                        var st_hud = main.hud
+                                        if st_hud == null:
+                                                _fail("A9: HUD non trovata in MainGame")
+                                        else:
+                                                var c_pink: Color = st_hud._stamina_fill_color(1.0)
+                                                var c_orange: Color = st_hud._stamina_fill_color(0.5)
+                                                var c_red: Color = st_hud._stamina_fill_color(0.0)
+                                                var c_mid: Color = st_hud._stamina_fill_color(0.75)
+                                                if c_pink.b <= c_pink.g or c_pink.r < 0.9:
+                                                        _fail("A9: barra piena non ROSA: " + str(c_pink))
+                                                else:
+                                                        print("[TEST] OK A9a: barra piena = ROSA ", str(c_pink))
+                                                if c_orange.g <= c_orange.b or c_orange.r < 0.9:
+                                                        _fail("A9: metà barra non ARANCIONE: " + str(c_orange))
+                                                else:
+                                                        print("[TEST] OK A9b: dopo il 1° salto = ARANCIONE ", str(c_orange))
+                                                if c_red.r < 0.7 or c_red.g > 0.3 or c_red.b > 0.3:
+                                                        _fail("A9: barra svuotata non ROSSA: " + str(c_red))
+                                                else:
+                                                        print("[TEST] OK A9c: dopo il 2° salto = ROSSO ", str(c_red))
+                                                if c_mid.g <= c_mid.b:
+                                                        _fail("A9: a 0.75 atteso ARANCIONE (1 salto disponibile): " + str(c_mid))
+                                                else:
+                                                        print("[TEST] OK A9d: 0.75 = ARANCIONE (1 salto disponibile)")
                                         # --- B: pozione verde 9s (5+4) ---
                                         if PlayerScript.GHOST_MODE_DURATION_MS != 9000:
                                                 _fail("B: GHOST_MODE_DURATION_MS = "

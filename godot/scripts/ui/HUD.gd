@@ -73,7 +73,7 @@ var _p1: Dictionary = {
         "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
         "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
-        # FIX (stamina salti): barra verde sotto quella della vita.
+        # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
         # RELIC (Task 21): stato armatura reliquia (nessuna = stringa vuota).
         "armor_name": "", "armor_color": Color.WHITE,
@@ -84,7 +84,7 @@ var _p2: Dictionary = {
         "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
         "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
-        # FIX (stamina salti): barra verde sotto quella della vita (per P2).
+        # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
         # RELIC (Task 21): stato armatura reliquia (per P2).
         "armor_name": "", "armor_color": Color.WHITE,
@@ -296,8 +296,9 @@ func _draw_1p() -> void:
         _draw_label("ENERGY", 280, 10)
         _draw_energy_bar(280, 30, 100, 18,
                 float(_p1.energy) / float(_p1.max_energy))
-        # FIX (stamina salti): barra STAMINA verde, SOTTO la barra della
-        # vita/energia (3 salti consecutivi; 1/3 consumato a ogni salto).
+        # FIX (stamina salti): barra STAMINA sotto la barra vita/energia:
+        # ROSA piena (2 salti disponibili), ARANCIONE dopo il 1° salto,
+        # ROSSA dopo il 2° (lampeggia finché la ricarica non è completa).
         _draw_stamina_bar(280, 52, 100, 10,
                 _p1.stamina, _p1.stamina_exhausted)
         # WPN — TASK 26: le armi speciali (reliquie) NON mostrano il nome
@@ -331,7 +332,7 @@ func _draw_2p() -> void:
         _draw_label("EN", 180, 10)
         _draw_energy_bar(180, 32, 60, 14,
                 float(_p1.energy) / float(_p1.max_energy))
-        # FIX (stamina salti): barra STAMINA verde sotto la vita (P1).
+        # FIX (stamina salti): barra STAMINA sotto la vita, P1 (rosa/arancione/rosso).
         _draw_stamina_bar(180, 50, 60, 8,
                 _p1.stamina, _p1.stamina_exhausted)
         if not str(_p1.weapon_name).is_empty():
@@ -354,7 +355,7 @@ func _draw_2p() -> void:
         _draw_label("EN", 1730, 10)
         _draw_energy_bar(1730, 32, 60, 14,
                 float(_p2.energy) / float(_p2.max_energy))
-        # FIX (stamina salti): barra STAMINA verde sotto la vita (P2).
+        # FIX (stamina salti): barra STAMINA sotto la vita, P2 (rosa/arancione/rosso).
         _draw_stamina_bar(1730, 50, 60, 8,
                 _p2.stamina, _p2.stamina_exhausted)
         if not str(_p2.weapon_name).is_empty():
@@ -507,30 +508,53 @@ func _draw_label_int(value: int, x: float, y: float, color: Color) -> void:
         _draw_label_colored(str(value), x, y, color)
 
 
-# FIX (stamina salti): barra della STAMINA (verde) sotto quella della vita.
-# Piena = 3 salti disponibili; ogni salto ne consuma 1/3; si ricarica da
-# sola quando il player non salta. Quando il player è "stanco" (3° salto
-# consecutivo: barra svuotata) la barra LAMPEGGIA finché non si è ricaricata
-# completamente — in quel momento il player può di nuovo saltare.
+# FIX (stamina salti): barra della STAMINA sotto quella della vita.
+# Colore legato ai salti usati (Task 37): ROSA quando è piena (0 salti
+# usati, 2 disponibili), ARANCIONE dopo il 1° salto (metà barra), ROSSA
+# dopo il 2° salto (barra svuotata). Ogni salto consuma 1/2 della barra;
+# si ricarica da sola quando il player non salta. Quando il player è
+# "stanco" (2° salto consecutivo: barra svuotata) la barra LAMPEGGIA in
+# rosso — con una traccia minima visibile anche a barra vuota — finché non
+# si è ricaricata completamente: in quel momento torna ROSA e il player può
+# di nuovo saltare.
 func _draw_stamina_bar(x: float, y: float, w: float, h: float,
                                            ratio: float, exhausted: bool) -> void:
         # Sfondo scuro + bordo (stesso stile delle altre barre)
         draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
         draw_rect(Rect2(x, y, w, h), color_energy_border, false, 1.5)
         var r: float = clampf(ratio, 0.0, 1.0)
-        if r <= 0.0:
+        # Il ROSSO del 2° salto deve comparire SUBITO, anche a barra
+        # completamente vuota (r=0): stub minimo che lampegga.
+        var fill_w: float = w * r
+        if exhausted and r <= 0.0:
+                fill_w = w * 0.12
+        if fill_w <= 0.0:
                 return
-        # Verde stamina; quando il player è esausto la barra lampeggia
-        # (semplificazione visiva del blocco "finché non si è caricata
-        # completamente").
-        var fill: Color = Color(0.10, 0.85, 0.30)
+        var fill: Color = _stamina_fill_color(r)
+        # Quando il player è esausto (2° salto consecutivo) la barra
+        # LAMPEGGIA in rosso chiaro/scuro finché la ricarica non è completa.
         if exhausted:
                 var blink_on: bool = fmod(Time.get_ticks_msec() / 1000.0, 0.36) < 0.18
-                fill = Color(0.55, 0.95, 0.60) if blink_on else Color(0.05, 0.45, 0.18)
-        draw_rect(Rect2(x, y, w * r, h), fill, true)
+                fill = Color(1.00, 0.38, 0.38) if blink_on else Color(0.45, 0.06, 0.10)
+        draw_rect(Rect2(x, y, fill_w, h), fill, true)
         # Highlight superiore (riflesso luce)
-        draw_rect(Rect2(x, y, w * r, 2.0),
-                Color(fill.r + 0.25, fill.g + 0.15, fill.b + 0.25, 0.55), true)
+        draw_rect(Rect2(x, y, fill_w, 2.0),
+                Color(minf(fill.r + 0.25, 1.0), minf(fill.g + 0.15, 1.0),
+                        minf(fill.b + 0.25, 1.0), 0.55), true)
+
+
+# Colore del riempimento per numero di salti DISPONIBILI (Task 37):
+#   * ratio >= 1.0  → ROSA       (barra piena: 2 salti disponibili)
+#   * ratio >= 0.5  → ARANCIONE  (dopo il 1° salto: 1 salto disponibile)
+#   * ratio <  0.5  → ROSSO      (dopo il 2° salto: 0 salti disponibili)
+# Pura funzione del ratio (testabile da test_stamina_weapons A9): il
+# lampeggio da esausto vive nel _draw perché dipende dal tempo reale.
+func _stamina_fill_color(ratio: float) -> Color:
+        if ratio >= 0.999:
+                return Color(1.00, 0.42, 0.72)   # ROSA
+        if ratio >= 0.5:
+                return Color(1.00, 0.55, 0.10)   # ARANCIONE
+        return Color(0.92, 0.16, 0.16)           # ROSSO
 
 
 # Draw a horizontal bar (mirror of the energy/ammo bar in UI.cpp).

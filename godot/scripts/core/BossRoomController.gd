@@ -1363,7 +1363,7 @@ func _update_hud() -> void:
                 "weapon_color": C.get_weapon_color(int(player.current_weapon.get("type", 0))),
                 "weapon_ammo": player.current_weapon.get("ammo", 0),
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
-                # FIX (stamina salti): barra verde sotto quella della vita.
+                # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
                 # RELIC (Task 21): stato armatura reliquia in HUD.
@@ -1385,7 +1385,7 @@ func _update_hud() -> void:
                         "weapon_color": C.get_weapon_color(int(player2.current_weapon.get("type", 0))),
                         "weapon_ammo": player2.current_weapon.get("ammo", 0),
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
-                        # FIX (stamina salti): barra verde sotto quella della vita (P2).
+                        # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
                         # RELIC (Task 21): stato armatura reliquia in HUD (P2).
