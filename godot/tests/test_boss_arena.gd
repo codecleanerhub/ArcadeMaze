@@ -5,8 +5,9 @@
 ## pilastri con frammenti, danno dei frammenti al boss, pickup/lancio/
 ## detonazione dei barili (con moltiplicatore debolezza x2.5), arma SIEGE
 ## (pickup, proiettile pesante, danno), blocco dei proiettili boss sui
-## pilastri, rilascio del barile alla morte del portatore, rinnovo arena,
-## rimbalzo del boss sui pilastri.
+## pilastri, rilascio del barile alla morte del portatore, rinnovo arena
+## (TASK 43: SOLO consumabili — le architetture non risorgono MAI),
+## ripristino snapshot pilastri al continue, rimbalzo del boss.
 ##
 ## Ambiente controllato: mina rimossa, sparo del boss disattivato (timer
 ## negativo), spawn guard azzerata, boss teletrasportato lontano dai
@@ -153,14 +154,18 @@ func _physics_process(delta: float) -> void:
                                 phase = 16
                                 t = 0.0
                 16:
-                        _phase_bounce_setup()
+                        _phase_snapshot_restore()
                         phase = 17
                         t = 0.0
                 17:
+                        _phase_bounce_setup()
+                        phase = 18
+                        t = 0.0
+                18:
                         if t > 0.4:
                                 _phase_bounce_check()
-                                phase = 18
-                18:
+                                phase = 19
+                19:
                         _finish()
 
 
@@ -477,16 +482,25 @@ func _phase_renewal_setup() -> void:
 
 
 # ---------------------------------------------------------------------------
-# FASE 15 — verifica rinnovo arena
+# FASE 15 — verifica rinnovo arena (TASK 43: SOLO consumabili)
 # ---------------------------------------------------------------------------
 func _phase_renewal_check() -> void:
         var standing: int = 0
+        var rubble_nodes: int = 0
         for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl) and pl.is_standing():
-                        standing += 1
-        _ok(standing == C.BOSS_ARENA_PILLAR_COUNT,
-                        "rinnovo arena: 4 pilastri di nuovo in piedi ("
-                        + str(standing) + ")")
+                if pl != null and is_instance_valid(pl):
+                        if pl.is_standing():
+                                standing += 1
+                        elif pl.state == 2:  # RUBBLE
+                                rubble_nodes += 1
+        # TASK 43 (richiesta utente): le architetture distrutte NON risorgono
+        # ne' col rinnovo periodico, ne' alla morte del player.
+        _ok(standing == 0,
+                        "rinnovo arena: NESSUN pilastro risorto ("
+                        + str(standing) + " in piedi)")
+        _ok(rubble_nodes == C.BOSS_ARENA_PILLAR_COUNT,
+                        "rinnovo arena: 4 cumuli di macerie persistenti ("
+                        + str(rubble_nodes) + ")")
         var usable_barrels: int = 0
         for b in boss_room._arena_barrels:
                 if b != null and is_instance_valid(b) \
@@ -500,7 +514,54 @@ func _phase_renewal_check() -> void:
 
 
 # ---------------------------------------------------------------------------
-# FASE 16/17 — rimbalzo del boss sul pilastro
+# FASE 16 — TASK 43: snapshot architetture + continue senza resurrezione
+# ---------------------------------------------------------------------------
+func _phase_snapshot_restore() -> void:
+        # Simula lo snapshot salvato alla morte del player: il pilastro 0 era
+        # gia' crollato (macerie), il pilastro 1 era in piedi con 2 HP.
+        boss_room._restore_arena_pillars_from_snapshot({"arena_pillars": [
+                {"idx": 0, "state": 2, "hp": 0},
+                {"idx": 1, "state": 0, "hp": 2},
+        ]})
+        var p0: Node2D = null
+        var p1: Node2D = null
+        for pl in boss_room._arena_pillars:
+                if pl != null and is_instance_valid(pl):
+                        if pl.pillar_index == 0:
+                                p0 = pl
+                        elif pl.pillar_index == 1:
+                                p1 = pl
+        _ok(p0 != null and not p0.is_standing() and p0.state == 2,
+                        "snapshot: pilastro 0 resta MACERIE (non risorge)")
+        _ok(p1 != null and p1.is_standing() and p1.hp == 2,
+                        "snapshot: pilastro 1 in piedi con HP residuo 2")
+        # Continue (2P in-scena): rinnova SOLO i consumabili, non tocca
+        # le architetture — nessun pilastro nuovo, le macerie restano.
+        var nodes_before: int = boss_room._arena_pillars.size()
+        boss_room._respawn_boss_arena()
+        var standing_after: int = 0
+        for pl in boss_room._arena_pillars:
+                if pl != null and is_instance_valid(pl) and pl.is_standing():
+                        standing_after += 1
+        _ok(boss_room._arena_pillars.size() == nodes_before,
+                        "continue: NESSUN pilastro nuovo creato ("
+                        + str(boss_room._arena_pillars.size()) + ")")
+        _ok(standing_after == 1,
+                        "continue: resta solo il pilastro 1, le macerie restano ("
+                        + str(standing_after) + ")")
+        var barrels_after: int = 0
+        for b in boss_room._arena_barrels:
+                if b != null and is_instance_valid(b) \
+                                and b.state != ElementalBarrelClass.State.EXPLODING:
+                        barrels_after += 1
+        _ok(barrels_after >= 2, "continue: barili rinnovati ("
+                        + str(barrels_after) + ")")
+        _ok(boss_room._arena_siege != null and is_instance_valid(boss_room._arena_siege),
+                        "continue: cannone rinnovato")
+
+
+# ---------------------------------------------------------------------------
+# FASE 17/18 — rimbalzo del boss sul pilastro
 # ---------------------------------------------------------------------------
 func _phase_bounce_setup() -> void:
         var boss: Node2D = boss_room.boss

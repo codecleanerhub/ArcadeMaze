@@ -3,9 +3,12 @@
 ## Catture (in /home/z/my-project/download/):
 ##   1. boss_arena_overview        — arena completa: pilastri a tema, barili,
 ##                                    cannone, boss (TASK 41: hint debolezza
-##                                    RIMOSSO dall'HUD)
+##                                    RIMOSSO dall'HUD; TASK 43: architetture
+##                                    gotiche Bloodborne 68x184)
 ##   2. boss_arena_pillar_cracked  — pilastro a 2 colpi (crepe visibili)
 ##   3. boss_arena_collapse        — crollo con frammenti in volo
+##   3b. boss_arena_rubble         — TASK 43: cumulo di macerie fermo
+##                                    (test che NON risorgono al rinnovo)
 ##   4. boss_arena_explosion       — detonazione FUOCO sul boss con testo
 ##                                    "DEBOLEZZA!" (moltiplicatore x2.5)
 ##   5. boss_arena_siege           — player con cannone equipaggiato + pickup
@@ -80,7 +83,7 @@ func _physics_process(delta: float) -> void:
                         if t > 0.45:
                                 _capture("boss_arena_pillar_cracked")
                                 _crop_capture("boss_arena_pillar_cracked",
-                                        Rect2i(330, 300, 200, 260))
+                                        Rect2i(315, 275, 230, 330))
                                 # colpo finale -> crollo
                                 boss_room._arena_pillars[0].take_hit()
                                 stage = 3
@@ -90,10 +93,18 @@ func _physics_process(delta: float) -> void:
                         if t > 0.32:
                                 _capture("boss_arena_collapse")
                                 _crop_capture("boss_arena_collapse",
-                                        Rect2i(280, 240, 300, 380))
+                                        Rect2i(265, 225, 330, 440))
                                 stage = 4
                                 t = 0.0
                 4:
+                        # TASK 43: macerie ferme (il crollo dura 430ms)
+                        if t > 1.2:
+                                _capture("boss_arena_rubble")
+                                _crop_capture("boss_arena_rubble",
+                                        Rect2i(315, 275, 230, 330))
+                                stage = 5
+                                t = 0.0
+                5:
                         # prepara la detonazione DEBOLE sul boss
                         if t > 0.9:
                                 fire_barrel = _find_idle_barrel_of_element(1)  # FIRE
@@ -114,17 +125,17 @@ func _physics_process(delta: float) -> void:
                                         fire_barrel.position = boss_room.boss.pos
                                         fire_barrel.detonate()
                                         fire_barrel.confirm_weakness()
-                                stage = 5
+                                stage = 6
                                 t = 0.0
-                5:
+                6:
                         # esplosione a metà (~280ms): core + onde + DEBOLEZZA!
                         if t > 0.28:
                                 _capture("boss_arena_explosion")
                                 _crop_capture("boss_arena_explosion",
                                         Rect2i(700, 380, 520, 480))
-                                stage = 6
+                                stage = 7
                                 t = 0.0
-                6:
+                7:
                         # player raccoglie il cannone + un barile in spalla
                         if t > 1.4:
                                 if boss_room._arena_siege != null \
@@ -141,9 +152,9 @@ func _physics_process(delta: float) -> void:
                                         other.pickup(boss_room.player)
                                 boss_room.player.dx = 1
                                 boss_room.player.last_dx = 1
-                                stage = 7
+                                stage = 8
                                 t = 0.0
-                7:
+                8:
                         if t > 0.7:
                                 _capture("boss_arena_siege")
                                 _crop_capture("boss_arena_siege",

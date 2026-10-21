@@ -681,21 +681,26 @@ const BOSS_ROOM_AMMO_MIN: int = 39
 #   3. DEBOLEZZA ELEMENTALE per TIPO DI BOSS: ogni boss teme UN elemento
 #      (il Golem di pietra teme il GHIACCIO che lo fessura, il Kraken il
 #      FULMINO che si propaga nell'acqua, la Strega il FUOCO...). Il barile
-#      dell'elemento debole infligge il 250% del danno base. La debolezza
-#      e' mostrata sotto la barra HP del boss (informazione strategica).
+#      dell'elemento debole infligge il 250% del danno base. TASK 41: la
+#      debolezza NON compare piu' in HUD — si scopre per tentativi.
 #   4. CANNONE D'ASSEDIO (BossSiegeCannon): arma ESCLUSIVA della boss room.
 #      4 colpi devastanti con palla di cannone pesante (lenta, potente,
 #      grafica e audio dedicati). Non esiste nel labirinto.
-# RINNOVO DELL'ARENA: ogni BOSS_ARENA_RENEWAL_MS i pilastri distrutti, i
-# barili finiti e il cannone esaurito riappaiono — gli scontri lunghi non
-# restano mai senza strumenti.
+# RINNOVO DELL'ARENA: ogni BOSS_ARENA_RENEWAL_MS i barili finiti e il
+# cannone esaurito riappaiono — gli scontri lunghi non restano mai senza
+# strumenti. TASK 43: le ARCHITETTURE (pilastri) NON si rinnovano MAI —
+# un pilastro crollato resta un cumulo di macerie fino alla fine dello
+# scontro, NEANCHE la morte del player lo fa risorgere (lo snapshot di
+# sessione riapplica i danni al continue).
 enum ElementKind { FIRE, FROST, LIGHTNING, POISON }
 
 const BOSS_ARENA_PILLAR_COUNT: int = 4        # pilastri per set
 const BOSS_ARENA_PILLAR_HP: int = 3           # colpi per abbattere un pilastro
 const BOSS_ARENA_PILLAR_FRAGMENTS: int = 5    # frammenti lanciati al crollo
 const BOSS_ARENA_PILLAR_FRAGMENT_DMG: int = 3 # danno di un frammento al boss
-const BOSS_ARENA_PILLAR_RADIUS: float = 30.0  # raggio fisico (rimbalzo boss / colpi)
+# raggio fisico (rimbalzo boss / colpi) — TASK 43: architettura PIU'
+# GRANDE (pilastro 68x184, era 30 con pilastro 54x130)
+const BOSS_ARENA_PILLAR_RADIUS: float = 34.0
 const BOSS_ARENA_BARREL_COUNT: int = 3        # barili per set (>= 1 dell'elemento debole)
 const BOSS_ARENA_BARREL_BASE_PCT: float = 0.10    # danno base: 10% HP max del boss
 const BOSS_ARENA_BARREL_WEAK_MULT: float = 2.5    # elemento debole: 25% HP max

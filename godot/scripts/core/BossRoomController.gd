@@ -171,6 +171,10 @@ func _ready() -> void:
                                         player2.current_weapon["power"] = 2
                                         player2.current_weapon["ammo"] = maxi(
                                                         int(player2.current_weapon.get("ammo", 0)), C.BOSS_ROOM_AMMO_MIN)
+                # TASK 43: le ARCHITETTURE non risorgono al continue — applica
+                # lo stato salvato alla morte (le macerie restano macerie, i
+                # pilastri sopravvissuti tengono i danni subiti).
+                _restore_arena_pillars_from_snapshot(snap)
                 print("[Continue] Sessione boss room ripristinata: HP boss ",
                                 boss.health if boss != null else "?", "/ ",
                                 boss.max_health if boss != null else "?")
@@ -997,10 +1001,22 @@ func _check_boss_death() -> void:
                                 # FIX (snapshot boss): salva anche HP del boss e stato
                                 # dei player, così il continue riprende LO STESSO
                                 # scontro (stesso HP del boss, stessi punteggi/armi).
+                                # TASK 43: salva anche lo stato delle ARCHITETTURE
+                                # — un pilastro crollato NON risorge al continue.
+                                var pillars_snap: Array = []
+                                for pillar in _arena_pillars:
+                                        if pillar == null or not is_instance_valid(pillar):
+                                                continue
+                                        pillars_snap.append({
+                                                "idx": int(pillar.pillar_index),
+                                                "state": int(pillar.state),
+                                                "hp": int(pillar.hp),
+                                        })
                                 GameManager.session_snapshot = {
                                         "kind": "boss",
                                         "level": current_level,
                                         "boss_health": int(boss.health) if (boss != null and is_instance_valid(boss)) else 0,
+                                        "arena_pillars": pillars_snap,
                                         "p1": {
                                                 "score": player.score,
                                                 "weapon": player.current_weapon.duplicate(),
@@ -1215,8 +1231,9 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
                         player2.position = Vector2(C.WINDOW_WIDTH / 2.0 + 120, C.WINDOW_HEIGHT - 100.0)
                 for child in boss_projectiles_node.get_children():
                         child.queue_free()
-                # TASK 39: l'arena si rinnova ANCHE sul continue (come mina e
-                # armi): lo scontro ripreso non resta mai senza strumenti.
+                # TASK 43: al continue si rinnovano SOLO i consumabili (barili,
+                # cannone — come mina e armi a terra); le ARCHITETTURE rotte
+                # NON risorgono: lo snapshot di sessione riapplica i danni.
                 _respawn_boss_arena()
                 return
 
@@ -1481,12 +1498,56 @@ func _spawn_arena_siege(at_pos: Vector2) -> void:
         _arena_siege = cannon
 
 
-# Continue: l'arena si rigenera COMPLETAMENTE (boss room fresca, come mina
-# e armi a terra; il boss conserva gli HP).
+# Continue (2P in-scena): si rinnovano SOLO i consumabili — barili finiti e
+# cannone esaurito (come mina e armi a terra). TASK 43: le ARCHITETTURE non
+# si toccano MAI — i pilastri in piedi restano, le macerie restano macerie
+# ("quando un'architettura si rompe non deve risorgere, neanche se il
+# player muore"). Il boss conserva gli HP.
 func _respawn_boss_arena() -> void:
-        _clear_boss_arena()
+        _clear_arena_consumables()
         if boss != null and not boss.is_dead():
-                _spawn_boss_arena()
+                _renew_boss_arena()
+
+
+# TASK 43: libera SOLO i consumabili dell'arena (barili + cannone), senza
+# toccare i pilastri — in piedi o macerie che siano, restano per sempre.
+func _clear_arena_consumables() -> void:
+        for barrel in _arena_barrels:
+                if barrel != null and is_instance_valid(barrel):
+                        barrel.queue_free()
+        _arena_barrels.clear()
+        if _arena_siege != null and is_instance_valid(_arena_siege):
+                _arena_siege.queue_free()
+        _arena_siege = null
+
+
+# TASK 43: applica lo snapshot delle ARCHITETTURE salvato alla morte del
+# player (continue 1P con ricarica scena). L'arena e' stata appena ricreata
+# fresca da start_boss_fight: qui si RIAPPLICANO i danni — i pilastri che
+# erano gia' crollati tornano cumuli di macerie (senza animazione ne'
+# frammenti: il crollo era gia' avvenuto), quelli in piedi recuperano le
+# crepe deterministiche derivate dagli HP residui.
+func _restore_arena_pillars_from_snapshot(snap: Dictionary) -> void:
+        var states: Array = snap.get("arena_pillars", [])
+        if states.is_empty():
+                return
+        for entry in states:
+                var idx: int = int(entry.get("idx", -1))
+                var st: int = int(entry.get("state", 0))
+                var hp_snap: int = int(entry.get("hp", C.BOSS_ARENA_PILLAR_HP))
+                for pillar in _arena_pillars:
+                        if pillar == null or not is_instance_valid(pillar):
+                                continue
+                        if pillar.pillar_index != idx:
+                                continue
+                        # COLLAPSING (1) al momento della morte -> il crollo si
+                        # e' gia' completato durante la schermata continue;
+                        # ogni stato != STANDING (0) torna CUMULO DI MACERIE.
+                        if st != int(BossArenaPillarClass.PillarState.STANDING):
+                                pillar.restore_from_snapshot(true)
+                        else:
+                                pillar.restore_from_snapshot(false, hp_snap)
+                        break
 
 
 # Libera tutti i props dell'arena (morte del boss, cambio scena, continue).
@@ -1600,41 +1661,17 @@ func _update_boss_arena(delta_ms: float) -> void:
                 _renew_boss_arena()
 
 
-# Rinnova cio' che e' stato consumato: pilastri mancanti, barili finiti,
-# cannone esaurito. I frammenti in volo non bloccano il rinnovo.
+# Rinnova cio' che e' stato consumato: barili finiti e cannone esaurito.
+# I frammenti in volo non bloccano il rinnovo.
+# TASK 43: le ARCHITETTURE non si rinnovano MAI — un pilastro crollato
+# resta un cumulo di macerie per tutta la durata dello scontro.
 func _renew_boss_arena() -> void:
         if boss == null or not is_instance_valid(boss) or boss.is_dead():
                 return
         var weak_el: int = C.get_boss_weakness(boss.boss_type)
-        # pilastri: ricrea quelli mancanti (stesse posizioni del set iniziale)
-        var pillar_spots: Array = [
-                Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
-                Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
-        ]
-        var alive: int = 0
-        for pillar in _arena_pillars:
-                if pillar != null and is_instance_valid(pillar) and pillar.is_standing():
-                        alive += 1
-        if alive < C.BOSS_ARENA_PILLAR_COUNT:
-                var spot_i: int = 0
-                # ricrea dove NON c'e' un pilastro in piedi
-                for spot in pillar_spots:
-                        var occupied: bool = false
-                        for pillar in _arena_pillars:
-                                if pillar != null and is_instance_valid(pillar) \
-                                                and pillar.is_standing() \
-                                                and pillar.position.distance_to(spot) < 40.0:
-                                        occupied = true
-                                        break
-                        if not occupied and alive < C.BOSS_ARENA_PILLAR_COUNT:
-                                var new_pillar: Node2D = BossArenaPillarClass.new()
-                                boss_room_weapons_node.add_child(new_pillar)
-                                if new_pillar.has_method("setup"):
-                                        new_pillar.setup(spot, weak_el, spot_i,
-                                                        boss_room_weapons_node)
-                                _arena_pillars.append(new_pillar)
-                                alive += 1
-                        spot_i += 1
+        # TASK 43: i PILASTRI non si toccano (richiesta utente: "quando
+        # un'architettura si rompe non deve risorgere"). Il vecchio blocco
+        # ricreava i pilastri mancanti alle 4 posizioni fisse: rimosso.
         # barili: se non ne restano (raccolti/esplosi), ne spawna 2
         var usable_barrels: int = 0
         for barrel in _arena_barrels:
