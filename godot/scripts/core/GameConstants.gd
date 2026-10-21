@@ -341,6 +341,10 @@ enum WeaponType {
         SHOTGUN,
         ROCKET,
         LASER,
+        SIEGE,  # TASK 39 — Cannone d'Assedio: arma ESCLUSIVA della boss room
+                # (non spawna mai nel labirinto, non e' nelle armi a terra
+                # casuali: la genera solo BossRoomController dal pickup
+                # dedicato). Potenza 5 flat + %HP del boss, 4 colpi.
 }
 
 ## Boss projectile kinds (from Weapon.h). Visual + behavior variant for
@@ -657,6 +661,126 @@ static func make_random_weapon() -> Dictionary:
 ## "arma utilizzabile"): era 30, +30% -> 39 (ceil). Usata da
 ## BossRoomController all'ingresso, sul potenziamento e nel restore-continue.
 const BOSS_ROOM_AMMO_MIN: int = 39
+
+
+# ============================================================================
+# TASK 39 — L'ARENA DEL BOSS: meccaniche esclusive della stanza del boss
+# ============================================================================
+# Il combattimento col boss e' lungo (HP alti) e puo' diventare monotono:
+# ripetere la stessa azione per decine di secondi. L'arena si trasforma in un
+# ALLEATO TATTICO con quattro meccaniche interagenti:
+#   1. PILASTRI ELEMENTALI (BossArenaPillar): 4 colonne a tema (elemento
+#      debole del boss). Si rompono in 3 colpi del player (o dei proiettili
+#      del boss che BLOCCANO, subendo 1 danno: la copertura si consuma).
+#      Al crollo scagliano 5 frammenti (ArenaDebris): chi colpisce il boss
+#      gli toglie energia -> il player INCLINA lo scontro a proprio favore
+#      posizionandosi tra pilastro e boss.
+#   2. BARILI ELEMENTALI (ElementalBarrel): raccoglibili e LANCIABILI col
+#      tasto di fuoco. Rotolano, rimbalzano sui muri e esplodono con una
+#      detonazione elementale dedicata (fuoco/ghiaccio/fulmine/veleno).
+#   3. DEBOLEZZA ELEMENTALE per TIPO DI BOSS: ogni boss teme UN elemento
+#      (il Golem di pietra teme il GHIACCIO che lo fessura, il Kraken il
+#      FULMINO che si propaga nell'acqua, la Strega il FUOCO...). Il barile
+#      dell'elemento debole infligge il 250% del danno base. La debolezza
+#      e' mostrata sotto la barra HP del boss (informazione strategica).
+#   4. CANNONE D'ASSEDIO (BossSiegeCannon): arma ESCLUSIVA della boss room.
+#      4 colpi devastanti con palla di cannone pesante (lenta, potente,
+#      grafica e audio dedicati). Non esiste nel labirinto.
+# RINNOVO DELL'ARENA: ogni BOSS_ARENA_RENEWAL_MS i pilastri distrutti, i
+# barili finiti e il cannone esaurito riappaiono — gli scontri lunghi non
+# restano mai senza strumenti.
+enum ElementKind { FIRE, FROST, LIGHTNING, POISON }
+
+const BOSS_ARENA_PILLAR_COUNT: int = 4        # pilastri per set
+const BOSS_ARENA_PILLAR_HP: int = 3           # colpi per abbattere un pilastro
+const BOSS_ARENA_PILLAR_FRAGMENTS: int = 5    # frammenti lanciati al crollo
+const BOSS_ARENA_PILLAR_FRAGMENT_DMG: int = 3 # danno di un frammento al boss
+const BOSS_ARENA_PILLAR_RADIUS: float = 30.0  # raggio fisico (rimbalzo boss / colpi)
+const BOSS_ARENA_BARREL_COUNT: int = 3        # barili per set (>= 1 dell'elemento debole)
+const BOSS_ARENA_BARREL_BASE_PCT: float = 0.10    # danno base: 10% HP max del boss
+const BOSS_ARENA_BARREL_WEAK_MULT: float = 2.5    # elemento debole: 25% HP max
+const BOSS_ARENA_BARREL_PLAYER_DMG: int = 1   # danno al player nella deflagrazione
+const BOSS_ARENA_BARREL_BLAST_RADIUS: float = 95.0
+const BOSS_ARENA_SIEGE_AMMO: int = 4          # colpi del cannone d'assedio
+const BOSS_ARENA_SIEGE_POWER: int = 5         # potenza flat minima per colpo
+const BOSS_ARENA_SIEGE_PCT: float = 0.025     # + 2.5% HP max del boss per colpo
+const BOSS_ARENA_RENEWAL_MS: float = 45000.0  # rigenerazione arena se saccheggiata
+
+## Palette per elemento: nome ITA + colori (corpo/glow) per barili, pilastri,
+## esplosioni e testo HUD. Usata da ElementalBarrel / BossArenaPillar /
+## BossRoomController (_draw hint debolezza).
+static func get_element_palette(el: int) -> Dictionary:
+        match el:
+                ElementKind.FIRE:
+                        return {
+                                "id": "fire", "name": "FUOCO",
+                                "color": Color(1.00, 0.42, 0.14),
+                                "glow": Color(1.00, 0.62, 0.22),
+                                "wood": Color(0.36, 0.20, 0.10),
+                        }
+                ElementKind.FROST:
+                        return {
+                                "id": "frost", "name": "GHIACCIO",
+                                "color": Color(0.42, 0.78, 1.00),
+                                "glow": Color(0.62, 0.90, 1.00),
+                                "wood": Color(0.26, 0.34, 0.46),
+                        }
+                ElementKind.LIGHTNING:
+                        return {
+                                "id": "lightning", "name": "FULMINE",
+                                "color": Color(1.00, 0.88, 0.26),
+                                "glow": Color(1.00, 0.96, 0.55),
+                                "wood": Color(0.34, 0.30, 0.12),
+                        }
+                ElementKind.POISON:
+                        return {
+                                "id": "poison", "name": "VELENO",
+                                "color": Color(0.55, 0.95, 0.28),
+                                "glow": Color(0.72, 1.00, 0.45),
+                                "wood": Color(0.24, 0.32, 0.14),
+                        }
+        return {
+                "id": "neutral", "name": "?",
+                "color": Color.WHITE, "glow": Color.WHITE,
+                "wood": Color(0.3, 0.3, 0.3),
+        }
+
+
+## TASK 39 — elemento DEBOLE di ogni boss (logica fantasy coerente):
+##   FUOCO    : brucia non-morti e streghe (Lich, Ragno, Abominio, Vampiro,
+##              Signore dei Ghoul, Strega Suprema)
+##   GHIACCIO : fessura la pietra col shock termico e spegne le fiamme
+##              (Golem, Demone, Drago)
+##   FULMINE  : si propaga in acqua e nell'etere (Kraken, Signore degli
+##              Spettri, Alfa Spettrale, Araldo del Culto, Cavaliere del
+##              Crepuscolo)
+##   VELENO   : corroe occhio aberrante, colla del mimico e ratti (Beholder,
+##              Mimico Colossale, Re dei Ratti)
+static func get_boss_weakness(boss_type: int) -> int:
+        match boss_type:
+                0:   return ElementKind.FROST      # GOLEM
+                1:   return ElementKind.FIRE       # LICH
+                2:   return ElementKind.FROST      # DEMON
+                3:   return ElementKind.FIRE       # SPIDER
+                4:   return ElementKind.FIRE       # ABOMINATION
+                5:   return ElementKind.LIGHTNING  # KRAKEN
+                6:   return ElementKind.FROST      # DRAGON
+                7:   return ElementKind.LIGHTNING  # WRAITH_LORD
+                8:   return ElementKind.FIRE       # VAMPIRE
+                9:   return ElementKind.POISON     # BEHOLDER
+                10:  return ElementKind.FIRE       # GHOUL_LORD
+                11:  return ElementKind.LIGHTNING  # SPECTRAL_ALPHA
+                12:  return ElementKind.LIGHTNING  # CULT_HERALD
+                13:  return ElementKind.POISON     # COLOSSAL_MIMIC
+                14:  return ElementKind.POISON     # RAT_KING
+                15:  return ElementKind.FIRE       # SUPREME_WITCH
+                16:  return ElementKind.LIGHTNING  # TWILIGHT_KNIGHT
+        return ElementKind.FIRE
+
+
+## Nome ITA della debolezza (per l'hint HUD sotto la barra HP del boss).
+static func get_boss_weakness_name(boss_type: int) -> String:
+        return str(get_element_palette(get_boss_weakness(boss_type)).get("name", "?"))
 
 
 # ============================================================================
@@ -1096,6 +1220,8 @@ static func get_weapon_name(type: int) -> String:
                         return "LASER"
                 WeaponType.ROCKET:
                         return "ROCKET"
+                WeaponType.SIEGE:
+                        return "SIEGE"
                 _:
                         return "?"
 
@@ -1114,6 +1240,8 @@ static func get_weapon_color(type: int) -> Color:
                         return Color(0.31, 0.78, 1.00, 1.0)  # (80,200,255)
                 WeaponType.ROCKET:
                         return Color(0.78, 0.20, 0.20, 1.0)  # (200,50,50)
+                WeaponType.SIEGE:
+                        return Color(1.00, 0.80, 0.30, 1.0)  # (255,204,77) oro
                 _:
                         return Color.WHITE
 

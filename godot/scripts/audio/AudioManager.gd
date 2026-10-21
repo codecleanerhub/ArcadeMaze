@@ -103,9 +103,34 @@ enum SoundType {
         # del PORTAL_OPEN usato prima: carica elettrica discendente, crack
         # della saetta, sweep elettrico, boom dell'impatto e coda di tuono
         # rotolante che sfuma.
-        SCROLL_LIGHTNING
+        SCROLL_LIGHTNING,
+        # TASK 39 — L'ARENA DEL BOSS: SFX dedicati delle nuove meccaniche.
+        # SIEGE_FIRE: sparo del Cannone d'Assedio — sibilo di miccia, botta
+        #   profonda della carica e coda metallica della canna (~0.6s).
+        # BARREL_TOSS: lancio del barile elementale — whoosh grave di oggetto
+        #   pesante che ruota (~0.3s).
+        # PILLAR_CRACK: colpo che fessura il pilastro — schiocco secco +
+        #   trickle di detriti (~0.35s).
+        # PILLAR_COLLAPSE: crollo del pilastro — scricchiolio, frana di
+        #   pietra e tonfo finale (~1.1s).
+        # WEAKNESS_HIT: colpo DEBOLE del boss con l'elemento giusto — campana
+        #   critica ascendente che premia la lettura strategica (~0.7s).
+        # BURST_FROST / BURST_LIGHTNING / BURST_POISON: deflagrazioni dei
+        #   barili elementali (il FUOCO riusa BARREL_EXPLODE) — vetro in
+        #   frantumi, scarica elettrica, sibilo di gas corrosivo.
+        SIEGE_FIRE,
+        BARREL_TOSS,
+        PILLAR_CRACK,
+        PILLAR_COLLAPSE,
+        WEAKNESS_HIT,
+        BURST_FROST,
+        BURST_LIGHTNING,
+        BURST_POISON
 }
-const SOUND_TYPE_COUNT: int = 47
+# NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
+# dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
+# 46 voci storiche (0..45) + 8 del Task 39 = 54 (0..53).
+const SOUND_TYPE_COUNT: int = 54
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -552,6 +577,14 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.BAT_SCREECH:     s = _sfx_bat_screech()
                 SoundType.BAT_FLAP:        s = _sfx_bat_flap()
                 SoundType.SCROLL_LIGHTNING: s = _sfx_scroll_lightning()
+                SoundType.SIEGE_FIRE:      s = _sfx_siege_fire()
+                SoundType.BARREL_TOSS:     s = _sfx_barrel_toss()
+                SoundType.PILLAR_CRACK:    s = _sfx_pillar_crack()
+                SoundType.PILLAR_COLLAPSE: s = _sfx_pillar_collapse()
+                SoundType.WEAKNESS_HIT:    s = _sfx_weakness_hit()
+                SoundType.BURST_FROST:     s = _sfx_burst_frost()
+                SoundType.BURST_LIGHTNING: s = _sfx_burst_lightning()
+                SoundType.BURST_POISON:    s = _sfx_burst_poison()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1058,6 +1091,284 @@ func _sfx_scroll_lightning() -> PackedFloat32Array:
                                 + 0.18 * triangle_wave(t * 47.0) \
                                 + 0.12 * triangle_wave(t * 31.0)
                 s.append(2200.0 / 32767.0 * v * env)
+        return s
+
+
+# ============================================================================
+# TASK 39 — L'ARENA DEL BOSS: generatori dei nuovi SFX
+# ============================================================================
+
+# --- SIEGE_FIRE (~0.6s): miccia che sibila, BOTTA profonda della carica
+# (55->28Hz) con blast di polvere, coda metallica della canna che vibra.
+func _sfx_siege_fire() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Phase 1: sibilo della miccia (0.10s)
+        var c1: int = int(SR * 0.10)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = 0.25 + 0.75 * (t / 0.10)
+                var v: float = noise_gen() * 0.7 + 0.3 * pulse_wave(t * 1900.0, 0.12)
+                s.append(1600.0 / 32767.0 * v * env)
+        # Phase 2: botta della carica (0.28s) — corpo grave + blast
+        var c2: int = int(SR * 0.28)
+        for i in c2:
+                var t: float = float(i) / SR
+                var freq: float = 55.0 * exp(-t * 5.0) + 28.0
+                var env: float = exp(-t * 6.5)
+                var v: float = 0.55 * triangle_wave(t * freq) \
+                                + 0.20 * pulse_wave(t * freq * 0.5, 0.3) \
+                                + 0.25 * noise_gen() * exp(-t * 10.0)
+                s.append(3200.0 / 32767.0 * v * env)
+        # Phase 3: canna che vibra (0.22s) — risonanza metallica discendente
+        var c3: int = int(SR * 0.22)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 8.0)
+                var freq: float = 420.0 * exp(-t * 3.0) + 130.0
+                var v: float = 0.4 * triangle_wave(t * freq) \
+                                + 0.25 * pulse_wave(t * freq * 1.5, 0.2) \
+                                + 0.12 * noise_gen() * exp(-t * 12.0)
+                s.append(1400.0 / 32767.0 * v * env)
+        return s
+
+
+# --- BARREL_TOSS (~0.3s): whoosh grave di oggetto pesante che rotea —
+# rumble basso con aperture aerodinamiche (il barile "passa" vicino).
+func _sfx_barrel_toss() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.30)
+        for i in n:
+                var t: float = float(i) / SR
+                var k: float = t / 0.30
+                var env: float = sin(PI * k)  # soffio a_monta_e_sfuma
+                # rotazione del barile: 3 "passaggi" d'aria
+                var spin: float = 0.55 + 0.45 * sin(t * TAU * 21.0)
+                var freq: float = 130.0 + 60.0 * k
+                var v: float = 0.45 * noise_gen() * spin \
+                                + 0.35 * triangle_wave(t * freq) \
+                                + 0.20 * sawtooth_wave(t * freq * 0.5)
+                s.append(2100.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+
+# --- PILLAR_CRACK (~0.35s): schiocco secco della pietra che fessura +
+# trickle di detriti che cadono.
+func _sfx_pillar_crack() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Schiocco principale (0.08s)
+        var c1: int = int(SR * 0.08)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 55.0)
+                var v: float = 0.6 * noise_gen() + 0.4 * pulse_wave(t * 240.0, 0.2)
+                s.append(3000.0 / 32767.0 * v * env)
+        # Crepa che corre (0.12s) — click nervosi in sequenza
+        var c2: int = int(SR * 0.12)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 14.0)
+                var crack: float = 0.5 + 0.5 * sin(t * TAU * 46.0)
+                var v: float = noise_gen() * crack
+                s.append(1700.0 / 32767.0 * v * env)
+        # Trickle di detriti (0.15s) — sassolini che rimbalzano
+        var c3: int = int(SR * 0.15)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 9.0)
+                var peb: float = 0.0
+                if int(i % int(SR * 0.017)) < 90:
+                        peb = noise_gen() * (1.0 - t / 0.15)
+                var v: float = 0.8 * peb + 0.2 * noise_gen() * 0.3
+                s.append(1200.0 / 32767.0 * v * env)
+        return s
+
+
+# --- PILLAR_COLLAPSE (~1.1s): scricchiolio di congedo, frana di pietra
+# (impatti multipli che si accavallano) e tonfo finale nella polvere.
+func _sfx_pillar_collapse() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Phase 1: scricchiolio (0.14s) — la pietra cede
+        var c1: int = int(SR * 0.14)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = 0.3 + 0.7 * (t / 0.14)
+                var v: float = 0.5 * noise_gen() + 0.5 * sawtooth_wave(t * 90.0)
+                s.append(1500.0 / 32767.0 * v * env)
+        # Phase 2: frana (0.55s) — blocchi che si spezzano e cadono
+        var c2: int = int(SR * 0.55)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 2.2)
+                # impatti irregolari (il blocco si frantuma a gradini)
+                var impacts: float = 0.55 + 0.45 * sin(t * TAU * 13.0 \
+                                + 1.7 * sin(t * TAU * 4.3))
+                var freq: float = 95.0 * exp(-t * 1.5) + 45.0
+                var v: float = 0.45 * noise_gen() * impacts \
+                                + 0.35 * triangle_wave(t * freq) \
+                                + 0.20 * pulse_wave(t * freq * 2.0, 0.25)
+                s.append(2800.0 / 32767.0 * _soft_clip(v * env))
+        # Phase 3: tonfo finale + polvere (0.41s)
+        var c3: int = int(SR * 0.41)
+        for i in c3:
+                var t: float = float(i) / SR
+                var freq: float = 60.0 * exp(-t * 6.0) + 24.0
+                var env: float = exp(-t * 4.5)
+                var v: float = 0.55 * triangle_wave(t * freq) \
+                                + 0.20 * pulse_wave(t * freq * 0.5, 0.3) \
+                                + 0.25 * noise_gen() * exp(-t * 5.5)
+                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+
+# --- WEAKNESS_HIT (~0.7s): colpo CRITICO elementale — campana luminosa
+# ascendente (Do#-Sol-Sol#-Do# alto) su scintillio: la ricompensa sonora
+# della lettura giusta della debolezza del boss.
+func _sfx_weakness_hit() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Impatto iniziale brillante (0.06s)
+        var c0: int = int(SR * 0.06)
+        for i in c0:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 40.0)
+                var v: float = 0.5 * noise_gen() + 0.5 * triangle_wave(t * 1600.0)
+                s.append(2200.0 / 32767.0 * v * env)
+        # Arpeggio campanellante (4 note, ~0.64s)
+        var notes := [1385.91, 2076.52, 2200.00, 2771.83]  # Do#6 Sol6 Sol#6 Do#7
+        var seg: float = 0.155
+        for k in notes.size():
+                var start: float = 0.05 + float(k) * seg * 0.62
+                var len: float = 0.40
+                var i0: int = int(SR * start)
+                var n: int = int(SR * len)
+                for i in n:
+                        var idx: int = i0 + i
+                        if idx >= int(SR * 0.70):
+                                break
+                        while s.size() <= idx:
+                                s.append(0.0)
+                        var t: float = float(i) / SR
+                        var env: float = exp(-t * 7.0)
+                        var f: float = notes[k]
+                        var v: float = 0.50 * sine_wave(t * f) \
+                                        + 0.28 * sine_wave(t * f * 2.004) \
+                                        + 0.14 * sine_wave(t * f * 3.01)
+                        # shimmer di battimento sulle note alte
+                        if k >= 2:
+                                v += 0.10 * sine_wave(t * (f * 1.5)) \
+                                                * sin(t * TAU * 9.0)
+                        s[idx] += 2600.0 / 32767.0 * _soft_clip(v * env)
+        return s
+
+
+# --- BURST_FROST (~0.6s): vetro gelato che esplode — frantumazione acuta
+# con ping cristallini discendenti e soffio ghiacciato.
+func _sfx_burst_frost() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Shatter iniziale (0.10s)
+        var c1: int = int(SR * 0.10)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 28.0)
+                var v: float = noise_gen() * 0.8 + 0.2 * pulse_wave(t * 2600.0, 0.15)
+                s.append(2900.0 / 32767.0 * v * env)
+        # Ping cristallini (0.28s) — schegge di ghiaccio che tintinnano
+        var c2: int = int(SR * 0.28)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 6.0)
+                var ping: float = 0.0
+                # 5 ping a intervalli irregolari, frequenza discendente
+                for k in 5:
+                        var tk: float = 0.012 + float(k) * 0.048 \
+                                        + 0.01 * sin(float(k) * 2.3)
+                        var dt: float = t - tk
+                        if dt >= 0.0:
+                                var fk: float = 3100.0 - float(k) * 380.0
+                                ping += 0.22 * sine_wave(dt * fk) * exp(-dt * 26.0)
+                var v: float = ping + 0.18 * noise_gen() * exp(-t * 8.0)
+                s.append(2000.0 / 32767.0 * _soft_clip(v * env))
+        # Soffio ghiacciato (0.22s)
+        var c3: int = int(SR * 0.22)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 14.0)) * exp(-t * 7.0)
+                var v: float = 0.55 * noise_gen() + 0.25 * sine_wave(t * 210.0)
+                s.append(1500.0 / 32767.0 * v * env)
+        return s
+
+
+# --- BURST_LIGHTNING (~0.5s): scarica elettrica — zap ad alta frequenza
+# con scariche secondarie e sfregamento finale dell'aria ionizzata.
+func _sfx_burst_lightning() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Zap principale (0.12s) — scarica nervosa
+        var c1: int = int(SR * 0.12)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 18.0)
+                var freq: float = 2800.0 * exp(-t * 14.0) + 300.0
+                var v: float = 0.5 * pulse_wave(t * freq, 0.08) \
+                                + 0.5 * noise_gen() * (0.5 + 0.5 * sin(t * TAU * 160.0))
+                s.append(3000.0 / 32767.0 * _soft_clip(v * env))
+        # Scariche secondarie (0.24s) — archetti erratici
+        var c2: int = int(SR * 0.24)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 7.0)
+                var arc: float = 0.0
+                if fmod(t, 0.031) < 0.011:
+                        var f2: float = 1900.0 + 900.0 * sin(t * TAU * 37.0)
+                        arc = pulse_wave(t * f2, 0.10)
+                var v: float = 0.55 * arc + 0.30 * noise_gen() \
+                                + 0.15 * sawtooth_wave(t * 140.0)
+                s.append(1900.0 / 32767.0 * v * env)
+        # Aria ionizzata (0.14s) — crepitio che sfuma
+        var c3: int = int(SR * 0.14)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 10.0)
+                var v: float = noise_gen() * (0.4 + 0.6 * sin(t * TAU * 23.0))
+                s.append(1100.0 / 32767.0 * v * env)
+        return s
+
+
+# --- BURST_POISON (~0.7s): fiala corrosiva — sibilo di gas sotto pressione,
+# gorgoglii ripugnanti e nebbia acida che si deposita.
+func _sfx_burst_poison() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Rottura del contenitore (0.06s)
+        var c1: int = int(SR * 0.06)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 60.0)
+                var v: float = noise_gen()
+                s.append(2200.0 / 32767.0 * v * env)
+        # Sibilo del gas (0.30s) — pressione che si scarica
+        var c2: int = int(SR * 0.30)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 30.0)) * exp(-t * 5.0)
+                var hiss: float = 0.65 + 0.35 * sin(t * TAU * 31.0 \
+                                + 0.8 * sin(t * TAU * 11.0))
+                var v: float = 0.75 * noise_gen() * hiss \
+                                + 0.25 * sine_wave(t * 340.0) * 0.5
+                s.append(1700.0 / 32767.0 * _soft_clip(v * env))
+        # Gorgoglii (0.34s) — bolle che scoppiano nel liquido
+        var c3: int = int(SR * 0.34)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 4.0)
+                var gurgle: float = 0.0
+                for k in 4:
+                        var tk: float = 0.03 + float(k) * 0.077
+                        var dt: float = t - tk
+                        if dt >= 0.0 and dt < 0.09:
+                                var fb: float = 140.0 + float(k) * 55.0
+                                gurgle += 0.45 * sine_wave(dt * fb \
+                                                * (1.0 + 2.2 * dt / 0.09)) \
+                                                * sin(PI * dt / 0.09)
+                var v: float = gurgle + 0.22 * noise_gen() * exp(-t * 6.0)
+                s.append(1600.0 / 32767.0 * _soft_clip(v * env))
         return s
 
 

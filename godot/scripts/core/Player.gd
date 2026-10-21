@@ -45,7 +45,7 @@ const CELL_TREASURE: int = 2
 const CELL_WEAPON: int = 3
 
 # --- Weapon types (mirror Weapon.h) -----------------------------------------
-enum WeaponType { PISTOL, SHOTGUN, ROCKET, LASER }
+enum WeaponType { PISTOL, SHOTGUN, ROCKET, LASER, SIEGE }
 
 # --- Playable characters (mirror Player.h CharacterType) --------------------
 # 9 entries in C++ enum (HERO_M..VAMPIRE), though the C++ comment says 8 -
@@ -1163,8 +1163,11 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                                 if p.has("lob_px"):
                                         p["exploded"] = true  # bomba: esplode sul muro
                                 continue
-                p.pos.x += p.dir.x * 8.0
-                p.pos.y += p.dir.y * 8.0
+                # TASK 39 (Cannone d'Assedio): velocita' per-proiettile — la
+                # palla di cannone viaggia piu' lenta (pesante) delle pallottole.
+                var step_px: float = float(p.get("speed_px", 8.0))
+                p.pos.x += p.dir.x * step_px
+                p.pos.y += p.dir.y * step_px
                 if p.has("lob_px"):
                         p["traveled"] = float(p.get("traveled", 0.0)) + 8.0
                         if float(p["traveled"]) >= float(p["lob_px"]):
@@ -1218,6 +1221,34 @@ func shoot() -> void:
         var rdef: Dictionary = GameConstants.get_relic_def(int(current_weapon.get("type", 0)))
         if not rdef.is_empty() and int(current_weapon.get("type", 0)) != GameConstants.RelicType.REFLECT_BOLT:
                 _fire_relic(rdef, shoot_dx, shoot_dy)
+                return
+
+        # TASK 39 (Cannone d'Assedio): palla di cannone PESANTE — piu' lenta
+        # (6 px/frame contro 8), potenza potente e flag "siege" che il
+        # BossRoomController usa per danno %HP + esplosione d'impatto.
+        if int(current_weapon.get("type", 0)) == WeaponType.SIEGE \
+                        and not current_weapon.has("relic"):
+                var siege_pos: Vector2
+                if shoot_dx != 0:
+                        siege_pos = Vector2(position.x + float(shoot_dx) * 26.0,
+                                                    position.y - 10.0)
+                else:
+                        siege_pos = Vector2(position.x + 4.0,
+                                                    position.y - 10.0 + float(shoot_dy) * 20.0)
+                projectiles.append({
+                        "pos": siege_pos,
+                        "dir": Vector2(float(shoot_dx), float(shoot_dy)),
+                        "power": current_weapon.power,
+                        "active": true,
+                        "type": WeaponType.SIEGE,
+                        "speed_px": 6.0,
+                        "siege": true,
+                })
+                current_weapon.ammo -= 1
+                _after_player_shot_fired()
+                shoot_anim_timer = 300
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.SIEGE_FIRE)
                 return
 
         # Spawn position: muzzle end of the weapon (gun barrel).
@@ -1930,6 +1961,35 @@ func _draw() -> void:
                                 draw_circle(local_pos, 2.5, Color(0.6, 0.3, 0.1))
                                 # Tip
                                 draw_circle(local_pos + dir * 3, 2.0, Color(1, 0.9, 0.4))
+                        WeaponType.SIEGE:
+                                # TASK 39 — palla di cannone in ghisa: sfera
+                                # scura con riflessi, anello runico dorato che
+                                # ruota e scia di fumo/braci.
+                                var dir: Vector2 = proj.get("dir", Vector2(1, 0))
+                                # Scia di fumo (3 sbuffi sfumati)
+                                draw_circle(local_pos - dir * 8, 3.2,
+                                                Color(0.22, 0.20, 0.19, 0.45))
+                                draw_circle(local_pos - dir * 13, 2.4,
+                                                Color(0.25, 0.23, 0.21, 0.30))
+                                draw_circle(local_pos - dir * 17, 1.7,
+                                                Color(0.28, 0.26, 0.24, 0.20))
+                                # Braci nella scia
+                                draw_circle(local_pos - dir * 10 + Vector2(0, -2), 1.0,
+                                                Color(1.0, 0.55, 0.15, 0.65))
+                                # Alone incandescente
+                                draw_circle(local_pos, 7.0, Color(1.0, 0.60, 0.18, 0.22))
+                                # Corpo in ghisa (3 strati: scuro/chiaro/specular)
+                                draw_circle(local_pos, 5.0, Color(0.16, 0.15, 0.17))
+                                draw_circle(local_pos - Vector2(1, 1), 3.6,
+                                                Color(0.38, 0.36, 0.38))
+                                draw_circle(local_pos - Vector2(2, 2), 1.4,
+                                                Color(0.85, 0.83, 0.86))
+                                # Anello runico dorato che ruota (2 archi)
+                                var spin: float = fmod(float(Time.get_ticks_msec()) * 0.004, TAU)
+                                draw_arc(local_pos, 5.8, spin, spin + 2.1, 12,
+                                                Color(1.0, 0.80, 0.30, 0.85), 1.4)
+                                draw_arc(local_pos, 5.8, spin + PI, spin + PI + 2.1, 12,
+                                                Color(1.0, 0.80, 0.30, 0.85), 1.4)
                         _:
                                 # Pistol: small red fire bullet (was: huge yellow ball).
                                 # FIX (pallino giallo troppo grande e giallo):
@@ -2534,6 +2594,8 @@ func _projectile_color(w_type: int) -> Color:
                         return Color(1.0, 0.5, 0.2)  # orange
                 WeaponType.ROCKET:
                         return Color(1.0, 0.3, 0.1)  # red
+                WeaponType.SIEGE:
+                        return Color(1.0, 0.80, 0.30)  # oro cannone (TASK 39)
                 WeaponType.LASER:
                         return Color(0.3, 1.0, 0.3)  # green
                 _:

@@ -39,6 +39,25 @@ const FF_HIT_RADIUS_SQ: float = 625.0
 # CanvasLayer layer 30 (sopra HUD 10 e pausa 20), pattern PauseOverlay.
 const BonusScreenClass = preload("res://scripts/ui/BonusScreen.gd")
 
+# TASK 39 — L'ARENA DEL BOSS: meccaniche esclusive della stanza.
+#   * BossArenaPillar: 4 pilastri-condotto a tema dell'elemento debole del
+#     boss; si frantumano in 3 colpi, bloccano i proiettili del boss e al
+#     crollo scagliano frammenti che danneggiano il boss
+#   * ElementalBarrel: barili elementali raccoglibili e lanciabili col tasto
+#     di fuoco; l'elemento debole del boss infligge il 250% del danno
+#   * BossSiegeCannon: pickup del Cannone d'Assedio (arma SIEGE, 4 colpi)
+const BossArenaPillarClass = preload("res://scripts/entities/BossArenaPillar.gd")
+const ElementalBarrelClass = preload("res://scripts/entities/ElementalBarrel.gd")
+const BossSiegeCannonClass = preload("res://scripts/entities/BossSiegeCannon.gd")
+
+# Props dell'arena (figli di boss_room_weapons_node: disegnati sopra il
+# pavimento, sotto player/boss, e liberati con la scena).
+var _arena_pillars: Array = []          # [BossArenaPillar]
+var _arena_barrels: Array = []          # [ElementalBarrel]
+var _arena_siege: Node2D = null         # BossSiegeCannon (pickup a terra)
+var _arena_renewal_ms: float = 0.0      # timer rigenerazione arena
+const ARENA_HINT_Y: float = 148.0       # riga hint debolezza (sotto HP boss)
+
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
 @onready var player2: CharacterBody2D = $Player2
@@ -268,10 +287,13 @@ func _handle_input(delta_ms: float = 16.0) -> void:
         if p1_joy_id >= 0 and Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn):
                 shoot_pressed = true
         if shoot_pressed and player.shoot_cooldown == 0:
-                player.shoot()
-                # RELIC (Task 21): cooldown dedicato per reliquia (Arco del
-                # Ranger = raffica 90ms; armi base restano a 150ms).
-                player.shoot_cooldown = C.relic_fire_cooldown(player.current_weapon)
+                # TASK 39: se P1 porta un BARILE, il fuoco lo LANCIA invece
+                # di sparare (pattern dinamite/martello del labirinto).
+                if not _try_throw_carried_barrel(player):
+                        player.shoot()
+                        # RELIC (Task 21): cooldown dedicato per reliquia (Arco del
+                        # Ranger = raffica 90ms; armi base restano a 150ms).
+                        player.shoot_cooldown = C.relic_fire_cooldown(player.current_weapon)
 
         # P1 jump (keyboard OR joystick)
         var jump_pressed: bool = Input.is_action_pressed("jump")
@@ -347,9 +369,12 @@ func _handle_input(delta_ms: float = 16.0) -> void:
                         if Input.is_joy_button_pressed(p2_joy_id, j2_shoot):
                                 p2_shoot_pressed = true
                 if p2_shoot_pressed and player2.shoot_cooldown == 0:
-                        player2.shoot()
-                        # RELIC (Task 21): cooldown dedicato per reliquia (P2).
-                        player2.shoot_cooldown = C.relic_fire_cooldown(player2.current_weapon)
+                        # TASK 39: barile in spalla -> il fuoco lo lancia (P2).
+                        if not _try_throw_carried_barrel(player2):
+                                player2.shoot()
+                                # RELIC (Task 21): cooldown dedicato per reliquia (P2).
+                                player2.shoot_cooldown = C.relic_fire_cooldown(
+                                                player2.current_weapon)
                 var p2_jump_pressed: bool = Input.is_action_pressed("p2_jump")
                 if p2_joy_id >= 0:
                         var j2_jump: int = ConfigManager.joy2_jump() if ConfigManager else -1
@@ -437,8 +462,13 @@ func _update_boss(delta_ms: float) -> void:
         # (3) Advance boss projectiles
         _advance_boss_projectiles(delta_ms)
 
-        # (4) Player projectiles vs boss
+        # (4) Player projectiles vs pillars (TASK 39: i pilastri sono PHYSICAL:
+        # frantumano i colpi PRIMA che possano raggiungere il boss dietro)
+        # e vs boss (con danno potenziato del Cannone d'Assedio).
         if boss and not boss.is_dead():
+                _check_player_projectiles_vs_pillars(player)
+                if GameManager and GameManager.num_players == 2 and player2.visible:
+                        _check_player_projectiles_vs_pillars(player2)
                 _check_player_projectiles_vs_boss(player)
                 if GameManager and GameManager.num_players == 2 and player2.visible:
                         _check_player_projectiles_vs_boss(player2)
@@ -494,6 +524,10 @@ func _update_boss(delta_ms: float) -> void:
 
         # (8b) Boss-room mine: bounce physics + collision with boss
         _update_boss_room_mine(delta_ms)
+
+        # (8c) TASK 39 — L'arena del boss: pickup barili/cannone, frammenti
+        # vs boss, rimbalzo del boss sui pilastri, rinnovo dell'arena.
+        _update_boss_arena(delta_ms)
 
         # (9) Death / continue check
         _check_boss_death()
@@ -662,6 +696,13 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
         for proj in boss_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
+                # TASK 39 (bug FX): gli effetti particellari (scintille,
+                # esplosioni, burst) aggiunti a questo nodo NON sono
+                # proiettili: senza questo filtro venivano avanzati,
+                # "bloccati" dai pilastri (colpendoli OGNI FRAME) e potevano
+                # colpire il player come proiettili fantasma.
+                if proj is GPUParticles2D:
+                        continue
                 if not proj.visible:
                         to_remove.append(proj)
                         continue
@@ -681,6 +722,31 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                 else:
                         vel = proj.get_meta("velocity", Vector2.ZERO)
                 proj.position += vel
+                # TASK 39: i PILASTRI in piedi BLOCCANO i proiettili del boss
+                # (copertura fisica) e subiscono 1 danno ciascuno: la
+                # copertura si consuma durante lo scontro.
+                var blocked_by_pillar: bool = false
+                for pillar in _arena_pillars:
+                        if pillar == null or not is_instance_valid(pillar):
+                                continue
+                        if not pillar.is_standing():
+                                continue
+                        if proj.position.distance_squared_to(pillar.position) \
+                                        < C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS:
+                                blocked_by_pillar = true
+                                pillar.take_hit()  # la copertura si consuma
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.PILLAR_CRACK)
+                                if EffectsManager:
+                                        var block_fx: Node2D = EffectsManager.spawn_sparks(
+                                                        proj.position, 8)
+                                        boss_projectiles_node.add_child(block_fx)
+                                break
+                if blocked_by_pillar:
+                        proj.visible = false
+                        to_remove.append(proj)
+                        continue
                 # Remove if out of bounds
                 if proj.position.x < -50 or proj.position.x > C.WINDOW_WIDTH + 50 or \
                    proj.position.y < C.UI_HEIGHT - 50 or proj.position.y > C.WINDOW_HEIGHT + 50:
@@ -699,6 +765,24 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                         # RELIC (Task 21): Corazza del Furore = +1 flat vs boss.
                         var dmg: int = int(proj.get("power", 1)) \
                                         + (1 if p.is_fury_active() else 0)
+                        # TASK 39 — CANNONE D'ASSEDIO: la palla di cannone ha
+                        # potenza flat E una componente %HP del boss (scala
+                        # negli livelli tardivi) + impatto scenico dedicato.
+                        if proj.get("siege", false):
+                                dmg = maxi(dmg, int(round(float(boss.max_health)
+                                                * C.BOSS_ARENA_SIEGE_PCT)))
+                                if EffectsManager:
+                                        EffectsManager.screen_shake(6.0, 0.25)
+                                        var siege_fx := EffectsManager.spawn_explosion(
+                                                        proj_pos, Color(1.0, 0.72, 0.25), 26, 0.7)
+                                        boss_projectiles_node.add_child(siege_fx)
+                                        var smoke_fx := EffectsManager.spawn_explosion(
+                                                        proj_pos + Vector2(0.0, -12.0),
+                                                        Color(0.25, 0.23, 0.21), 12, 1.0)
+                                        boss_projectiles_node.add_child(smoke_fx)
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.ENEMY_EXPLODE)
                         boss.take_damage(dmg)
                         # RELIC (Task 21): la bomba esplode al contatto col boss.
                         if proj.has("lob_px"):
@@ -949,6 +1033,9 @@ func _check_boss_death() -> void:
                                         Color(1.0, 0.5, 0.1), 40, 1.2)
                                 boss_projectiles_node.add_child(p)
                 player.add_life()
+                # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
+                # nessun proiettile vagante durante la schermata bonus).
+                _clear_boss_arena()
                 if GameManager:
                         # FIX (Hall of Fame): se questa è la vittoria finale
                         # (story completa), registra il punteggio prima di
@@ -1042,6 +1129,13 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                 if EffectsManager:
                         var hit_fx := EffectsManager.spawn_sparks(boss.pos, 14)
                         boss_projectiles_node.add_child(hit_fx)
+        # TASK 39: il fendente reliquia FRANTUMA anche i pilastri adiacenti
+        # (una spada spacca la pietra meglio di una pallottola).
+        for pillar in _arena_pillars:
+                if pillar == null or not is_instance_valid(pillar) or not pillar.is_standing():
+                        continue
+                if C.relic_melee_in_shape(def, aim, p.get_pixel_pos(), pillar.position):
+                        _damage_pillar(pillar, p.get_pixel_pos())
 
 
 # Sterzo dei proiettili a RICERCA (Bastone dell'Arcimago): la sfera insegue
@@ -1122,6 +1216,9 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
                         player2.position = Vector2(C.WINDOW_WIDTH / 2.0 + 120, C.WINDOW_HEIGHT - 100.0)
                 for child in boss_projectiles_node.get_children():
                         child.queue_free()
+                # TASK 39: l'arena si rinnova ANCHE sul continue (come mina e
+                # armi): lo scontro ripreso non resta mai senza strumenti.
+                _respawn_boss_arena()
                 return
 
         # New boss fight
@@ -1169,6 +1266,9 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         # boss room; when collected by either player it starts bouncing
         # and, on impact with the boss, deals 30% of boss.max_health.
         _spawn_boss_room_mine()
+
+        # TASK 39 — L'arena del boss: pilastri, barili e cannone d'assedio.
+        _spawn_boss_arena()
 
 
 func _spawn_boss_room_weapons() -> void:
@@ -1322,6 +1422,391 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                 mine_item.bouncing = false
                                 mine_item.queue_free()
                                 mine_item = null
+
+
+# ============================================================================
+# TASK 39 — L'ARENA DEL BOSS: pilastri, barili elementali, cannone d'assedio
+# ============================================================================
+# 4 pilastri a tema dell'elemento debole del boss (posizioni simmetriche,
+# lontane dagli spawn di player e boss), 3 barili elementali (almeno 1
+# dell'elemento debole) e 1 cannone d'assedio a terra.
+func _spawn_boss_arena() -> void:
+        var weak_el: int = C.get_boss_weakness(boss.boss_type) if boss != null \
+                        else C.ElementKind.FIRE
+        # --- Pilastri: 4 posizioni fisse simmetriche (non bloccano gli spawn) ---
+        var pillar_spots: Array = [
+                Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
+                Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
+        ]
+        for i in range(mini(C.BOSS_ARENA_PILLAR_COUNT, pillar_spots.size())):
+                var pillar: Node2D = BossArenaPillarClass.new()
+                boss_room_weapons_node.add_child(pillar)
+                if pillar.has_method("setup"):
+                        pillar.setup(pillar_spots[i], weak_el, i,
+                                        boss_room_weapons_node)
+                _arena_pillars.append(pillar)
+        # --- Barili: 3 posizioni scelte da un pool (prima = elemento debole) ---
+        var barrel_spots: Array = [
+                Vector2(270.0, 320.0), Vector2(1650.0, 320.0),
+                Vector2(270.0, 920.0), Vector2(1650.0, 920.0),
+                Vector2(960.0, 580.0),
+        ]
+        barrel_spots.shuffle()
+        var elements_pool: Array = [
+                C.ElementKind.FIRE, C.ElementKind.FROST,
+                C.ElementKind.LIGHTNING, C.ElementKind.POISON,
+        ]
+        for i in range(mini(C.BOSS_ARENA_BARREL_COUNT, barrel_spots.size())):
+                var el: int = weak_el if i == 0 \
+                                else elements_pool[randi() % elements_pool.size()]
+                var barrel: Node2D = ElementalBarrelClass.new()
+                boss_room_weapons_node.add_child(barrel)
+                if barrel.has_method("setup"):
+                        barrel.setup(barrel_spots[i], el)
+                if barrel.has_signal("exploded"):
+                        barrel.exploded.connect(_on_barrel_exploded)
+                _arena_barrels.append(barrel)
+        # --- Cannone d'assedio: uno a terra tra il centro e lo spawn player ---
+        _spawn_arena_siege(Vector2(C.WINDOW_WIDTH * 0.5, 850.0))
+        _arena_renewal_ms = 0.0
+
+
+# Spawna il pickup del cannone (usato anche dal rinnovo dell'arena).
+func _spawn_arena_siege(at_pos: Vector2) -> void:
+        if _arena_siege != null and is_instance_valid(_arena_siege):
+                return
+        var cannon: Node2D = BossSiegeCannonClass.new()
+        boss_room_weapons_node.add_child(cannon)
+        if cannon.has_method("setup"):
+                cannon.setup(at_pos)
+        _arena_siege = cannon
+
+
+# Continue: l'arena si rigenera COMPLETAMENTE (boss room fresca, come mina
+# e armi a terra; il boss conserva gli HP).
+func _respawn_boss_arena() -> void:
+        _clear_boss_arena()
+        if boss != null and not boss.is_dead():
+                _spawn_boss_arena()
+
+
+# Libera tutti i props dell'arena (morte del boss, cambio scena, continue).
+func _clear_boss_arena() -> void:
+        for pillar in _arena_pillars:
+                if pillar != null and is_instance_valid(pillar):
+                        pillar.queue_free()
+        _arena_pillars.clear()
+        for barrel in _arena_barrels:
+                if barrel != null and is_instance_valid(barrel):
+                        barrel.queue_free()
+        _arena_barrels.clear()
+        if _arena_siege != null and is_instance_valid(_arena_siege):
+                _arena_siege.queue_free()
+        _arena_siege = null
+        # frammenti ancora in volo
+        for node in get_tree().get_nodes_in_group("arena_debris"):
+                if node is Node2D and is_instance_valid(node):
+                        node.queue_free()
+
+
+# Tick per-frame dell'arena: pickup barili/cannone, frammenti vs boss,
+# rimbalzo del boss sui pilastri in piedi, rinnovo periodico.
+func _update_boss_arena(delta_ms: float) -> void:
+        # pulizia riferimenti morti (barili esplosi / pilastri liberati)
+        _prune_arena_refs()
+        # --- pickup barili a terra (P1 e P2) ---
+        for barrel in _arena_barrels:
+                if barrel == null or not is_instance_valid(barrel) \
+                                or not barrel.is_idle():
+                        continue
+                for p in [player, player2]:
+                        if p == null or not is_instance_valid(p) or not p.visible \
+                                        or p.soul_pending or p.lives <= 0:
+                                continue
+                        if p.get_pixel_pos().distance_squared_to(barrel.position) \
+                                        < 676.0:  # 26 px
+                                barrel.pickup(p)
+                                break
+        # --- barili lanciati vs boss: detonazione al contatto ---
+        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                for barrel in _arena_barrels:
+                        if barrel == null or not is_instance_valid(barrel):
+                                continue
+                        if barrel.state != 2:  # 2 = THROWN
+                                continue
+                        var barrel_r: float = boss.size * 0.5 + 14.0
+                        if barrel.position.distance_squared_to(boss.pos) < barrel_r * barrel_r:
+                                barrel.detonate()
+        # --- pickup cannone d'assedio ---
+        if _arena_siege != null and is_instance_valid(_arena_siege):
+                for p in [player, player2]:
+                        if p == null or not is_instance_valid(p) or not p.visible:
+                                continue
+                        if p.get_pixel_pos().distance_squared_to(
+                                        _arena_siege.position) < 900.0:
+                                p.collect_weapon(
+                                                BossSiegeCannonClass.make_siege_weapon())
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.RELIC_PICKUP)
+                                if EffectsManager:
+                                        var burst: Node2D = EffectsManager.spawn_pickup_burst(
+                                                        _arena_siege.position,
+                                                        Color(1.0, 0.80, 0.30))
+                                        boss_projectiles_node.add_child(burst)
+                                _arena_siege.queue_free()
+                                _arena_siege = null
+                                break
+        # --- frammenti (arena_debris) vs boss ---
+        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                var boss_r: float = boss.size * 0.5 + 8.0
+                for node in get_tree().get_nodes_in_group("arena_debris"):
+                        if not node is Node2D or not is_instance_valid(node):
+                                continue
+                        if node.position.distance_squared_to(boss.pos) < boss_r * boss_r:
+                                boss.take_damage(C.BOSS_ARENA_PILLAR_FRAGMENT_DMG)
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.BOSS_HIT)
+                                if EffectsManager:
+                                        var frag_fx: Node2D = EffectsManager.spawn_sparks(
+                                                        node.position, 10)
+                                        boss_projectiles_node.add_child(frag_fx)
+                                if node.has_method("consume_on_boss"):
+                                        node.consume_on_boss()
+        # --- il boss RIMBALZA sui pilastri in piedi (ostacoli fisici) ---
+        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                for pillar in _arena_pillars:
+                        if pillar == null or not is_instance_valid(pillar) \
+                                        or not pillar.is_standing():
+                                continue
+                        var min_d: float = boss.size * 0.5 \
+                                        + C.BOSS_ARENA_PILLAR_RADIUS * 0.7
+                        if boss.pos.distance_squared_to(pillar.position) < min_d * min_d:
+                                var away: Vector2 = (boss.pos - pillar.position)
+                                if away.length() < 0.01:
+                                        away = Vector2(0.0, 1.0)
+                                away = away.normalized()
+                                # spingi fuori dal pilastro + inversione marcia
+                                boss.pos = pillar.position + away * (min_d + 2.0)
+                                if absf(away.x) > absf(away.y):
+                                        boss.dx = -boss.dx
+                                else:
+                                        boss.dy = -boss.dy
+                                break
+        # --- rinnovo periodico dell'arena (scontri lunghi) ---
+        _arena_renewal_ms += float(delta_ms)
+        if _arena_renewal_ms >= C.BOSS_ARENA_RENEWAL_MS:
+                _arena_renewal_ms = 0.0
+                _renew_boss_arena()
+
+
+# Rinnova cio' che e' stato consumato: pilastri mancanti, barili finiti,
+# cannone esaurito. I frammenti in volo non bloccano il rinnovo.
+func _renew_boss_arena() -> void:
+        if boss == null or not is_instance_valid(boss) or boss.is_dead():
+                return
+        var weak_el: int = C.get_boss_weakness(boss.boss_type)
+        # pilastri: ricrea quelli mancanti (stesse posizioni del set iniziale)
+        var pillar_spots: Array = [
+                Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
+                Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
+        ]
+        var alive: int = 0
+        for pillar in _arena_pillars:
+                if pillar != null and is_instance_valid(pillar) and pillar.is_standing():
+                        alive += 1
+        if alive < C.BOSS_ARENA_PILLAR_COUNT:
+                var spot_i: int = 0
+                # ricrea dove NON c'e' un pilastro in piedi
+                for spot in pillar_spots:
+                        var occupied: bool = false
+                        for pillar in _arena_pillars:
+                                if pillar != null and is_instance_valid(pillar) \
+                                                and pillar.is_standing() \
+                                                and pillar.position.distance_to(spot) < 40.0:
+                                        occupied = true
+                                        break
+                        if not occupied and alive < C.BOSS_ARENA_PILLAR_COUNT:
+                                var new_pillar: Node2D = BossArenaPillarClass.new()
+                                boss_room_weapons_node.add_child(new_pillar)
+                                if new_pillar.has_method("setup"):
+                                        new_pillar.setup(spot, weak_el, spot_i,
+                                                        boss_room_weapons_node)
+                                _arena_pillars.append(new_pillar)
+                                alive += 1
+                        spot_i += 1
+        # barili: se non ne restano (raccolti/esplosi), ne spawna 2
+        var usable_barrels: int = 0
+        for barrel in _arena_barrels:
+                if barrel != null and is_instance_valid(barrel) \
+                                and barrel.state != ElementalBarrelClass.State.EXPLODING:
+                        usable_barrels += 1
+        if usable_barrels == 0:
+                var barrel_spots: Array = [
+                        Vector2(380.0, 560.0), Vector2(1540.0, 640.0),
+                ]
+                for i in range(barrel_spots.size()):
+                        var el: int = weak_el if i == 0 else randi() % 4
+                        var barrel: Node2D = ElementalBarrelClass.new()
+                        boss_room_weapons_node.add_child(barrel)
+                        if barrel.has_method("setup"):
+                                barrel.setup(barrel_spots[i], el)
+                        if barrel.has_signal("exploded"):
+                                barrel.exploded.connect(_on_barrel_exploded)
+                        _arena_barrels.append(barrel)
+        # cannone: se non c'e' a terra e NESSUN player lo impugna ancora
+        var siege_in_use: bool = _arena_siege != null and is_instance_valid(_arena_siege)
+        if not siege_in_use:
+                for p in [player, player2]:
+                        if p != null and is_instance_valid(p) and p.visible \
+                                        and int(p.current_weapon.get("type", -1)) \
+                                                        == C.WeaponType.SIEGE \
+                                        and int(p.current_weapon.get("ammo", 0)) > 0:
+                                siege_in_use = true
+                                break
+        if not siege_in_use:
+                _spawn_arena_siege(Vector2(C.WINDOW_WIDTH * 0.5, 850.0))
+
+
+# Rimuove i riferimenti a nodi liberati (esplosi/crollati).
+func _prune_arena_refs() -> void:
+        var keep_pillars: Array = []
+        for pillar in _arena_pillars:
+                if pillar != null and is_instance_valid(pillar):
+                        keep_pillars.append(pillar)
+        _arena_pillars = keep_pillars
+        var keep_barrels: Array = []
+        for barrel in _arena_barrels:
+                if barrel != null and is_instance_valid(barrel):
+                        keep_barrels.append(barrel)
+        _arena_barrels = keep_barrels
+
+
+# Barile trasportato da `p` (o null).
+func _carried_barrel_of(p: CharacterBody2D) -> Node2D:
+        for barrel in _arena_barrels:
+                if barrel != null and is_instance_valid(barrel) \
+                                and barrel.is_carried_by(p):
+                        return barrel
+        return null
+
+
+# Lancia il barile trasportato da `p` nella direzione di mira. Ritorna false
+# se `p` non trasporta nulla (il controller prosegue con lo sparo normale).
+func _try_throw_carried_barrel(p: CharacterBody2D) -> bool:
+        var barrel: Node2D = _carried_barrel_of(p)
+        if barrel == null:
+                return false
+        var aim: Vector2 = Vector2(
+                        float(p.dx if p.dx != 0 else p.last_dx),
+                        float(p.dy if p.dy != 0 else p.last_dy))
+        barrel.throw_barrel(aim)
+        p.shoot_cooldown = 300
+        return true
+
+
+# Proiettili del player vs pilastri in piedi: il colpo si FRANTUMA sul
+# pilastro (consumato) e gli infligge 1 danno.
+func _check_player_projectiles_vs_pillars(p: CharacterBody2D) -> void:
+        if _arena_pillars.is_empty():
+                return
+        var r_sq: float = C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS
+        for proj in p.projectiles:
+                if not proj.get("active", false):
+                        continue
+                var proj_pos: Vector2 = proj.get("pos", Vector2.ZERO)
+                for pillar in _arena_pillars:
+                        if pillar == null or not is_instance_valid(pillar) \
+                                        or not pillar.is_standing():
+                                continue
+                        if proj_pos.distance_squared_to(pillar.position) < r_sq:
+                                proj["active"] = false
+                                _damage_pillar(pillar, proj_pos)
+                                break
+
+
+# Danno a un pilastro + feedback comune (crack, scintille, micro-shake).
+func _damage_pillar(pillar: Node2D, from_pos: Vector2) -> void:
+        if pillar == null or not is_instance_valid(pillar) or not pillar.is_standing():
+                return
+        pillar.take_hit()
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PILLAR_CRACK)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.5, 0.12)
+                var sparks: Node2D = EffectsManager.spawn_sparks(from_pos, 10)
+                boss_projectiles_node.add_child(sparks)
+
+
+# Detonazione di un barile elementale: danno %HP al boss (x2.5 se elemento
+# debole), danno ai player nella deflagrazione, SFX elementale dedicato.
+func _on_barrel_exploded(pos: Vector2, element: int) -> void:
+        var pal: Dictionary = C.get_element_palette(element)
+        var col: Color = pal.get("color", Color.WHITE)
+        # --- SFX elementale dedicato (il fuoco riusa il botto del barile) ---
+        if AudioManager:
+                match element:
+                        C.ElementKind.FIRE:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.BARREL_EXPLODE)
+                        C.ElementKind.FROST:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.BURST_FROST)
+                        C.ElementKind.LIGHTNING:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.BURST_LIGHTNING)
+                        C.ElementKind.POISON:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.BURST_POISON)
+        if EffectsManager:
+                EffectsManager.screen_shake(8.0, 0.4)
+                # particelle elementali (colore tema) + fumo
+                var burst: Node2D = EffectsManager.spawn_explosion(pos, col, 30, 0.9)
+                boss_projectiles_node.add_child(burst)
+                var smoke: Node2D = EffectsManager.spawn_explosion(
+                                pos + Vector2(0.0, -14.0), Color(0.24, 0.22, 0.20), 14, 1.1)
+                boss_projectiles_node.add_child(smoke)
+        # --- danno al boss (raggio blast + meta' raggio del boss) ---
+        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+                var hit_r: float = C.BOSS_ARENA_BARREL_BLAST_RADIUS + boss.size * 0.5
+                if pos.distance_squared_to(boss.pos) < hit_r * hit_r:
+                        var weak: bool = element == C.get_boss_weakness(boss.boss_type)
+                        var dmg: int = int(round(float(boss.max_health)
+                                        * C.BOSS_ARENA_BARREL_BASE_PCT))
+                        if weak:
+                                dmg = int(round(float(dmg)
+                                                * C.BOSS_ARENA_BARREL_WEAK_MULT))
+                        boss.take_damage(dmg)
+                        # trova il barile appena esploso per il testo DEBOLEZZA!
+                        for barrel in _arena_barrels:
+                                if barrel != null and is_instance_valid(barrel) \
+                                                and barrel.state \
+                                                == ElementalBarrelClass.State.EXPLODING \
+                                                and barrel.position.distance_to(pos) < 2.0 \
+                                                and barrel.has_method("confirm_weakness"):
+                                        barrel.confirm_weakness()
+                                        break
+                        if weak:
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.WEAKNESS_HIT)
+                                if EffectsManager:
+                                        EffectsManager.screen_shake(11.0, 0.5)
+                        else:
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.BOSS_HIT)
+        # --- danno ai player nella deflagrazione (saltare/invulnerabilita' salva) ---
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.visible:
+                        continue
+                if p.is_jumping() or p.is_invulnerable() or p.soul_pending:
+                        continue
+                if p.get_pixel_pos().distance_squared_to(pos) \
+                                < C.BOSS_ARENA_BARREL_BLAST_RADIUS \
+                                                * C.BOSS_ARENA_BARREL_BLAST_RADIUS:
+                        p.take_hazard_damage(C.BOSS_ARENA_BARREL_PLAYER_DMG)
 
 
 # ============================================================================
@@ -1503,6 +1988,34 @@ func _draw() -> void:
                                 Color(0.3, 0.1, 0.1), true)
                         draw_rect(Rect2(bar_x, bar_y, bar_w * hp_ratio, bar_h),
                                 Color(0.8, 0.15, 0.1), true)
+                        # TASK 39 — hint DEBOLEZZA ELEMENTALE sotto la barra HP:
+                        # l'informazione strategica dei barili elementali.
+                        # Es. "Debolezza: FUOCO" + glifo dell'elemento.
+                        var weak_el: int = C.get_boss_weakness(boss.boss_type)
+                        var weak_pal: Dictionary = C.get_element_palette(weak_el)
+                        var weak_col: Color = weak_pal.get("glow", Color.WHITE)
+                        var weak_name: String = str(weak_pal.get("name", "?"))
+                        var hint: String = "Debolezza: " + weak_name
+                        var font_hint: Font = ThemeDB.fallback_font
+                        var hint_x: float = cx - 110.0
+                        # glifo: cerchietto elementale + 4 raggi
+                        var glyph_c: Vector2 = Vector2(hint_x - 14.0, ARENA_HINT_Y - 6.0)
+                        draw_circle(glyph_c, 8.0, Color(0, 0, 0, 0.6))
+                        draw_circle(glyph_c, 5.5,
+                                Color(weak_col.r, weak_col.g, weak_col.b, 0.9))
+                        for g_i in 4:
+                                var g_ang: float = TAU * float(g_i) / 4.0 \
+                                                + _boss_bg_time * 0.8
+                                draw_line(glyph_c + Vector2(cos(g_ang), sin(g_ang)) * 5.0,
+                                                glyph_c + Vector2(cos(g_ang), sin(g_ang)) * 8.0,
+                                                Color(weak_col.r, weak_col.g,
+                                                                weak_col.b, 0.8), 1.5)
+                        draw_string(font_hint, Vector2(hint_x, ARENA_HINT_Y), hint,
+                                HORIZONTAL_ALIGNMENT_LEFT, 230.0, 16,
+                                Color(0, 0, 0, 0.85))
+                        draw_string(font_hint, Vector2(hint_x - 1.0, ARENA_HINT_Y - 1.0), hint,
+                                HORIZONTAL_ALIGNMENT_LEFT, 230.0, 16,
+                                Color(weak_col.r, weak_col.g, weak_col.b))
         # Draw boss room weapons on the floor
         for w_entry in boss_room_weapons:
                 var pos: Vector2 = w_entry["pos"]
