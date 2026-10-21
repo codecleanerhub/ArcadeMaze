@@ -13,17 +13,20 @@
 #                   becomes "OPTIONS" while the Options submenu is open.
 #   * Ornament:     gold horizontal line + diamond (between title and items)
 #   * Scroll panel: dark parchment-style rounded rectangle (items list)
-#       Main menu (6 items, selected highlighted in yellow + animated flame):
+#       Main menu (7 items, selected highlighted in yellow + animated flame):
 #           0. NUMBER OF PLAYERS: 1 / 2
 #           1. GAME MODE: STORY / INFINITE
 #           2. TEST MODE: ON / OFF
 #           3. OPTIONS          (opens the Options submenu)
 #           4. START GAME
 #           5. CREDITS
-#       Options submenu (3 items):
+#           6. HALL OF FAME
+#       Options submenu (4 items — TASK 44 aggiunta LANGUAGE):
 #           0. MUSIC: ON / OFF
-#           1. CONFIGURE JOYSTICK
-#           2. BACK              (returns to main menu)
+#           1. LANGUAGE: ENGLISH / ITALIANO   (cambia tutti i testi del gioco)
+#           2. CONFIGURE JOYSTICK
+#           3. BACK              (returns to main menu)
+#       TASK 44: ogni testo del menu arriva da I18n.t() (EN default / IT).
 #   * Character wheel: 8 characters (HERO_M, HERO_F, MAGE, ORC, ELF, KNIGHT,
 #                      GOLEM, DRAGON, VAMPIRE) shown side-view.
 #   * Footer:        "By" (gold) + "Marled Software" (ivory)
@@ -80,8 +83,13 @@ var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
 # to true; the BACK item (or ESC) sets it back to false.
 var _in_options: bool = false
 const MAIN_MENU_ITEMS: int = 7   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CREDITS, HALL OF FAME
-const OPTIONS_MENU_ITEMS: int = 3  # MUSIC, CONFIGURE JOYSTICK, BACK
+# TASK 44: il sottomenu OPTIONS ha 4 voci — MUSIC, LANGUAGE (nuova),
+# CONFIGURE JOYSTICK, BACK.
+const OPTIONS_MENU_ITEMS: int = 4  # MUSIC, LANGUAGE, CONFIGURE JOYSTICK, BACK
 const OPTIONS_MAIN_RETURN_INDEX: int = 3  # main menu index of OPTIONS item
+# TASK 44: indice della voce CONFIGURE JOYSTICK nel sottomenu OPTIONS
+# (era 1 prima dell'inserimento di LANGUAGE alla posizione 1).
+const OPTIONS_JOY_CONFIG_INDEX: int = 2
 # FIX (Hall of Fame): indice della voce HALL OF FAME nel menu principale
 const HALL_OF_FAME_MENU_INDEX: int = 6
 # ---
@@ -150,7 +158,7 @@ func _ready() -> void:
         if GameManager and GameManager.menu_reopen_options:
                 GameManager.menu_reopen_options = false
                 _set_in_options(true)
-                _menu_item_index = 1  # CONFIGURE JOYSTICK
+                _menu_item_index = OPTIONS_JOY_CONFIG_INDEX  # CONFIGURE JOYSTICK
                 _update_items_text()
 
 
@@ -171,6 +179,10 @@ func _start_demo_mode() -> void:
                         GameManager.go_to_hall_of_fame()
                         return
         print("[MainMenu] Inactivity timeout, starting demo mode")
+        # TASK 44: LoadingScreen al posto dello schermo nero (la demo è una
+        # scena pesante: carica il labirinto procedurale).
+        if LoadingScreen:
+                LoadingScreen.show_loading()
         get_tree().change_scene_to_file("res://scenes/DemoMode.tscn")
 
 
@@ -517,6 +529,7 @@ func _build_ui() -> void:
 
         # Initial placeholder texts; the real text is set in _update_items_text()
         # based on whether the main menu or the Options submenu is active.
+        # TASK 44: i testi veri arrivano da I18n.t() in _update_items_text().
         var item_texts: Array = [
                 "NUMBER OF PLAYERS:",
                 "GAME MODE:",
@@ -670,14 +683,18 @@ func _character_sprite_path(char_idx: int) -> String:
 
 
 # Returns a friendly display name for a character index.
+# TASK 44: localizzato (I18n "char.*").
 func _character_name(char_idx: int) -> String:
-        var names := [
-                "HERO", "HEROINE", "MAGE", "ORC",
-                "ELF", "KNIGHT", "GOLEM", "DRAGON", "VAMPIRE"
+        var keys := [
+                "char.hero", "char.heroine", "char.mage", "char.orc",
+                "char.elf", "char.knight", "char.golem", "char.dragon",
+                "char.vampire",
         ]
-        if char_idx < 0 or char_idx >= names.size():
+        if char_idx < 0 or char_idx >= keys.size():
                 return "???"
-        return names[char_idx]
+        if I18n:
+                return I18n.t(keys[char_idx])
+        return keys[char_idx]
 
 
 # ============================================================================
@@ -686,52 +703,61 @@ func _character_name(char_idx: int) -> String:
 
 # Refresh the text of every menu item to reflect the current selection values.
 # Two display modes (simple state machine):
-#   * _in_options == false  -> main menu (6 items: NUMBER OF PLAYERS, GAME
-#                              MODE, TEST MODE, OPTIONS, START GAME, CREDITS)
-#   * _in_options == true   -> Options submenu (3 items: MUSIC, CONFIGURE
-#                              JOYSTICK, BACK). Labels at index 3..5 are
-#                              hidden via `visible = false` so the panel
-#                              visually shrinks while in the submenu.
+#   * _in_options == false  -> main menu (7 items)
+#   * _in_options == true   -> Options submenu (4 items: MUSIC, LANGUAGE,
+#                              CONFIGURE JOYSTICK, BACK). Labels beyond the
+#                              submenu count are hidden via `visible = false`.
 # The title text and the visible background are also swapped here so callers
 # only need to invoke `_update_items_text()` after any state change.
+# TASK 44: tutti i testi passano da I18n.t() — cambiano lingua alla volta
+# quando il giocatore toggola LANGUAGE nel sottomenu.
 func _update_items_text() -> void:
         if _item_labels.is_empty():
                 return
+        if I18n:
+                _hint_label.text = I18n.t("menu.hint")
         if _in_options:
-                # --- Options submenu (3 items) ---
-                _item_labels[0].text = "MUSIC: %s" % ("ON" if _music_enabled else "OFF")
+                # --- Options submenu (4 items) ---
+                _item_labels[0].text = I18n.t("menu.music") % (
+                        I18n.t("menu.on") if _music_enabled else I18n.t("menu.off"))
                 _item_labels[0].visible = true
-                _item_labels[1].text = "CONFIGURE JOYSTICK"
+                # TASK 44 — voce LANGUAGE: mostra l'ENDONIMO della lingua
+                # ("ENGLISH" / "ITALIANO") in entrambe le lingue.
+                _item_labels[1].text = I18n.t("menu.language") % I18n.language_display_name()
                 _item_labels[1].visible = true
-                _item_labels[2].text = "BACK"
+                _item_labels[2].text = I18n.t("menu.configure_joystick")
                 _item_labels[2].visible = true
-                # Hide any extra labels (indices 3..N-1) while inside the Options
-                # submenu so the panel only shows the 3 options items.
+                _item_labels[3].text = I18n.t("menu.back")
+                _item_labels[3].visible = true
+                # Hide any extra labels (indices 4..N-1) while inside the Options
+                # submenu so the panel only shows the 4 options items.
                 for i in range(OPTIONS_MENU_ITEMS, _item_labels.size()):
                         _item_labels[i].visible = false
                 # Swap title + background to the themed Options screen.
                 if _title_label:
-                        _title_label.text = "OPTIONS"
+                        _title_label.text = I18n.t("menu.options")
                 if _options_bg:
                         _options_bg.visible = true
                 if _bg:
                         _bg.visible = false
                 return
-        # --- Main menu (6 items) ---
-        _item_labels[0].text = "NUMBER OF PLAYERS: %d" % _num_players
+        # --- Main menu (7 items) ---
+        _item_labels[0].text = I18n.t("menu.num_players") % _num_players
         _item_labels[0].visible = true
-        _item_labels[1].text = "GAME MODE: %s" % ("STORY" if _game_mode == GameMode.STORY else "INFINITE")
+        _item_labels[1].text = I18n.t("menu.game_mode") % (
+                I18n.t("mode.story") if _game_mode == GameMode.STORY else I18n.t("mode.infinite"))
         _item_labels[1].visible = true
-        _item_labels[2].text = "TEST MODE: %s" % ("ON" if _test_mode_enabled else "OFF")
+        _item_labels[2].text = I18n.t("menu.test_mode") % (
+                I18n.t("menu.on") if _test_mode_enabled else I18n.t("menu.off"))
         _item_labels[2].visible = true
-        _item_labels[3].text = "OPTIONS"
+        _item_labels[3].text = I18n.t("menu.options")
         _item_labels[3].visible = true
-        _item_labels[4].text = "START GAME"
+        _item_labels[4].text = I18n.t("menu.start")
         _item_labels[4].visible = true
-        _item_labels[5].text = "CREDITS"
+        _item_labels[5].text = I18n.t("menu.credits")
         _item_labels[5].visible = true
         # FIX (Hall of Fame): 7ª voce di menu
-        _item_labels[6].text = "HALL OF FAME"
+        _item_labels[6].text = I18n.t("menu.hall_of_fame")
         _item_labels[6].visible = true
         # Hide any extra labels beyond MAIN_MENU_ITEMS (defensive; should be none).
         for i in range(MAIN_MENU_ITEMS, _item_labels.size()):
@@ -908,13 +934,13 @@ func _move_selection(delta: int) -> void:
 
 # Change the value of the currently-selected option (Left/Right).
 # Behaviour depends on whether the main menu or the Options submenu is open:
-#   * Options submenu (3 items): only MUSIC (index 0) is toggleable.
-#                                CONFIGURE JOYSTICK and BACK are activated
-#                                via _activate_current() (Enter/A button).
-#   * Main menu (6 items):       NUMBER OF PLAYERS (0) and GAME MODE (1) and
+#   * Options submenu (4 items): MUSIC (0) and LANGUAGE (1) are toggleable.
+#                                CONFIGURE JOYSTICK (2) and BACK (3) are
+#                                activated via _activate_current().
+#   * Main menu (7 items):       NUMBER OF PLAYERS (0), GAME MODE (1) and
 #                                TEST MODE (2) are toggleable. OPTIONS (3),
-#                                START GAME (4) and CREDITS (5) are activated
-#                                via _activate_current().
+#                                START GAME (4), CREDITS (5) and HALL OF FAME
+#                                (6) are activated via _activate_current().
 func _change_option(delta: int) -> void:
         if _in_options:
                 match _menu_item_index:
@@ -931,9 +957,14 @@ func _change_option(delta: int) -> void:
                                         AudioManager.set_music_enabled(_music_enabled)
                                         if _music_enabled:
                                                 AudioManager.play_menu_music()
-                        1, 2:
-                                # CONFIGURE JOYSTICK / BACK are activated via _activate_current(),
-                                # not via Left/Right - ignore.
+                        1:
+                                # TASK 44 — LANGUAGE english/italiano: cambia
+                                # ALLA VOLTA ogni testo del menu (e del gioco).
+                                if I18n:
+                                        I18n.toggle_language()
+                        2, 3:
+                                # CONFIGURE JOYSTICK / BACK are activated via
+                                # _activate_current(), not via Left/Right.
                                 pass
                         _:
                                 pass
@@ -1067,8 +1098,9 @@ func _activate_current() -> void:
         if _in_options:
                 # Options submenu items:
                 #   0 = MUSIC (toggle on/off)
-                #   1 = CONFIGURE JOYSTICK (emit signal; P1 first, P2 if 2 players)
-                #   2 = BACK (return to main menu)
+                #   1 = LANGUAGE (toggle ENGLISH/ITALIANO — TASK 44)
+                #   2 = CONFIGURE JOYSTICK (emit signal; P1 first, P2 if 2 players)
+                #   3 = BACK (return to main menu)
                 match _menu_item_index:
                         0:
                                 _music_enabled = not _music_enabled
@@ -1078,8 +1110,14 @@ func _activate_current() -> void:
                                                 AudioManager.play_menu_music()
                                 _update_items_text()
                         1:
-                                configure_joystick_requested.emit(1)
+                                # TASK 44 — LANGUAGE: anche Invio/A toggola
+                                # (come MUSIC), oltre a Left/Right.
+                                if I18n:
+                                        I18n.toggle_language()
+                                _update_items_text()
                         2:
+                                configure_joystick_requested.emit(1)
+                        3:
                                 _set_in_options(false)
                         _:
                                 pass
@@ -1121,9 +1159,10 @@ func on_joystick_config_done(player: int) -> void:
                 configure_joystick_requested.emit(2)
         else:
                 # Done configuring. Return to the Options submenu, cursor on the
-                # CONFIGURE JOYSTICK item (index 1) so the player can pick BACK.
+                # CONFIGURE JOYSTICK item (index 2 — TASK 44, era 1 prima di
+                # LANGUAGE) so the player can pick BACK.
                 _in_options = true
-                _menu_item_index = 1
+                _menu_item_index = OPTIONS_JOY_CONFIG_INDEX
                 _update_items_text()
 
 

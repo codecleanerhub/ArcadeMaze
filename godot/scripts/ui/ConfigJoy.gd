@@ -28,7 +28,7 @@ func _ready() -> void:
         if GameManager:
                 player_num = GameManager.config_joy_player
                 step = 0 if GameManager.config_joy_step == 0 else 1
-        player_label.text = "PLAYER " + str(player_num)
+        player_label.text = I18n.t("joy.player") % player_num
         _update_step()
         # Preload the AI-generated crypt/ruderi background (same as SelectPlayer).
         # FIX (regressione): usa Image.load() per bypassare import.
@@ -66,11 +66,11 @@ func _on_config_finished() -> void:
 
 func _update_step() -> void:
         match step:
-                0: step_label.text = "PRESS JUMP BUTTON"
-                1: step_label.text = "PRESS SHOOT BUTTON"
+                0: step_label.text = I18n.t("joy.press_jump")
+                1: step_label.text = I18n.t("joy.press_shoot")
         # Update the hint label to remind the user they can cancel with ESC.
         if hint_label:
-                hint_label.text = "ESC TO CANCEL  •  STEP %d OF 2" % (step + 1)
+                hint_label.text = I18n.t("joy.hint") % (step + 1)
 
 func _process(delta: float) -> void:
         _anim_time += delta
@@ -170,7 +170,7 @@ func _unhandled_input(event: InputEvent) -> void:
                                 # rispondeva. Ora mostriamo un messaggio chiaro.
                                 print("[ConfigJoy] same button as jump, ignoring")
                                 if hint_label:
-                                        hint_label.text = "SAME AS JUMP! PRESS ANOTHER BUTTON"
+                                        hint_label.text = I18n.t("joy.same_as_jump")
                                 return
                         if player_num == 1:
                                 ConfigManager.config["JOY_SHOOT"] = btn
@@ -188,7 +188,7 @@ func _unhandled_input(event: InputEvent) -> void:
                                                 GameManager.config_joy_player = 2
                                                 GameManager.config_joy_step = 0
                                         step = 0
-                                        player_label.text = "PLAYER 2"
+                                        player_label.text = I18n.t("joy.player") % 2
                                         _update_step()
                                         wait_for_release = true
                                 else:

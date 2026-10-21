@@ -28,6 +28,11 @@ const CHARACTERS: Array[String] = [
 const CHARACTER_NAMES: Array[String] = [
         "HERO", "HEROINE", "MAGE", "ORC", "ELF", "KNIGHT", "GOLEM", "DRAGON", "VAMPIRE"
 ]
+# TASK 44: chiavi I18n dei nomi personaggi (stesso ordine di CHARACTER_NAMES).
+const CHARACTER_NAME_KEYS: Array[String] = [
+        "char.hero", "char.heroine", "char.mage", "char.orc",
+        "char.elf", "char.knight", "char.golem", "char.dragon", "char.vampire",
+]
 const CHARACTER_COUNT: int = 8  # solo 8 nella ruota
 
 # Colori (mirror C++ palette)
@@ -191,6 +196,9 @@ func _on_player_selected(character_index: int, p_num: int) -> void:
                         GameManager.player2_character = character_index
                 GameManager.go_to_intro()
         else:
+                # TASK 44: LoadingScreen al posto dello schermo nero.
+                if LoadingScreen:
+                        LoadingScreen.show_loading()
                 get_tree().change_scene_to_file("res://scenes/IntroCutscene.tscn")
 
 
@@ -220,14 +228,17 @@ func _draw() -> void:
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.35), true)
 
         # --- Titolo ---
-        var title: String = "SELECT PLAYER " + str(player_num)
+        var title: String = I18n.t("select.title") % player_num
         _draw_text_centered(title, cx - 4, 96, 48, Color(0.706, 0.471, 0.157))  # shadow
         _draw_text_centered(title, cx, 100, 48, Color(1.0, 0.843, 0.0))  # gold
 
         # --- Hint ---
         var player_color: Color = Color(1.0, 0.843, 0.0) if player_num == 1 else Color(0.471, 0.706, 1.0)
-        _draw_text_centered("LEFT/RIGHT TO ROTATE - ENTER TO CONFIRM", cx, 160, 20, Color(0.588, 0.588, 0.588))
-        _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, 185, 28, player_color)
+        _draw_text_centered(I18n.t("select.hint"), cx, 160, 20, Color(0.588, 0.588, 0.588))
+        var char_name: String = CHARACTER_NAMES[wheel_index]
+        if I18n and wheel_index < CHARACTER_NAME_KEYS.size():
+                char_name = I18n.t(CHARACTER_NAME_KEYS[wheel_index])
+        _draw_text_centered(char_name, cx, 185, 28, player_color)
 
         # --- Parametri ruota ---
         # FIX (wheel radius aumentato per sprite più grandi 128px)

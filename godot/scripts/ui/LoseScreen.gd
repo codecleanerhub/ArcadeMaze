@@ -85,10 +85,10 @@ func _build_hof_queue() -> void:
         _hof_level = GameManager.final_level
         if GameManager.num_players == 2:
                 if HallOfFameData.qualifies(GameManager.final_score_p1):
-                        _hof_queue.append({"label": "PLAYER 1",
+                        _hof_queue.append({"label": I18n.t("hud.player") % 1,
                                         "score": GameManager.final_score_p1})
                 if HallOfFameData.qualifies(GameManager.final_score_p2):
-                        _hof_queue.append({"label": "PLAYER 2",
+                        _hof_queue.append({"label": I18n.t("hud.player") % 2,
                                         "score": GameManager.final_score_p2})
         else:
                 if HallOfFameData.qualifies(GameManager.final_score):
@@ -235,7 +235,7 @@ func _draw() -> void:
 
         # Subtitle
         draw_string(font, Vector2(cx - 300, 240),
-                "The maze has claimed another soul...",
+                I18n.t("lose.body"),
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 28, color_subtitle)
 
         # FIX (Hall of Fame): punteggio finale raggiunto. In 2P mostra i
@@ -245,9 +245,9 @@ func _draw() -> void:
         if GameManager:
                 score = GameManager.final_score
                 level = GameManager.final_level
-        var score_text: String = "FINAL SCORE: %d    LEVEL: %d" % [score, level]
+        var score_text: String = I18n.t("lose.final") % [score, level]
         if GameManager and GameManager.num_players == 2:
-                score_text = "P1 SCORE: %d    P2 SCORE: %d    LEVEL: %d" % [
+                score_text = I18n.t("lose.p_final") % [
                         GameManager.final_score_p1, GameManager.final_score_p2, level]
         draw_string(font, Vector2(cx - 300, 300),
                 score_text,
@@ -255,7 +255,7 @@ func _draw() -> void:
 
         # Hint (blinking) — cambia se la tastiera sta per apparire
         var hint_alpha: float = 0.5 + 0.5 * sin(_time * 2.0)
-        var hint_text: String = "PRESS ENTER TO RETURN TO MENU"
+        var hint_text: String = I18n.t("screen.return_hint")
         # FIX (game over sparita): durante la grazia input l'hint resta nascosto
         # (non e' ancora possibile premere nulla).
         if _display_timer < MIN_DISPLAY_SECONDS:
@@ -267,7 +267,7 @@ func _draw() -> void:
                 var pending_p2: bool = GameManager.num_players == 2 \
                                 and HallOfFameData.qualifies(GameManager.final_score_p2)
                 if not _keyboard_shown and (pending_p1 or pending_p2):
-                        hint_text = "NEW HIGH SCORE! PREPARE TO ENTER YOUR NAME..."
+                        hint_text = I18n.t("lose.new_high")
                 elif _keyboard_shown and _keyboard != null and is_instance_valid(_keyboard):
                         hint_text = ""
         draw_string(font, Vector2(cx - 300, size.y - 80),

@@ -77,6 +77,21 @@ static var ARMOR_OUTFIT_ENABLED: bool = true
 #                          identico al pre-Task-26.
 static var BOSS_CANVAS_SHADER_ENABLED: bool = true
 
+# ============================================================================
+# 0d. TASK 44 — LINGUA UI (INGLESE / ITALIANO)
+# ============================================================================
+# Mirror STATICO della lingua selezionata nel menu OPTIONS -> LANGUAGE.
+# L'autoload I18nManager ne è l'unico SCRITTORE (lo sincronizza al boot da
+# ConfigManager e a ogni cambio); GameConstants è accessibile anche da
+# funzioni static (Boss.get_boss_name, get_weapon_name...) dove gli
+# autoload NON sono risolvibili (verificato: "Identifier not found").
+#   0 = ENGLISH (default), 1 = ITALIANO.
+static var ui_language: int = 0
+
+## Scorciatoia statica: true se la UI è in italiano.
+static func ui_is_italian() -> bool:
+        return ui_language == 1
+
 #   BOSS_SHOOT_SFX_ENABLED -> SFX procedurali di sparo dei boss, UNO per tipo
 #                          di "munizione" (masso=tonfo di pietra, ragnatela=
 #                          fruscio di seta, fiamma=soffio, raggio=zap...):
@@ -492,28 +507,31 @@ static func get_character_sprite_base(ct: int) -> String:
 
 
 ## Returns a human-readable name for the character (used by the UI).
+## TASK 44: localizzato (EN default / IT) tramite il mirror statico
+## ui_language (i nomi brevi della ruota sono in I18nManager: char.hero...).
 static func get_character_name(ct: int) -> String:
+        var it: bool = ui_is_italian()
         match ct:
                 CharacterType.HERO_M:
-                        return "Hero"
+                        return "Eroe" if it else "Hero"
                 CharacterType.HERO_F:
-                        return "Heroine"
+                        return "Eroina" if it else "Heroine"
                 CharacterType.MAGE:
-                        return "Mage"
+                        return "Mago" if it else "Mage"
                 CharacterType.ORC:
-                        return "Orc"
+                        return "Orco" if it else "Orc"
                 CharacterType.ELF:
-                        return "Elf"
+                        return "Elfo" if it else "Elf"
                 CharacterType.KNIGHT:
-                        return "Knight"
+                        return "Cavaliere" if it else "Knight"
                 CharacterType.GOLEM:
-                        return "Golem"
+                        return "Golem" if it else "Golem"
                 CharacterType.DRAGON:
-                        return "Dragon Man"
+                        return "Uomo Drago" if it else "Dragon Man"
                 CharacterType.VAMPIRE:
-                        return "Vampire"
+                        return "Vampiro" if it else "Vampire"
                 _:
-                        return "Unknown"
+                        return "Sconosciuto" if it else "Unknown"
 
 
 ## Returns the tint applied to P1 (white = no tint) or P2 (bluish) when
@@ -720,37 +738,46 @@ static func get_element_palette(el: int) -> Dictionary:
         match el:
                 ElementKind.FIRE:
                         return {
-                                "id": "fire", "name": "FUOCO",
+                                "id": "fire", "name": "FUOCO", "name_en": "FIRE",
                                 "color": Color(1.00, 0.42, 0.14),
                                 "glow": Color(1.00, 0.62, 0.22),
                                 "wood": Color(0.36, 0.20, 0.10),
                         }
                 ElementKind.FROST:
                         return {
-                                "id": "frost", "name": "GHIACCIO",
+                                "id": "frost", "name": "GHIACCIO", "name_en": "FROST",
                                 "color": Color(0.42, 0.78, 1.00),
                                 "glow": Color(0.62, 0.90, 1.00),
                                 "wood": Color(0.26, 0.34, 0.46),
                         }
                 ElementKind.LIGHTNING:
                         return {
-                                "id": "lightning", "name": "FULMINE",
+                                "id": "lightning", "name": "FULMINE", "name_en": "LIGHTNING",
                                 "color": Color(1.00, 0.88, 0.26),
                                 "glow": Color(1.00, 0.96, 0.55),
                                 "wood": Color(0.34, 0.30, 0.12),
                         }
                 ElementKind.POISON:
                         return {
-                                "id": "poison", "name": "VELENO",
+                                "id": "poison", "name": "VELENO", "name_en": "POISON",
                                 "color": Color(0.55, 0.95, 0.28),
                                 "glow": Color(0.72, 1.00, 0.45),
                                 "wood": Color(0.24, 0.32, 0.14),
                         }
         return {
-                "id": "neutral", "name": "?",
+                "id": "neutral", "name": "?", "name_en": "?",
                 "color": Color.WHITE, "glow": Color.WHITE,
                 "wood": Color(0.3, 0.3, 0.3),
         }
+
+
+## TASK 44: nome ELEMENTALE localizzato (IT "FUOCO" / EN "FIRE") letto
+## dalla palette secondo il mirror statico ui_language.
+static func get_element_name(el: int) -> String:
+        var pal: Dictionary = get_element_palette(el)
+        if ui_is_italian():
+                return str(pal.get("name", "?"))
+        return str(pal.get("name_en", pal.get("name", "?")))
 
 
 ## TASK 39 — elemento DEBOLE di ogni boss (logica fantasy coerente):
@@ -1217,20 +1244,23 @@ static func hammer_damage_for(target_max_health: int) -> int:
 ## mostra il nome (resta il contatore AMMO); i nomi lunghi delle reliquie
 ## si sovrapponevano ai cuori delle vite. I nomi completi restano nelle
 ## schermate bonus (BonusScreen usa name/short delle definizioni).
+## TASK 44: localizzato (EN default / IT) tramite il mirror statico
+## ui_language (le reliquie usano invece i campi name/name_en).
 static func get_weapon_name(type: int) -> String:
         if is_relic_weapon(type):
                 return ""
+        var it: bool = ui_is_italian()
         match type:
                 WeaponType.PISTOL:
-                        return "PISTOL"
+                        return "PISTOLA" if it else "PISTOL"
                 WeaponType.SHOTGUN:
-                        return "SHOTGUN"
+                        return "FUCILE" if it else "SHOTGUN"
                 WeaponType.LASER:
                         return "LASER"
                 WeaponType.ROCKET:
-                        return "ROCKET"
+                        return "RAZZI" if it else "ROCKET"
                 WeaponType.SIEGE:
-                        return "SIEGE"
+                        return "ASSEDIO" if it else "SIEGE"
                 _:
                         return "?"
 
@@ -1678,7 +1708,11 @@ static func relic_aura_contact_damage(armor: Dictionary,
 
 
 ## Nome corto dell'armatura per la HUD ("" se nessuna armatura equipaggiata).
+## TASK 44: localizzato — IT usa "short", EN usa "short_en" (mirror statico
+## ui_language, stessa convenzione name/name_en delle reliquie).
 static func get_armor_short_name(armor: Dictionary) -> String:
         if armor.is_empty():
                 return ""
-        return str(armor.get("short", "ARMATURA"))
+        if ui_is_italian():
+                return str(armor.get("short", "ARMATURA"))
+        return str(armor.get("short_en", armor.get("short", "ARMOR")))

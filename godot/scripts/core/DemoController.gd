@@ -365,7 +365,7 @@ func _draw() -> void:
         # Letters drawn as rectangles forming "DEMO MODE" - simplified to colored bars
         # Use draw_string with ThemeDB fallback
         var font: Font = ThemeDB.fallback_font
-        draw_string(font, Vector2(cx - 150, C.WINDOW_HEIGHT - 60), "DEMO MODE",
+        draw_string(font, Vector2(cx - 150, C.WINDOW_HEIGHT - 60), I18n.t("demo.mode"),
                 HORIZONTAL_ALIGNMENT_CENTER, 300, 48, demo_col)
-        draw_string(font, Vector2(cx - 200, C.WINDOW_HEIGHT - 24), "PRESS ANY KEY TO EXIT",
+        draw_string(font, Vector2(cx - 200, C.WINDOW_HEIGHT - 24), I18n.t("demo.exit"),
                 HORIZONTAL_ALIGNMENT_CENTER, 400, 18, Color(1.0, 0.784, 0.784, alpha))

@@ -355,7 +355,8 @@ func _draw_explosion() -> void:
         if _weak_hit:
                 var rise: float = k * 46.0
                 var font: Font = ThemeDB.fallback_font
-                var txt: String = "DEBOLEZZA!"
+                # TASK 44: localizzato (EN "WEAKNESS!" / IT "DEBOLEZZA!").
+                var txt: String = I18n.t("weakness") if I18n else "DEBOLEZZA!"
                 var txt_pos: Vector2 = Vector2(-44.0, -52.0 - rise)
                 draw_string(font, txt_pos + Vector2(1.5, 1.5), txt,
                                 HORIZONTAL_ALIGNMENT_LEFT, 90.0, 17,

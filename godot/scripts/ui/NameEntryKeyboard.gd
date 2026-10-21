@@ -204,7 +204,8 @@ func _confirm_entry() -> void:
         if _finished:
                 return
         _finished = true
-        var final_name: String = _name if _name.length() > 0 else "HERO"
+        var final_name: String = _name if _name.length() > 0 \
+                        else I18n.t("ne.default_name")
         if save_on_confirm:
                 HallOfFameData.add_entry(final_name, display_score, display_level)
         if AudioManager:
@@ -213,7 +214,7 @@ func _confirm_entry() -> void:
 
 
 func get_entered_name() -> String:
-        return _name if _name.length() > 0 else "HERO"
+        return _name if _name.length() > 0 else I18n.t("ne.default_name")
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +236,12 @@ func _draw() -> void:
 
         # Titolo
         var title_pulse: float = 1.0 + 0.04 * sin(_time * 2.0)
-        draw_string(font, Vector2(cx - 400, 110), "NEW HIGH SCORE!",
+        draw_string(font, Vector2(cx - 400, 110), I18n.t("ne.title"),
                 HORIZONTAL_ALIGNMENT_CENTER, 800, int(46 * title_pulse), color_title)
 
         # Punteggio e livello raggiunto
         draw_string(font, Vector2(cx - 400, 152),
-                "SCORE: %d   -   LEVEL: %d" % [display_score, display_level],
+                I18n.t("ne.score_line") % [display_score, display_level],
                 HORIZONTAL_ALIGNMENT_CENTER, 800, 24, Color(0.9, 0.9, 0.9))
 
         # FIX (Hall of Fame 2P): etichetta del player che sta inserendo il
@@ -257,7 +258,7 @@ func _draw() -> void:
                 shown_name += "_" if fmod(_time, 0.8) < 0.4 else " "
         while shown_name.length() < HallOfFameData.MAX_NAME_LENGTH:
                 shown_name += " "
-        draw_string(font, Vector2(cx - 300, 200), "NAME:  %s" % shown_name,
+        draw_string(font, Vector2(cx - 300, 200), I18n.t("ne.name_line") % shown_name,
                 HORIZONTAL_ALIGNMENT_LEFT, 600, 34, color_name)
         # Riga di underline sotto il nome
         var name_x: float = cx - 300 + 90
@@ -291,11 +292,11 @@ func _draw() -> void:
                         # Etichetta
                         var label: String
                         if idx == SPECIAL_CANC:
-                                label = "CANC"
+                                label = I18n.t("ne.del")
                         elif idx == SPECIAL_END:
-                                label = "FINE"
+                                label = I18n.t("ne.end")
                         elif idx == SPECIAL_OK:
-                                label = "OK"
+                                label = I18n.t("ne.ok")
                         else:
                                 label = CHARACTERS[idx]
                         var lbl_col: Color = color_special if is_special else (
@@ -305,13 +306,13 @@ func _draw() -> void:
                                 label, HORIZONTAL_ALIGNMENT_CENTER,
                                 CELL_W * 0.88, lbl_size, lbl_col)
 
-        # Hint comandi (pulsante)
+        # Hint comandi (pulsante) — TASK 44: localizzati (EN/IT)
         var hint_alpha: float = 0.5 + 0.5 * sin(_time * 2.0)
         draw_string(font, Vector2(cx - 500, vp.y - 90),
-                "FRECCE / JOYSTICK = MOVIMENTO    FUOCO = SELEZIONA",
+                I18n.t("ne.hint1"),
                 HORIZONTAL_ALIGNMENT_CENTER, 1000, 20,
                 Color(0.59, 0.59, 0.59, hint_alpha))
         draw_string(font, Vector2(cx - 500, vp.y - 62),
-                "OK O FINE = CONFERMA E SALVA IN HALL OF FAME",
+                I18n.t("ne.hint2"),
                 HORIZONTAL_ALIGNMENT_CENTER, 1000, 20,
                 Color(0.59, 0.59, 0.59, hint_alpha))

@@ -210,9 +210,8 @@ func _apply_choice(def: Dictionary) -> void:
                 chooser.current_weapon = C.make_relic_weapon(def)
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
-        _last_choice_text = "PLAYER %d CHOSE: %s" % [
-                        int(chooser.player_num),
-                        str(def.get("name_en", def.get("name", "?")))]
+        _last_choice_text = I18n.t("bonus.chose") % [
+                        int(chooser.player_num), I18n.relic_name(def)]
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         _advance_chooser()
@@ -236,13 +235,14 @@ func _finish() -> void:
 
 
 # ============================================================================
-# Rendering — TASK 23: tutto in INGLESE, NESSUN nome di schermata,
-# icone PNG ad alta qualità (fallback procedurale), sfondo fucina dedicato.
+# Rendering — TASK 23: icone PNG ad alta qualità (fallback procedurale),
+# sfondo fucina dedicato. TASK 44: TUTTI i testi (titoli, famiglie,
+# statistiche, nomi e descrizioni delle reliquie) localizzati EN/IT.
 # ============================================================================
-const FAMILY_LABEL := {
-        "mischia": "MELEE",
-        "distanza": "RANGED",
-        "armatura": "ARMOR",
+const FAMILY_LABEL_KEYS := {
+        "mischia": "bonus.family_melee",
+        "distanza": "bonus.family_ranged",
+        "armatura": "bonus.family_armor",
 }
 
 
@@ -266,10 +266,11 @@ func _draw_screen(p: Control) -> void:
         var cx: float = vp.x * 0.5
 
         # TASK 23: titolo generico SENZA nome/lettera di schermata.
+        # TASK 44: localizzato (EN/IT).
         var gold: Color = Color(1.0, 0.84, 0.25)
-        _draw_text_centered(p, font, "CHOOSE YOUR RELIC",
+        _draw_text_centered(p, font, I18n.t("bonus.title"),
                 Vector2(cx, 140.0), 44, gold)
-        _draw_text_centered(p, font, "A LEGENDARY TREASURE FROM THE FORGE",
+        _draw_text_centered(p, font, I18n.t("bonus.subtitle"),
                 Vector2(cx, 190.0), 18, Color(0.85, 0.75, 0.55))
         # Cornice decorativa a doppia linea sotto il titolo.
         p.draw_line(Vector2(cx - 420.0, 215.0), Vector2(cx + 420.0, 215.0),
@@ -281,7 +282,7 @@ func _draw_screen(p: Control) -> void:
                 # Schermata completata: riepilogo scelte + saluto finale.
                 _draw_text_centered(p, font, _last_choice_text,
                         Vector2(cx, vp.y * 0.5 - 20.0), 26, Color(0.9, 0.95, 1.0))
-                _draw_text_centered(p, font, "GOOD LUCK, HEROES!",
+                _draw_text_centered(p, font, I18n.t("bonus.good_luck"),
                         Vector2(cx, vp.y * 0.5 + 30.0), 20, gold)
                 return
 
@@ -292,7 +293,7 @@ func _draw_screen(p: Control) -> void:
         if chooser != null:
                 pnum = int(chooser.player_num)
         var who_col: Color = Color(0.39, 0.78, 1.0) if pnum == 1 else Color(1.0, 0.59, 0.39)
-        _draw_text_centered(p, font, "PLAYER %d — CHOOSE YOUR RELIC" % pnum,
+        _draw_text_centered(p, font, I18n.t("bonus.player_choose") % pnum,
                 Vector2(cx, 250.0), 26, who_col)
         if _last_choice_text != "" and _wait_ms > 0.0:
                 _draw_text_centered(p, font, _last_choice_text,
@@ -310,12 +311,12 @@ func _draw_screen(p: Control) -> void:
                         Rect2(x0 + float(i) * (card_w + gap), card_y, card_w, card_h),
                         i == selection, i)
 
-        # --- Istruzioni comandi (inglese) ---
+        # --- Istruzioni comandi (TASK 44: localizzate) ---
         var hint: String
         if pnum == 1:
-                hint = "ARROWS / D-PAD: select    Z or ENTER (FIRE button): confirm"
+                hint = I18n.t("bonus.hint_1p")
         else:
-                hint = "A / D: select    ENTER or P2 FIRE button: confirm"
+                hint = I18n.t("bonus.hint_2p")
         _draw_text_centered(p, font, hint,
                 Vector2(cx, card_y + card_h + 46.0), 18, Color(0.75, 0.75, 0.8))
 
@@ -339,26 +340,27 @@ func _draw_relic_card(p: Control, font: Font, def: Dictionary,
                 p.draw_rect(rect, Color(0.35, 0.32, 0.40, 0.9), false, 2.0)
 
         var cx: float = rect.position.x + rect.size.x * 0.5
-        # Etichetta famiglia in alto (inglese).
-        var fam: String = FAMILY_LABEL.get(str(def.get("family", "")), "RELIC")
+        # Etichetta famiglia in alto (TASK 44: localizzata).
+        var fam: String = I18n.t(FAMILY_LABEL_KEYS.get(
+                        str(def.get("family", "")), "bonus.family_relic"))
         _draw_text_centered(p, font, fam,
                 Vector2(cx, rect.position.y + 34.0), 17,
                 Color(0.78, 0.72, 0.60))
         # TASK 23: icona PNG ad alta qualità della reliquia (fallback
         # procedurale se l'asset non c'è). Area icona ~200x210.
         _draw_relic_icon(p, def, Vector2(cx, rect.position.y + 140.0), selected)
-        # Nome (inglese; 2 righe se lungo).
-        var name_s: String = str(def.get("name_en", def.get("name", "?")))
+        # Nome (TASK 44: localizzato; 2 righe se lungo).
+        var name_s: String = I18n.relic_name(def)
         var name_size: int = 24 if name_s.length() <= 22 else 20
         _draw_text_centered(p, font, name_s,
                 Vector2(cx, rect.position.y + 262.0), name_size, col)
-        # Statistiche principali (inglese).
+        # Statistiche principali (TASK 44: localizzate).
         var stats: String = _relic_stats_line(def)
         _draw_text_centered(p, font, stats,
                 Vector2(cx, rect.position.y + 298.0), 17, Color(0.95, 0.9, 0.7))
-        # Descrizione (inglese, a capo automatico).
+        # Descrizione (TASK 44: localizzata, a capo automatico).
         var desc_y: float = rect.position.y + 348.0
-        for line in _wrap_text(str(def.get("desc_en", def.get("desc", ""))), 38):
+        for line in _wrap_text(I18n.relic_desc(def), 38):
                 _draw_text_centered(p, font, line, Vector2(cx, desc_y), 15,
                         Color(0.82, 0.82, 0.88))
                 desc_y += 22.0
@@ -432,27 +434,27 @@ func _draw_relic_icon(p: Control, def: Dictionary, center: Vector2,
                         center + Vector2(0, 8)]), Color(1, 1, 1, 0.65))
 
 
-## riga statistiche compatta per la carta (INGLESE — TASK 23).
+## riga statistiche compatta per la carta (TASK 44: localizzata EN/IT).
 func _relic_stats_line(def: Dictionary) -> String:
         if str(def.get("family", "")) == "armatura":
-                return "charges: %d   max energy: +2" % int(def.get("charges", 0))
+                return I18n.t("bonus.stat_charges") % int(def.get("charges", 0))
         var parts: Array[String] = []
-        parts.append("shots: %d" % int(def.get("shots", 0)))
-        parts.append("power: %d" % int(def.get("power", 1)))
+        parts.append(I18n.t("bonus.stat_shots") % int(def.get("shots", 0)))
+        parts.append(I18n.t("bonus.stat_power") % int(def.get("power", 1)))
         if def.has("pierce_max"):
-                parts.append("piercing")
+                parts.append(I18n.t("bonus.tag_piercing"))
         if bool(def.get("homing", false)):
-                parts.append("homing")
+                parts.append(I18n.t("bonus.tag_homing"))
         if def.has("fan"):
-                parts.append("fan x%d" % int(def["fan"]))
+                parts.append(I18n.t("bonus.tag_fan") % int(def["fan"]))
         if def.has("chain"):
-                parts.append("chain")
+                parts.append(I18n.t("bonus.tag_chain"))
         if def.has("lob_px"):
-                parts.append("area")
+                parts.append(I18n.t("bonus.tag_area"))
         if def.has("stun_ms"):
-                parts.append("stuns")
+                parts.append(I18n.t("bonus.tag_stuns"))
         if bool(def.get("vampiric", false)):
-                parts.append("vampiric")
+                parts.append(I18n.t("bonus.tag_vampiric"))
         return "  ·  ".join(parts)
 
 

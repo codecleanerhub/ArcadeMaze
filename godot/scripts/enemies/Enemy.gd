@@ -1075,52 +1075,56 @@ func get_type() -> int:
 # FIX (HUD last hit enemy): ritorna il nome leggibile del tipo di nemico.
 # Usato dall'HUD per mostrare il nome del nemico colpito.
 func get_enemy_name() -> String:
-        match type:
-                EnemyType.ZOMBIE: return "Zombie"
-                EnemyType.SKELETON: return "Skeleton"
-                EnemyType.GHOST: return "Ghost"
-                EnemyType.BAT: return "Bat"
-                EnemyType.SPIDER: return "Spider"
-                EnemyType.SLIME: return "Slime"
-                EnemyType.DEMON: return "Demon"
-                EnemyType.ROBOT: return "Robot"
-                EnemyType.GOBLIN: return "Goblin"
-                EnemyType.ORC: return "Orc"
-                EnemyType.WRAITH: return "Wraith"
-                EnemyType.GHOUL: return "Ghoul"
-                EnemyType.IMP: return "Imp"
-                EnemyType.RAT: return "Rat"
-                EnemyType.CULTIST: return "Cultist"
-                EnemyType.MIMIC: return "Mimic"
-                EnemyType.WOLF: return "Wolf"
-                EnemyType.WITCH: return "Witch"
-                EnemyType.BONE_GOLEM: return "Bone Golem"
-                EnemyType.ASH_SERPENT: return "Ash Serpent"
-                EnemyType.DAMNED_KNIGHT: return "Damned Knight"
-                EnemyType.MAD_WIZARD: return "Mad Wizard"
-                EnemyType.DEMONIC_CROW: return "Demonic Crow"
-                EnemyType.TENTACLE: return "Tentacle"
-                EnemyType.GARGOYLE: return "Gargoyle"
-                EnemyType.WELL_SPIRIT: return "Well Spirit"
-                EnemyType.CURSED_BOAR: return "Cursed Boar"
-                EnemyType.PREDATOR_FUNGUS: return "Predator Fungus"
-                EnemyType.OWLBEAR: return "Owlbear"
-                EnemyType.GIBBERING_MOUTHER: return "Gibbering Mouther"
-                EnemyType.HELLHOUND: return "Hellhound"
-                EnemyType.BARLGURA: return "Barlgura"
-                EnemyType.TROGLODYTE: return "Troglodyte"
-                EnemyType.BULETTE: return "Bulette"
-                EnemyType.KUO_TOA: return "Kuo Toa"
-                EnemyType.BASILISK: return "Basilisk"
-                EnemyType.COCKATRICE: return "Cockatrice"
-                EnemyType.UMBER_HULK: return "Umber Hulk"
-                EnemyType.HOOK_HORROR: return "Hook Horror"
-                EnemyType.DOPPELGANGER: return "Doppelganger"
-                EnemyType.ENT: return "Ent"
-                EnemyType.CAVE_DRAKE: return "Cave Drake"
-                EnemyType.LOST_SOUL: return "Lost Soul"
-                EnemyType.POSSESSED_SOLDIER: return "Possessed Soldier"
-                _: return "Enemy"
+        # TASK 44: nomi localizzati (EN default / IT) — chiavi I18n "enemy.*".
+        var keys := {
+                EnemyType.ZOMBIE: "enemy.zombie",
+                EnemyType.SKELETON: "enemy.skeleton",
+                EnemyType.GHOST: "enemy.ghost",
+                EnemyType.BAT: "enemy.bat",
+                EnemyType.SPIDER: "enemy.spider",
+                EnemyType.SLIME: "enemy.slime",
+                EnemyType.DEMON: "enemy.demon",
+                EnemyType.ROBOT: "enemy.robot",
+                EnemyType.GOBLIN: "enemy.goblin",
+                EnemyType.ORC: "enemy.orc",
+                EnemyType.WRAITH: "enemy.wraith",
+                EnemyType.GHOUL: "enemy.ghoul",
+                EnemyType.IMP: "enemy.imp",
+                EnemyType.RAT: "enemy.rat",
+                EnemyType.CULTIST: "enemy.cultist",
+                EnemyType.MIMIC: "enemy.mimic",
+                EnemyType.WOLF: "enemy.wolf",
+                EnemyType.WITCH: "enemy.witch",
+                EnemyType.BONE_GOLEM: "enemy.bone_golem",
+                EnemyType.ASH_SERPENT: "enemy.ash_serpent",
+                EnemyType.DAMNED_KNIGHT: "enemy.damned_knight",
+                EnemyType.MAD_WIZARD: "enemy.mad_wizard",
+                EnemyType.DEMONIC_CROW: "enemy.demonic_crow",
+                EnemyType.TENTACLE: "enemy.tentacle",
+                EnemyType.GARGOYLE: "enemy.gargoyle",
+                EnemyType.WELL_SPIRIT: "enemy.well_spirit",
+                EnemyType.CURSED_BOAR: "enemy.cursed_boar",
+                EnemyType.PREDATOR_FUNGUS: "enemy.predator_fungus",
+                EnemyType.OWLBEAR: "enemy.owlbear",
+                EnemyType.GIBBERING_MOUTHER: "enemy.gibbering_mouther",
+                EnemyType.HELLHOUND: "enemy.hellhound",
+                EnemyType.BARLGURA: "enemy.barlgura",
+                EnemyType.TROGLODYTE: "enemy.troglodyte",
+                EnemyType.BULETTE: "enemy.bulette",
+                EnemyType.KUO_TOA: "enemy.kuo_toa",
+                EnemyType.BASILISK: "enemy.basilisk",
+                EnemyType.COCKATRICE: "enemy.cockatrice",
+                EnemyType.UMBER_HULK: "enemy.umber_hulk",
+                EnemyType.HOOK_HORROR: "enemy.hook_horror",
+                EnemyType.DOPPELGANGER: "enemy.doppelganger",
+                EnemyType.ENT: "enemy.ent",
+                EnemyType.CAVE_DRAKE: "enemy.cave_drake",
+                EnemyType.LOST_SOUL: "enemy.lost_soul",
+                EnemyType.POSSESSED_SOLDIER: "enemy.possessed_soldier",
+        }
+        if I18n and keys.has(type):
+                return I18n.t(keys[type])
+        return "Enemy"
 
 
 # ===========================================================================

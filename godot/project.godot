@@ -16,12 +16,27 @@ run/main_scene="res://scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://assets/sprites/player1_sheet.png"
 
+; TASK 44 — boot splash "Loading..." sangue gocciolante: copre la fase di
+; caricamento engine/autoload (PRIMA che qualsiasi script disegni).
+boot_splash/show_image=true
+boot_splash/image="res://assets/boot/boot_splash.png"
+boot_splash/fullsize=false
+boot_splash/use_filter=true
+boot_splash/bg_color=Color(0.02, 0.01, 0.02, 1)
+
 [autoload]
 
+; LoadingScreen PRIMA di tutto: mostra "Loading..." (sangue gocciolante,
+; stile Hurry Up) dal primissimo frame renderizzato e copre le transizioni
+; di scena al posto dello schermo nero (TASK 44).
+LoadingScreen="*res://scripts/core/LoadingScreen.gd"
 BootManager="*res://scripts/core/BootManager.gd"
 GameManager="*res://scripts/core/GameManager.gd"
 SpriteManager="*res://scripts/core/SpriteManager.gd"
 ConfigManager="*res://scripts/core/ConfigManager.gd"
+; I18n DOPO ConfigManager (legge la lingua salvata da config.ini nel _ready)
+; e PRIMA di AudioManager: espone t()/set_language() a tutte le scene.
+I18n="*res://scripts/core/I18nManager.gd"
 AudioManager="*res://scripts/audio/AudioManager.gd"
 EffectsManager="*res://scripts/core/EffectsManager.gd"
 EnvironmentArt="*res://scripts/core/EnvironmentArt.gd"

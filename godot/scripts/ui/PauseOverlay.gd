@@ -81,7 +81,7 @@ func _build_ui() -> void:
         # Use explicit anchors so the label spans the full width and centers
         # its text. This avoids relying on `size.x` (which is 0 at _ready()).
         _pause_label = Label.new()
-        _pause_label.text = "PAUSE"
+        _pause_label.text = I18n.t("pause.title")
         _pause_label.anchor_left = 0.0
         _pause_label.anchor_top = 0.0
         _pause_label.anchor_right = 1.0
@@ -101,7 +101,7 @@ func _build_ui() -> void:
 
         # --- "PRESS P TO RESUME" label (smaller, below) ---
         _resume_label = Label.new()
-        _resume_label.text = "PRESS P TO RESUME"
+        _resume_label.text = I18n.t("pause.hint")
         _resume_label.anchor_left = 0.0
         _resume_label.anchor_top = 0.0
         _resume_label.anchor_right = 1.0

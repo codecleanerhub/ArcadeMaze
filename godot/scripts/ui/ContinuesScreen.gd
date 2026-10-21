@@ -153,10 +153,11 @@ func _draw() -> void:
         # Dark overlay
         draw_rect(Rect2(0, 0, size.x, size.y), color_bg_overlay, true)
 
-        # Title "CONTINUE?"
+        # Title "CONTINUE?" — TASK 44: resta in inglese in entrambe le lingue
+        # (termine arcade usato anche in Italia, richiesta utente).
         var font := get_theme_default_font()
         var cx: float = size.x / 2.0
-        draw_string(font, Vector2(cx - 200, 120), "CONTINUE?",
+        draw_string(font, Vector2(cx - 200, 120), I18n.t("cont.title"),
                 HORIZONTAL_ALIGNMENT_CENTER, 400, 64, color_title)
 
         # Countdown number (big, blinking when < 5)
@@ -176,18 +177,18 @@ func _draw() -> void:
         else:
                 draw_string(font, Vector2(cx + 80, 400), ">",
                         HORIZONTAL_ALIGNMENT_CENTER, 30, 36, color_title)
-        draw_string(font, Vector2(cx - 180, 400), "YES",
+        draw_string(font, Vector2(cx - 180, 400), I18n.t("cont.yes"),
                 HORIZONTAL_ALIGNMENT_CENTER, 150, 40, yes_color)
-        draw_string(font, Vector2(cx + 30, 400), "NO",
+        draw_string(font, Vector2(cx + 30, 400), I18n.t("cont.no"),
                 HORIZONTAL_ALIGNMENT_CENTER, 150, 40, no_color)
 
         # Continues left
         var continues: int = GameManager.continues_left if GameManager else 3
         draw_string(font, Vector2(cx - 200, 500),
-                "CONTINUES LEFT: %d" % continues,
+                I18n.t("cont.left") % continues,
                 HORIZONTAL_ALIGNMENT_CENTER, 400, 24, color_hint)
 
         # Hint
         draw_string(font, Vector2(cx - 300, 560),
-                "LEFT/RIGHT TO SELECT - ENTER TO CONFIRM",
+                I18n.t("cont.hint"),
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 18, color_hint)

@@ -87,10 +87,10 @@ func _build_hof_queue() -> void:
         _hof_level = GameManager.final_level
         if GameManager.num_players == 2:
                 if HallOfFameData.qualifies(GameManager.final_score_p1):
-                        _hof_queue.append({"label": "PLAYER 1",
+                        _hof_queue.append({"label": I18n.t("hud.player") % 1,
                                         "score": GameManager.final_score_p1})
                 if HallOfFameData.qualifies(GameManager.final_score_p2):
-                        _hof_queue.append({"label": "PLAYER 2",
+                        _hof_queue.append({"label": I18n.t("hud.player") % 2,
                                         "score": GameManager.final_score_p2})
         else:
                 if HallOfFameData.qualifies(GameManager.final_score):
@@ -253,22 +253,22 @@ func _draw() -> void:
         var cx: float = size.x / 2.0
         var pulse: float = 1.0 + 0.05 * sin(_time * 3.0)
         var title_size: int = int(72 * pulse)
-        draw_string(font, Vector2(cx - 300, 100), "VICTORY!",
+        draw_string(font, Vector2(cx - 300, 100), I18n.t("win.title"),
                 HORIZONTAL_ALIGNMENT_CENTER, 600, title_size, color_title)
 
         # Subtitle
         draw_string(font, Vector2(cx - 350, 220),
-                "YOU CONQUERED THE ARCADE MAZE",
+                I18n.t("win.subtitle"),
                 HORIZONTAL_ALIGNMENT_CENTER, 700, 32, color_subtitle)
         draw_string(font, Vector2(cx - 200, 280),
-                "All 68 levels cleared. The treasure is yours.",
+                I18n.t("win.body"),
                 HORIZONTAL_ALIGNMENT_CENTER, 400, 22, color_hint)
 
         # Final score (FIX Hall of Fame 2P: punteggi singoli + totale)
         if GameManager:
-                var score_text: String = "FINAL SCORE: %d" % GameManager.final_score
+                var score_text: String = I18n.t("win.final_score") % GameManager.final_score
                 if GameManager.num_players == 2:
-                        score_text = "P1 SCORE: %d    P2 SCORE: %d" % [
+                        score_text = I18n.t("win.p_score") % [
                                         GameManager.final_score_p1, GameManager.final_score_p2]
                 draw_string(font, Vector2(cx - 150, 350),
                         score_text,
@@ -277,6 +277,6 @@ func _draw() -> void:
         # Hint (blinking)
         var hint_alpha: float = 0.5 + 0.5 * sin(_time * 2.0)
         draw_string(font, Vector2(cx - 300, size.y - 80),
-                "PRESS ENTER TO RETURN TO MENU",
+                I18n.t("screen.return_hint"),
                 HORIZONTAL_ALIGNMENT_CENTER, 600, 24,
                 Color(color_hint.r, color_hint.g, color_hint.b, hint_alpha))

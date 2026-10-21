@@ -5,12 +5,16 @@ extends Control
 
 signal intro_finished
 
+# TASK 44: le didascalie sono localizzate (EN/IT) — vedi I18nManager
+# (chiavi "intro.cap1".."intro.cap4"). Questa costante resta come
+# FALLBACK compile-time se l'autoload I18n non fosse disponibile.
 const CAPTIONS: Array[String] = [
         "It all began with the search for an island that appears on no map.\nWe chose the course. It was the storm that chose us.\nThe island welcomed us with cliffs black and hard as steel,\nelements unseen, and whispers from below.",
         "The ruins were not dead. They were waiting.\nEvery corridor breathed. Every shadow had teeth.\nWe lit our torches and pressed deeper, driven by gold and glory.\nThe maze would test our worth.",
         "Creatures of nightmare roamed these halls.\nSkeletons of ancient warriors, demons of fire and shadow,\nbeasts twisted by centuries of darkness.\nWe fought. We bled. We pressed on.",
         "At the heart of the island, the Treasure awaited.\nBut it was guarded by the oldest evil.\nA dragon of bone and fire, the last sentinel of a forgotten age.\nThis is where our legend begins."
 ]
+const CAPTION_KEYS: Array[String] = ["intro.cap1", "intro.cap2", "intro.cap3", "intro.cap4"]
 
 var _images: Array[Texture2D] = []
 var _current_frame: int = 0
@@ -88,6 +92,9 @@ func _finish() -> void:
                 GameManager.carry_p2.clear()
                 GameManager.go_to_maze()
         else:
+                # TASK 44: LoadingScreen al posto dello schermo nero.
+                if LoadingScreen:
+                        LoadingScreen.show_loading()
                 var err := get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
                 if err != OK:
                         push_error("Errore nel caricamento di MainGame.tscn")
@@ -153,7 +160,12 @@ func draw_overlay(ci: CanvasItem) -> void:
                 Color(0.4, 0.3, 0.1, 0.5), false, 1.0)
 
         # --- Testo caption (scolpito su pietra) ---
-        var caption_text: String = CAPTIONS[_current_frame] if _current_frame < CAPTIONS.size() else ""
+        var caption_text: String = ""
+        if _current_frame < CAPTIONS.size():
+                caption_text = CAPTIONS[_current_frame]
+        # TASK 44: versione localizzata (EN default / IT dal menu LANGUAGE).
+        if I18n and _current_frame < CAPTION_KEYS.size():
+                caption_text = I18n.t(CAPTION_KEYS[_current_frame])
         var font_size: int = 20
         var text_x: float = panel_x + 20
         var text_y: float = panel_y + 15
@@ -176,6 +188,8 @@ func draw_overlay(ci: CanvasItem) -> void:
         # --- Skip hint (in basso a destra, pulsante) ---
         var skip_alpha: float = 0.5 + sin(_frame_timer * 3.0) * 0.3
         var skip_text: String = "PRESS FIRE TO SKIP"
+        if I18n:
+                skip_text = I18n.t("intro.skip")
         var skip_size: int = 20
         var skip_w: float = font.get_string_size(skip_text, HORIZONTAL_ALIGNMENT_RIGHT, -1, skip_size).x
         var skip_x: float = vp_size.x - skip_w - 35

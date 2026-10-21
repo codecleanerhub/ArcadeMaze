@@ -238,9 +238,11 @@ func _draw_last_hit_enemy() -> void:
         var bar_y: float = 38.0
         var bar_x: float = center_x - bar_w * 0.5
         # Etichetta "ENEMY" sopra la barra (y=10, più in alto)
-        _draw_label_colored("ENEMY:", bar_x, 10.0, Color(0.9, 0.5, 0.5))
+        # TASK 44: localizzata ("NEMICO:" in IT — inizio nome spostato a +75
+        # perché l'etichetta italiana è un carattere più lunga).
+        _draw_label_colored(I18n.t("hud.enemy"), bar_x, 10.0, Color(0.9, 0.5, 0.5))
         # Nome del nemico (più spazio: +70 invece di +50)
-        _draw_label_colored(_last_hit_enemy_name, bar_x + 70, 10.0, Color(1.0, 0.9, 0.5))
+        _draw_label_colored(_last_hit_enemy_name, bar_x + 75, 10.0, Color(1.0, 0.9, 0.5))
         # Background barra
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.95), true)
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 1.0)
@@ -279,21 +281,21 @@ func _draw_boss_bar() -> void:
         # Border
         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 2)
         # Label
-        _draw_label_colored("BOSS", bar_x + 4, bar_y - 14, Color(0.9, 0.7, 0.3))
+        _draw_label_colored(I18n.t("hud.boss"), bar_x + 4, bar_y - 14, Color(0.9, 0.7, 0.3))
 
 
 # --- 1-player layout (mirror UI::render single-player) ---------------------
 func _draw_1p() -> void:
         # SCORE
-        _draw_label("SCORE", 10, 10)
+        _draw_label(I18n.t("hud.score"), 10, 10)
         _draw_label_int(_p1.score, 10, 30, color_score)
         # LIVES (hearts) — TASK 26: oltre 5 cuori non si disegna la fila
         # (si sovrapponeva a ENERGY/WPN): si mostra il numero con la "x"
         # + UN solo simbolo di cuore (es. "6x ♥" = 6 vite).
-        _draw_label("LIVES", 150, 10)
+        _draw_label(I18n.t("hud.lives"), 150, 10)
         _draw_lives_row(int(_p1.lives), 160.0, 35.0, 8.0, 24.0)
         # ENERGY (gradiente verde→arancione→rosso)
-        _draw_label("ENERGY", 280, 10)
+        _draw_label(I18n.t("hud.energy"), 280, 10)
         _draw_energy_bar(280, 30, 100, 18,
                 float(_p1.energy) / float(_p1.max_energy))
         # FIX (stamina salti): barra STAMINA sotto la barra vita/energia:
@@ -303,17 +305,17 @@ func _draw_1p() -> void:
                 _p1.stamina, _p1.stamina_exhausted)
         # WPN — TASK 26: le armi speciali (reliquie) NON mostrano il nome
         # (sovrapposizione coi cuori); resta l'header WPN + il contatore AMMO.
-        _draw_label("WPN", 420, 10)
+        _draw_label(I18n.t("hud.wpn"), 420, 10)
         if not str(_p1.weapon_name).is_empty():
                 _draw_label_colored(_p1.weapon_name, 420, 30, _p1.weapon_color)
         # AMMO (numero colpi invece di barra)
-        _draw_label("AMMO", 570, 10)
+        _draw_label(I18n.t("hud.ammo"), 570, 10)
         _draw_label_int(_p1.weapon_ammo, 570, 30, color_ammo)
         # RELIC (Task 21): stato ARMATURA nello slot libero tra AMMO e la
         # barra del nemico (x=870..1010). Nessuna armatura = non disegna.
         _draw_armor_status(_p1, 870, 10)
-        # TRES — FIX: label in inglese "Treasures remaining: N"
-        _draw_label("Treasures remaining:", 700, 10)
+        # TRES — TASK 44: localizzata ("Tesori rimasti:" in IT)
+        _draw_label(I18n.t("hud.treasures"), 700, 10)
         _draw_label_int(_remaining_treasures, 700, 30, color_score)
 
 
@@ -327,9 +329,9 @@ func _draw_2p() -> void:
         # === PLAYER 1 (left) ===
         _draw_label_colored("P1", 10, 10, color_p1_label)
         _draw_label_int(_p1.score, 10, 30, color_score)
-        _draw_label("LIFE", 80, 10)
+        _draw_label(I18n.t("hud.life"), 80, 10)
         _draw_lives_row(int(_p1.lives), 90.0, 35.0, 6.0, 16.0)
-        _draw_label("EN", 180, 10)
+        _draw_label(I18n.t("hud.en"), 180, 10)
         _draw_energy_bar(180, 32, 60, 14,
                 float(_p1.energy) / float(_p1.max_energy))
         # FIX (stamina salti): barra STAMINA sotto la vita, P1 (rosa/arancione/rosso).
@@ -344,15 +346,15 @@ func _draw_2p() -> void:
         # === TREASURES (center) — centrata su schermo 1920px. x=800: il
         # testo (~170px, fino a ~970) NON collide con la barra "last hit
         # enemy" che parte da x=1010 (margine 40px) ===
-        _draw_label("Treasures remaining:", 800, 10)
+        _draw_label(I18n.t("hud.treasures"), 800, 10)
         _draw_label_int(_remaining_treasures, 800, 30, color_score)
 
         # === PLAYER 2 (right, speculare a P1) ===
         _draw_label_colored("P2", 1560, 10, color_p2_label)
         _draw_label_int(_p2.score, 1560, 30, color_score)
-        _draw_label("LIFE", 1630, 10)
+        _draw_label(I18n.t("hud.life"), 1630, 10)
         _draw_lives_row(int(_p2.lives), 1640.0, 35.0, 6.0, 16.0)
-        _draw_label("EN", 1730, 10)
+        _draw_label(I18n.t("hud.en"), 1730, 10)
         _draw_energy_bar(1730, 32, 60, 14,
                 float(_p2.energy) / float(_p2.max_energy))
         # FIX (stamina salti): barra STAMINA sotto la vita, P2 (rosa/arancione/rosso).

@@ -72,7 +72,7 @@ func _physics_process(delta: float) -> void:
                                         return
                                 # Simula l'utente: OPTIONS -> CONFIGURE JOYSTICK.
                                 menu._in_options = true
-                                menu._menu_item_index = 1
+                                menu._menu_item_index = 2  # TASK 44: CONFIGURE JOYSTICK (era 1)
                                 menu._activate_current()
                                 phase = 1
                                 st = 0.0
@@ -126,7 +126,7 @@ func _physics_process(delta: float) -> void:
                                 GameManager.config_joy_step = 0
                                 menu = get_tree().current_scene as Control
                                 menu._in_options = true
-                                menu._menu_item_index = 1
+                                menu._menu_item_index = 2  # TASK 44: CONFIGURE JOYSTICK (era 1)
                                 menu._activate_current()
                                 phase = 6
                                 st = 0.0
@@ -266,7 +266,7 @@ func menu_visible_and_options() -> bool:
         var m: Control = get_tree().current_scene as Control
         if m == null or _scene_name() != "MainMenu.tscn":
                 return false
-        return m._in_options and m._menu_item_index == 1
+        return m._in_options and m._menu_item_index == 2  # TASK 44: CONFIGURE JOYSTICK
 
 
 func _finish() -> void:

@@ -523,9 +523,18 @@ func state_name(state: int = current_state) -> String:
 # ============================================================================
 
 func change_scene(scene_path: String) -> void:
+        # TASK 44: overlay "Loading..." (sangue gocciolante, stile Hurry Up)
+        # al posto dello schermo nero. L'autoload resta sopra la scena nuova
+        # finché non sono passati 3 frame renderizzati: se il _ready della
+        # scena è pesante (es. generazione labirinto) i frame non avanzano e
+        # la scritta copre TUTTA l'elaborazione.
+        if LoadingScreen:
+                LoadingScreen.show_loading()
         var err := get_tree().change_scene_to_file(scene_path)
         if err != OK:
                 push_error("Errore caricamento scena: " + scene_path)
+                if LoadingScreen:
+                        LoadingScreen.hide_loading()
 
 func go_to_menu() -> void:
         current_state = C.GameState.MENU

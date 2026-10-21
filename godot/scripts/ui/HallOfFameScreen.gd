@@ -125,8 +125,10 @@ func _draw() -> void:
         draw_rect(Rect2(0, 0, vp.x, vp.y), Color(0.0, 0.0, 0.0, 0.45), true)
 
         # --- Titolo con pulsazione dorata ---
+        # TASK 44: "HALL OF FAME" resta in inglese in entrambe le lingue
+        # (termine arcade usato anche in Italia, richiesta utente).
         var title_pulse: float = 1.0 + 0.03 * sin(_time * 2.0)
-        draw_string(font, Vector2(cx - 450, 120), "HALL OF FAME",
+        draw_string(font, Vector2(cx - 450, 120), I18n.t("menu.hall_of_fame"),
                 HORIZONTAL_ALIGNMENT_CENTER, 900, int(58 * title_pulse), color_title)
         # Ornamenti (linea + rombo, come MainMenu)
         var orn_y: float = 148.0
@@ -143,15 +145,15 @@ func _draw() -> void:
         draw_rect(panel_rect, Color(0.06, 0.045, 0.03, 0.82), true)
         draw_rect(panel_rect, Color(0.55, 0.39, 0.20), false, 5.0)
 
-        # --- Intestazione colonne ---
+        # --- Intestazione colonne (TASK 44: localizzate) ---
         var head_y: float = 248.0
-        draw_string(font, Vector2(cx - 500, head_y), "RANK",
+        draw_string(font, Vector2(cx - 500, head_y), I18n.t("hof.rank"),
                 HORIZONTAL_ALIGNMENT_LEFT, 120, 24, color_header)
-        draw_string(font, Vector2(cx - 380, head_y), "NAME",
+        draw_string(font, Vector2(cx - 380, head_y), I18n.t("hof.name"),
                 HORIZONTAL_ALIGNMENT_LEFT, 260, 24, color_header)
-        draw_string(font, Vector2(cx - 60, head_y), "SCORE",
+        draw_string(font, Vector2(cx - 60, head_y), I18n.t("hof.score"),
                 HORIZONTAL_ALIGNMENT_RIGHT, 260, 24, color_header)
-        draw_string(font, Vector2(cx + 300, head_y), "LEVEL",
+        draw_string(font, Vector2(cx + 300, head_y), I18n.t("hof.level"),
                 HORIZONTAL_ALIGNMENT_RIGHT, 200, 24, color_header)
         draw_rect(Rect2(cx - 500, head_y + 10, 1000, 2), Color(0.55, 0.39, 0.20, 0.8), true)
 
@@ -204,6 +206,6 @@ func _draw() -> void:
         # --- Hint (lampeggiante) ---
         var hint_alpha: float = 0.4 + 0.6 * (0.5 + 0.5 * sin(_time * 2.0))
         draw_string(font, Vector2(cx - 400, vp.y - 70),
-                "PRESS ENTER TO RETURN TO MENU",
+                I18n.t("screen.return_hint"),
                 HORIZONTAL_ALIGNMENT_CENTER, 800, 24,
                 Color(0.59, 0.59, 0.59, hint_alpha))

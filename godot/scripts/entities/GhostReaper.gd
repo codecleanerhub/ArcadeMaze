@@ -189,6 +189,9 @@ func get_pixel_pos() -> Vector2:
 
 
 func get_enemy_name() -> String:
+        # TASK 44: localizzato (EN/IT).
+        if I18n:
+                return I18n.t("misc.reaper_red" if is_red_variant else "misc.reaper_immortal")
         if is_red_variant:
                 return "The Crimson Reaper"
         return "The Immortal Reaper"

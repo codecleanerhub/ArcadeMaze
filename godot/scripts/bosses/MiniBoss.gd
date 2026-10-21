@@ -404,6 +404,9 @@ func get_max_health() -> int:
 
 # FIX (HUD last hit enemy): ritorna il nome del mini-boss per l'HUD.
 func get_enemy_name() -> String:
+        # TASK 44: localizzato ("tipo" in italiano).
+        if I18n:
+                return I18n.t("misc.miniboss") % mb_type
         return "Mini-Boss (type %d)" % mb_type
 
 

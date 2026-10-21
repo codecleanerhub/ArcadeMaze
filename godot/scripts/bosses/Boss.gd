@@ -146,25 +146,30 @@ static func get_sprite_id(t: int) -> String:
 
 
 # Descriptive boss name for the room banner.
+# TASK 44: localizzato (EN default / IT) tramite il mirror statico
+# C.ui_language — le funzioni static NON risolvono gli autoload.
 static func get_boss_name(t: int) -> String:
+        var it: bool = C.ui_is_italian()
         match t:
-                Type.BOSS_GOLEM:           return "Stone Golem"
-                Type.BOSS_LICH:            return "Lich Necromancer"
-                Type.BOSS_DEMON:           return "Abyssal Demon"
-                Type.BOSS_SPIDER:          return "Giant Spider"
-                Type.BOSS_ABOMINATION:     return "Abomination"
-                Type.BOSS_KRAKEN:          return "Kraken"
-                Type.BOSS_DRAGON:          return "Ancient Dragon"
-                Type.BOSS_WRAITH_LORD:     return "Wraith Lord"
-                Type.BOSS_VAMPIRE:         return "Vampire Lord"
-                Type.BOSS_BEHOLDER:        return "Beholder"
-                Type.BOSS_GHOUL_LORD:      return "Ghoul Lord"
-                Type.BOSS_SPECTRAL_ALPHA:  return "Spectral Alpha Wolf"
-                Type.BOSS_CULT_HERALD:     return "Cult Herald"
-                Type.BOSS_COLOSSAL_MIMIC:   return "Colossal Mimic"
-                Type.BOSS_RAT_KING:        return "Rat King"
-                Type.BOSS_SUPREME_WITCH:   return "Supreme Witch"
-                Type.BOSS_TWILIGHT_KNIGHT: return "Twilight Knight"
+                Type.BOSS_GOLEM: return "Golem di Pietra" if it else "Stone Golem"
+                Type.BOSS_LICH: return "Lich Necromante" if it else "Lich Necromancer"
+                Type.BOSS_DEMON: return "Demone Abissale" if it else "Abyssal Demon"
+                Type.BOSS_SPIDER: return "Ragno Gigante" if it else "Giant Spider"
+                Type.BOSS_ABOMINATION: return "Abominio" if it else "Abomination"
+                Type.BOSS_KRAKEN: return "Kraken" if it else "Kraken"
+                Type.BOSS_DRAGON: return "Drago Antico" if it else "Ancient Dragon"
+                Type.BOSS_WRAITH_LORD: return "Signore degli Spettri" if it else "Wraith Lord"
+                Type.BOSS_VAMPIRE: return "Signore dei Vampiri" if it else "Vampire Lord"
+                Type.BOSS_BEHOLDER: return "Beholder" if it else "Beholder"
+                Type.BOSS_GHOUL_LORD: return "Signore dei Ghoul" if it else "Ghoul Lord"
+                Type.BOSS_SPECTRAL_ALPHA:
+                        return "Lupo Alfa Spettrale" if it else "Spectral Alpha Wolf"
+                Type.BOSS_CULT_HERALD: return "Araldo del Culto" if it else "Cult Herald"
+                Type.BOSS_COLOSSAL_MIMIC: return "Mimico Colossale" if it else "Colossal Mimic"
+                Type.BOSS_RAT_KING: return "Re dei Ratti" if it else "Rat King"
+                Type.BOSS_SUPREME_WITCH: return "Strega Suprema" if it else "Supreme Witch"
+                Type.BOSS_TWILIGHT_KNIGHT:
+                        return "Cavaliere del Crepuscolo" if it else "Twilight Knight"
         return "Unknown"
 
 

@@ -90,6 +90,8 @@ var config: Dictionary = {
         "JOY2_AXIS_Y": 1,
         "JOY2_JUMP":   -1,
         "JOY2_SHOOT":  -1,
+        # --- TASK 44: lingua UI (0 = ENGLISH default, 1 = ITALIANO) ---
+        "LANGUAGE":    0,
 }
 
 # Path to the config file (user://config.ini = OS-specific writable folder).
@@ -101,6 +103,7 @@ const _INI_KEYS: Array = [
         "JOY_ID", "JOY_AXIS_X", "JOY_AXIS_Y", "JOY_JUMP", "JOY_SHOOT",
         "KEY2_UP", "KEY2_DOWN", "KEY2_LEFT", "KEY2_RIGHT", "KEY2_JUMP", "KEY2_SHOOT",
         "JOY2_ID", "JOY2_AXIS_X", "JOY2_AXIS_Y", "JOY2_JUMP", "JOY2_SHOOT",
+        "LANGUAGE",
 ]
 
 
@@ -182,6 +185,8 @@ func save_config() -> void:
         f.store_line("JOY2_AXIS_Y=%d" % config["JOY2_AXIS_Y"])
         f.store_line("JOY2_JUMP=%d"   % config["JOY2_JUMP"])
         f.store_line("JOY2_SHOOT=%d"  % config["JOY2_SHOOT"])
+        # TASK 44: lingua UI (0 = ENGLISH, 1 = ITALIANO)
+        f.store_line("LANGUAGE=%d"    % config["LANGUAGE"])
         f.close()
         config_changed.emit()
 
