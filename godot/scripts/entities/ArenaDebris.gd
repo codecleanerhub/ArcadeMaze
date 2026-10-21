@@ -82,14 +82,15 @@ func _draw() -> void:
                                 Color(_tint.r, _tint.g, _tint.b, 0.30 * fade))
                 draw_circle(dirv * _size * 2.3, _size * 0.26,
                                 Color(_tint.r, _tint.g, _tint.b, 0.16 * fade))
-        # corpo: scheggia scura + spigolo illuminato + bordo elementale
-        draw_colored_polygon(_shape, Color(0.30, 0.28, 0.27, fade))
+        # corpo: scheggia calcarea + spigolo illuminato + faccia dorata (TASK 42:
+        # i frammenti del pilastro gotico sono polycromi — pietra, oro, conduits)
+        draw_colored_polygon(_shape, Color(0.33, 0.34, 0.39, fade))
         draw_polygon(_shape, PackedColorArray([
                 Color(_tint.r, _tint.g, _tint.b, 0.80 * fade),
-                Color(_tint.r, _tint.g, _tint.b, 0.80 * fade),
-                Color(0.60, 0.58, 0.55, fade),
-                Color(0.42, 0.40, 0.38, fade),
-                Color(0.42, 0.40, 0.38, fade),
+                Color(0.87, 0.71, 0.30, 0.85 * fade),
+                Color(0.62, 0.64, 0.70, fade),
+                Color(0.44, 0.45, 0.51, fade),
+                Color(0.40, 0.41, 0.47, fade),
         ]))
         # rimasuglio di carica elementale (brillio al centro)
         draw_circle(Vector2.ZERO, _size * 0.3,
