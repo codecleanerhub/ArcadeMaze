@@ -2,7 +2,8 @@
 ##
 ## Catture (in /home/z/my-project/download/):
 ##   1. boss_arena_overview        — arena completa: pilastri a tema, barili,
-##                                    cannone, hint "Debolezza: FUOCO", boss
+##                                    cannone, boss (TASK 41: hint debolezza
+##                                    RIMOSSO dall'HUD)
 ##   2. boss_arena_pillar_cracked  — pilastro a 2 colpi (crepe visibili)
 ##   3. boss_arena_collapse        — crollo con frammenti in volo
 ##   4. boss_arena_explosion       — detonazione FUOCO sul boss con testo

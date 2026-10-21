@@ -5,7 +5,8 @@
 ##      max 2 apparizioni con 1 solo uso, finestra 2a apparizione.
 ##   B. SCHEDULING: start_level(10) -> entrambe WAIT con timer in finestra;
 ##      timer forzato + vivi >= 30% -> BEACON (bagliore sulla cella);
-##      telegrafo scaduto -> FULMINE + pergamena a TERRA (lifetime 10s+2s)
+##      telegrafo scaduto -> FULMINE + pergamena a TERRA (lifetime 16s+2s,
+##      +50% TASK 41)
 ##      e contatore apparizioni incrementato. TASK 38: allo spawn nasce
 ##      anche l'ONDA DI LUCE additiva con raggio fino all'angolo piu'
 ##      lontano del labirinto (copre TUTTA la sua dimensione).
@@ -117,8 +118,8 @@ func _phaseA_constants() -> void:
         if C.PARCHMENT_FIRST_MIN_MS != 25000 or C.PARCHMENT_FIRST_MAX_MS != 70000:
                 _fail("A: finestra apparizione %d..%d, attesa 25000..70000"
                                 % [C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS])
-        elif C.PARCHMENT_VISIBLE_MS != 10000 or C.PARCHMENT_BLINK_MS != 2000:
-                _fail("A: vita a terra %d+%d, attesa 10000+2000"
+        elif C.PARCHMENT_VISIBLE_MS != 16000 or C.PARCHMENT_BLINK_MS != 2000:
+                _fail("A: vita a terra %d+%d, attesa 16000+2000 (+50%% TASK 41)"
                                 % [C.PARCHMENT_VISIBLE_MS, C.PARCHMENT_BLINK_MS])
         elif C.SCROLL_CHASM_COUNT != 4 or C.SCROLL_CHASM_WAVE_MS != 4000 \
                         or C.SCROLL_CHASM_WAVES != 3:
@@ -450,8 +451,9 @@ func _phaseE_chasm_scroll() -> void:
 
 
 # ===========================================================================
-# F — SCADENZA: 10s + 2s blink, poi scompare; TASK 36: se non usata puo'
-# riapparire (max 2 per livello), se il budget e' esaurito -> DONE
+# F — SCADENZA: 16s + 2s blink (18s totali, +50% TASK 41), poi scompare;
+# TASK 36: se non usata puo' riapparire (max 2 per livello), se il budget
+# e' esaurito -> DONE
 # ===========================================================================
 func _phaseF_expiry() -> void:
         main.scroll_quake_phase = main.ScrollPhase.GROUND
@@ -465,16 +467,23 @@ func _phaseF_expiry() -> void:
         var item = main.scroll_quake_item
         # simula il trascorrere del tempo (il blink vive nel Collectibles)
         var saw_blink: bool = false
-        for _i in 120:
+        var alive_at_old_lifetime: bool = false
+        for _i in 190:
                 item.update_step(100.0, Vector2(9999, 9999), 1)
                 if item.modulate.a < 1.0:
                         saw_blink = true
+                # TASK 41: al VECCHIO limite (12s) la pergamena deve essere
+                # ancora raccoglibile — il +50% porta il totale a 18s
+                if _i == 119 and item.active:
+                        alive_at_old_lifetime = true
         if item.active:
-                _fail("F: pergamena ancora attiva dopo 12s+ di vita")
+                _fail("F: pergamena ancora attiva dopo 19s di vita")
+        elif not alive_at_old_lifetime:
+                _fail("F: pergamena scaduta entro i vecchi 12s (+50% non applicato)")
         elif not saw_blink:
                 _fail("F: lampeggio finale mai visto")
         else:
-                _ok("F: 10s visibile + 2s di lampeggio, poi active=false")
+                _ok("F: 16s visibile + 2s di lampeggio (18s totali, +50%), poi active=false")
         # TASK 36: scaduta NON raccolta (era la 1a apparizione) -> il tipo
         # torna WAIT e programma la SECONDA apparizione (finestra 15-45s)
         main.scroll_quake_spawns_used = 1

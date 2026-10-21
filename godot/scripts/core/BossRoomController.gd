@@ -56,7 +56,6 @@ var _arena_pillars: Array = []          # [BossArenaPillar]
 var _arena_barrels: Array = []          # [ElementalBarrel]
 var _arena_siege: Node2D = null         # BossSiegeCannon (pickup a terra)
 var _arena_renewal_ms: float = 0.0      # timer rigenerazione arena
-const ARENA_HINT_Y: float = 148.0       # riga hint debolezza (sotto HP boss)
 
 # --- Node references ---
 @onready var player: CharacterBody2D = $Player
@@ -1988,34 +1987,10 @@ func _draw() -> void:
                                 Color(0.3, 0.1, 0.1), true)
                         draw_rect(Rect2(bar_x, bar_y, bar_w * hp_ratio, bar_h),
                                 Color(0.8, 0.15, 0.1), true)
-                        # TASK 39 — hint DEBOLEZZA ELEMENTALE sotto la barra HP:
-                        # l'informazione strategica dei barili elementali.
-                        # Es. "Debolezza: FUOCO" + glifo dell'elemento.
-                        var weak_el: int = C.get_boss_weakness(boss.boss_type)
-                        var weak_pal: Dictionary = C.get_element_palette(weak_el)
-                        var weak_col: Color = weak_pal.get("glow", Color.WHITE)
-                        var weak_name: String = str(weak_pal.get("name", "?"))
-                        var hint: String = "Debolezza: " + weak_name
-                        var font_hint: Font = ThemeDB.fallback_font
-                        var hint_x: float = cx - 110.0
-                        # glifo: cerchietto elementale + 4 raggi
-                        var glyph_c: Vector2 = Vector2(hint_x - 14.0, ARENA_HINT_Y - 6.0)
-                        draw_circle(glyph_c, 8.0, Color(0, 0, 0, 0.6))
-                        draw_circle(glyph_c, 5.5,
-                                Color(weak_col.r, weak_col.g, weak_col.b, 0.9))
-                        for g_i in 4:
-                                var g_ang: float = TAU * float(g_i) / 4.0 \
-                                                + _boss_bg_time * 0.8
-                                draw_line(glyph_c + Vector2(cos(g_ang), sin(g_ang)) * 5.0,
-                                                glyph_c + Vector2(cos(g_ang), sin(g_ang)) * 8.0,
-                                                Color(weak_col.r, weak_col.g,
-                                                                weak_col.b, 0.8), 1.5)
-                        draw_string(font_hint, Vector2(hint_x, ARENA_HINT_Y), hint,
-                                HORIZONTAL_ALIGNMENT_LEFT, 230.0, 16,
-                                Color(0, 0, 0, 0.85))
-                        draw_string(font_hint, Vector2(hint_x - 1.0, ARENA_HINT_Y - 1.0), hint,
-                                HORIZONTAL_ALIGNMENT_LEFT, 230.0, 16,
-                                Color(weak_col.r, weak_col.g, weak_col.b))
+                        # TASK 41 — hint DEBOLEZZA ELEMENTALE RIMOSSO su richiesta
+                        # utente: la debolezza non deve essere riportata in HUD.
+                        # Il player la scopre per tentativi lanciando i barili
+                        # (il moltiplicatore x2.5 resta nel calcolo danno).
         # Draw boss room weapons on the floor
         for w_entry in boss_room_weapons:
                 var pos: Vector2 = w_entry["pos"]

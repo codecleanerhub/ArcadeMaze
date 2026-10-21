@@ -63,10 +63,11 @@ enum Kind {
 @export var treasure_type: int = TreasureType.TRES_CROWN
 
 # --- SCROLL (TASK 35) ---
-# Tempo di vita residuo a terra (ms): 10s raccoglibile + 2s di
-# lampeggio finale. Gli ultimi SCROLL_BLINK_THRESHOLD_MS modulano
-# l'alpha (lampeggio d'avviso). A zero: active = false (l'evento e'
-# perso — il controller libera il nodo).
+# Tempo di vita residuo a terra (ms): 16s raccoglibile + 2s di
+# lampeggio finale (TASK 41: totale 12s -> 18s, +50%). Gli ultimi
+# SCROLL_BLINK_THRESHOLD_MS modulano l'alpha (lampeggio d'avviso).
+# A zero: active = false (l'evento e' perso — il controller libera
+# il nodo).
 var scroll_lifetime_ms: float = 0.0
 const SCROLL_BLINK_THRESHOLD_MS: float = 2000.0
 

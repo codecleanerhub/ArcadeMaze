@@ -708,7 +708,9 @@ const BOSS_ARENA_RENEWAL_MS: float = 45000.0  # rigenerazione arena se saccheggi
 
 ## Palette per elemento: nome ITA + colori (corpo/glow) per barili, pilastri,
 ## esplosioni e testo HUD. Usata da ElementalBarrel / BossArenaPillar /
-## BossRoomController (_draw hint debolezza).
+## BossRoomController (esplosioni e frammenti).
+## TASK 41 — l'hint "Debolezza: X" in HUD e' stato RIMOSSO: la debolezza
+## non viene piu' riportata, si scopre lanciando i barili sul boss.
 static func get_element_palette(el: int) -> Dictionary:
         match el:
                 ElementKind.FIRE:
@@ -1094,7 +1096,9 @@ const PARCHMENT_RETRY_MS: int = 5000
 const PARCHMENT_TELEGRAPH_MS: int = 1200
 
 ## Tempo raccoglibile a terra + lampeggio finale prima di svanire.
-const PARCHMENT_VISIBLE_MS: int = 10000
+## TASK 41 — periodo raccoglibile +50%: 10s -> 16s visibili (totale
+## 12s -> 18s con il lampeggio finale invariato a 2s).
+const PARCHMENT_VISIBLE_MS: int = 16000
 const PARCHMENT_BLINK_MS: int = 2000
 
 ## Soglia di nemici vivi per far apparire la pergamena (frazione del
