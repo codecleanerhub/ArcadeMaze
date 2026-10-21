@@ -922,10 +922,18 @@ const BAT_CLOUD_MIN_SPAWN_DIST: float = 384.0
 # TASK 35 — PERGAMENE EVENTO (terremoto + voragini magiche)
 # ============================================================================
 # Due pergamene raccoglibili con le STESSE meccaniche di apparizione:
-# momento casuale del livello, SOLO se i nemici vivi sono almeno il 50%
-# del totale iniziale, telegrafo luminoso (bagliore/aura ~1.2s) sulla
-# cella PRIMA dell'apparizione, poi la pergamena resta a terra per 10s
+# momento casuale del livello, SOLO se i nemici vivi sono almeno il 30%
+# del totale iniziale (TASK 36: soglia abbassata dal 50% al 30%; al di
+# sotto del 30% non appaiono piu'), telegrafo luminoso (bagliore/aura
+# ~1.2s) sulla cella PRIMA dell'apparizione, poi un FULMINE SI ABBATE AL
+# SUOLO sulla cella (TASK 36: effetto visivo pronunciato + effetto audio
+# lungo dedicato SCROLL_LIGHTNING) e la pergamena resta a terra per 10s
 # e lampeggia per gli ultimi 2s (poi scompare: evento perso).
+# TASK 36 — apparizioni multiple: ogni TIPO puo' apparire al massimo DUE
+# volte per livello in momenti casuali, ma puo' essere UTILIZZATA una
+# sola volta: se la pergamena viene raccolta e usata, quel tipo non
+# appare piu' nello stesso livello; se invece scade senza essere raccolta,
+# puo' riapparire una seconda volta.
 # Si attivano IMMEDIATAMENTE alla raccolta, un solo uso:
 #   * PERGAMENA DEL TERREMOTO (arancio, simbolo sismico in alto a dx):
 #     scatena un terremoto che infligge il 50% degli HP max a TUTTI i
@@ -941,7 +949,7 @@ const BAT_CLOUD_MIN_SPAWN_DIST: float = 384.0
 #     3 ondate totali (12s di effetto). NON bloccano il pathing: i
 #     nemici non le vedono e ci camminano dentro.
 # Le due pergamene hanno lo stesso stile ma COLORI DIVERSI e dimensioni
-# dei tesori (48px). 1 pergamena per TIPO per livello.
+# dei tesori (48px). 2 apparizioni per TIPO per livello, 1 solo uso.
 # Rollback: GameConstants.PARCHMENTS_ENABLED = false.
 # ============================================================================
 
@@ -955,7 +963,7 @@ const PARCHMENT_GRACE_LEVEL: int = 5
 const PARCHMENT_FIRST_MIN_MS: int = 25000
 const PARCHMENT_FIRST_MAX_MS: int = 70000
 
-## Se alla scadenza del timer i vivi sono sotto il 50%, riprova tra N ms.
+## Se alla scadenza del timer i vivi sono sotto il 30%, riprova tra N ms.
 const PARCHMENT_RETRY_MS: int = 5000
 
 ## Durata del bagliore/aura di telegrafo prima dell'apparizione.
@@ -966,8 +974,18 @@ const PARCHMENT_VISIBLE_MS: int = 10000
 const PARCHMENT_BLINK_MS: int = 2000
 
 ## Soglia di nemici vivi per far apparire la pergamena (frazione del
-## totale iniziale del livello).
-const PARCHMENT_MIN_ALIVE_PCT: float = 0.5
+## totale iniziale del livello). TASK 36: 0.5 -> 0.3 — le pergamene
+## possono apparire anche con i nemici al 30%; AL DI SOTTO non appaiono.
+const PARCHMENT_MIN_ALIVE_PCT: float = 0.3
+
+## TASK 36 — apparizioni massime per TIPO per livello: DUE momenti casuali,
+## ma UN SOLO USO (la raccolta chiude l'evento per il resto del livello).
+const PARCHMENT_MAX_SPAWNS: int = 2
+
+## TASK 36 — finestra casuale della SECONDA apparizione (ms dalla
+## scomparsa della prima pergamena non raccolta: era scaduta a terra).
+const PARCHMENT_NEXT_MIN_MS: int = 15000
+const PARCHMENT_NEXT_MAX_MS: int = 45000
 
 ## Pergamena del terremoto: danno a tutti i nemici (frazione HP max) e
 ## soglia di eliminazione (chi resta sotto quella frazione viene ucciso).

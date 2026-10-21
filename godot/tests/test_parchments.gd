@@ -1,22 +1,31 @@
 ## test_parchments.gd — Test funzionale runtime (headless) delle due
-## PERGAMENE EVENTO del Task 35:
+## PERGAMENE EVENTO del Task 35 + modifiche TASK 36:
 ##   A. COSTANTI: finestra di apparizione, timing vita/blink, rollback
-##      PARCHMENTS_ENABLED, grace level 5.
+##      PARCHMENTS_ENABLED, grace level 5; TASK 36: soglia vivi 30%,
+##      max 2 apparizioni con 1 solo uso, finestra 2a apparizione.
 ##   B. SCHEDULING: start_level(10) -> entrambe WAIT con timer in finestra;
-##      timer forzato + vivi >= 50% -> BEACON (bagliore sulla cella);
-##      telegrafo scaduto -> pergamena a TERRA con lifetime 10s+2s.
-##   C. CONDIZIONE 50%: con i vivi sotto meta', il timer scaduto NON spawna
-##      nulla e riprova dopo PARCHMENT_RETRY_MS.
+##      timer forzato + vivi >= 30% -> BEACON (bagliore sulla cella);
+##      telegrafo scaduto -> FULMINE + pergamena a TERRA (lifetime 10s+2s)
+##      e contatore apparizioni incrementato.
+##   C. CONDIZIONE 30% (TASK 36): con i vivi TRA il 30% e il 50% lo spawn
+##      ORA e' CONSENTITO (prima no); con i vivi SOTTO il 30% il timer
+##      scaduto NON spawna nulla e riprova dopo PARCHMENT_RETRY_MS.
 ##   D. TERREMOTO: raccolta = -50% HP max a tutti i nemici; nemico gia'
 ##      ferito (sotto soglia dopo il colpo) ELIMINATO +5000 punti; il
-##      player NON subisce danni (energia invariata).
+##      player NON subisce danni (energia invariata). L'USO chiude
+##      l'evento (DONE: nessuna seconda apparizione).
 ##   E. VORAGINI: raccolta -> 4 voragini BEN DISTANZIATE (Manhattan >= 5);
 ##      nemico sulla cella UCCISO (+5000); player sulla cella ILLESO;
 ##      fine ondata (4s + fade) -> RIPOSIZIONAMENTO in nuove 4 celle,
 ##      per 3 ondate totali; alla fine tutto pulito.
 ##   F. SCADENZA: pergamena non raccolta: 10s + 2s di blink -> active=false
-##      e il controller libera il nodo (evento perso).
-##   G. ROLLBACK: PARCHMENTS_ENABLED=false -> nessuna programmazione.
+##      e il controller libera il nodo. TASK 36: scaduta NON usata con
+##      budget residuo -> SECONDA apparizione programmata (WAIT, finestra
+##      15-45s); con budget esaurito (2/2) -> DONE.
+##   G. (TASK 36) SECONDA APPARIZIONE: il ciclo reale WAIT -> BEACON ->
+##      GROUND porta il contatore a 2/2; la scadenza della seconda chiude
+##      DONE (MAI una terza); la guardia budget in WAIT chiude subito.
+##   H. ROLLBACK: PARCHMENTS_ENABLED=false -> nessuna programmazione.
 extends Node
 
 const C = preload("res://scripts/core/GameConstants.gd")
@@ -80,7 +89,10 @@ func _physics_process(delta: float) -> void:
                         _phaseF_expiry()
                         _next(6)
                 6:
-                        _phaseG_rollback()
+                        _phaseG_second_spawn()
+                        _next(7)
+                7:
+                        _phaseH_rollback()
                         _finish()
 
 
@@ -113,8 +125,16 @@ func _phaseA_constants() -> void:
                                         C.SCROLL_CHASM_WAVES])
         elif C.SCROLL_QUAKE_DAMAGE_PCT != 0.5 or C.SCROLL_QUAKE_KILL_PCT != 0.5:
                 _fail("A: costanti terremoto errate")
+        elif absf(C.PARCHMENT_MIN_ALIVE_PCT - 0.3) > 0.0001:
+                _fail("A: soglia vivi %.2f, attesa 0.30"
+                                % C.PARCHMENT_MIN_ALIVE_PCT)
+        elif C.PARCHMENT_MAX_SPAWNS != 2:
+                _fail("A: max apparizioni %d, attese 2" % C.PARCHMENT_MAX_SPAWNS)
+        elif C.PARCHMENT_NEXT_MIN_MS != 15000 or C.PARCHMENT_NEXT_MAX_MS != 45000:
+                _fail("A: finestra 2a apparizione %d..%d, attesa 15000..45000"
+                                % [C.PARCHMENT_NEXT_MIN_MS, C.PARCHMENT_NEXT_MAX_MS])
         else:
-                _ok("A: costanti (finestra 25-70s, vita 10+2s, 4 voragini x3, danno 50%)")
+                _ok("A: costanti (25-70s, vita 10+2s, soglia 30%, max 2, 2a 15-45s)")
         C.PARCHMENTS_ENABLED = false
         C.PARCHMENTS_ENABLED = true
         _ok("A: flag rollback PARCHMENTS_ENABLED presente")
@@ -172,6 +192,19 @@ func _phaseB_scheduling() -> void:
         else:
                 _ok("B: pergamena a terra (lifetime %.0fs)"
                                 % (main.scroll_quake_item.scroll_lifetime_ms / 1000.0))
+        # TASK 36: spawn REALE -> contatore apparizioni + FULMINE in scena
+        var has_strike: bool = false
+        for n in main.collectibles_node.get_children():
+                if n.get_script() == main.LightningStrikeFx:
+                        has_strike = true
+                        break
+        if main.scroll_quake_spawns_used != 1:
+                _fail("B: contatore apparizioni %d, atteso 1"
+                                % main.scroll_quake_spawns_used)
+        elif not has_strike:
+                _fail("B: fulmine che si abbatte al suolo mancante")
+        else:
+                _ok("B: apparizione eclatante (FULMINE al suolo, 1/2 apparizioni)")
         # anche la pergamena voragini: portala a terra per i test successivi
         main.scroll_chasm_timer_ms = 1.0
         main._update_parchments(16.0)
@@ -184,37 +217,60 @@ func _phaseB_scheduling() -> void:
 
 
 # ===========================================================================
-# C — CONDIZIONE: almeno il 50% dei nemici vivi
+# C — CONDIZIONE (TASK 36): spawn consentito dal 30% in su, negato sotto
 # ===========================================================================
 func _phaseC_alive_condition() -> void:
         # svuota le pergamene correnti (reset pulito senza re-scheduling)
         main._free_scroll_visuals()
         main.scroll_quake_phase = main.ScrollPhase.WAIT
-        main.scroll_chasm_phase = main.ScrollPhase.WAIT
+        main.scroll_chasm_phase = main.ScrollPhase.DONE
         main.scroll_quake_timer_ms = 1.0
-        main.scroll_chasm_timer_ms = 1.0
-        # ammazza i nemici finche' i vivi sono sotto il 50%
+        # C1 — ammazza finche' i vivi sono TRA il 30% e il 50%: TASK 36
+        # ora lo spawn e' CONSENTITO (prima, con soglia 50%, era negato)
         var total: int = maxi(1, main.spawner.initial_count)
         for e in main.spawner.enemies:
                 if e == null or not is_instance_valid(e) or e.is_dead():
                         continue
-                if main.spawner.alive_count() * 2 < total:
+                if main.spawner.alive_count() * 10 < total * 5:
                         break
                 e.take_damage(99999)
         var alive: int = main.spawner.alive_count()
-        if alive * 2 >= total:
-                _fail("C: preparazione fallita (vivi %d su %d)" % [alive, total])
+        if alive * 10 >= total * 5 or alive * 10 < total * 3:
+                _fail("C: preparazione C1 fallita (vivi %d su %d)"
+                                % [alive, total])
+        else:
+                main._update_parchments(16.0)
+                if main.scroll_quake_phase != main.ScrollPhase.BEACON:
+                        _fail("C: vivi al %.0f%% (tra 30%% e 50%%) ma spawn negato (fase %d)"
+                                        % [100.0 * alive / total,
+                                                main.scroll_quake_phase])
+                else:
+                        _ok("C: vivi al %.0f%% (>= 30%%, < 50%%) -> spawn CONSENTITO"
+                                        % [100.0 * alive / total])
+        # C2 — vivi SOTTO il 30%: niente spawn, retry dopo 5s
+        main._free_scroll_visuals()
+        main.scroll_quake_phase = main.ScrollPhase.WAIT
+        main.scroll_quake_timer_ms = 1.0
+        for e in main.spawner.enemies:
+                if e == null or not is_instance_valid(e) or e.is_dead():
+                        continue
+                if main.spawner.alive_count() * 10 < total * 3:
+                        break
+                e.take_damage(99999)
+        alive = main.spawner.alive_count()
+        if alive * 10 >= total * 3:
+                _fail("C: preparazione C2 fallita (vivi %d su %d)" % [alive, total])
                 return
         main._update_parchments(16.0)
-        if main.scroll_quake_phase != main.ScrollPhase.WAIT \
-                        or main.scroll_chasm_phase != main.ScrollPhase.WAIT:
-                _fail("C: spawn con vivi sotto il 50%% (fasi %d/%d)"
-                                % [main.scroll_quake_phase, main.scroll_chasm_phase])
+        if main.scroll_quake_phase != main.ScrollPhase.WAIT:
+                _fail("C: spawn con vivi sotto il 30%% (fase %d)"
+                                % main.scroll_quake_phase)
         elif absf(main.scroll_quake_timer_ms - float(C.PARCHMENT_RETRY_MS)) > 40.0:
                 _fail("C: retry non programmato (%.0f, atteso %.0f)"
-                                % [main.scroll_quake_timer_ms, float(C.PARCHMENT_RETRY_MS)])
+                                % [main.scroll_quake_timer_ms,
+                                        float(C.PARCHMENT_RETRY_MS)])
         else:
-                _ok("C: vivi %d/%d (< 50%%) -> niente spawn, retry tra %.0fs"
+                _ok("C: vivi %d/%d (< 30%%) -> niente spawn, retry tra %.0fs"
                                 % [alive, total, main.scroll_quake_timer_ms / 1000.0])
 
 
@@ -353,7 +409,8 @@ func _phaseE_chasm_scroll() -> void:
 
 
 # ===========================================================================
-# F — SCADENZA: 10s + 2s blink, poi scompare
+# F — SCADENZA: 10s + 2s blink, poi scompare; TASK 36: se non usata puo'
+# riapparire (max 2 per livello), se il budget e' esaurito -> DONE
 # ===========================================================================
 func _phaseF_expiry() -> void:
         main.scroll_quake_phase = main.ScrollPhase.GROUND
@@ -377,29 +434,94 @@ func _phaseF_expiry() -> void:
                 _fail("F: lampeggio finale mai visto")
         else:
                 _ok("F: 10s visibile + 2s di lampeggio, poi active=false")
-        # il controller libera il nodo
+        # TASK 36: scaduta NON raccolta (era la 1a apparizione) -> il tipo
+        # torna WAIT e programma la SECONDA apparizione (finestra 15-45s)
+        main.scroll_quake_spawns_used = 1
         main._update_parchments(16.0)
-        if main.scroll_quake_phase != main.ScrollPhase.DONE:
-                _fail("F: evento non chiuso dal controller (fase %d)"
+        if main.scroll_quake_phase != main.ScrollPhase.WAIT:
+                _fail("F: scadenza non usata non riprogramma la 2a apparizione (fase %d)"
                                 % main.scroll_quake_phase)
+        elif main.scroll_quake_timer_ms < float(C.PARCHMENT_NEXT_MIN_MS) \
+                        or main.scroll_quake_timer_ms > float(C.PARCHMENT_NEXT_MAX_MS):
+                _fail("F: timer 2a apparizione fuori finestra (%.0f)"
+                                % main.scroll_quake_timer_ms)
         elif main.scroll_quake_item != null:
                 _fail("F: nodo pergamena non liberato")
         else:
-                _ok("F: evento perso -> controller pulisce il nodo")
+                _ok("F: scaduta non usata -> 2a apparizione tra %.0fs"
+                                % (main.scroll_quake_timer_ms / 1000.0))
+        # TASK 36: budget esaurito (2/2) -> la prossima scadenza chiude DONE
+        main.scroll_quake_phase = main.ScrollPhase.GROUND
+        var cell2: Vector2i = main._random_empty_cell()
+        main.scroll_quake_item = main._create_collectible(
+                        main.CollectiblesClass.Kind.QUAKE_SCROLL,
+                        main._cell_to_pixel(cell2))
+        main.scroll_quake_item.scroll_lifetime_ms = 1.0
+        main.collectibles_node.add_child(main.scroll_quake_item)
+        main.scroll_quake_item.update_step(100.0, Vector2(9999, 9999), 1)
+        main.scroll_quake_spawns_used = 2
+        main._update_parchments(16.0)
+        if main.scroll_quake_phase != main.ScrollPhase.DONE:
+                _fail("F: budget esaurito ma evento non chiuso (fase %d)"
+                                % main.scroll_quake_phase)
+        else:
+                _ok("F: 2/2 apparizioni consumate -> evento chiuso (DONE)")
 
 
 # ===========================================================================
-# G — ROLLBACK
+# G — (TASK 36) SECONDA APPARIZIONE REALE + guardia budget
 # ===========================================================================
-func _phaseG_rollback() -> void:
+func _phaseG_second_spawn() -> void:
+        # livello fresco (i nemici di E/F potrebbero essere sotto il 30%)
+        main.start_level(10)
+        main.scroll_chasm_phase = main.ScrollPhase.DONE
+        main.scroll_quake_spawns_used = 1   # 1a apparizione gia' consumata
+        main.scroll_quake_phase = main.ScrollPhase.WAIT
+        main.scroll_quake_timer_ms = 1.0
+        main._update_parchments(16.0)   # -> BEACON (1 < 2, vivi al 100%)
+        main.scroll_quake_timer_ms = 1.0
+        main._update_parchments(16.0)   # -> GROUND (2a apparizione REALE)
+        if main.scroll_quake_phase != main.ScrollPhase.GROUND \
+                        or main.scroll_quake_item == null:
+                _fail("G: seconda apparizione negata (fase %d)"
+                                % main.scroll_quake_phase)
+        elif main.scroll_quake_spawns_used != 2:
+                _fail("G: contatore apparizioni %d, atteso 2"
+                                % main.scroll_quake_spawns_used)
+        else:
+                _ok("G: seconda apparizione a terra (2/2, lifetime %.0fs)"
+                                % (main.scroll_quake_item.scroll_lifetime_ms / 1000.0))
+        # la fa scadere: budget esaurito -> DONE, MAI una terza apparizione
+        main.scroll_quake_item.active = false
+        main._update_parchments(16.0)
+        if main.scroll_quake_phase != main.ScrollPhase.DONE:
+                _fail("G: terza apparizione programmata (fase %d)"
+                                % main.scroll_quake_phase)
+        else:
+                _ok("G: scadenza della 2a -> evento chiuso, mai una terza")
+        # guardia budget: WAIT con budget esaurito -> DONE immediato
+        main.scroll_quake_phase = main.ScrollPhase.WAIT
+        main.scroll_quake_timer_ms = 1.0
+        main._update_parchments(16.0)
+        if main.scroll_quake_phase != main.ScrollPhase.DONE:
+                _fail("G: WAIT col budget esaurito non chiude subito (fase %d)"
+                                % main.scroll_quake_phase)
+        else:
+                _ok("G: guardia budget in WAIT -> DONE immediato")
+
+
+# ===========================================================================
+# H — ROLLBACK
+# ===========================================================================
+func _phaseH_rollback() -> void:
         C.PARCHMENTS_ENABLED = false
         main.start_level(10)
         if main.scroll_quake_phase != main.ScrollPhase.DONE \
                         or main.scroll_chasm_phase != main.ScrollPhase.DONE:
-                _fail("G: PARCHMENTS_ENABLED=false ma pergamene programmate (%d/%d)"
+                _fail("H: PARCHMENTS_ENABLED=false ma pergamene programmate (%d/%d)"
                                 % [main.scroll_quake_phase, main.scroll_chasm_phase])
         else:
-                _ok("G: rollback — nessuna pergamena programmata")
+                _ok("H: rollback — nessuna pergamena programmata")
         C.PARCHMENTS_ENABLED = true
 
 

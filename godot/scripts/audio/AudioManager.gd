@@ -97,9 +97,15 @@ enum SoundType {
         # TASK 32 — nube di pipistrelli: stridio (chittering di squittii acuti
         # in rapida successione) e battito d'ali (soffici soffiate d'aria).
         BAT_SCREECH,
-        BAT_FLAP
+        BAT_FLAP,
+        # TASK 36 — apparizione delle pergamene evento: FULMINE che si
+        # abbatte al suolo. Effetto audio LUNGO (~1.9s) e piu' pronunciato
+        # del PORTAL_OPEN usato prima: carica elettrica discendente, crack
+        # della saetta, sweep elettrico, boom dell'impatto e coda di tuono
+        # rotolante che sfuma.
+        SCROLL_LIGHTNING
 }
-const SOUND_TYPE_COUNT: int = 46
+const SOUND_TYPE_COUNT: int = 47
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -545,6 +551,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.BARREL_EXPLODE:  s = _sfx_barrel_explode()
                 SoundType.BAT_SCREECH:     s = _sfx_bat_screech()
                 SoundType.BAT_FLAP:        s = _sfx_bat_flap()
+                SoundType.SCROLL_LIGHTNING: s = _sfx_scroll_lightning()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -992,6 +999,65 @@ func _sfx_lightning() -> PackedFloat32Array:
                 var env: float = exp(-t * 8.0)
                 var v: float = 0.4 * noise_gen() * (1.0 - t / 0.13) + 0.2 * triangle_wave(t * 50.0)
                 s.append(1800.0 / 32767.0 * v * env)
+        return s
+
+
+# --- TASK 36 — ~1.9s FULMINE della pergamena (apparizione piu' evidente):
+# --- carica elettrica discendente + crack della saetta + sweep elettrico +
+# --- boom dell'impatto al suolo + lunga coda di tuono rotolante. ------------
+# --- Molto piu' lungo del LIGHTNING (0.4s) e del PORTAL_OPEN usati prima. ----
+func _sfx_scroll_lightning() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Phase 1: carica elettrica discendente (0.30s) — sfrigolio che
+        # scende di tonalita' e cresce di volume (il cielo si carica)
+        var c1: int = int(SR * 0.30)
+        for i in c1:
+                var t: float = float(i) / SR
+                var k: float = t / 0.30
+                var env: float = 0.15 + 0.85 * k * k
+                var freq: float = 2400.0 * exp(-t * 6.0) + 500.0
+                var v: float = 0.45 * pulse_wave(t * freq, 0.08) \
+                                + 0.55 * noise_gen() * (0.4 + 0.6 * k)
+                s.append(1500.0 / 32767.0 * v * env)
+        # Phase 2: crack della saetta (0.05s) — schiocco secco fortissimo
+        var c2: int = int(SR * 0.05)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 90.0)
+                var v: float = noise_gen()
+                s.append(3400.0 / 32767.0 * v * env)
+        # Phase 3: sweep elettrico (0.18s) — la scarica attraversa l'aria
+        var c3: int = int(SR * 0.18)
+        for i in c3:
+                var t: float = float(i) / SR
+                var freq: float = 3200.0 * exp(-t * 16.0) + 180.0
+                var env: float = exp(-t * 10.0)
+                var v: float = 0.4 * pulse_wave(t * freq, 0.1) \
+                                + 0.3 * noise_gen() * exp(-t * 9.0) \
+                                + 0.3 * sawtooth_wave(t * freq * 0.3)
+                s.append(3000.0 / 32767.0 * v * env)
+        # Phase 4: boom dell'impatto al suolo (0.42s) — profondo e pieno
+        var c4: int = int(SR * 0.42)
+        for i in c4:
+                var t: float = float(i) / SR
+                var freq: float = 85.0 * exp(-t * 4.5) + 26.0
+                var env: float = exp(-t * 5.0)
+                var v: float = 0.55 * triangle_wave(t * freq) \
+                                + 0.25 * pulse_wave(t * freq, 0.3) \
+                                + 0.20 * noise_gen() * exp(-t * 7.0)
+                s.append(2600.0 / 32767.0 * v * env)
+        # Phase 5: tuono rotolante (0.95s) — coda lunga che sfuma, con
+        # ondulazioni lente (il boato "rotola" via)
+        var c5: int = int(SR * 0.95)
+        for i in c5:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 2.6)
+                var roll: float = 0.60 + 0.40 * sin(t * TAU * 2.5 \
+                                + 1.3 * sin(t * TAU * 0.9))
+                var v: float = noise_gen() * roll \
+                                + 0.18 * triangle_wave(t * 47.0) \
+                                + 0.12 * triangle_wave(t * 31.0)
+                s.append(2200.0 / 32767.0 * v * env)
         return s
 
 

@@ -1,6 +1,8 @@
-## shot_parchments.gd — TASK 35: screenshot delle due pergamene evento.
+## shot_parchments.gd — TASK 35 + TASK 36: screenshot delle pergamene evento.
 ## 1) pergamena TERREMOTO a terra vicino al player (glow arancio);
-## 2) pergamena VORAGINI + ondata di 4 voragini magiche viola in scena.
+## 2) pergamena VORAGINI + ondata di 4 voragini magiche viola in scena;
+## 3) TASK 36: FULMINE che si abbatte al suolo all'apparizione (spawn
+##    reale: saetta + onda d'urto + bagliore d'impatto + flash schermo).
 extends Node2D
 
 const MainGameScene = preload("res://scenes/MainGame.tscn")
@@ -83,4 +85,33 @@ func _process(delta: float) -> void:
                                 var img2: Image = get_viewport().get_texture().get_image()
                                 img2.save_png("/home/z/my-project/download/parchment_chasms.png")
                                 print("[SHOTP] salvato parchment_chasms.png")
+                                stage = 5
+                                t = 0.0
+                5:
+                        # TASK 36: FULMINE all'apparizione — spawn REALE della
+                        # pergamena terremoto (saetta + flash + shake + suono)
+                        if t > 0.2:
+                                main.set_meta("scroll_quake_cell", Vector2i(3, 2))
+                                main._spawn_scroll_item(true)
+                                print("[SHOTP] fulmine scatenato sulla cella (3,2)")
+                                stage = 6
+                                t = 0.0
+                6:
+                        # cattura a meta' colpo (~0.25s: flicker + anello).
+                        # Il flash schermo (110ms) si sarebbe gia' spento
+                        # in gioco; con is_paused il timer e' congelato,
+                        # quindi lo si azzera a mano prima della cattura.
+                        if t > 0.25:
+                                main.screen_flash_timer_ms = 0
+                                var img3: Image = get_viewport().get_texture().get_image()
+                                img3.save_png("/home/z/my-project/download/parchment_lightning.png")
+                                var c3: Vector2 = main.scroll_quake_item.position
+                                var crop3: Image = img3.get_region(Rect2i(
+                                                int(c3.x) - 96, 0, 192,
+                                                int(c3.y) + 96))
+                                crop3.resize(384, int(crop3.get_height()) * 2,
+                                                Image.INTERPOLATE_NEAREST)
+                                crop3.save_png(
+                                        "/home/z/my-project/download/parchment_lightning_crop.png")
+                                print("[SHOTP] salvato parchment_lightning.png + crop")
                                 get_tree().quit(0)

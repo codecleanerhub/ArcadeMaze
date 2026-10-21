@@ -24,6 +24,10 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
 # TASK 23: arco di fulmine visibile per la Verga della Tempesta (catena).
 const LightningArcFx = preload("res://scripts/entities/LightningArcEffect.gd")
+
+## TASK 36 — fulmine che si abbatte al suolo all'apparizione delle
+## pergamene evento (effetto visivo pronunciato + flash + shake).
+const LightningStrikeFx = preload("res://scripts/entities/LightningStrikeEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, tra proiettile-nemico 24.5 e miniboss 35).
 const FF_HIT_RADIUS_SQ: float = 625.0
@@ -118,11 +122,14 @@ var bat_events_left: int = 0
 var bat_event_timer_ms: float = 0.0
 var _bat_rng := RandomNumberGenerator.new()
 
-# TASK 35 — PERGAMENE EVENTO (terremoto + voragini magiche): 1 per TIPO per
-# livello, a un momento casuale (solo se i nemici vivi sono >= 50%). Fasi per
+# TASK 35 — PERGAMENE EVENTO (terremoto + voragini magiche). TASK 36: ogni
+# TIPO puo' apparire al massimo DUE volte per livello ma con UN SOLO USO,
+# e solo se i nemici vivi sono >= 30% (al di sotto non appaiono). Fasi per
 # tipo: WAIT (timer all'apparizione) -> BEACON (bagliore/aura di telegrafo
-# sulla cella) -> GROUND (pergamena a terra: 10s + 2s di lampeggio, poi
-# svanisce) -> DONE (raccolta o scaduta: evento concluso).
+# sulla cella) -> GROUND (FULMINE che si abbatte al suolo, pergamena a
+# terra: 10s + 2s di lampeggio, poi svanisce) -> DONE (raccolta/USO o
+# budget di 2 apparizioni esaurito: evento concluso per il livello; se
+# invece scade non raccolta, torna WAIT per la seconda apparizione).
 enum ScrollPhase { WAIT, BEACON, GROUND, DONE }
 var scroll_quake_phase: int = ScrollPhase.DONE
 var scroll_quake_timer_ms: float = 0.0
@@ -132,6 +139,10 @@ var scroll_chasm_phase: int = ScrollPhase.DONE
 var scroll_chasm_timer_ms: float = 0.0
 var scroll_chasm_item: Node2D = null
 var scroll_chasm_beacon: Sprite2D = null
+## TASK 36 — apparizioni gia' consumate in questo livello (per TIPO):
+## il budget e' PARCHMENT_MAX_SPAWNS (2), ma l'USO e' uno solo.
+var scroll_quake_spawns_used: int = 0
+var scroll_chasm_spawns_used: int = 0
 var _scroll_rng := RandomNumberGenerator.new()
 # FIX (2P): in modalità due giocatori il mini boss immortale NON è uno ma
 # DUE, uno per player, e si differenziano SOLO nel colore: quello che
@@ -2410,6 +2421,8 @@ func _reset_parchments(level: int) -> void:
         _free_scroll_visuals()
         scroll_quake_phase = ScrollPhase.DONE
         scroll_chasm_phase = ScrollPhase.DONE
+        scroll_quake_spawns_used = 0
+        scroll_chasm_spawns_used = 0
         if not C.PARCHMENTS_ENABLED or level < C.PARCHMENT_GRACE_LEVEL:
                 return
         _scroll_rng.seed = hash("scrolls_v1_%d" % level)
@@ -2444,9 +2457,10 @@ func _free_scroll_visuals() -> void:
 
 
 ## Macchina a stati delle due pergamene (WAIT -> BEACON -> GROUND -> DONE).
-## La condizione "almeno il 50% dei nemici ancora vivi" viene verificata
-## ALLA SCADENZA del timer: se non e' soddisfatta si riprova dopo
-## PARCHMENT_RETRY_MS (finche' il livello e' vivo).
+## TASK 36: la condizione "almeno il 30% dei nemici ancora vivi" viene
+## verificata ALLA SCADENZA del timer: se non e' soddisfatta si riprova
+## dopo PARCHMENT_RETRY_MS; se il budget di PARCHMENT_MAX_SPAWNS
+## apparizioni e' esaurito, l'evento si chiude (DONE).
 func _update_parchments(delta_ms: float) -> void:
         _update_one_scroll(delta_ms, true)   # terremoto
         _update_one_scroll(delta_ms, false)  # voragini
@@ -2460,7 +2474,16 @@ func _update_one_scroll(delta_ms: float, is_quake: bool) -> void:
                                         else scroll_chasm_timer_ms
                         timer -= delta_ms
                         if timer <= 0.0:
-                                # condizione: almeno il 50% dei nemici vivi
+                                # TASK 36: budget apparizioni esaurito?
+                                var spawns_used: int = scroll_quake_spawns_used \
+                                                if is_quake else scroll_chasm_spawns_used
+                                if spawns_used >= C.PARCHMENT_MAX_SPAWNS:
+                                        if is_quake:
+                                                scroll_quake_phase = ScrollPhase.DONE
+                                        else:
+                                                scroll_chasm_phase = ScrollPhase.DONE
+                                        return
+                                # condizione: almeno il 30% dei nemici vivi
                                 var alive: int = spawner.alive_count()
                                 var total: int = maxi(1, spawner.initial_count)
                                 if float(alive) >= float(total) * C.PARCHMENT_MIN_ALIVE_PCT:
@@ -2552,7 +2575,8 @@ func _start_scroll_beacon(is_quake: bool) -> void:
                 EffectsManager.screen_shake(2.0, 0.2)
 
 
-## Fase GROUND: il bagliore si spegne e la pergamena appare sulla cella.
+## Fase GROUND: il bagliore si spegne, un FULMINE SI ABBATE AL SUOLO
+## sulla cella (TASK 36: apparizione eclatante) e la pergamena appare.
 func _spawn_scroll_item(is_quake: bool) -> void:
         var meta_key: String = "scroll_quake_cell" if is_quake else "scroll_chasm_cell"
         var cell: Vector2i = get_meta(meta_key, Vector2i(-1, -1))
@@ -2569,43 +2593,77 @@ func _spawn_scroll_item(is_quake: bool) -> void:
         var item: Collectibles = _create_collectible(kind, _cell_to_pixel(cell))
         item.scroll_lifetime_ms = float(C.PARCHMENT_VISIBLE_MS + C.PARCHMENT_BLINK_MS)
         collectibles_node.add_child(item)
+        # TASK 36: consuma UNO dei due slot di apparizione del livello
         if is_quake:
                 scroll_quake_item = item
                 scroll_quake_beacon = null
                 scroll_quake_phase = ScrollPhase.GROUND
+                scroll_quake_spawns_used += 1
         else:
                 scroll_chasm_item = item
                 scroll_chasm_beacon = null
                 scroll_chasm_phase = ScrollPhase.GROUND
-        # piccola esplosione luminosa: la pergamena MATERIALIZZA
+                scroll_chasm_spawns_used += 1
+        # TASK 36 — FULMINE CHE SI ABBATE AL SUOLO: saetta verticale con
+        # zigzag flicker, onda d'urto, bagliore d'impatto e braci (alone
+        # tinto col colore della pergamena) + flash dello schermo + shake.
+        var tint := Color(1.0, 0.62, 0.22) if is_quake else Color(0.72, 0.50, 1.0)
+        var strike: Node2D = LightningStrikeFx.new()
+        strike.setup(item.position, tint)
+        collectibles_node.add_child(strike)
+        screen_flash_timer_ms = 110
         if EffectsManager:
-                var col := Color(1.0, 0.6, 0.25) if is_quake else Color(0.7, 0.5, 1.0)
-                var burst := EffectsManager.spawn_explosion(item.position, col, 14, 0.45)
+                EffectsManager.screen_shake(7.0, 0.55)
+                # piccola esplosione luminosa: la pergamena MATERIALIZZA
+                var burst := EffectsManager.spawn_explosion(item.position, tint, 14, 0.45)
                 collectibles_node.add_child(burst)
+        # TASK 36 — effetto audio LUNGO dedicato (~1.9s: carica + crack +
+        # sweep + boom + tuono rotolante), al posto del corto PORTAL_OPEN.
         if AudioManager:
-                AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+                AudioManager.play_sound(AudioManager.SoundType.SCROLL_LIGHTNING)
 
 
-## Conclude la fase GROUND: raccolta (effect=true, chiama il chiamante) o
-## scaduta (effect=false, l'item e' gia' active=false: liberarlo e via).
+## Conclude la fase GROUND: raccolta (collected=true, l'USO chiude
+## l'evento per il resto del livello: nessuna seconda apparizione) o
+## scaduta (collected=false). TASK 36: se scade NON raccolta e il budget
+## di PARCHMENT_MAX_SPAWNS apparizioni non e' esaurito, il tipo torna
+## WAIT per una SECONDA apparizione in un momento casuale successivo.
 func _consume_scroll_ground(is_quake: bool, collected: bool) -> void:
         var item: Node2D = scroll_quake_item if is_quake else scroll_chasm_item
         if item != null and is_instance_valid(item):
+                if not collected:
+                        # svanita nel nulla: piccolo puff di polvere
+                        if EffectsManager:
+                                var puff := EffectsManager.spawn_explosion(
+                                                item.position,
+                                                Color(0.5, 0.45, 0.4), 8, 0.4)
+                                collectibles_node.add_child(puff)
                 item.queue_free()
         if is_quake:
                 scroll_quake_item = null
                 scroll_quake_beacon = null
-                scroll_quake_phase = ScrollPhase.DONE
         else:
                 scroll_chasm_item = null
                 scroll_chasm_beacon = null
-                scroll_chasm_phase = ScrollPhase.DONE
+        # TASK 36 — se NON e' stata usata puo' riapparire (max 2 per livello);
+        # se e' stata RACCOLTA (usata) l'evento e' chiuso per sempre.
         if not collected:
-                # svanita nel nulla: piccolo puff di polvere
-                if item != null and is_instance_valid(item) and EffectsManager:
-                        var puff := EffectsManager.spawn_explosion(item.position,
-                                        Color(0.5, 0.45, 0.4), 8, 0.4)
-                        collectibles_node.add_child(puff)
+                var spawns_used: int = scroll_quake_spawns_used if is_quake \
+                                else scroll_chasm_spawns_used
+                if spawns_used < C.PARCHMENT_MAX_SPAWNS:
+                        var next_ms: float = float(_scroll_rng.randi_range(
+                                C.PARCHMENT_NEXT_MIN_MS, C.PARCHMENT_NEXT_MAX_MS))
+                        if is_quake:
+                                scroll_quake_phase = ScrollPhase.WAIT
+                                scroll_quake_timer_ms = next_ms
+                        else:
+                                scroll_chasm_phase = ScrollPhase.WAIT
+                                scroll_chasm_timer_ms = next_ms
+                        return
+        if is_quake:
+                scroll_quake_phase = ScrollPhase.DONE
+        else:
+                scroll_chasm_phase = ScrollPhase.DONE
 
 
 ## Cella EMPTY casuale non-tunnel e libera da collectible a terra.
