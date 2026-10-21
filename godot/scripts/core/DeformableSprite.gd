@@ -190,6 +190,26 @@ func set_grid_size(w: int, h: int) -> void:
         _rebuild_mesh()
 
 
+## TASK 46 — selezione del frame corrente sullo sheet (animazione a FRAME
+## REALI: grafica PixelLab per il Golem + cicli legacy 4-frame degli altri
+## boss, che il percorso DeformableSprite mostrava congelati sul frame 0).
+## Cambia SOLO il sub_rect: la texture resta in cache (nessun ricaricamento
+## da disco) e il mesh viene ricostruito sulla nuova regione UV.
+## row 0 = ciclo camminata/idle, row 1 = ciclo attacco (se presente).
+func set_sheet_frame(col: int, row: int = 0) -> void:
+        if texture == null or sub_rect.size.x <= 0 or sub_rect.size.y <= 0:
+                return
+        var fw := sub_rect.size.x
+        var fh := sub_rect.size.y
+        var fx := float(col) * fw
+        var fy := float(row) * fh
+        # Frame fuori sheet (sheet più corto del previsto): ignora.
+        if fx + fw > float(texture.get_width()) + 0.5 \
+                        or fy + fh > float(texture.get_height()) + 0.5:
+                return
+        sub_rect = Rect2(fx, fy, fw, fh)
+
+
 # -----------------------------------------------------------------------
 # TASK 26 — enhancement canvas (vedi commento in testa al file).
 # -----------------------------------------------------------------------

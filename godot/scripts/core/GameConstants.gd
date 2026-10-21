@@ -100,6 +100,21 @@ static func ui_is_italian() -> bool:
 #                          (comportamento pre-Task-26).
 static var BOSS_SHOOT_SFX_ENABLED: bool = true
 
+## TASK 46 — ANIMAZIONE A FRAME REALI DEI BOSS
+#   BOSS_FRAME_ANIM_ENABLED -> i boss ciclando i frame reali dello sheet
+#                          (XHD/SD) in base allo stato: IDLE 5.5 FPS, WALK
+#                          8.3 FPS, ATTACK one-shot 11 FPS sincronizzato col
+#                          timer d'attacco (rate = frameDuration legacy dei
+#                          meta). Prima il percorso DeformableSprite mostrava
+#                          SOLO il frame 0: i boss erano statue che si
+#                          muovevano solo via deformazione procedurale
+#                          della mesh. Il GOLEM (boss_031) ora usa il ciclo
+#                          walk a 6 frame rigenerato con PixelLab (256px);
+#                          gli altri 16 boss tornano ad animare i propri cicli
+#                          legacy a 4 frame. false = frame 0 statico (rollback
+#                          al comportamento pre-Task-46).
+static var BOSS_FRAME_ANIM_ENABLED: bool = true
+
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
 

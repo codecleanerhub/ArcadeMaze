@@ -80,6 +80,13 @@ var sprite_id: String = ""
 # TASK 22 — frame size della sorgente (64 SD legacy / 256 XHD).
 var _frame_px: int = 64
 
+# TASK 46 — animazione a FRAME REALI dello sheet: colonne (frame per riga)
+# e righe (0 = camminata/idle, 1 = attacco quando presente) rilevate dalla
+# dimensione della texture caricata. 1 colonna = sheet statico (boss senza
+# ciclo): il cycling resta semplicemente inattivo.
+var _frame_cols: int = 1
+var _frame_rows: int = 1
+
 # TASK 22 — mappa tipo boss -> profilo animazione arti (DeformableSprite).
 # LP_* vedi DeformableSprite.LimbProfile. LP_NONE = solo respirazione/idle
 # classico (comportamento pre-Task 22).
@@ -317,6 +324,28 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                         draw_x += sin(anim_time * 0.8) * 4.0
                         draw_y += sin(anim_time * 1.6) * 7.0
                 deform_sprite.position = Vector2(draw_x, draw_y) - pos  # local offset
+                # TASK 46 — cycling dei frame reali dello sheet. I rate
+                # replicano i frameDuration legacy dei meta (idle 180ms,
+                # walk 120ms, attack 90ms -> 5.5 / 8.3 / 11 FPS): il nuovo
+                # Golem PixelLab (6 frame) e i cicli legacy 4-frame degli
+                # altri boss si animano con la stessa tempizzazione originale.
+                if C.BOSS_FRAME_ANIM_ENABLED and _frame_cols > 1:
+                        var frow := 0
+                        var fidx := 0
+                        if mode == DeformableSprite.AnimMode.ATTACK:
+                                if _frame_rows > 1:
+                                        frow = 1  # riga attacco dedicata
+                                # riproduzione one-shot nel timer d'attacco
+                                # (500 ms): 11 FPS -> ~5 frame e mezzo.
+                                var elapsed_ms := 500 - attacking_timer_ms
+                                fidx = int(float(elapsed_ms) * 0.011)
+                                if fidx >= _frame_cols:
+                                        fidx = _frame_cols - 1
+                        elif mode == DeformableSprite.AnimMode.WALK:
+                                fidx = int(anim_time * 8.3) % _frame_cols
+                        else:  # IDLE
+                                fidx = int(anim_time * 5.5) % _frame_cols
+                        deform_sprite.set_sheet_frame(fidx, frow)
                 deform_sprite.update(anim_time, mode, scale_val, false)
 
         position = pos
@@ -541,6 +570,18 @@ func _draw() -> void:
                         loaded = deform_sprite.load_subrect(path, 0, 0, 64, 64)
                         if loaded:
                                 deform_sprite.set_grid_size(8, 8)
+                # TASK 46 — rilevamento frame reali dello sheet caricato:
+                # colonne = larghezza/frame, righe = altezza/frame. Golem
+                # PixelLab = 6x1 (XHD 1536x256 / SD 384x64); boss legacy =
+                # 4x1; 1x1 = sprite statico (cycling inattivo).
+                if loaded and deform_sprite != null and deform_sprite.texture != null:
+                        var tw := float(deform_sprite.texture.get_width())
+                        var th := float(deform_sprite.texture.get_height())
+                        _frame_cols = max(1, int(tw / float(_frame_px)))
+                        _frame_rows = max(1, int(th / float(_frame_px)))
+                else:
+                        _frame_cols = 1
+                        _frame_rows = 1
                 deform_loaded = loaded
                 # TASK 22: applica subito il profilo arti (update_step lo
                 # rinnova ogni frame; qui copre il primo frame di vita).
