@@ -42,6 +42,17 @@ enum Kind {
                          # nel labirinto. 2 lanci: infligge il 50% degli HP max ai nemici
                          # e spezza i muri INTERNI creando scorciatoie usabili da player e
                          # nemici. Dopo il secondo lancio scompare dal player.
+        QUAKE_SCROLL,     # TASK 35 (pergamene evento): pergamena del TERREMOTO.
+                         # Si attiva subito alla raccolta: -50% HP a TUTTI i nemici,
+                         # chi resta sotto il 50% dell'energia max viene eliminato.
+                         # Il player non subisce danni. Appare in un momento casuale
+                         # (solo se i vivi sono >= 50%), telegrafo luminoso, 10s a
+                         # terra + 2s di lampeggio poi scompare. Un solo uso.
+        CHASM_SCROLL,     # TASK 35: pergamena delle VORAGINI MAGICHE. Alla raccolta
+                         # fa apparire 4 voragini in celle casuali ben distanziate:
+                         # i nemici che vi cadono sopra vengono uccisi, il player e'
+                         # immune. 3 ontate da 4s con riposizionamento (12s totali).
+                         # Stesse meccaniche di apparizione della pergamena terremoto.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -50,6 +61,14 @@ enum Kind {
                 _apply_kind_defaults()
 
 @export var treasure_type: int = TreasureType.TRES_CROWN
+
+# --- SCROLL (TASK 35) ---
+# Tempo di vita residuo a terra (ms): 10s raccoglibile + 2s di
+# lampeggio finale. Gli ultimi SCROLL_BLINK_THRESHOLD_MS modulano
+# l'alpha (lampeggio d'avviso). A zero: active = false (l'evento e'
+# perso — il controller libera il nodo).
+var scroll_lifetime_ms: float = 0.0
+const SCROLL_BLINK_THRESHOLD_MS: float = 2000.0
 
 @export var active: bool = true
 
@@ -140,6 +159,17 @@ func _apply_kind_defaults() -> void:
                 Kind.HAMMER:
                         pulse = 0.0
                         bob_offset = 0.0
+                Kind.QUAKE_SCROLL:
+                        pulse = 0.0
+                        bob_offset = 0.0
+                        # NB: scroll_lifetime_ms NON si tocca qui: e' stato
+                        # runtime impostato dal controller PRIMA dell'add_child,
+                        # e _ready() chiama _apply_kind_defaults() DOPO
+                        # (azzerarlo qui cancellava il countdown di vita.
+                        # Parte comunque a 0.0 per default di istanza.)
+                Kind.CHASM_SCROLL:
+                        pulse = 0.0
+                        bob_offset = 0.0
 
 
 # =========================================================
@@ -178,6 +208,10 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                         pass  # only anim
                 Kind.HAMMER:
                         pass  # only anim (bob + aura elettrica nel _draw)
+                Kind.QUAKE_SCROLL:
+                        _update_scroll_lifetime(delta_ms)
+                Kind.CHASM_SCROLL:
+                        _update_scroll_lifetime(delta_ms)
 
         # FIX (calice non raccoglibile): RIMOSSA la self-collision a 16px.
         # Era un duplicato più piccolo del check del controller (20px) che
@@ -338,6 +372,12 @@ func _draw() -> void:
                 Kind.DYNAMITE:     _draw_dynamite()
                 Kind.POTION:       _draw_potion()
                 Kind.HAMMER:       _draw_hammer()
+                Kind.QUAKE_SCROLL: _draw_parchment(
+                                "res://assets/sprites/parchment/quake_scroll.png",
+                                Color(1.0, 0.55, 0.2))
+                Kind.CHASM_SCROLL: _draw_parchment(
+                                "res://assets/sprites/parchment/chasm_scroll.png",
+                                Color(0.7, 0.45, 1.0))
 
 
 func _draw_mine() -> void:
@@ -1181,3 +1221,66 @@ func _draw_hammer() -> void:
         draw_rect(Rect2(-4.5, 13, 9, 5), Color(0.62, 0.58, 0.44), true)
         draw_rect(Rect2(-4.5, 13, 9, 2), Color(0.8, 0.76, 0.6), true)
         draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+# =========================================================
+# TASK 35 — PERGAMENE EVENTO (terremoto + voragini magiche)
+# =========================================================
+
+## Countdown di vita a terra: 10s raccoglibile, poi 2s di LAMPEGGIO
+## (alpha oscillante: avviso "sta per sparire"), poi active = false.
+## Il MainGameController libera il nodo quando vede active = false.
+func _update_scroll_lifetime(delta_ms: int) -> void:
+        if scroll_lifetime_ms <= 0.0:
+                return
+        scroll_lifetime_ms -= float(delta_ms)
+        if scroll_lifetime_ms <= 0.0:
+                scroll_lifetime_ms = 0.0
+                active = false
+                modulate.a = 1.0
+                return
+        if scroll_lifetime_ms <= SCROLL_BLINK_THRESHOLD_MS:
+                # lampeggio: acceso/spento ~7 volte nei 2s finali
+                var k: float = fmod(scroll_lifetime_ms, 280.0) / 280.0
+                modulate.a = 0.25 + 0.75 * (1.0 if k < 0.5 else 0.0)
+        else:
+                modulate.a = 1.0
+
+
+## Pergamena a terra: 48px (le dimensioni dei tesori) con aura colorata
+## pulsante del colore della scuola magica (arancio terremoto / viola
+## voragini). Fallback procedurale: rotolo di pergamena stilizzato.
+func _draw_parchment(tex_path: String, glow_color: Color) -> void:
+        var y_off := -bob_offset
+        var glow_alpha: float = 0.14 + pulse * 0.12
+        draw_circle(Vector2.ZERO, 26.0, Color(glow_color.r, glow_color.g,
+                        glow_color.b, glow_alpha))
+        draw_circle(Vector2.ZERO, 16.0, Color(glow_color.r, glow_color.g,
+                        glow_color.b, glow_alpha * 0.8))
+        var tex: Texture2D = _load_png_cached(tex_path)
+        if tex != null:
+                var size: float = 48.0  # come i tesori da raccogliere
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off,
+                                size, size), false)
+                return
+        # Fallback procedurale: rotolo verticale con estremita' arrotolate
+        # e nastro col sigillo. Palette derivata dal colore della scuola.
+        var dark := Color(glow_color.r * 0.45, glow_color.g * 0.45,
+                        glow_color.b * 0.45)
+        var paper := Color(0.87, 0.78, 0.62)
+        var edge := Color(0.62, 0.5, 0.34)
+        # corpo
+        draw_rect(Rect2(-10.0, -16.0 + y_off, 20.0, 32.0), paper)
+        draw_rect(Rect2(-10.0, -16.0 + y_off, 20.0, 32.0), edge, false, 1.5)
+        # estremita' arrotolate
+        draw_rect(Rect2(-12.0, -20.0 + y_off, 24.0, 5.0), edge)
+        draw_rect(Rect2(-12.0, 15.0 + y_off, 24.0, 5.0), edge)
+        # rune centrali
+        draw_rect(Rect2(-6.0, -9.0 + y_off, 12.0, 2.0), dark)
+        draw_rect(Rect2(-6.0, -4.0 + y_off, 8.0, 2.0), dark)
+        draw_rect(Rect2(-6.0, 1.0 + y_off, 11.0, 2.0), dark)
+        draw_rect(Rect2(-6.0, 6.0 + y_off, 7.0, 2.0), dark)
+        # nastro + sigillo
+        draw_rect(Rect2(-11.0, -2.0 + y_off, 22.0, 4.0), dark)
+        draw_circle(Vector2(0.0, 0.0 + y_off), 4.5, glow_color)
+        draw_circle(Vector2(0.0, 0.0 + y_off), 4.5, dark, false, 1.2)

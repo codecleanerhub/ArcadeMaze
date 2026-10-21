@@ -919,6 +919,74 @@ const BAT_CLOUD_MIN_SPAWN_DIST: float = 384.0
 
 
 # ============================================================================
+# TASK 35 — PERGAMENE EVENTO (terremoto + voragini magiche)
+# ============================================================================
+# Due pergamene raccoglibili con le STESSE meccaniche di apparizione:
+# momento casuale del livello, SOLO se i nemici vivi sono almeno il 50%
+# del totale iniziale, telegrafo luminoso (bagliore/aura ~1.2s) sulla
+# cella PRIMA dell'apparizione, poi la pergamena resta a terra per 10s
+# e lampeggia per gli ultimi 2s (poi scompare: evento perso).
+# Si attivano IMMEDIATAMENTE alla raccolta, un solo uso:
+#   * PERGAMENA DEL TERREMOTO (arancio, simbolo sismico in alto a dx):
+#     scatena un terremoto che infligge il 50% degli HP max a TUTTI i
+#     nemici (mini-boss compreso); chi dopo il colpo si ritrova SOTTO il
+#     50% dell'energia massima viene ELIMINATO. Il player non subisce
+#     NESSUN danno. Kill ambientale: +5000 punti al raccoglitore.
+#   * PERGAMENA DELLE VORAGINI (viola, simbolo spirale in alto a dx):
+#     fa apparire 4 voragini MAGICHE in celle casuali BEN DISTANZIATE
+#     tra loro (gap Manhattan >= 5). I nemici che vi entrano/ci cadono
+#     sopra vengono UCCISI (+5000 punti al raccoglitore); il player NON
+#     puo' caderci (immune del tutto). Ogni ondata dura 4s, poi le
+#     voragini svaniscono e riappaiono in ALTRRE 4 celle casuali, per
+#     3 ondate totali (12s di effetto). NON bloccano il pathing: i
+#     nemici non le vedono e ci camminano dentro.
+# Le due pergamene hanno lo stesso stile ma COLORI DIVERSI e dimensioni
+# dei tesori (48px). 1 pergamena per TIPO per livello.
+# Rollback: GameConstants.PARCHMENTS_ENABLED = false.
+# ============================================================================
+
+## Flag di rollback: false = nessuna pergamena programmata.
+static var PARCHMENTS_ENABLED: bool = true
+
+## Primo livello con le pergamene evento.
+const PARCHMENT_GRACE_LEVEL: int = 5
+
+## Finestra casuale di apparizione (ms dall'inizio livello), per tipo.
+const PARCHMENT_FIRST_MIN_MS: int = 25000
+const PARCHMENT_FIRST_MAX_MS: int = 70000
+
+## Se alla scadenza del timer i vivi sono sotto il 50%, riprova tra N ms.
+const PARCHMENT_RETRY_MS: int = 5000
+
+## Durata del bagliore/aura di telegrafo prima dell'apparizione.
+const PARCHMENT_TELEGRAPH_MS: int = 1200
+
+## Tempo raccoglibile a terra + lampeggio finale prima di svanire.
+const PARCHMENT_VISIBLE_MS: int = 10000
+const PARCHMENT_BLINK_MS: int = 2000
+
+## Soglia di nemici vivi per far apparire la pergamena (frazione del
+## totale iniziale del livello).
+const PARCHMENT_MIN_ALIVE_PCT: float = 0.5
+
+## Pergamena del terremoto: danno a tutti i nemici (frazione HP max) e
+## soglia di eliminazione (chi resta sotto quella frazione viene ucciso).
+const SCROLL_QUAKE_DAMAGE_PCT: float = 0.5
+const SCROLL_QUAKE_KILL_PCT: float = 0.5
+const SCROLL_QUAKE_KILL_POINTS: int = 5000
+
+## Pergamena delle voragini: numero di voragini per ondata, durata di
+## ogni ondata, ondate totali, distanza minima tra voragini (Manhattan,
+## in celle) e durata della dissolvenza tra le ondate.
+const SCROLL_CHASM_COUNT: int = 4
+const SCROLL_CHASM_WAVE_MS: int = 4000
+const SCROLL_CHASM_WAVES: int = 3
+const SCROLL_CHASM_MIN_GAP: int = 5
+const SCROLL_CHASM_FADE_MS: int = 350
+const SCROLL_CHASM_KILL_POINTS: int = 5000
+
+
+# ============================================================================
 # RELIC (Task 21): i TYPE delle 12 armi reliquia (6 mischia + 6 distanza)
 # + il proiettile riflesso dalle Scaglie del Drago. Dichiarati QUI (prima
 # di WEAPON_HITS_TO_KILL) perche' i const si valutano IN ORDINE nel file.

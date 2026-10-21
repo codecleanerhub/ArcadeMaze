@@ -117,6 +117,22 @@ var bat_cloud: Node2D = null
 var bat_events_left: int = 0
 var bat_event_timer_ms: float = 0.0
 var _bat_rng := RandomNumberGenerator.new()
+
+# TASK 35 — PERGAMENE EVENTO (terremoto + voragini magiche): 1 per TIPO per
+# livello, a un momento casuale (solo se i nemici vivi sono >= 50%). Fasi per
+# tipo: WAIT (timer all'apparizione) -> BEACON (bagliore/aura di telegrafo
+# sulla cella) -> GROUND (pergamena a terra: 10s + 2s di lampeggio, poi
+# svanisce) -> DONE (raccolta o scaduta: evento concluso).
+enum ScrollPhase { WAIT, BEACON, GROUND, DONE }
+var scroll_quake_phase: int = ScrollPhase.DONE
+var scroll_quake_timer_ms: float = 0.0
+var scroll_quake_item: Node2D = null
+var scroll_quake_beacon: Sprite2D = null
+var scroll_chasm_phase: int = ScrollPhase.DONE
+var scroll_chasm_timer_ms: float = 0.0
+var scroll_chasm_item: Node2D = null
+var scroll_chasm_beacon: Sprite2D = null
+var _scroll_rng := RandomNumberGenerator.new()
 # FIX (2P): in modalità due giocatori il mini boss immortale NON è uno ma
 # DUE, uno per player, e si differenziano SOLO nel colore: quello che
 # insegue P1 è VERDE, quello che insegue P2 è ROSSO. In 1P resta il
@@ -1244,6 +1260,11 @@ func _update_playing(delta_ms: float) -> void:
         # morsi e abbattimento (lo sciame vola sopra i muri: niente
         # interazione col maze, solo con player e proiettili).
         _update_bat_cloud(delta_ms)
+
+        # (1e) TASK 35 — PERGAMENE EVENTO: scheduling (momento casuale,
+        # solo con >= 50% di nemici vivi), telegrafo luminoso, vita a
+        # terra 10s + 2s di lampeggio, raccolta = effetto immediato.
+        _update_parchments(delta_ms)
 
         # (2) Enemies update
         # FIX (2P — nemici ignoravano P2): ogni nemico insegue il player VIVO
@@ -2378,6 +2399,288 @@ func _spawn_bat_cloud() -> void:
         add_child(bat_cloud)
 
 
+# ============================================================================
+# TASK 35 — PERGAMENE EVENTO: terremoto + voragini magiche
+# ============================================================================
+
+## Reset a inizio livello: pulizia difensiva di item/beacon rimasti e
+## programmazione dei due timer (seed RNG per livello: al continue gli
+## orari di apparizione si ripetono, come gli hazard).
+func _reset_parchments(level: int) -> void:
+        _free_scroll_visuals()
+        scroll_quake_phase = ScrollPhase.DONE
+        scroll_chasm_phase = ScrollPhase.DONE
+        if not C.PARCHMENTS_ENABLED or level < C.PARCHMENT_GRACE_LEVEL:
+                return
+        _scroll_rng.seed = hash("scrolls_v1_%d" % level)
+        scroll_quake_phase = ScrollPhase.WAIT
+        scroll_quake_timer_ms = float(_scroll_rng.randi_range(
+                C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS))
+        scroll_chasm_phase = ScrollPhase.WAIT
+        scroll_chasm_timer_ms = float(_scroll_rng.randi_range(
+                C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS))
+
+
+## Libera item a terra e beacon di entrambe le pergamene (fine livello /
+## reset difensivo). Le voragini magiche vivono in MazeHazards e vengono
+## ripulite da hazards.generate() -> clear().
+func _free_scroll_visuals() -> void:
+        if scroll_quake_item != null:
+                if is_instance_valid(scroll_quake_item):
+                        scroll_quake_item.queue_free()
+                scroll_quake_item = null
+        if scroll_quake_beacon != null:
+                if is_instance_valid(scroll_quake_beacon):
+                        scroll_quake_beacon.queue_free()
+                scroll_quake_beacon = null
+        if scroll_chasm_item != null:
+                if is_instance_valid(scroll_chasm_item):
+                        scroll_chasm_item.queue_free()
+                scroll_chasm_item = null
+        if scroll_chasm_beacon != null:
+                if is_instance_valid(scroll_chasm_beacon):
+                        scroll_chasm_beacon.queue_free()
+                scroll_chasm_beacon = null
+
+
+## Macchina a stati delle due pergamene (WAIT -> BEACON -> GROUND -> DONE).
+## La condizione "almeno il 50% dei nemici ancora vivi" viene verificata
+## ALLA SCADENZA del timer: se non e' soddisfatta si riprova dopo
+## PARCHMENT_RETRY_MS (finche' il livello e' vivo).
+func _update_parchments(delta_ms: float) -> void:
+        _update_one_scroll(delta_ms, true)   # terremoto
+        _update_one_scroll(delta_ms, false)  # voragini
+
+
+func _update_one_scroll(delta_ms: float, is_quake: bool) -> void:
+        var phase: int = scroll_quake_phase if is_quake else scroll_chasm_phase
+        match phase:
+                ScrollPhase.WAIT:
+                        var timer: float = scroll_quake_timer_ms if is_quake \
+                                        else scroll_chasm_timer_ms
+                        timer -= delta_ms
+                        if timer <= 0.0:
+                                # condizione: almeno il 50% dei nemici vivi
+                                var alive: int = spawner.alive_count()
+                                var total: int = maxi(1, spawner.initial_count)
+                                if float(alive) >= float(total) * C.PARCHMENT_MIN_ALIVE_PCT:
+                                        _start_scroll_beacon(is_quake)
+                                        return
+                                # troppi morti: riprova piu' tardi
+                                timer = float(C.PARCHMENT_RETRY_MS)
+                        if is_quake:
+                                scroll_quake_timer_ms = timer
+                        else:
+                                scroll_chasm_timer_ms = timer
+                ScrollPhase.BEACON:
+                        var tb: float = scroll_quake_timer_ms if is_quake \
+                                        else scroll_chasm_timer_ms
+                        tb -= delta_ms
+                        # pulsazione del bagliore (cresce verso l'apparizione)
+                        var beacon: Sprite2D = scroll_quake_beacon if is_quake \
+                                        else scroll_chasm_beacon
+                        if beacon != null and is_instance_valid(beacon):
+                                var k: float = 1.0 - tb / float(C.PARCHMENT_TELEGRAPH_MS)
+                                var pulse_k: float = 0.75 + 0.25 * sin(
+                                                _time_now() * 16.0)
+                                beacon.scale = Vector2.ONE * (0.55 + k * 0.75) * pulse_k
+                                beacon.rotation += delta_ms / 900.0
+                        if tb <= 0.0:
+                                _spawn_scroll_item(is_quake)
+                                return
+                        if is_quake:
+                                scroll_quake_timer_ms = tb
+                        else:
+                                scroll_chasm_timer_ms = tb
+                ScrollPhase.GROUND:
+                        # il lifetime (10s + 2s blink) vive nel Collectibles;
+                        # qui si vigilano scomparsa (active=false) e validita'.
+                        var item: Node2D = scroll_quake_item if is_quake \
+                                        else scroll_chasm_item
+                        if item == null or not is_instance_valid(item) \
+                                        or not item.active:
+                                _consume_scroll_ground(is_quake, false)
+                ScrollPhase.DONE:
+                        pass
+
+
+## Orologio di scena per le pulsazioni (secondi).
+func _time_now() -> float:
+        return Time.get_ticks_msec() / 1000.0
+
+
+## Fase BEACON: accende il bagliore/aura sulla cella scelta (PRIMA ancora
+## dell'apparizione, come richiesto: "emette una luce, un bagliore, un'aura
+## nei pressi prima di apparire").
+func _start_scroll_beacon(is_quake: bool) -> void:
+        var cell := _random_empty_cell()
+        if cell == Vector2i(-1, -1):
+                # nessuna cella libera (labirinto degenere): riprova piu' tardi
+                if is_quake:
+                        scroll_quake_timer_ms = float(C.PARCHMENT_RETRY_MS)
+                else:
+                        scroll_chasm_timer_ms = float(C.PARCHMENT_RETRY_MS)
+                return
+        var pos: Vector2 = _cell_to_pixel(cell)
+        var beacon := Sprite2D.new()
+        var tex: Texture2D = load("res://assets/sprites/parchment/beacon_glow.png")
+        if tex != null:
+                beacon.texture = tex
+        beacon.position = pos
+        beacon.scale = Vector2.ONE * 0.55
+        # arancio fuoco per il terremoto, viola psichico per le voragini
+        beacon.modulate = Color(1.0, 0.55, 0.2, 0.85) if is_quake \
+                        else Color(0.7, 0.45, 1.0, 0.85)
+        beacon.z_index = 5  # sopra pavimento e hazard, sotto le entita'
+        collectibles_node.add_child(beacon)
+        if is_quake:
+                scroll_quake_beacon = beacon
+                scroll_quake_phase = ScrollPhase.BEACON
+                scroll_quake_timer_ms = float(C.PARCHMENT_TELEGRAPH_MS)
+                scroll_quake_item = null
+                # memorizza la cella per lo spawn dell'item
+                set_meta("scroll_quake_cell", cell)
+        else:
+                scroll_chasm_beacon = beacon
+                scroll_chasm_phase = ScrollPhase.BEACON
+                scroll_chasm_timer_ms = float(C.PARCHMENT_TELEGRAPH_MS)
+                scroll_chasm_item = null
+                set_meta("scroll_chasm_cell", cell)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.0, 0.2)
+
+
+## Fase GROUND: il bagliore si spegne e la pergamena appare sulla cella.
+func _spawn_scroll_item(is_quake: bool) -> void:
+        var meta_key: String = "scroll_quake_cell" if is_quake else "scroll_chasm_cell"
+        var cell: Vector2i = get_meta(meta_key, Vector2i(-1, -1))
+        var beacon: Sprite2D = scroll_quake_beacon if is_quake else scroll_chasm_beacon
+        if beacon != null and is_instance_valid(beacon):
+                beacon.queue_free()
+        if cell == Vector2i(-1, -1):
+                cell = _random_empty_cell()
+        if cell == Vector2i(-1, -1):
+                _consume_scroll_ground(is_quake, false)
+                return
+        var kind: int = CollectiblesClass.Kind.QUAKE_SCROLL if is_quake \
+                        else CollectiblesClass.Kind.CHASM_SCROLL
+        var item: Collectibles = _create_collectible(kind, _cell_to_pixel(cell))
+        item.scroll_lifetime_ms = float(C.PARCHMENT_VISIBLE_MS + C.PARCHMENT_BLINK_MS)
+        collectibles_node.add_child(item)
+        if is_quake:
+                scroll_quake_item = item
+                scroll_quake_beacon = null
+                scroll_quake_phase = ScrollPhase.GROUND
+        else:
+                scroll_chasm_item = item
+                scroll_chasm_beacon = null
+                scroll_chasm_phase = ScrollPhase.GROUND
+        # piccola esplosione luminosa: la pergamena MATERIALIZZA
+        if EffectsManager:
+                var col := Color(1.0, 0.6, 0.25) if is_quake else Color(0.7, 0.5, 1.0)
+                var burst := EffectsManager.spawn_explosion(item.position, col, 14, 0.45)
+                collectibles_node.add_child(burst)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+
+
+## Conclude la fase GROUND: raccolta (effect=true, chiama il chiamante) o
+## scaduta (effect=false, l'item e' gia' active=false: liberarlo e via).
+func _consume_scroll_ground(is_quake: bool, collected: bool) -> void:
+        var item: Node2D = scroll_quake_item if is_quake else scroll_chasm_item
+        if item != null and is_instance_valid(item):
+                item.queue_free()
+        if is_quake:
+                scroll_quake_item = null
+                scroll_quake_beacon = null
+                scroll_quake_phase = ScrollPhase.DONE
+        else:
+                scroll_chasm_item = null
+                scroll_chasm_beacon = null
+                scroll_chasm_phase = ScrollPhase.DONE
+        if not collected:
+                # svanita nel nulla: piccolo puff di polvere
+                if item != null and is_instance_valid(item) and EffectsManager:
+                        var puff := EffectsManager.spawn_explosion(item.position,
+                                        Color(0.5, 0.45, 0.4), 8, 0.4)
+                        collectibles_node.add_child(puff)
+
+
+## Cella EMPTY casuale non-tunnel e libera da collectible a terra.
+func _random_empty_cell() -> Vector2i:
+        var candidates: Array[Vector2i] = []
+        for r in range(1, C.MAZE_ROWS - 1):
+                for c in range(1, C.MAZE_COLS - 1):
+                        if maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                continue
+                        if C.is_tunnel_cell(c, r):
+                                continue
+                        if not _collectible_cell_free(c, r):
+                                continue
+                        candidates.append(Vector2i(c, r))
+        if candidates.is_empty():
+                return Vector2i(-1, -1)
+        return candidates[randi() % candidates.size()]
+
+
+## EFFETTO — PERGAMENA DEL TERREMOTO: -50% HP max a TUTTI i nemici; chi
+## dopo il colpo si ritrova SOTTO il 50% dell'energia massima viene
+## ELIMINATO (+5000 punti al raccoglitore). Il player NON subisce danni.
+func _activate_scroll_quake(p: CharacterBody2D) -> void:
+        if EffectsManager:
+                EffectsManager.screen_shake(10.0, 0.9)
+                EffectsManager.screen_shake(4.0, 0.5)
+        screen_flash_timer_ms = 90
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_THUD)
+        var killed: int = 0
+        for enemy in spawner.enemies:
+                if enemy == null or not is_instance_valid(enemy) or enemy.is_dead():
+                        continue
+                var max_hp: int = enemy.get_max_health()
+                var dmg: int = maxi(1, int(round(float(max_hp) * C.SCROLL_QUAKE_DAMAGE_PCT)))
+                var kill_threshold: int = int(ceil(float(max_hp) * C.SCROLL_QUAKE_KILL_PCT))
+                if enemy.health - dmg < kill_threshold:
+                        # sotto il 50% dopo il colpo: eliminato
+                        enemy.take_damage(99999)
+                        killed += 1
+                        if p != null:
+                                p.add_score(C.SCROLL_QUAKE_KILL_POINTS)
+                        if EffectsManager:
+                                var blood := EffectsManager.spawn_blood(
+                                                enemy.get_pixel_pos(), 14)
+                                collectibles_node.add_child(blood)
+                else:
+                        enemy.take_damage(dmg)
+                        if EffectsManager:
+                                var dust := EffectsManager.spawn_explosion(
+                                                enemy.get_pixel_pos(),
+                                                Color(0.45, 0.4, 0.35), 10, 0.5)
+                                collectibles_node.add_child(dust)
+        # mini-boss: stessa regola (50% + kill sotto soglia, +10000 punti)
+        if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
+                var mb_max: int = mini_boss.get_max_health()
+                var mb_dmg: int = maxi(1, int(round(float(mb_max) * C.SCROLL_QUAKE_DAMAGE_PCT)))
+                var mb_threshold: int = int(ceil(float(mb_max) * C.SCROLL_QUAKE_KILL_PCT))
+                if mini_boss.health - mb_dmg < mb_threshold:
+                        mini_boss.take_damage(99999)
+                        if mini_boss.is_dead() and p != null:
+                                p.add_score(C.HAZARD_WALL_KILL_POINTS)
+                else:
+                        mini_boss.take_damage(mb_dmg)
+        if AudioManager and killed > 0:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
+
+
+## EFFETTO — PERGAMENA DELLE VORAGINI: 3 ondate da 4 voragini magiche in
+## celle casuali ben distanziate (le uccisioni sono gestite da MazeHazards).
+func _activate_scroll_chasms(p: CharacterBody2D) -> void:
+        hazards.start_scroll_chasms(p)
+
+
 # FIX (2P): il player VIVO più vicino a `from_pos` (P1 o P2), oppure null se
 # non ce ne sono. Usato dal targeting di nemici, miniboss e boss room: in 2P
 # l'IA preme su chi è più vicino invece di ignorare completamente P2.
@@ -2924,6 +3227,38 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.5, 0.8, 1.0))
                                 collectibles_node.add_child(burst_h)
                         print("[Hammer] Player ", player_id, " ha raccolto Mjolnir (2 lanci)")
+                CollectiblesClass.Kind.QUAKE_SCROLL:
+                        # TASK 35 (pergamene evento): si attiva IMMEDIATAMENTE
+                        # alla raccolta — terremoto: -50% HP a tutti i nemici,
+                        # eliminati quelli che restano sotto il 50%. Il player
+                        # non subisce NESSUN danno. (_consume_scroll_ground
+                        # libera l'item e chiude la fase GROUND.)
+                        item.active = false
+                        _consume_scroll_ground(true, true)
+                        _activate_scroll_quake(p)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+                        if EffectsManager:
+                                var burst_q := EffectsManager.spawn_pickup_burst(
+                                        p.get_pixel_pos(), Color(1.0, 0.55, 0.2))
+                                collectibles_node.add_child(burst_q)
+                        print("[Parchment] Player ", player_id,
+                                        " ha letto la pergamena del terremoto")
+                CollectiblesClass.Kind.CHASM_SCROLL:
+                        # TASK 35: pergamena delle voragini — 3 ondate da 4
+                        # voragini magiche: uccidono i nemici, il player e'
+                        # immune e non puo' caderci.
+                        item.active = false
+                        _consume_scroll_ground(false, true)
+                        _activate_scroll_chasms(p)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+                        if EffectsManager:
+                                var burst_c := EffectsManager.spawn_pickup_burst(
+                                        p.get_pixel_pos(), Color(0.7, 0.45, 1.0))
+                                collectibles_node.add_child(burst_c)
+                        print("[Parchment] Player ", player_id,
+                                        " ha letto la pergamena delle voragini")
 
 
 # ============================================================================
@@ -3120,6 +3455,9 @@ func start_level(lvl: int) -> void:
         bat_events_left = C.bat_events_for_level(current_level)
         bat_event_timer_ms = float(_bat_rng.randi_range(
                 C.BAT_CLOUD_FIRST_MIN_MS, C.BAT_CLOUD_FIRST_MAX_MS))
+        # TASK 35: programma le due pergamene evento (momento casuale,
+        # seedato per livello: al continue gli orari si ripetono).
+        _reset_parchments(current_level)
         # Play level music
         # FIX (musica calice tra livelli): se l'effetto del calice è ancora
         # attivo (player uscito dal livello mentre era invincibile) la

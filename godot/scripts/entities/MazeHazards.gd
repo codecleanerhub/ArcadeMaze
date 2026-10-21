@@ -89,6 +89,18 @@ var quake_shake_accum: float = 0.0
 ## delay_ms, sprite (Sprite2D del masso o crepa), fall_from (Vector2)}.
 var boulder_list: Array[Dictionary] = []
 
+# --- TASK 35: voragini MAGICHE della pergamena -----------------------------
+# 4 voragini temporanee in celle casuali ben distanziate (gap Manhattan
+# >= SCROLL_CHASM_MIN_GAP): uccidono SOLO i nemici che vi entrano (il
+# player e' immune). NON sono registrate in dynamic_walls: il pathing non
+# le vede, i nemici ci camminano dentro e muoiono. Ogni ondata dura
+# SCROLL_CHASM_WAVE_MS, poi dissolve (SCROLL_CHASM_FADE_MS) e una nuova
+# ondata appare in altre celle casuali, per SCROLL_CHASM_WAVES ondate.
+# {cell, sprite, state (0=OPEN, 1=FADE), timer_ms}
+var scroll_chasm_list: Array[Dictionary] = []
+var scroll_chasm_waves_left: int = 0
+var scroll_chasm_owner: CharacterBody2D = null
+
 var _rng := RandomNumberGenerator.new()
 var _time := 0.0
 var _tex_cache: Dictionary = {}
@@ -180,6 +192,8 @@ func clear(maze: Node) -> void:
         boulder_list.clear()
         quake_state = QuakeState.INACTIVE
         quake_events_left = 0
+        # TASK 35: via anche le voragini della pergamena.
+        _clear_scroll_chasms()
         if maze != null:
                 maze.dynamic_walls.clear()
 
@@ -445,6 +459,184 @@ func update_hazards(delta_ms: float, maze: Node) -> void:
 
         _update_players_slow(players, maze)
         _update_quake(delta_ms, maze, players)
+        _update_scroll_chasms(delta_ms)
+
+
+# ===========================================================================
+# TASK 35 — VORAGINI MAGICHE della pergamena
+# ===========================================================================
+
+## Attiva l'effetto della PERGAMENA DELLE VORAGINI: 3 ondate da 4 voragini
+## ciascuna. `owner` e' il player che ha raccolto la pergamena (a lui vanno
+## i punti delle uccisioni). Chiamato dal MainGameController alla raccolta.
+func start_scroll_chasms(owner: CharacterBody2D) -> void:
+        scroll_chasm_owner = owner
+        scroll_chasm_waves_left = C.SCROLL_CHASM_WAVES
+        _spawn_scroll_wave()
+
+
+## Piazza un'ondata di 4 voragini in celle EMPTY casuali BEN DISTANZIATE
+## tra loro (Manhattan >= SCROLL_CHASM_MIN_GAP) e non occupate da item a
+## terra. Le celle NON vanno in dynamic_walls: il pathing dei nemici non
+## le vede (e' il punto: devono CRISCADERCI dentro).
+func _spawn_scroll_wave() -> void:
+        # Celle EMPTY valide: non tunnel, non occupate da item a terra
+        # (il maze arriva dal controller, che possiede il riferimento).
+        var valid: Array[Vector2i] = []
+        if controller != null and controller.maze != null:
+                for r in range(1, C.MAZE_ROWS - 1):
+                        for c in range(1, C.MAZE_COLS - 1):
+                                if controller.maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                        continue
+                                if _near_tunnel(c, r):
+                                        continue
+                                if not controller._collectible_cell_free(c, r):
+                                        continue
+                                valid.append(Vector2i(c, r))
+        var placed: Array[Vector2i] = []
+        for _i in C.SCROLL_CHASM_COUNT:
+                var cell := _pop_far_cell(valid, placed, C.SCROLL_CHASM_MIN_GAP)
+                if cell == Vector2i(-1, -1):
+                        break
+                placed.append(cell)
+                var s := _make_sprite(
+                        "res://assets/sprites/hazards/chasm_open.png", cell, 66.0)
+                # tinta magica VIOLA: si distinguono dalle voragini normali
+                s.modulate = Color(0.82, 0.62, 1.0)
+                s.modulate.a = 0.0  # fade-in rapido
+                scroll_chasm_list.append({
+                        "cell": cell,
+                        "sprite": s,
+                        "state": 0,  # 0 = OPEN
+                        "timer_ms": float(C.SCROLL_CHASM_WAVE_MS),
+                })
+        if AudioManager and not placed.is_empty():
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_COLLAPSE)
+                AudioManager.play_sound(AudioManager.SoundType.PORTAL_OPEN)
+        if EffectsManager and not placed.is_empty():
+                EffectsManager.screen_shake(4.0, 0.3)
+
+
+## Estrae una cella casuale a distanza Manhattan >= min_gap da tutte le
+## celle gia' piazzate (fallback: la prima disponibile se il vincolo non
+## e' soddisfacibile in un labirinto piccolo).
+func _pop_far_cell(cells: Array[Vector2i], placed: Array[Vector2i],
+                min_gap: int) -> Vector2i:
+        for _attempt in 30:
+                if cells.is_empty():
+                        break
+                var idx: int = _rng.randi_range(0, cells.size() - 1)
+                var cell: Vector2i = cells[idx]
+                var ok := true
+                for u in placed:
+                        if absi(cell.x - u.x) + absi(cell.y - u.y) < min_gap:
+                                ok = false
+                                break
+                cells.remove_at(idx)
+                if ok:
+                        return cell
+        if cells.size() > 0:
+                return cells.pop_back()
+        return Vector2i(-1, -1)
+
+
+## Update delle voragini magiche: fade-in, uccisione dei nemici che vi
+## entrano, dissolvenza a fine ondata e riposizionamento (nuova ondata).
+func _update_scroll_chasms(delta_ms: float) -> void:
+        if scroll_chasm_list.is_empty() and scroll_chasm_waves_left <= 0:
+                return
+        for i in range(scroll_chasm_list.size() - 1, -1, -1):
+                var h: Dictionary = scroll_chasm_list[i]
+                h["timer_ms"] -= delta_ms
+                match h["state"]:
+                        0:  # OPEN: fade-in rapido + caccia ai nemici
+                                var s: Sprite2D = h["sprite"]
+                                if is_instance_valid(s):
+                                        s.modulate.a = minf(1.0,
+                                                        s.modulate.a + delta_ms / 300.0)
+                                _kill_enemies_on_chasm(h)
+                                if h["timer_ms"] <= 0.0:
+                                        h["state"] = 1
+                                        h["timer_ms"] = float(C.SCROLL_CHASM_FADE_MS)
+                        1:  # FADE: dissolvenza, niente piu' uccisioni
+                                var sf: Sprite2D = h["sprite"]
+                                if is_instance_valid(sf):
+                                        sf.modulate.a = maxf(0.0,
+                                                        sf.modulate.a - delta_ms / float(C.SCROLL_CHASM_FADE_MS))
+                                if h["timer_ms"] <= 0.0:
+                                        if is_instance_valid(sf):
+                                                sf.queue_free()
+                                        scroll_chasm_list.remove_at(i)
+        # fine ondata: se restano ondate, riposiziona subito le voragini
+        if scroll_chasm_list.is_empty() and scroll_chasm_waves_left > 0:
+                scroll_chasm_waves_left -= 1
+                if scroll_chasm_waves_left > 0:
+                        _spawn_scroll_wave()
+                else:
+                        scroll_chasm_owner = null
+                        if AudioManager:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.PORTAL_CLOSE)
+
+
+## Uccide ogni nemico vivo che si trova sulla cella di una voragine
+## magica (+ punti al raccoglitore della pergamena). Il PLAYER non e'
+## MAI controllato: la richiesta utente e' che non possa caderci.
+func _kill_enemies_on_chasm(h: Dictionary) -> void:
+        if controller == null:
+                return
+        for e in controller.spawner.enemies:
+                if e == null or not is_instance_valid(e) or e.is_dead():
+                        continue
+                var ecell := Vector2i(
+                                int(e.position.x / C.TILE_SIZE),
+                                int((e.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                if ecell != h["cell"]:
+                        continue
+                e.take_damage(99999)
+                if e.is_dead() and scroll_chasm_owner != null:
+                        scroll_chasm_owner.add_score(C.SCROLL_CHASM_KILL_POINTS)
+                if e.is_dead():
+                        if AudioManager:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.ENEMY_DEATH)
+                        if EffectsManager:
+                                var dust := EffectsManager.spawn_explosion(
+                                                e.position, Color(0.5, 0.35, 0.7), 12, 0.5)
+                                controller.collectibles_node.add_child(dust)
+        # mini-boss sulla voragine: stessa regola (kill + 10000)
+        var mb = controller.mini_boss
+        if mb != null and is_instance_valid(mb) and not mb.is_dead():
+                var mb_cell := Vector2i(
+                                int(mb.position.x / C.TILE_SIZE),
+                                int((mb.position.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                if mb_cell == h["cell"]:
+                        mb.take_damage(99999)
+                        if mb.is_dead():
+                                if scroll_chasm_owner != null:
+                                        scroll_chasm_owner.add_score(
+                                                        C.HAZARD_WALL_KILL_POINTS)
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.BOSS_DEATH)
+
+
+## Rimuove tutte le voragini della pergamena (clear a fine livello).
+func _clear_scroll_chasms() -> void:
+        for h in scroll_chasm_list:
+                if is_instance_valid(h.get("sprite")):
+                        h["sprite"].queue_free()
+        scroll_chasm_list.clear()
+        scroll_chasm_waves_left = 0
+        scroll_chasm_owner = null
+
+
+## Celle delle voragini attive (per test/debug).
+func scroll_chasm_cells() -> Array[Vector2i]:
+        var out: Array[Vector2i] = []
+        for h in scroll_chasm_list:
+                out.append(h["cell"])
+        return out
 
 
 func _reset_players_flags() -> void:
