@@ -10,9 +10,16 @@
 ##     subisce il 20% dell'energia max come danno AMBIENTALE (bypass
 ##     armature). Dopo il morso lo sciame FLEE via per ~0.9s: niente
 ##     drain a raffica, il player ha tempo di reagire.
-##   * ABBATTUTO: due colpi di proiettile lo disperdono (+5000 punti al
-##     tiratore). Al primo colpo perde un pipistrello (sprite via +
-##     squittio): feedback chiaro che ci vuole solo un altro colpo.
+##   * ABBATTUTO (TASK 34, richiesta utente — "i pipistrelli devono poter
+##     essere eliminati sia con lo sparo che con le spade, armi bonus,
+##     dinamite e barili"): due colpi di PROIETTILE (sparo, qualunque
+##     arma a distanza) o due colpi di MISCHIA (spade/reliquie mischia)
+##     o due passaggi del MARTELLO lo disperdono (+5000 punti
+##     all'attaccante). Un'ESPLOSIONE (dinamite, barile, mina, scettro,
+##     bombe dell'Alchimista, aura di fuoco) lo disperde SUBITO: lo
+##     scoppio spazza via l'intero sciame. Al primo colpo perde un
+##     pipistrello (sprite via + squittio): feedback chiaro che ci vuole
+##     solo un altro colpo.
 ##   * SCADENZA: dopo 20s di caccia svolazza via da sola (angolo alto
 ##     piu' vicino) e l'evento e' consumato.
 ##   * AUDIO: battito d'ali periodico (~700ms, debounce), stridio al
@@ -181,6 +188,9 @@ func _try_bite(players: Array) -> void:
 
 ## Colpo di proiettile: ritorna true se il proiettile e' stato consumato.
 ## (chiamato dal controller nel loop proiettili, oppure usato dai test)
+## TASK 34: e' il colpo SINGOLO generico — vale per proiettili (sparo),
+## fendenti delle spade (reliquie mischia) e passaggi del martello:
+## ogni colpo abbatte un pipistrello, due colpi disperdono lo sciame.
 func take_projectile_hit(shooter: CharacterBody2D) -> bool:
         if state == CloudState.DYING or state == CloudState.LEAVE or gone:
                 return false
@@ -203,6 +213,25 @@ func take_projectile_hit(shooter: CharacterBody2D) -> bool:
                         break
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.BAT_SCREECH)
+        return true
+
+
+## Colpo da ESPLOSIONE (TASK 34 — dinamite, barili, mina, scettro, bombe
+## dell'Alchimista): lo scoppio spazza via TUTTO lo sciame, indipendente-
+## mente dagli HP residui. Punti al player indicato. Ritorna true se lo
+## sciame e' stato disperso dal colpo.
+func take_explosion_hit(shooter: CharacterBody2D) -> bool:
+        if state == CloudState.DYING or state == CloudState.LEAVE or gone:
+                return false
+        hp = 0
+        state = CloudState.DYING
+        state_ms = 0.0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.BAT_SCREECH)
+        if EffectsManager:
+                EffectsManager.screen_shake(5.0, 0.3)
+        if shooter != null:
+                shooter.add_score(C.BAT_CLOUD_KILL_POINTS)
         return true
 
 

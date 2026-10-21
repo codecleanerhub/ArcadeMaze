@@ -1,7 +1,7 @@
 ## MazeHazards.gd - TASK 30: hazard ambientali del labirinto.
 ## =============================================================
 ## Quattro pericoli generati a ogni livello maze (dal livello 4, in
-## quantita' crescente ogni 3 livelli, max 5 per tipo):
+## quantita' crescente ogni 3 livelli, max 4 per tipo — Task 34):
 ##
 ##   * SABBIE MOBILI (quicksand): cella che rallenta il player del 50%
 ##     (i nemici passano indenni). Si superano con un salto. Gli stivali
@@ -9,19 +9,25 @@
 ##   * GANASCE (trap): trappola dentata ARMATA visibile a terra. Cattura
 ##     il player che la calpesta (grounded): -33% energia max (morte se
 ##     l'energia residua non basta), tenuta 1.5s accorciabile MASHANDO
-##     salto/sparo (min 0.6s). Un PROIETTILE del player la fa scattare a
-##     vuoto (disarmo, riarmo 4s; dopo una cattura riarmo 5s).
+##     salto/sparo (min 0.6s). TASK 34 (richiesta utente): una volta che
+##     scatta la ganascia si DISATTIVA per il resto del livello — puo'
+##     colpire il player UNA SOLA volta. Un PROIETTILE del player la fa
+##     scattare a vuoto: disattivata anche in quel caso (sparare alle
+##     ganasce le bonifica: elemento di skill).
 ##   * VORAGINE (chasm): appare con telegrafo (crepa + rumble, 1.2s) poi
 ##     resta APERTA per tutto il livello: chi vi cade dentro perde una
 ##     vita (salto = passi sopra; ghost = immuni; i nemici camminano sul
 ##     bordo indenni).
 ##   * MURO DI ROCCIA (rock wall): cella muro TRA DUE CORRIDOI che si
 ##     apre/chiude (3s aperto + 0.5s vibrazione + 3s chiuso): scorciatoia
-##     per player E nemici (il BFS la attraversa quando aperta). Chi
-##     resta imprigionato alla chiusura: player -66% energia max (morte
-##     se non basta) e resta bloccato fino alla riapertura; nemico -33%
-##     HP max, bloccato finche' chiuso. Nemico UCCISO dal muro = 2x punti
-##     (10000) al player vivo piu' vicino.
+##     per player E nemici quando APERTO (il BFS la attraversa). TASK 34
+##     (richiesta utente): CHIUSO il muro blocca ANCHE I NEMICI — un
+##     nemico a meta' transito verso la cella che si chiude si FERMA e
+##     rientra al centro della cella di provenienza (mai compenetrazione
+##     nella roccia). Chi resta imprigionato alla chiusura: player -66%
+##     energia max (morte se non basta) e resta bloccato fino alla
+##     riapertura; nemico -33% HP max, bloccato finche' chiuso. Nemico
+##     UCCISO dal muro = 2x punti (10000) al player vivo piu' vicino.
 ##
 ## REGOLE COMUNI (decisioni utente):
 ##   - I danni ambientali BYPASSANO le armature-reliquia (vanno dritti
@@ -46,11 +52,14 @@ enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL }
 
 # Stati per tipo:
 # QUICKSAND: nessuno stato (sempre attiva).
-# TRAP:        ARMED -> SNAPPED (tieni player) -> REARM(timer) -> ARMED
-#              ARMED -> SNAPPED_EMPTY (proiettile) -> REARM -> ARMED
+# TRAP (TASK 34):  ARMED -> SNAPPED (tieni player) -> SPRUNG (per sempre)
+#                 ARMED -> SPRUNG (scatto a vuoto da proiettile)
+#                 SPRUNG = scattata e DISATTIVATA: innocua, resta a terra
+#                 come relitto visibile per tutto il livello. Il player puo'
+#                 essere colpito UNA SOLA volta da ogni ganascia.
 # CHASM:       DORMANT(delay casuale) -> CRACK(1.2s) -> OPEN (per sempre)
 # ROCK_WALL:   fase ciclica OPEN(3s) -> WARN(0.5s) -> CLOSED(3s) -> OPEN...
-enum TrapState { ARMED, SNAPPED, REARM }
+enum TrapState { ARMED, SNAPPED, SPRUNG }
 enum ChasmState { DORMANT, CRACK, OPEN }
 enum WallPhase { OPEN, WARN, CLOSED }
 
@@ -517,6 +526,7 @@ func _update_trap(h: Dictionary, delta_ms: float, players: Array, _maze: Node) -
         match h["state"]:
                 TrapState.ARMED:
                         # disarmo: proiettile di qualunque player nella cella
+                        # (TASK 34: scatto a vuoto = disattivazione permanente)
                         if _projectile_in_cell(h["cell"], players):
                                 _snap_trap(h, null, false)
                                 return
@@ -534,7 +544,7 @@ func _update_trap(h: Dictionary, delta_ms: float, players: Array, _maze: Node) -
                                 if not is_instance_valid(victim) \
                                                 or not victim.visible \
                                                 or _player_cell(victim) != h["cell"]:
-                                        _release_trap(h, C.HAZARD_TRAP_REARM_MS)
+                                        _release_trap(h)
                                         return
                                 # mash: ogni pressione consumata accorcia
                                 var mash: int = victim.input_mash_count
@@ -550,16 +560,17 @@ func _update_trap(h: Dictionary, delta_ms: float, players: Array, _maze: Node) -
                                 victim.held_by_trap = true
                                 h["hold_ms"] -= delta_ms
                                 if h["hold_ms"] <= 0.0:
-                                        _release_trap(h, C.HAZARD_TRAP_REARM_MS)
+                                        _release_trap(h)
                         else:
-                            # scatto a vuoto (disarmo): riarmo piu' corto
-                            # (gestito in _snap_trap con timer REARM)
+                            # scatto a vuoto (disarmo): la ganascia resta
+                            # SPRUNG (gestito in _snap_trap)
                             pass
-                TrapState.REARM:
-                        h["timer_ms"] -= delta_ms
-                        if h["timer_ms"] <= 0.0:
-                                h["state"] = TrapState.ARMED
-                                _set_trap_sprite(h, true)
+                TrapState.SPRUNG:
+                        # TASK 34: scattata = DISATTIVATA per tutto il livello.
+                        # Nessun riarmo: il player che ci passa sopra e' al
+                        # sicuro (l'ha gia' colpito una volta, o e' stata
+                        # bonificata con un colpo).
+                        pass
         # NOTA: il parametro maze non e' usato qui (le ganasce non toccano
         # i muri), resta nella firma per simmetria con gli altri update.
 
@@ -590,18 +601,20 @@ func _snap_trap(h: Dictionary, victim: CharacterBody2D, with_player: bool) -> vo
                 # se il danno ha ucciso, il player e' gia' respawnato allo
                 # spawn: la trap si libera al prossimo giro (_player_cell != cell)
         else:
-                h["state"] = TrapState.REARM
-                h["timer_ms"] = float(C.HAZARD_TRAP_DISARM_REARM_MS)
+                # TASK 34: scatto a vuoto (proiettile) = DISATTIVATA per
+                # sempre: niente piu' riarmo.
+                h["state"] = TrapState.SPRUNG
                 h["holding"] = null
 
 
-func _release_trap(h: Dictionary, rearm_ms: int) -> void:
+func _release_trap(h: Dictionary) -> void:
         var victim: CharacterBody2D = h["holding"]
         if victim != null and is_instance_valid(victim):
                 victim.held_by_trap = false
         h["holding"] = null
-        h["state"] = TrapState.REARM
-        h["timer_ms"] = float(rearm_ms)
+        # TASK 34: fine della tenuta = DISATTIVATA (il player e' stato
+        # colpito, questa ganascia non colpira' mai piu' nessuno).
+        h["state"] = TrapState.SPRUNG
 
 
 func _set_trap_sprite(h: Dictionary, armed: bool) -> void:
@@ -900,6 +913,18 @@ func _explode_barrel(h: Dictionary) -> void:
                         var dmg: int = maxi(1, int(round(
                                 p.max_energy * C.BARREL_PLAYER_DAMAGE_PCT)))
                         p.take_hazard_damage(dmg)
+        # TASK 34 (richiesta utente): l'esplosione del barile ELIMINA anche
+        # la nube di pipistrelli se e' nel raggio (esplosione = dispersione
+        # istantanea dello sciame, punti al player vivo piu' vicino).
+        if controller != null and controller.bat_cloud != null \
+                        and is_instance_valid(controller.bat_cloud):
+                if controller.bat_cloud.position.distance_to(center) \
+                                <= C.BARREL_EXPLOSION_RADIUS:
+                        var scorer: CharacterBody2D = _nearest_player(
+                                        controller.bat_cloud.position)
+                        if scorer == null:
+                                scorer = controller.player
+                        controller.bat_cloud.take_explosion_hit(scorer)
         # reazione a catena: gli altri barili nel raggio accendono la miccia
         for other in hazard_list:
                 if other["type"] == HazardType.BARREL \

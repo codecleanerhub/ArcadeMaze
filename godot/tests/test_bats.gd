@@ -11,6 +11,9 @@
 ##      +5000 punti al tiratore; controller libera lo sciame.
 ##   F. SCADENZA: lifetime esaurito -> vola via (LEAVE) -> gone.
 ##   G. ROLLBACK: BATS_ENABLED=false -> nessun evento armato.
+##   H. TASK 34 (armi): SPADA (reliquia mischia) nella shape del fendente
+##      = -1 colpo; ESPLOSIONE (dinamite/barili/mina/scettro/bombe) =
+##      dispersione immediata + punti; il controller libera lo sciame.
 extends Node
 
 const C = preload("res://scripts/core/GameConstants.gd")
@@ -76,6 +79,9 @@ func _physics_process(delta: float) -> void:
                         _phaseF_expiry()
                         _next(6)
                 6:
+                        _phaseH_weapons()
+                        _next(7)
+                7:
                         _phaseG_rollback()
                         _finish()
 
@@ -274,6 +280,58 @@ func _phaseG_rollback() -> void:
         else:
                 _ok("G: rollback — nessun evento pipistrelli")
         C.BATS_ENABLED = true
+
+
+# ===========================================================================
+# H — TASK 34: SPADE (reliquie mischia) + ESPLOSIONI
+# ===========================================================================
+func _phaseH_weapons() -> void:
+        # ri-arma un evento e forza lo spawn (pattern fase F)
+        main.bat_events_left = 1
+        main.bat_event_timer_ms = 1.0
+        main._update_bat_cloud(16.0)
+        if main.bat_cloud == null:
+                _fail("H: precondizione mancante (sciame)")
+                return
+        var p: CharacterBody2D = main.player
+        var cloud = main.bat_cloud
+        cloud.state = BC.CloudState.CHASE
+        cloud.state_ms = 0.0
+        cloud.hp = C.BAT_CLOUD_HITS_TO_DIE
+        # --- SPADONE (reliquia mischia): il fendente nella shape colpisce ---
+        p.set_position_abs(_center(3, 3).x, _center(3, 3).y)
+        p.dx = 0
+        p.dy = 0
+        p.last_dx = 1
+        p.last_dy = 0
+        cloud.position = p.position + Vector2(70.0, 0.0)
+        p.melee_pending = true
+        p.melee_pending_def = C.get_relic_def(C.RelicType.SWORD)
+        main._check_pending_relic_melee(p)
+        if cloud.get_hp() != C.BAT_CLOUD_HITS_TO_DIE - 1:
+                _fail("H: fendente spadone non registrato (hp %d)" % cloud.get_hp())
+        elif p.melee_pending:
+                _fail("H: melee_pending non consumato dal fendente")
+        else:
+                _ok("H: spada (reliquia mischia) = -1 colpo (hp %d)" % cloud.get_hp())
+        # --- ESPLOSIONE (dinamite/barile/mina/scettro/bombe): dispersione ---
+        var score_before: int = p.score
+        var dispersed: bool = cloud.take_explosion_hit(p)
+        if not dispersed or cloud.state != BC.CloudState.DYING:
+                _fail("H: esplosione non disperde lo sciame (stato %d)" % cloud.state)
+        elif p.score != score_before + C.BAT_CLOUD_KILL_POINTS:
+                _fail("H: punti esplosione %d, attesi %d"
+                                % [p.score - score_before, C.BAT_CLOUD_KILL_POINTS])
+        else:
+                _ok("H: esplosione = dispersione immediata (+%d punti)"
+                                % C.BAT_CLOUD_KILL_POINTS)
+        # il controller ripulisce quando is_gone
+        for _i in 60:
+                main._update_bat_cloud(16.0)
+        if main.bat_cloud != null:
+                _fail("H: controller non ha liberato lo sciame disperso")
+        else:
+                _ok("H: sciame rimosso dal controller")
 
 
 func _finish() -> void:

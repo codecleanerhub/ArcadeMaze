@@ -639,8 +639,32 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # (ricalcolo per-cella del target a meta transito).
         # La vecchia correzione "rotaia" e' assorbita: l'asse perpendicolare
         # converge sul waypoint a ogni frame (self-healing).
+        # TASK 34 (richiesta utente — "i muri devono bloccare anche i
+        # nemici"): il check del muro avveniva SOLO alla decisione al centro
+        # cella; se un muro di roccia DINAMICO si chiudeva mentre il nemico
+        # era a meta' transito, il waypoint restava valido e il nemico
+        # entrava nella roccia (bloccato DENTRO il muro fino alla
+        # riapertura = attraversamento di fatto). Ora il waypoint viene
+        # ri-validato OGNI FRAME: se la cella di destinazione e' diventata
+        # muro, il passo viene ANNULLATO e il nemico rientra al centro
+        # della cella di provenienza, dove il BFS ricalcola il percorso
+        # (che la cella chiusa non attraversa).
         if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
-                position = position.move_toward(_move_waypoint, step_size)
+                var wp_col: int = int(_move_waypoint.x / TILE_SIZE)
+                var wp_row: int = int((_move_waypoint.y - UI_HEIGHT) / TILE_SIZE)
+                if maze.is_wall(wp_col, wp_row):
+                        # cella di destinazione CHIUSA: abortisci il transito
+                        dx = 0
+                        dy = 0
+                        _move_waypoint = Vector2.INF
+                        # forza il ricalcolo BFS appena tornato al centro
+                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                        # rientra subito al centro della cella corrente
+                        position = position.move_toward(
+                                        Vector2(center_x, center_y), step_size)
+                        last_pos = position
+                else:
+                        position = position.move_toward(_move_waypoint, step_size)
 
         # FIX (meccanica tunnel "Pac-Man"): se il nemico sta marciando verso
         # la cella VIRTUALE di una galleria (waypoint fuori griglia), il

@@ -548,8 +548,26 @@ func update_step(maze_ref: Node, player_grid_pos: Vector2i,
         # float32, i micro-salti dello snap e il "target che scivola".
         # La vecchia correzione "rotaia" è assorbita: l'asse perpendicolare
         # converge sul waypoint a ogni frame (self-healing).
+        # TASK 34 (richiesta utente — "i muri devono bloccare anche i
+        # nemici", mirror Enemy.gd): il waypoint viene ri-validato OGNI
+        # FRAME contro is_wall; se un muro di roccia DINAMICO si chiude
+        # sulla cella di destinazione mentre il miniboss è a metà transito,
+        # il passo viene ANNULLATO e il miniboss rientra al centro della
+        # cella di provenienza (mai compenetrazione nella roccia chiusa).
         if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
-                pos = pos.move_toward(_move_waypoint, step_size)
+                var wp_col: int = int(_move_waypoint.x / TILE_SIZE)
+                var wp_row: int = int((_move_waypoint.y - UI_HEIGHT) / TILE_SIZE)
+                if maze != null and maze.is_wall(wp_col, wp_row):
+                        # cella di destinazione CHIUSA: abortisci il transito
+                        dx = 0
+                        dy = 0
+                        _move_waypoint = Vector2.INF
+                        # rientra subito al centro della cella corrente
+                        pos = pos.move_toward(
+                                        Vector2(center_x, center_y), step_size)
+                        last_pos = pos
+                else:
+                        pos = pos.move_toward(_move_waypoint, step_size)
 
         # FIX (meccanica tunnel "Pac-Man"): se il miniboss sta marciando verso
         # la cella VIRTUALE di una galleria (waypoint fuori griglia), il

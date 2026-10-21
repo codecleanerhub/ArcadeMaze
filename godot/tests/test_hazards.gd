@@ -1,7 +1,7 @@
 ## test_hazards.gd — Test funzionale runtime (headless) degli HAZARD
-## AMBIENTALI del labirinto (Task 30):
+## AMBIENTALI del labirinto (Task 30 + Task 34):
 ##   A. COSTANTI: hazard_count_for_level — grace level 4, +1 ogni 3 livelli,
-##      cap 5 per tipo; rollback HAZARDS_ENABLED = false.
+##      cap 4 per tipo (TASK 34: era 5); rollback HAZARDS_ENABLED = false.
 ##   B. GENERAZIONE: start_level(7) -> 2 hazard per tipo (sabbie/ganasce/
 ##      voragini; muri >= 1 se candidati scarsi), celle EMPTY per il
 ##      pavimento e WALL tra due corridoi per i muri, distanza minima dallo
@@ -11,10 +11,14 @@
 ##      is_wall() true da chiuso / false da aperto; player nella cella alla
 ##      chiusura = -66% energia max + held_by_wall; nemico = -33% HP max +
 ##      held_by_wall; nemico ucciso dal muro = +10000 al player vicino;
-##      riapertura = flag rilasciati.
+##      riapertura = flag rilasciati. TASK 34: nemico a META' TRANSITO verso
+##      la cella che si chiude si FERMA e rientra (il muro chiuso blocca
+##      anche i nemici, mai compenetrazione nella roccia).
 ##   D. GANASCE: cattura player grounded = -33% energia max + held_by_trap;
-##      mash accorcia la tenuta; scadenza = rilascio + REARM; PROIETTILE
-##      nella cella = scatto a vuoto (disarmo, proiettile consumato).
+##      mash accorcia la tenuta; scadenza = rilascio + DISATTIVAZIONE
+##      PERMANENTE (TASK 34: SPRUNG, niente riarmo — il player puo' essere
+##      colpito UNA SOLA volta); PROIETTILE nella cella = scatto a vuoto
+##      (disattivata anche cosi', proiettile consumato).
 ##   E. VORAGINE: DORMANT->CRACK (sprite crepa) ->OPEN (sprite voragine);
 ##      player grounded sulla cella aperta = vita persa (fall_into_chasm).
 ##   F. SABBIE MOBILI: hazard_slow 0.5 sulla cella; stivali alati
@@ -100,14 +104,14 @@ func _physics_process(delta: float) -> void:
 func _phaseA_constants() -> void:
         var cases: Dictionary = {
                 1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1, 7: 2, 9: 2,
-                10: 3, 13: 4, 16: 5, 19: 5, 40: 5, 68: 5,
+                10: 3, 13: 4, 16: 4, 19: 4, 40: 4, 68: 4,
         }
         for lvl in cases:
                 var got: int = C.hazard_count_for_level(lvl)
                 if got != cases[lvl]:
                         _fail("A: hazard_count_for_level(%d) = %d, atteso %d"
                                         % [lvl, got, cases[lvl]])
-        _ok("A: curva hazard_count_for_level (grace 4, +1/3 livelli, cap 5)")
+        _ok("A: curva hazard_count_for_level (grace 4, +1/3 livelli, cap 4 — Task 34)")
         # Rollback del solo flag: conteggio a zero per ogni livello.
         C.HAZARDS_ENABLED = false
         if C.hazard_count_for_level(30) != 0:
@@ -269,6 +273,47 @@ func _phaseC_rock_wall() -> void:
                 _fail("C: held_by_wall non rilasciato alla riapertura")
         else:
                 _ok("C: riapertura = passaggio libero + flag rilasciati")
+        # --- TASK 34: il muro CHIUSO blocca i nemici anche a meta' transito ---
+        # Nemico vivo fresco (il precedente e' stato ucciso dal test kill):
+        var blocker = null
+        for e in main.spawner.enemies:
+                if e != null and is_instance_valid(e) and not e.is_dead() \
+                                and not e.held_by_wall:
+                        blocker = e
+                        break
+        if blocker == null:
+                _fail("C: nessun nemico vivo per il test blocco muro")
+                return
+        # chiudi il muro, poi metti il nemico a META' TRANSITO dalla cella
+        # adiacente verso la cella del muro (waypoint gia' sbloccato)
+        _drive_wall_phase(hz, h, true)
+        var from_cell: Vector2i = cell + (Vector2i(1, 0) if h["axis"] == "h" \
+                        else Vector2i(0, 1))
+        var from_center: Vector2 = _cell_center(from_cell.x, from_cell.y)
+        var wall_center: Vector2 = _cell_center(cell.x, cell.y)
+        blocker.position = from_center + (wall_center - from_center) * 0.25
+        blocker.dx = 1 if h["axis"] == "h" else 0
+        blocker.dy = 0 if h["axis"] == "h" else 1
+        blocker._move_waypoint = wall_center
+        blocker.held_by_wall = false
+        blocker.stuck_timer = 0
+        blocker.update_enemy(main.maze, Vector2i(1, 1),
+                        main.player.get_pixel_pos(), [], 16.0)
+        var b_cell: Vector2i = Vector2i(
+                        int(blocker.position.x / 64),
+                        int((blocker.position.y - 80) / 64))
+        var b_dist: float = blocker.position.distance_to(from_center)
+        if b_cell == cell:
+                _fail("C: nemico entrato nella cella del muro CHIUSO")
+        elif blocker.dx != 0 or blocker.dy != 0:
+                _fail("C: transito verso il muro chiuso non abortito (dx/dy residui)")
+        elif b_dist > 20.0:
+                _fail("C: nemico non rientrato verso il centro di provenienza")
+        else:
+                _ok("C: muro chiuso blocca il nemico (abort transito + rientro)")
+        # pulizia: riapri e libera il nemico di test
+        _drive_wall_phase(hz, h, false)
+        blocker.held_by_wall = false
 
 
 # ===========================================================================
@@ -314,30 +359,45 @@ func _phaseD_trap() -> void:
                 _fail("D: mash tenuta %.0fms, attesa %.0fms" % [hold_after, expected_hold])
         else:
                 _ok("D: 5 mash = -%dms di tenuta" % (C.HAZARD_TRAP_MASH_REDUCE_MS * 5))
-        # --- Scadenza: rilascio + REARM ---
+        # --- Scadenza: rilascio + DISATTIVAZIONE permanente (TASK 34) ---
         h["hold_ms"] = 1.0
         hz.update_hazards(16.0, main.maze)
-        if h["state"] != H.TrapState.REARM:
-                _fail("D: ganascia non passata in REARM dopo la tenuta")
+        if h["state"] != H.TrapState.SPRUNG:
+                _fail("D: ganascia non DISATTIVATA (SPRUNG) dopo la tenuta")
         elif p.held_by_trap:
                 _fail("D: held_by_trap non rilasciato alla scadenza")
         else:
-                _ok("D: scadenza tenuta = rilascio + REARM")
-        # --- Disarmo da proiettile: scatto a vuoto, proiettile consumato ---
+                _ok("D: scadenza tenuta = rilascio + disattivazione permanente")
+        # --- TASK 34: il player puo' essere colpito UNA SOLA volta ---
+        p.set_position_abs(_cell_center(cell.x, cell.y).x, _cell_center(cell.x, cell.y).y)
+        p.damage_timer = 0
+        p.jump_timer = 0
+        var e_stay: int = p.energy
+        for _i in 10:
+                hz.update_hazards(16.0, main.maze)
+        if p.energy != e_stay:
+                _fail("D: ganascia scattata ha colpito una seconda volta")
+        elif p.held_by_trap:
+                _fail("D: ganascia scattata ha ricolto il player")
+        elif h["state"] != H.TrapState.SPRUNG:
+                _fail("D: ganascia scattata non resta SPRUNG")
+        else:
+                _ok("D: ganascia scattata = innocua (colpo unico sul player)")
+        # --- Disarmo da proiettile: scatto a vuoto = DISATTIVATA (Task 34) ---
         h["state"] = H.TrapState.ARMED
         h["holding"] = null
         hz._set_trap_sprite(h, true)
         p.projectiles.clear()
         p.projectiles.append({"pos": _cell_center(cell.x, cell.y), "active": true})
         hz.update_hazards(16.0, main.maze)
-        if h["state"] != H.TrapState.REARM:
-                _fail("D: proiettile sulla ganascia non la disarmata")
+        if h["state"] != H.TrapState.SPRUNG:
+                _fail("D: proiettile sulla ganascia non la disattiva")
         elif p.projectiles[0]["active"] != false:
                 _fail("D: proiettile del disarmo non consumato")
         elif p.held_by_trap:
                 _fail("D: disarmo a vuoto ma player trattenuto")
         else:
-                _ok("D: proiettile = scatto a vuoto (disarmo, colpo consumato)")
+                _ok("D: proiettile = scatto a vuoto (disattivata, colpo consumato)")
         p.projectiles.clear()
 
 

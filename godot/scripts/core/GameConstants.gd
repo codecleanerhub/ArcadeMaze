@@ -686,17 +686,22 @@ const BOSS_ROOM_AMMO_MIN: int = 39
 #                      indenni); si superano con un salto.
 #   * GANASCE        — trappola dentata: intrappola il player e toglie il
 #                      33% dell'energia max (morte se l'energia residua non
-#                      basta). Mashare i tasti accorcia la tenuta; un colpo
-#                      di proiettile la fa scattare a vuoto (disarmo).
+#                      basta). Mashare i tasti accorcia la tenuta. TASK 34
+#                      (richiesta utente): una volta SCATTE resta
+#                      DISATTIVATA per tutto il livello — puo' colpire il
+#                      player UNA SOLA volta (un proiettile la fa scattare
+#                      a vuoto: disattivata anche quello).
 #   * VORAGINI       — crepa telegrafica (1.2s) poi si aprono in modo
 #                      permanente: chi vi cade dentro perde una vita; si
 #                      saltano con un salto.
 #   * MURI DI ROCCIA — celle muro che si aprono/chiudono (3s + 0.5s di
 #                      vibrazione pre-chiusura): scorciatoia per player e
-#                      nemici; chi resta imprigionato prende il 66%
-#                      dell'energia max (player) o il 33% (nemico, che
-#                      resta bloccato fino alla riapertura). Un nemico
-#                      ucciso dal muro vale il Doppio dei punti.
+#                      nemici quando APERTI; CHIUSI bloccano entrambi (i
+#                      nemici non entrano mai in una cella muro chiusa,
+#                      nemmeno a meta' transito); chi resta imprigionato
+#                      prende il 66% dell'energia max (player) o il 33%
+#                      (nemico, che resta bloccato fino alla riapertura). Un
+#                      nemico ucciso dal muro vale il Doppio dei punti.
 # I danni ambientali BYPASSANO le armature-reliquia (vanno dritti
 # all'energia): le cariche armatura restano per il combattimento.
 # Rollback globale: GameConstants.HAZARDS_ENABLED = false.
@@ -708,8 +713,10 @@ static var HAZARDS_ENABLED: bool = true
 ## Primo livello con hazard (i precedenti sono "grace period" tutorial).
 const HAZARD_GRACE_LEVEL: int = 4
 
-## Massimo elementi dello STESSO tipo per livello (specifiche utente).
-const HAZARD_MAX_PER_TYPE: int = 5
+## Massimo elementi dello STESSO tipo per livello (specifica utente Task 34:
+## prima era 5, ora 4 — ganasce, voragini, muri, sabbie non superano MAI il
+## numero 4 dello stesso tipo per livello).
+const HAZARD_MAX_PER_TYPE: int = 4
 
 ## Ogni 3 livelli (dal grace level) gli hazard per tipo aumentano di 1.
 const HAZARD_GROWTH_EVERY: int = 3
@@ -717,15 +724,14 @@ const HAZARD_GROWTH_EVERY: int = 3
 ## Quicksand: fattore di rallentamento del player sulla cella.
 const HAZARD_QUICKSAND_SLOW: float = 0.5
 
-## Ganasce: danno in frazione dell'energia max, durata della tenuta,
-## riduzione per mash, minimo irriducibile e cooldown di riarmo (dopo
-## scatto a vuoto o cattura rilasciata).
+## Ganasce (TASK 34): danno in frazione dell'energia max, durata della
+## tenuta, riduzione per mash, minimo irriducibile. Lo scatto (cattura o
+## proiettile) DISATTIVA la ganascia per il resto del livello: nessun
+## riarmo, il player puo' essere colpito UNA SOLA volta.
 const HAZARD_TRAP_DAMAGE_PCT: float = 0.33
 const HAZARD_TRAP_HOLD_MS: int = 1500
 const HAZARD_TRAP_MASH_REDUCE_MS: int = 250
 const HAZARD_TRAP_HOLD_MIN_MS: int = 600
-const HAZARD_TRAP_REARM_MS: int = 5000
-const HAZARD_TRAP_DISARM_REARM_MS: int = 4000
 
 ## Voragine: durata del telegrafo (crepa + rumble) prima dell'apertura.
 const HAZARD_CHASM_TELEGRAPH_MS: int = 1200

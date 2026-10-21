@@ -1755,6 +1755,15 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                                 p.add_score(10000)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+        # TASK 34 (richiesta utente — "i pipistrelli devono poter essere
+        # eliminati sia con lo sparo che con le spade..."): la nube di
+        # pipistrelli dentro la shape del fendente prende UN colpo per
+        # fendente (due fendenti la disperdono, come per i proiettili).
+        # Conta come colpo andato a segno anche per la scossa del Golem.
+        if bat_cloud != null and is_instance_valid(bat_cloud):
+                if C.relic_melee_in_shape(def, aim, p_pos, bat_cloud.position):
+                        bat_cloud.take_projectile_hit(p)
+                        hits += 1
         # Scossa visiva del Martello del Golem (cerchio): il colpo pesante
         # si FA sentire anche quando non prende nessuno.
         if hits == 0 and str(def.get("shape", "")) == "circle" and EffectsManager:
@@ -1863,6 +1872,12 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                                         p.add_score(10000)
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+                # TASK 34 (pipistrelli): le Bombe dell'Alchimista sono un'arma
+                # bonus — lo scoppio nel raggio disperde SUBITO lo sciame.
+                if bat_cloud != null and is_instance_valid(bat_cloud):
+                        if blast_pos.distance_squared_to(bat_cloud.position) \
+                                        < radius * radius:
+                                bat_cloud.take_explosion_hit(p)
                 if EffectsManager:
                         var boom := EffectsManager.spawn_explosion(blast_pos,
                                         Color(1.0, 0.6, 0.15), 30, 0.8)
@@ -1896,6 +1911,12 @@ func _tick_fire_armor(p: CharacterBody2D, delta_ms: float) -> void:
                 if p_pos.distance_squared_to(mini_boss.get_pixel_pos()) \
                                 < radius * radius:
                         mini_boss.take_damage(aura_dmg)
+        # TASK 34 (pipistrelli): la Corazza di Fuoco e' un'arma bonus — lo
+        # sciame che si avvicina per mordere brucia a ogni pulsazione
+        # dell'aura (due pulsazioni lo disperdono).
+        if bat_cloud != null and is_instance_valid(bat_cloud):
+                if p_pos.distance_squared_to(bat_cloud.position) < radius * radius:
+                        bat_cloud.take_projectile_hit(p)
         if EffectsManager:
                 var ring := EffectsManager.spawn_explosion(p_pos,
                                 Color(1.0, 0.45, 0.2), 12, 0.4)
@@ -2077,6 +2098,11 @@ func _explode_mine(explode_pos: Vector2) -> void:
                 if explode_pos.distance_squared_to(mb_pos) < blast_radius_sq:
                         var mb_max_hp: int = mini_boss.get_max_health()
                         mini_boss.take_damage(int(mb_max_hp * 0.5))
+        # TASK 34 (pipistrelli): la mina e' un'arma bonus — l'esplosione nel
+        # raggio disperde SUBITO lo sciame (punti al player).
+        if bat_cloud != null and is_instance_valid(bat_cloud):
+                if explode_pos.distance_squared_to(bat_cloud.position) < blast_radius_sq:
+                        bat_cloud.take_explosion_hit(player)
         # Effetti visivi + audio
         if EffectsManager:
                 var burst := EffectsManager.spawn_explosion(explode_pos,
@@ -3583,6 +3609,20 @@ func _update_thrown_hammer(delta_ms: float) -> void:
                                 ghost.take_damage(1)  # immortale: risata
                                 hammer.start_return()
                                 return
+                # --- TASK 34 (pipistrelli): il martello e' un'arma bonus —
+                # attraverso lo sciame abbatte un pipistrello per passaggio
+                # (due passaggi lo disperdono), poi torna indietro ---
+                if bat_cloud != null and is_instance_valid(bat_cloud):
+                        if new_pos.distance_squared_to(bat_cloud.position) < 1600.0:
+                                bat_cloud.take_projectile_hit(owner_p)
+                                if AudioManager:
+                                        AudioManager.play_sound(AudioManager.SoundType.HAMMER_CLANK)
+                                if EffectsManager:
+                                        var bat_burst := EffectsManager.spawn_explosion(new_pos,
+                                                Color(0.65, 0.8, 1.0), 12, 0.4)
+                                        collectibles_node.add_child(bat_burst)
+                                hammer.start_return()
+                                return
                 # --- Corsa massima: ritorno automatico ---
                 if hammer.travelled_px >= HammerClass.MAX_TRAVEL_PX:
                         hammer.start_return()
@@ -4511,6 +4551,12 @@ func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
                                 enemy.take_damage(999)
                                 enemy.start_burning(30)
                                 player.add_score(2000)
+                # TASK 34 (richiesta utente — "...dinamite e barili"): la
+                # dinamite lanciata che esplode sullo sciame lo disperde
+                # SUBITO (punti al proprietario della dinamite).
+                if bat_cloud != null and is_instance_valid(bat_cloud):
+                        if pos.distance_squared_to(bat_cloud.position) < blast_sq:
+                                bat_cloud.take_explosion_hit(dyn_victim)
         # Cleanup stato
         dynamite_equipped = false
         dynamite_fuse_timer_ms = 0
@@ -4618,6 +4664,14 @@ func _fire_lightning_strike() -> void:
                                                 mb_max_hp = mini_boss.get_max_health()
                                         mini_boss.take_damage(int(mb_max_hp * 0.35))
                                         break
+        # TASK 34 (pipistrelli): lo scettro e' un'arma bonus — il fulmine che
+        # passa vicino allo sciame lo disperde SUBITO (80px dal percorso,
+        # come i nemici).
+        if bat_cloud != null and is_instance_valid(bat_cloud):
+                for pt in points:
+                        if bat_cloud.position.distance_to(pt) < 80.0:
+                                bat_cloud.take_explosion_hit(player)
+                                break
 
 
 # Generate a zigzag lightning path from start_pos to end_pos with `num_segs`
