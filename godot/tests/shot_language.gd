@@ -6,17 +6,23 @@
 ##   3. lang_options_it  — sottomenu OPTIONS in ITALIANO (LINGUA: ITALIANO,
 ##                         CONFIGURA JOYSTICK, INDIETRO)
 ##   4. lang_menu_it     — menu principale in ITALIANO (GIOCATORI, MODALITÀ...)
-##   5. lang_loading_en  — overlay "Loading..." sangue gocciolante (EN)
-##   6. lang_loading_it  — overlay "Caricamento..." sangue gocciolante (IT)
+##   5. lang_loading_en  — overlay "Loading..." sangue SOLO sui 3 puntini
+##                         (TASK 45: testo osseo + gocce realistiche; la
+##                         cattura e' DETERMINISTICA: anim congelata a 1.69
+##                         = fase ricca con goccia piena + distacco fresco
+##                         + caduta in corso e scia)
+##   6. lang_loading_it  — overlay "Caricamento..." stesso stile (IT)
 ##   + crop del pannello opzioni (entrambe le lingue) e della scritta.
 extends Node
 
 const MainMenuScene = preload("res://scenes/MainMenu.tscn")
 const OUT: String = "/home/z/my-project/download/"
+const LOADING_FREEZE_T: float = 1.69
 
 var menu: Control = null
 var stage: int = 0
 var t: float = 0.0
+var busy: bool = false
 
 
 func _ready() -> void:
@@ -92,30 +98,39 @@ func _physics_process(delta: float) -> void:
                                 stage = 6
                                 t = 0.0
                 6:
-                        if t > 0.9:
-                                _capture("lang_loading_en")
-                                _crop("lang_loading_en_crop",
-                                        Rect2i(560, 300, 800, 420))
-                                LoadingScreen.hide_loading()
-                                I18n.set_language(I18n.Language.ITALIAN)
-                                stage = 7
-                                t = 0.0
+                        if t > 0.15 and not busy:
+                                busy = true
+                                _capture_loading("lang_loading_en")
                 7:
-                        if t > 0.9:
-                                # FIX: applica davvero la lingua IT prima di
-                                # riattivare l'overlay (il testo si legge a
-                                # ogni draw, ma così è deterministico).
+                        if t > 0.5 and not busy:
+                                # applica davvero la lingua IT prima di
+                                # riattivare l'overlay.
                                 I18n.set_language(I18n.Language.ITALIAN)
                                 LoadingScreen.show_loading(false)
                                 stage = 8
                                 t = 0.0
                 8:
-                        if t > 0.9:
-                                _capture("lang_loading_it")
-                                _crop("lang_loading_it_crop",
-                                        Rect2i(560, 300, 800, 420))
-                                LoadingScreen.hide_loading()
+                        if t > 0.15 and not busy:
+                                busy = true
+                                _capture_loading("lang_loading_it")
+                9:
+                        if t > 0.5:
                                 # Ripristino EN (default) per l'utente.
                                 I18n.set_language(I18n.Language.ENGLISH)
                                 print("[SHOT-LANG] ==== CATTURE COMPLETATE (8) ====")
                                 get_tree().quit(0)
+
+
+## Cattura DETERMINISTICA dell'overlay loading: congela l'animazione a
+## LOADING_FREEZE_T, aspetta i frame renderizzati, salva, sblocca.
+func _capture_loading(tag: String) -> void:
+        LoadingScreen.set_anim_t_debug(LOADING_FREEZE_T)
+        await RenderingServer.frame_post_draw
+        await RenderingServer.frame_post_draw
+        _capture(tag)
+        _crop(tag + "_crop", Rect2i(560, 300, 800, 420))
+        LoadingScreen.unset_anim_t_debug()
+        LoadingScreen.hide_loading()
+        busy = false
+        stage += 1
+        t = 0.0

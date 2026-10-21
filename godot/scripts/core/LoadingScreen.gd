@@ -1,44 +1,73 @@
-## LoadingScreen.gd - Autoload "LoadingScreen": overlay "Loading..." stile
-## orrore sangue GOCCIOLANTE (stessa famiglia visiva della scritta "Hurry Up!"
-## del MainGameController — richiesta utente TASK 44).
+## LoadingScreen.gd - Autoload "LoadingScreen": overlay "Loading..." con il
+## sangue SOLO sui 3 puntini (TASK 45 - richiesta utente: ogni puntino e'
+## una goccia di sangue sgocciolante REALISTICA, forma a goccia pendente,
+## NIENTE tubi/rettangoli; le lettere restano pulite, in osso invecchiato).
 ##
 ## COPRE tutte le attese che prima erano SCHERMO NERO:
 ##   * BOOT: l'autoload si mostra da subito; si nasconde da solo dopo 3 frame
-##     renderizzati (la fase di caricamento engine/autoload è coperta dallo
-##     boot_splash PNG, vedi project.godot — questo overlay prende il resto).
+##     renderizzati (la fase engine/autoload e' coperta dal boot_splash PNG
+##     rigenerato nello stesso stile, vedi project.godot).
 ##   * TRANSIZIONI DI SCENA: GameManager.change_scene() chiama show_loading()
 ##     prima di change_scene_to_file(); l'overlay resta sopra la scena nuova
-##     finché non sono passati 3 frame renderizzati (se il _ready della scena
-##     è pesante — es. generazione labirinto — i frame non avanzano e la
-##     scritta resta visibile per tutta l'elaborazione: nessun nero).
+##     finche' non sono passati 3 frame renderizzati.
 ##
-## STILE (analogo a "Hurry Up!"): testo rosso sangue con ombra scura e riflesso
-## bagnato, alalone scuro che trasuda, gocce deterministiche sotto la baseline
-## che crescono, si staccano e cadono con scia. Differenza voluta: NESSUN
-## lampeggio on/off (la scritta di caricamento deve restare LEGGIBILE), c'è
-## solo una lenta pulsazione di luminosità e il tremolio orror ±1px.
+## STILE (TASK 45, ridefinizione dell'idea del TASK 44):
+##   * TESTO: "Loading" / "Caricamento" in osso chiaro invecchiato (testo
+##     pre-renderizzato 4x da scripts/gen_loading_blood.py con grunge,
+##     venature e ombra di contatto cotta) - NESSUN sangue sulle lettere.
+##   * PUNTINI: al posto dei 3 punti sospensione, 3 GOCCE di sangue
+##     photorealistiche (asset PIL: morph a 8 frame da puntino-calotta a
+##     goccia pendente con collo concavo, shading radiale limb-darkening,
+##     speculare a sinistra, glow subsurface ambra sul bordo inferiore).
+##     Ogni goccia: cresce -> si allunga pre-distacco -> si stacca e cade
+##     (accelerata, si schiaccia verticalmente, sfuma) -> resta un residuo
+##     bagnato che si asciuga + una scia bagnata che si ritira.
+##   * Le 3 gocce sono SFALSATE a cascata (sinistra guida). Tutto
+##     DETERMINISTICO: nessun random, fase resettata a ogni show_loading()
+##     (partiamo da ANIM_T_START = istante "ricco" con caduta in corso, cosi'
+##     anche un singolo frame congelato mostra la scena migliore).
+##   * Tremolio orror +-1px e lenta pulsazione di luminosita' (mai blink:
+##     la scritta di caricamento deve restare LEGGIBILE).
+##
+## FALLBACK: se gli asset PNG mancano, testo osseo col font di sistema +
+## gocce vettoriali (poligoni a goccia: comunque MAI rettangoli).
 extends Node
 
-## Frame renderizzati dopo i quali l'overlay si auto-nasconde (modalità
-## automatica: scene change / boot). 3 frame = la nuova scena è già comparsa
+## Frame renderizzati dopo i quali l'overlay si auto-nasconde (modalita'
+## automatica: scene change / boot). 3 frame = la nuova scena e' gia' comparsa
 ## dietro l'overlay per almeno un frame intero.
 const AUTO_HIDE_FRAMES: int = 3
 
-# --- Stile sangue (palette condivisa con _draw_hurry_up_text) ---
 const LOAD_FONT_SIZE: int = 64
-const LOAD_CENTER_Y_FRAC: float = 0.44   # centro verticale del testo
-# Posizioni delle gocce in frazione della larghezza del testo + fase iniziale
-# (deterministiche, come in Hurry Up: nessun random per-frame).
-const DRIP_T: Array[float] = [0.08, 0.20, 0.33, 0.46, 0.58, 0.71, 0.84, 0.95]
-const DRIP_PHASE: Array[float] = [0.0, 1.15, 0.55, 1.7, 0.3, 1.0, 1.5, 0.8]
-const DRIP_CYCLE: float = 2.4            # durata del ciclo di ogni goccia (s)
+const LOAD_CENTER_Y_FRAC: float = 0.44   # centro verticale del blocco testo
+
+# --- Asset sangue (generati da scripts/gen_loading_blood.py, commit accanto) ---
+const ASSET_DIR: String = "res://assets/loading/"
+
+# --- Timing del ciclo di ogni puntino-goccia (deterministico) ---
+const DROP_CYCLE: float = 3.0                    # durata ciclo (s)
+const DROP_LEAD: Array[float] = [0.62, 0.31, 0.0]  # sfalsamento cascata
+const GROW_FRAC: float = 0.62                    # frazione del ciclo: crescita
+const ANIM_T_START: float = 1.52                 # fase iniziale "ricca"
+const FALL_TIME: float = 0.62                    # durata caduta (s)
+const FALL_TRAVEL: float = 250.0                 # px di caduta (accelerata)
+const TRAIL_FADE: float = 0.95                   # vita scia bagnata (s)
+const RESIDUE_SHRINK: float = 0.38               # asciugatura del residuo
 
 var _canvas: CanvasLayer
 var _painter: Control
 var _visible: bool = false
 var _auto_hide: bool = true
 var _frames_since_show: int = 0
-var _time: float = 0.0
+var _anim_t: float = 0.0
+var _meta: Dictionary = {}
+var _tex_text: Dictionary = {}
+var _tex_grow: Array[Texture2D] = []
+var _tex_fall: Texture2D = null
+var _tex_residue: Texture2D = null
+var _tex_trail: Texture2D = null
+# diagnostica screenshot (congela l'animazione per catture deterministiche)
+var _dbg_freeze: bool = false
 
 
 func _ready() -> void:
@@ -53,13 +82,15 @@ func _ready() -> void:
         _painter.mouse_filter = Control.MOUSE_FILTER_IGNORE
         _painter.draw.connect(_on_draw)
         _canvas.add_child(_painter)
+        _load_assets()
         # BOOT: mostrati subito; il primo frame utile del menu appare sotto
         # l'overlay e dopo 3 frame si dissolve (niente nero tra splash e menu).
         show_loading()
 
 
 func _process(delta: float) -> void:
-        _time += delta
+        if not _dbg_freeze:
+                _anim_t += delta
         if not _visible:
                 return
         _frames_since_show += 1
@@ -75,11 +106,13 @@ func _process(delta: float) -> void:
 
 ## Mostra l'overlay. `auto_hide` = true (default) lo nasconde da solo dopo
 ## AUTO_HIDE_FRAMES frame renderizzati (per scene change e boot); false lo
-## mantiene finché il chiamante non chiama hide_loading().
+## mantiene finche' il chiamante non chiama hide_loading().
+## L'animazione delle gocce riparte SEMPRE dalla stessa fase (determinismo).
 func show_loading(auto_hide: bool = true) -> void:
         _visible = true
         _auto_hide = auto_hide
         _frames_since_show = 0
+        _anim_t = ANIM_T_START
         if _canvas:
                 _canvas.visible = true
         if _painter:
@@ -97,86 +130,306 @@ func is_showing() -> bool:
         return _visible
 
 
+## True se gli asset sangue/osso del TASK 45 sono caricati (usato dai test).
+func assets_ready() -> bool:
+        return not _tex_text.is_empty() and _tex_grow.size() >= 2 \
+                        and _tex_fall != null and _tex_trail != null \
+                        and _tex_residue != null
+
+
+## Il dizionario loading_meta.json (vuoto se gli asset mancano) - per i test.
+func get_meta_json() -> Dictionary:
+        return _meta
+
+
+## Tempo di animazione corrente (diagnostica screenshot; NON usato dal gioco).
+func get_anim_t() -> float:
+        return _anim_t
+
+
+## Forza un redraw del painter (diagnostica screenshot).
+func force_redraw() -> void:
+        if _painter:
+                _painter.queue_redraw()
+
+
+## Diagnostica screenshot: congela l'animazione a `anim_t` e ridisegna.
+func set_anim_t_debug(v: float) -> void:
+        _anim_t = v
+        _dbg_freeze = true
+        if _painter:
+                _painter.queue_redraw()
+
+
+## Diagnostica screenshot: sblocca l'avanzamento dell'animazione.
+func unset_anim_t_debug() -> void:
+        _dbg_freeze = false
+
+
 # ============================================================================
-# Disegno (stile "Hurry Up!" senza lampeggio: pulsazione lenta + gocce)
+# Caricamento asset (pattern Collectibles: Image.load, NESSUN import)
+# ============================================================================
+
+func _load_assets() -> void:
+        var meta_path: String = ProjectSettings.globalize_path(
+                        ASSET_DIR + "loading_meta.json")
+        if not FileAccess.file_exists(meta_path):
+                return
+        var f: FileAccess = FileAccess.open(meta_path, FileAccess.READ)
+        if f == null:
+                return
+        var parsed: Variant = JSON.parse_string(f.get_as_text())
+        if typeof(parsed) != TYPE_DICTIONARY:
+                return
+        _meta = parsed
+        var texts: Dictionary = _meta.get("texts", {})
+        for key in texts.keys():
+                var entry: Dictionary = texts[key]
+                var tex: Texture2D = _load_png(
+                                ASSET_DIR + String(entry.get("file", "")))
+                if tex != null:
+                        _tex_text[key] = tex
+        var frames: int = int(_meta.get("hang_frames", 0))
+        for i in frames:
+                var ft: Texture2D = _load_png(
+                                ASSET_DIR + "drop_hang_%d.png" % i)
+                if ft != null:
+                        _tex_grow.append(ft)
+        _tex_fall = _load_png(ASSET_DIR + "drop_fall.png")
+        _tex_residue = _load_png(ASSET_DIR + "drop_residue.png")
+        _tex_trail = _load_png(ASSET_DIR + "drop_trail.png")
+
+
+func _load_png(path: String) -> Texture2D:
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img: Image = Image.new()
+        if img.load(abs_path) != OK:
+                return null
+        return ImageTexture.create_from_image(img)
+
+
+# ============================================================================
+# Disegno: testo osseo pulito + 3 gocce di sangue animate
 # ============================================================================
 
 func _on_draw() -> void:
         var ci: Control = _painter
-        var font: Font = ThemeDB.fallback_font
-        if font == null:
-                return
         var vp: Vector2 = ci.get_viewport_rect().size
         if vp.x <= 1.0 or vp.y <= 1.0:
                 return
 
-        # --- Fondale: nero pieno (era lo "schermo nero" — ora fa da tela) ---
+        # --- Fondale: nero pieno (era lo "schermo nero" - ora fa da tela) ---
         ci.draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.01, 0.02, 1.0), true)
-        # Vignettatura leggera per non lasciare il nero "piatto".
+        # Vignettatura neutra leggera (niente alone rosso: il sangue e'
+        # SOLO sui puntini).
         var vg: float = minf(vp.x, vp.y) * 0.55
         for i in 3:
                 var k: float = 1.0 - float(i) * 0.28
                 ci.draw_rect(Rect2(Vector2(vp.x * 0.5 - vg * k, vp.y * 0.5 - vg * k),
                                 Vector2(vg * 2.0 * k, vg * 2.0 * k)),
-                        Color(0.10, 0.0, 0.0, 0.05), false, 3.0)
+                        Color(0.05, 0.03, 0.04, 0.06), false, 3.0)
 
-        # --- Testo localizzato ("Loading..." / "Caricamento...") ---
+        # --- Testo localizzato SENZA puntini (base = "Loading"/"Caricamento") ---
         var txt: String = "Loading..."
         if I18n:
                 txt = I18n.t("loading")
+        var base: String = txt.trim_suffix("...")
         # Pulsazione lenta (SEMPRE visibile: niente blink on/off).
-        var alpha: float = 0.84 + 0.16 * sin(_time * 2.3)
-        # Tremolio orror ±1px (come Hurry Up).
-        var shiver_x: float = sin(_time * 31.0) * 1.1 * alpha
-        var shiver_y: float = cos(_time * 24.0) * 0.7 * alpha
+        var alpha: float = 0.88 + 0.12 * sin(_anim_t * 1.9)
+        # Tremolio orror +-1px.
+        var shiver_x: float = sin(_anim_t * 31.0) * 1.1 * alpha
+        var shiver_y: float = cos(_anim_t * 24.0) * 0.7 * alpha
+        var baseline: float = vp.y * LOAD_CENTER_Y_FRAC \
+                        + LOAD_FONT_SIZE * 0.30 + shiver_y
 
-        var text_size: Vector2 = font.get_string_size(txt,
-                        HORIZONTAL_ALIGNMENT_LEFT, -1, LOAD_FONT_SIZE)
-        var x0: float = vp.x * 0.5 - text_size.x * 0.5 + shiver_x
-        var baseline: float = vp.y * LOAD_CENTER_Y_FRAC + text_size.y * 0.5 + shiver_y
+        var tex: Texture2D = _tex_text.get(base)
+        if tex != null and not _meta.is_empty() \
+                        and _meta.get("texts", {}).has(base):
+                # --- Modalita' asset: testo osseo 4x + gocce reali ---
+                var tm: Dictionary = _meta["texts"][base]
+                var dot_adv: float = float(_meta.get("dot_advance", 22.0))
+                var gap: float = float(_meta.get("gap", 12.0))
+                var period_h: float = float(_meta.get("period_h", 12.0))
+                var ink_w: float = float(tm.get("ink_w", 0.0))
+                var total_w: float = ink_w + gap + 3.0 * dot_adv
+                var x0: float = vp.x * 0.5 - total_w * 0.5 + shiver_x
+                # texture 4x disegnata a scala 1/4 (nitida, LANCZOS-like)
+                var tw: float = float(tm.get("w4", 1)) * 0.25
+                var th: float = float(tm.get("h4", 1)) * 0.25
+                var tpos: Vector2 = Vector2(
+                                x0 - float(tm.get("ink_x", 0.0)),
+                                baseline - float(tm.get("baseline", 0.0)))
+                ci.draw_texture_rect(tex, Rect2(tpos, Vector2(tw, th)), false,
+                                Color(1.0, 1.0, 1.0, alpha))
+                for i in 3:
+                        var dx: float = x0 + ink_w + gap \
+                                        + dot_adv * (float(i) + 0.5)
+                        _draw_blood_dot(ci, dx, baseline - period_h, i, alpha)
+        else:
+                _draw_fallback(ci, base, vp, baseline, alpha, shiver_x)
 
-        # Alalone scuro dietro il testo (sangue che trasuda).
-        ci.draw_rect(Rect2(x0 - 30.0, baseline - LOAD_FONT_SIZE - 16.0,
-                        text_size.x + 60.0, LOAD_FONT_SIZE + 36.0),
-                Color(0.28, 0.0, 0.0, 0.16 * alpha), true)
-        ci.draw_rect(Rect2(x0 - 22.0, baseline - LOAD_FONT_SIZE - 9.0,
-                        text_size.x + 44.0, LOAD_FONT_SIZE + 22.0),
-                Color(0.34, 0.0, 0.0, 0.14 * alpha), true)
 
-        # Gocce di sangue deterministiche sotto la baseline.
-        for i in DRIP_T.size():
-                var drip_x: float = x0 + text_size.x * DRIP_T[i]
-                var ct: float = fmod(_time + DRIP_PHASE[i], DRIP_CYCLE)
-                var max_len: float = 20.0 + 15.0 * (0.5 + 0.5 * sin(float(i) * 2.7))
-                var blood: Color = Color(0.62, 0.02, 0.02, alpha)
-                var blood_dark: Color = Color(0.38, 0.0, 0.0, alpha)
-                if ct < 1.6:
-                        # fase 1: la goccia cresce pendendo dalla lettera.
-                        var len: float = max_len * (ct / 1.6)
-                        ci.draw_rect(Rect2(drip_x - 2.3, baseline + 2.0, 4.6, len),
-                                blood, true)
-                        ci.draw_circle(Vector2(drip_x, baseline + 2.0 + len), 3.1, blood)
+## Disegna un puntino-goccia nella fase corrente del suo ciclo.
+## Cresce (morph 8 frame in crossfade + stretch pre-distacco), poi si stacca:
+## caduta accelerata con scia e residuo bagnato che si asciuga.
+func _draw_blood_dot(ci: Control, dx: float, attach_y: float, idx: int,
+                alpha: float) -> void:
+        # NB: fposmod e NON posmod: in Godot 4.7.2 posmod TRONCA a intero
+        # anche con argomenti float (verificato con probe: posmod(2.31, 3.0)
+        # restituisce 2) -> le fasi delle gocce saltavano a gradini interi.
+        var phase: float = fposmod(_anim_t + DROP_LEAD[idx], DROP_CYCLE)
+        var grow_dur: float = DROP_CYCLE * GROW_FRAC
+        var hang_size: Array = _meta.get("hang_size", [48, 50])
+        var hw: float = float(hang_size[0])
+        var hh: float = float(hang_size[1])
+        var hang_att: Array = _meta.get("hang_attach", [24.0, 2.0])
+        var hax: float = float(hang_att[0])
+        var hay: float = float(hang_att[1])
+
+        if phase <= grow_dur:
+                # ---- FASE CRESCITA: puntino -> goccia pendente ----
+                var n: int = _tex_grow.size()
+                if n <= 0:
+                        return
+                var gt: float = phase / grow_dur
+                var fpos: float = gt * (n - 1)
+                var i0: int = int(fpos)
+                var i1: int = mini(i0 + 1, n - 1)
+                var w: float = fpos - float(i0)
+                # pre-distacco: la goccia si allunga sotto il peso
+                var sy: float = 1.0
+                if gt > 0.94:
+                        sy = 1.0 + 0.14 * (gt - 0.94) / 0.06
+                var rect: Rect2 = Rect2(Vector2(dx - hax, attach_y - hay),
+                                Vector2(hw, hh * sy))
+                if i0 == i1 or w <= 0.001:
+                        _blit(ci, _tex_grow[i0], rect, alpha)
                 else:
-                        # fase 2: si stacca e cade, il residuo si accorcia.
-                        var ft: float = (ct - 1.6) / (DRIP_CYCLE - 1.6)
-                        var resid: float = max_len * (1.0 - ft * 0.55)
-                        ci.draw_rect(Rect2(drip_x - 2.3, baseline + 2.0, 4.6, resid),
-                                blood_dark, true)
-                        var drop_y: float = baseline + 2.0 + resid + ft * ft * 66.0
-                        var drop_alpha: float = (1.0 - ft) * alpha
-                        ci.draw_circle(Vector2(drip_x, drop_y), 3.5,
-                                Color(0.62, 0.02, 0.02, drop_alpha))
-                        if ft > 0.15:
-                                ci.draw_rect(Rect2(drip_x - 1.4, drop_y - 9.0, 2.8, 7.0),
-                                        Color(0.55, 0.02, 0.02, drop_alpha * 0.55), true)
+                        _blit(ci, _tex_grow[i0], rect, (1.0 - w) * alpha)
+                        _blit(ci, _tex_grow[i1], rect, w * alpha)
+                return
 
-        # Testo: ombra scura sotto + passata sangue + riflesso bagnato.
-        ci.draw_string(font, Vector2(x0 + 3.0, baseline + 3.0), txt,
+        # ---- FASE DISTACCO + CADUTA ----
+        var tf: float = phase - grow_dur
+        # residuo bagnato che si asciuga (resta fino al prossimo ciclo)
+        if _tex_residue != null:
+                var res_size: Array = _meta.get("residue_size", [28, 16])
+                var res_att: Array = _meta.get("residue_attach", [14.0, 2.0])
+                var rw: float = float(res_size[0])
+                var rh: float = float(res_size[1])
+                var rax: float = float(res_att[0])
+                var ray: float = float(res_att[1])
+                var s: float = 1.0 - RESIDUE_SHRINK * clampf(tf / 0.9, 0.0, 1.0)
+                _blit(ci, _tex_residue,
+                                Rect2(Vector2(dx - rax * s, attach_y - ray),
+                                                Vector2(rw * s, rh)), alpha)
+        # scia bagnata che si ritira verso l'alto
+        if _tex_trail != null and tf < TRAIL_FADE:
+                var tr_size: Array = _meta.get("trail_size", [12, 140])
+                var tr_att: Array = _meta.get("trail_attach", [6.0, 1.0])
+                var twd: float = float(tr_size[0])
+                var tht: float = float(tr_size[1])
+                var tax: float = float(tr_att[0])
+                var k: float = tf / TRAIL_FADE
+                var trail_len: float = tht * (1.0 - 0.45 * k)
+                _blit(ci, _tex_trail,
+                                Rect2(Vector2(dx - tax, attach_y + 1.0),
+                                                Vector2(twd, trail_len)),
+                                (1.0 - k) * alpha)
+        # goccia in caduta: accelerata, si schiaccia verticalmente, sfuma
+        if _tex_fall != null and tf < FALL_TIME:
+                var fall_size: Array = _meta.get("fall_size", [40, 44])
+                var fall_c: Array = _meta.get("fall_c", [20.0, 25.0])
+                var fw: float = float(fall_size[0])
+                var fh: float = float(fall_size[1])
+                var fcx: float = float(fall_c[0])
+                var fcy: float = float(fall_c[1])
+                var prog: float = (tf / FALL_TIME) * (tf / FALL_TIME)
+                var af: float = 1.0 - clampf((prog - 0.55) / 0.45, 0.0, 1.0)
+                var syf: float = 1.0 + 0.20 * prog
+                var fy: float = attach_y + 30.0 + FALL_TRAVEL * prog
+                _blit(ci, _tex_fall,
+                                Rect2(Vector2(dx - fcx, fy - fcy * syf),
+                                                Vector2(fw, fh * syf)),
+                                af * alpha)
+
+
+func _blit(ci: Control, tex: Texture2D, rect: Rect2, alpha: float) -> void:
+        if tex == null or alpha <= 0.01:
+                return
+        ci.draw_texture_rect(tex, rect, false, Color(1.0, 1.0, 1.0, alpha))
+
+
+# ============================================================================
+# Fallback vettoriale (asset mancanti): comunque NIENTE rettangoli
+# ============================================================================
+
+func _draw_fallback(ci: Control, base: String, vp: Vector2, baseline: float,
+                alpha: float, shiver_x: float) -> void:
+        var font: Font = ThemeDB.fallback_font
+        if font == null:
+                return
+        var text_size: Vector2 = font.get_string_size(base,
+                        HORIZONTAL_ALIGNMENT_LEFT, -1, LOAD_FONT_SIZE)
+        var dot_adv: float = LOAD_FONT_SIZE * 0.35
+        var total_w: float = text_size.x + dot_adv * 3.0
+        var x0: float = vp.x * 0.5 - total_w * 0.5 + shiver_x
+        ci.draw_string(font, Vector2(x0 + 2.5, baseline + 3.0), base,
                         HORIZONTAL_ALIGNMENT_LEFT, -1, LOAD_FONT_SIZE,
-                        Color(0.16, 0.0, 0.0, 0.85 * alpha))
-        ci.draw_string(font, Vector2(x0, baseline), txt,
+                        Color(0.05, 0.03, 0.03, 0.8 * alpha))
+        ci.draw_string(font, Vector2(x0, baseline), base,
                         HORIZONTAL_ALIGNMENT_LEFT, -1, LOAD_FONT_SIZE,
-                        Color(0.72, 0.03, 0.03, alpha))
-        ci.draw_string(font, Vector2(x0, baseline - 1.5), txt,
+                        Color(0.86, 0.81, 0.70, alpha))
+        ci.draw_string(font, Vector2(x0, baseline - 1.5), base,
                         HORIZONTAL_ALIGNMENT_LEFT, -1, LOAD_FONT_SIZE,
-                        Color(0.85, 0.10, 0.08, 0.32 * alpha))
+                        Color(0.95, 0.92, 0.84, 0.35 * alpha))
+        for i in 3:
+                var dx: float = x0 + text_size.x + dot_adv * (float(i) + 0.5)
+                _draw_vector_drop(ci, dx, baseline - LOAD_FONT_SIZE * 0.18,
+                                i, alpha)
+
+
+## Goccia vettoriale semplice (solo emergenza): poligono a goccia pendente.
+func _draw_vector_drop(ci: Control, dx: float, attach_y: float, idx: int,
+                alpha: float) -> void:
+        var phase: float = fposmod(_anim_t + DROP_LEAD[idx], DROP_CYCLE)
+        var grow_dur: float = DROP_CYCLE * GROW_FRAC
+        var blood: Color = Color(0.62, 0.08, 0.05, alpha)
+        var blood_dark: Color = Color(0.35, 0.02, 0.02, alpha)
+        if phase <= grow_dur:
+                var gt: float = phase / grow_dur
+                var r: float = 5.5 + 5.0 * gt
+                var l: float = 11.0 + 27.0 * gt * gt
+                var pts: PackedVector2Array = PackedVector2Array()
+                pts.append(Vector2(dx - r * 0.30, attach_y))
+                pts.append(Vector2(dx - r * 0.75, attach_y + l * 0.55))
+                pts.append(Vector2(dx - r, attach_y + l))
+                var steps: int = 10
+                for j in steps + 1:
+                        var a: float = PI * float(j) / float(steps)
+                        pts.append(Vector2(dx - r * cos(a),
+                                        attach_y + l + r * sin(a)))
+                pts.append(Vector2(dx + r, attach_y + l))
+                pts.append(Vector2(dx + r * 0.75, attach_y + l * 0.55))
+                pts.append(Vector2(dx + r * 0.30, attach_y))
+                var cols: PackedColorArray = PackedColorArray()
+                for j in pts.size():
+                        cols.append(blood)
+                ci.draw_polygon(pts, cols)
+                # speculare
+                ci.draw_circle(Vector2(dx - r * 0.35, attach_y + l * 0.62),
+                                r * 0.16, Color(0.95, 0.55, 0.45, 0.75 * alpha))
+        else:
+                var tf: float = phase - grow_dur
+                ci.draw_circle(Vector2(dx, attach_y + 5.0), 4.0, blood_dark)
+                if tf < FALL_TIME:
+                        var prog: float = (tf / FALL_TIME) * (tf / FALL_TIME)
+                        var af: float = 1.0 - clampf((prog - 0.55) / 0.45, 0.0, 1.0)
+                        ci.draw_circle(Vector2(dx, attach_y + 30.0
+                                        + FALL_TRAVEL * prog), 5.5,
+                                Color(0.62, 0.08, 0.05, af * alpha))
+                        ci.draw_line(Vector2(dx, attach_y + 8.0),
+                                        Vector2(dx, attach_y + 24.0),
+                                        Color(0.55, 0.06, 0.04, 0.5 * af * alpha), 2.0)

@@ -484,7 +484,7 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: engine/godot-engine-fixes-v8 - game controller ready")
+        print("[MainGameController] VERSION: engine/godot-engine-fixes-v9 - game controller ready")
         # FIX (pause P non toggle): quando get_tree().paused = true, _physics_process
         # non gira più → is_action_just_pressed("pause") non viene rilevato per
         # togliere la pausa. Impostando process_mode = PROCESS_MODE_ALWAYS il nodo

@@ -1,0 +1,58 @@
+{
+ "font_px": 64,
+ "supersample": 4,
+ "dot_advance": 22.281,
+ "gap": 12.255,
+ "period_h": 12.0,
+ "hang_frames": 8,
+ "hang_size": [
+  48,
+  50
+ ],
+ "hang_attach": [
+  24.0,
+  2.0
+ ],
+ "fall_size": [
+  40,
+  44
+ ],
+ "fall_c": [
+  20.0,
+  25.0
+ ],
+ "residue_size": [
+  28,
+  16
+ ],
+ "residue_attach": [
+  14.0,
+  2.0
+ ],
+ "trail_size": [
+  12,
+  140
+ ],
+ "trail_attach": [
+  6.0,
+  1.0
+ ],
+ "texts": {
+  "Loading": {
+   "file": "loading_text_en.png",
+   "w4": 1190,
+   "h4": 291,
+   "ink_x": 4.0,
+   "ink_w": 289.5,
+   "baseline": 52.75
+  },
+  "Caricamento": {
+   "file": "loading_text_it.png",
+   "w4": 1864,
+   "h4": 238,
+   "ink_x": 4.0,
+   "ink_w": 458.0,
+   "baseline": 52.75
+  }
+ }
+}

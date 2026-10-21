@@ -159,6 +159,16 @@ func _run_all() -> void:
         await get_tree().process_frame
         _ok(not LoadingScreen.is_showing(),
                         "H5: auto-hide dopo 3+ frame renderizzati (scene change mode)")
+        # TASK 45: asset sangue SOLO sui 3 puntini (gocce realistiche + testo
+        # osseo pre-renderizzato) caricati a runtime.
+        _ok(LoadingScreen.assets_ready(),
+                        "H6: asset gocce/testo TASK 45 caricati (assets_ready)")
+        var meta: Dictionary = LoadingScreen.get_meta_json()
+        _ok(meta.has("texts") and meta["texts"].has("Loading")
+                        and meta["texts"].has("Caricamento"),
+                        "H7: meta bilingue Loading/Caricamento presente")
+        _ok(int(meta.get("hang_frames", 0)) >= 6,
+                        "H8: morph goccia >= 6 frame (realismo, niente tubi)")
 
         # ---------- I: boot splash PNG ----------
         _ok(bool(ProjectSettings.get_setting("application/boot_splash/show_image", false)),
