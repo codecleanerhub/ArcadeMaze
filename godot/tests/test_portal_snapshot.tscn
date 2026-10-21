@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testportalsnap40"]
+
+[ext_resource type="Script" path="res://tests/test_portal_snapshot.gd" id="1"]
+
+[node name="TestPortalSnapshot" type="Node"]
+script = ExtResource("1")

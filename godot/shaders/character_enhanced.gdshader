@@ -62,5 +62,11 @@ void fragment() {
         if (alpha_right < 0.1) edge = max(edge, 1.0);
         enhanced += rim_color.rgb * rim_intensity * edge;
 
-        COLOR = vec4(clamp(enhanced, 0.0, 1.0), tex.a);
+        // FIX (Task 40 - lampeggio spawn guard invisibile): in un canvas_item
+        // shader il COLOR iniziale del fragment trasporta la catena MODULATE
+        // (modulate del nodo Player = lampeggio alpha nascita/rinascita,
+        // tint P2, evanescenza ghost). Sovrascrivere COLOR senza moltiplicare
+        // per il valore iniziale annulla tutto: il corpo del player non
+        // lampeggiava mentre l'arma (draw_* del _draw, sempre modulata) si'.
+        COLOR = vec4(clamp(enhanced, 0.0, 1.0), tex.a) * COLOR;
 }

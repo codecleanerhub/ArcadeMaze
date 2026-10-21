@@ -484,7 +484,7 @@ const FRAME_MS: float = 1000.0 / 60.0
 # Lifecycle
 # ============================================================================
 func _ready() -> void:
-        print("[MainGameController] VERSION: engine/godot-engine-fixes-v3 - game controller ready")
+        print("[MainGameController] VERSION: engine/godot-engine-fixes-v4 - game controller ready")
         # FIX (pause P non toggle): quando get_tree().paused = true, _physics_process
         # non gira più → is_action_just_pressed("pause") non viene rilevato per
         # togliere la pausa. Impostando process_mode = PROCESS_MODE_ALWAYS il nodo
@@ -3588,15 +3588,20 @@ func _build_session_snapshot() -> Dictionary:
         snap["enemies"] = enemies_snap
         snap["initial_count"] = spawner.initial_count
         # --- Portale magico ---
+        # FIX (Task 40 - crash 'phase_timer_ms'): le chiavi REALI del dict
+        # magic_portal di EnemySpawner sono "phase_timer" e "spawn_timer"
+        # (senza suffisso _ms). Gli accessi vecchi leggevano chiavi
+        # inesistenti -> SCRIPT ERROR alla morte con portale attivo (HurryUp)
+        # e session_snapshot persa (continue senza sessione esatta).
         var portal_snap: Dictionary = {}
         if spawner.magic_portal.active:
                 portal_snap = {
                         "pos": spawner.magic_portal.pos,
                         "active": true,
                         "phase": int(spawner.magic_portal.phase),
-                        "phase_timer_ms": int(spawner.magic_portal.phase_timer_ms),
+                        "phase_timer_ms": int(spawner.magic_portal.phase_timer),
                         "enemies_to_spawn": int(spawner.magic_portal.enemies_to_spawn),
-                        "spawn_timer_ms": int(spawner.magic_portal.spawn_timer_ms),
+                        "spawn_timer_ms": int(spawner.magic_portal.spawn_timer),
                 }
         snap["portal"] = portal_snap
         snap["portal_used"] = spawner.portal_used
@@ -3768,9 +3773,12 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 spawner.magic_portal.pos = portal_snap.get("pos", Vector2.ZERO)
                 spawner.magic_portal.active = true
                 spawner.magic_portal.phase = int(portal_snap.get("phase", 1))
-                spawner.magic_portal.phase_timer_ms = int(portal_snap.get("phase_timer_ms", 4000))
+                # FIX (Task 40): scrive le chiavi REALI della state machine del
+                # portale (phase_timer / spawn_timer): prima creava chiavi
+                # fantasma "*_ms" mai lette da update_portal.
+                spawner.magic_portal.phase_timer = int(portal_snap.get("phase_timer_ms", 4000))
                 spawner.magic_portal.enemies_to_spawn = int(portal_snap.get("enemies_to_spawn", 0))
-                spawner.magic_portal.spawn_timer_ms = int(portal_snap.get("spawn_timer_ms", 4000))
+                spawner.magic_portal.spawn_timer = int(portal_snap.get("spawn_timer_ms", 4000))
         # --- Mini-boss: ricreato con gli HP che aveva alla morte ---
         var mb_snap: Dictionary = snap.get("mini_boss", {})
         if not mb_snap.is_empty():

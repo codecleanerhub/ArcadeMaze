@@ -130,5 +130,9 @@ void fragment() {
         float rim_amt = armor_active ? armor_rim : rim_intensity;
         enhanced += rim_col * rim_amt * edge;
 
-        COLOR = vec4(clamp(enhanced, 0.0, 1.0), tex.a);
+        // FIX (Task 40 - lampeggio spawn guard invisibile): identico al fix di
+        // character_enhanced.gdshader — il COLOR iniziale del fragment porta
+        // la catena MODULATE (blink alpha nascita/rinascita, tint P2, ghost);
+        // va moltiplicato, non sostituito.
+        COLOR = vec4(clamp(enhanced, 0.0, 1.0), tex.a) * COLOR;
 }
