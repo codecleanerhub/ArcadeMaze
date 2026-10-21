@@ -1,0 +1,10 @@
+{
+  "name": "KnightStatue",
+  "frame_w": 64,
+  "frame_h": 64,
+  "columns": 1,
+  "rows": 1,
+  "animations": {
+    "idle": {"row": 0, "frames": 1, "frameDuration": 200}
+  }
+}

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testhammercont1"]
+
+[ext_resource type="Script" path="res://tests/test_hammer_continue.gd" id="1"]
+
+[node name="TestHammerContinue" type="Node"]
+script = ExtResource("1")

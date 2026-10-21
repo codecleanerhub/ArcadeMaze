@@ -40,6 +40,7 @@ enum GameState {
     STATE_LOSE,           // schermata game over
     STATE_WIN_STORY,      // vittoria modalita' story (con fuochi d'artificio)
     STATE_WIN_INFINITE,   // vittoria modalita' infinite (placeholder)
+    STATE_CREDITS,        // schermata credits (scrolling)
     STATE_DEMO            // modalita' demo automatica (AI controlla P1 e P2)
 };
 
@@ -455,6 +456,21 @@ private:
     // altrimenti, va a STATE_CONFIG_JOY (che poi portera' a STATE_CONFIG_JOY_2
     // in 2P, e infine al livello).
     void startGameAfterSelectPlayer();
+
+    // --- CREDITS ---
+    // Inizializza i dati credits e avvia lo scrolling.
+    void startCredits();
+    // Aggiorna lo scrolling dei credits (y offset cresce).
+    void updateCredits();
+    // Disegna i credits con scrolling dal basso verso l'alto.
+    void drawCredits();
+
+    // Dati credits: ogni entry e' (ruolo, nome)
+    struct CreditEntry { std::string role; std::string name; };
+    std::vector<CreditEntry> creditsData;
+    float creditsScrollY;  // offset Y per scrolling (cresce da 0)
+    bool creditsFinished;   // true quando tutte le scritte sono scrollate
+    float creditsEndTimer;  // timer per mostrare "Thank you!" alla fine
 };
 
 #endif

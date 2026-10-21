@@ -1,0 +1,605 @@
+# ============================================================================
+# HUD.gd  (Control node - game HUD)
+#
+# Godot port of:
+#   - UI.h
+#   - UI.cpp
+#
+# The HUD is an 80 px tall bar at the top of the screen (UI_HEIGHT = 80) that
+# shows: SCORE, LIVES (hearts), ENERGY bar, WEAPON name, AMMO bar, TREASURES
+# remaining. Supports both 1P and 2P layouts (in 2P the bar is split between
+# the left = P1, center = treasures, right = P2).
+#
+# Heart sprite:
+#   * Loaded via loadHeartSprite() from res://assets/sprites/ui_heart.png.
+#   * Used by drawHeart() for each life; if the PNG is missing, falls back
+#     to a procedural heart drawn in _draw_detailed_heart() (same fallback
+#     logic as the original UI.cpp).
+#
+# Layout (1P mode) - mirrors UI.cpp::render(target, player, remainingTreasures):
+#       x=  10  SCORE       + score
+#       x= 150  LIVES       + hearts
+#       x= 280  ENERGY      + energy bar (100x18, magenta on gray)
+#       x= 420  WPN         + weapon name (colored)
+#       x= 570  AMMO        + ammo bar (100x18, yellow on gray, norm. on 15)
+#       x= 700  TRES        + remaining treasures
+#
+# Layout (2P mode) - mirrors UI.cpp::render(target, p1, p2, remainingTreasures):
+#   P1 (left):   P1 score, LIFE hearts (16px), EN bar (60x14), WPN name, ammo#
+#   Center:      TRES + remainingTreasures
+#   P2 (right):  P2 score, LIFE hearts (16px), EN bar (60x14), WPN name, ammo#
+# ============================================================================
+extends Control
+
+# --- Layout constants (mirrors Utils.h) -----------------------------------
+const WINDOW_WIDTH: int = 1920
+const WINDOW_HEIGHT: int = 1080
+const UI_HEIGHT: int = 80
+
+# --- Public API ------------------------------------------------------------
+# Player snapshot for 1P rendering. Set externally before each render.
+# Expected fields (mirror Player accessors used in UI.cpp):
+#     score:int, lives:int, energy:float, max_energy:float,
+#     weapon_name:String, weapon_color:Color, weapon_ammo:int, weapon_max:int
+# Actually we expose a single `set_player_state` API instead of breaking it
+# down, so the caller doesn't have to know about the exact field names.
+
+# The "PlayerState" struct is a simple Dictionary with the fields above.
+# We keep two slots for 1P/2P and a separate remaining-treasures counter.
+
+# --- Signals ---------------------------------------------------------------
+signal heart_clicked()  # currently unused but exposed for future editor hooks
+
+# --- Exported theme colors (mirror SFML palette) --------------------------
+@export var color_bg:        Color = Color(0.078, 0.078, 0.078)      # 20,20,20
+@export var color_score:     Color = Color(1.000, 1.000, 0.000)      # Yellow
+@export var color_label:     Color = Color.WHITE
+@export var color_energy:     Color = Color(0.0, 0.9, 0.0)       # FIX (energia invisibile): era Magenta, ora verde (vedi _draw_energy_bar per gradiente)
+@export var color_energy_bg:  Color = Color(0.392, 0.392, 0.392)
+@export var color_energy_border: Color = Color(0.235, 0.235, 0.235)
+@export var color_ammo:       Color = Color(1.000, 1.000, 0.000)
+@export var color_p1_label:    Color = Color(0.392, 0.784, 1.000)     # 100,200,255
+@export var color_p2_label:    Color = Color(1.000, 0.588, 0.392)     # 255,150,100
+@export var color_heart_fill:  Color = Color(0.863, 0.078, 0.078)    # 220,20,20
+@export var color_heart_outline: Color = Color(0.392, 0.000, 0.000)  # 100,0,0
+
+# --- Heart sprite (mirror of UI::heartTexture + heartSprite) ---------------
+var _heart_texture: Texture2D = null
+var _heart_loaded: bool = false
+
+# --- HUD state (set externally before _draw) ------------------------------
+# 1P snapshot
+var _p1: Dictionary = {
+        "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
+        "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
+        "weapon_ammo": 15, "weapon_max": 15,
+        # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
+        "stamina": 1.0, "stamina_exhausted": false,
+        # RELIC (Task 21): stato armatura reliquia (nessuna = stringa vuota).
+        "armor_name": "", "armor_color": Color.WHITE,
+        "armor_charges": 0, "armor_max": 0,
+}
+# 2P snapshot (only used when _num_players == 2)
+var _p2: Dictionary = {
+        "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
+        "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
+        "weapon_ammo": 15, "weapon_max": 15,
+        # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
+        "stamina": 1.0, "stamina_exhausted": false,
+        # RELIC (Task 21): stato armatura reliquia (per P2).
+        "armor_name": "", "armor_color": Color.WHITE,
+        "armor_charges": 0, "armor_max": 0,
+}
+var _num_players: int = 1
+var _remaining_treasures: int = 0
+
+# Normalisation constant (mirror UI.cpp): ammo bar uses 15 as the max.
+const _AMMO_NORMALISER: int = 15
+
+# Built-in font for labels; we use the default Theme font (kept simple).
+
+
+# ============================================================================
+# Lifecycle
+# ============================================================================
+func _ready() -> void:
+        # The HUD spans the full width and is UI_HEIGHT tall at the top.
+        set_anchors_preset(Control.PRESET_TOP_WIDE)
+        custom_minimum_size = Vector2(WINDOW_WIDTH, UI_HEIGHT)
+        # Use set_deferred to avoid "non-equal opposite anchors" warning.
+        set_deferred("size", Vector2(WINDOW_WIDTH, UI_HEIGHT))
+        mouse_filter = Control.MOUSE_FILTER_IGNORE
+        # FIX (HUD invisibile root cause definitiva): il HUD è ora figlio di
+        # HUDLayer (CanvasLayer layer=10) nella scena MainGame.tscn.
+        # I CanvasLayer sono IGNORATI dalla Camera2D → HUD sempre visibile.
+        # Prima il HUD era figlio diretto di MainGame (Node2D) e la Camera2D
+        # lo trasformava. Il riparentamento runtime causava che @onready var hud
+        # in MainGameController perdesse il riferimento → hud = null →
+        # _update_hud ritornava subito senza aggiornare.
+        position = Vector2.ZERO
+        load_heart_sprite("res://assets/sprites/ui_heart.png")
+
+
+# ----------------------------------------------------------------------------
+# loadHeartSprite: load the heart PNG. Returns true on success.
+# Mirrors UI::loadHeartSprite(path). If the file is missing, `heartLoaded`
+# stays false and drawHeart() will use the procedural fallback.
+# ----------------------------------------------------------------------------
+func load_heart_sprite(path: String) -> bool:
+        # FIX (cuoricini invisibili): usava load() (ResourceLoader) che ritorna
+        # null se .godot/imported/ è vuoto. Ora usa Image.load() + ImageTexture.
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                _heart_loaded = false
+                _heart_texture = null
+                return false
+        var img := Image.new()
+        if img.load(abs_path) == OK:
+                _heart_texture = ImageTexture.create_from_image(img)
+                _heart_loaded = _heart_texture != null
+                return _heart_loaded
+        _heart_loaded = false
+        _heart_texture = null
+        return false
+
+
+# ============================================================================
+# Public API  (set state before redrawing)
+# ============================================================================
+# Set the 1P snapshot. The Dictionary may contain any subset of:
+# score, lives, energy, max_energy, weapon_name, weapon_color, weapon_ammo,
+# weapon_max.
+func set_player_state(snap: Dictionary) -> void:
+        for k in snap.keys():
+                _p1[k] = snap[k]
+        queue_redraw()
+
+
+# Set the 2P snapshot (used only when num_players == 2).
+func set_player2_state(snap: Dictionary) -> void:
+        for k in snap.keys():
+                _p2[k] = snap[k]
+        queue_redraw()
+
+
+# Set the number of players (1 or 2) - selects the layout.
+func set_num_players(n: int) -> void:
+        _num_players = clampi(n, 1, 2)
+        queue_redraw()
+
+
+# Set the remaining treasures count (drives the "boss is coming" trigger).
+func set_remaining_treasures(n: int) -> void:
+        _remaining_treasures = n
+        queue_redraw()
+
+
+# FIX (HUD last hit enemy): stato del nemico colpito dal player.
+# Mostra nome + barra energia in alto al centro dell'HUD.
+var _last_hit_enemy_name: String = ""
+var _last_hit_enemy_hp: int = 0
+var _last_hit_enemy_max_hp: int = 0
+
+func set_last_hit_enemy(name: String, hp: int, max_hp: int) -> void:
+        _last_hit_enemy_name = name
+        _last_hit_enemy_hp = hp
+        _last_hit_enemy_max_hp = max_hp
+        queue_redraw()
+
+
+# Set the boss HP bar (shown during boss fights).
+var _boss_hp: int = 0
+var _boss_max_hp: int = 0
+var _boss_type: int = 0
+var _show_boss_bar: bool = false
+
+func set_boss_hp(hp: int, max_hp: int, boss_type: int) -> void:
+        _boss_hp = hp
+        _boss_max_hp = max_hp
+        _boss_type = boss_type
+        _show_boss_bar = true
+        queue_redraw()
+
+func hide_boss_bar() -> void:
+        _show_boss_bar = false
+        queue_redraw()
+
+
+# ============================================================================
+# Drawing
+# ============================================================================
+func _draw() -> void:
+        # Background bar
+        draw_rect(Rect2(0, 0, WINDOW_WIDTH, UI_HEIGHT), color_bg)
+        if _num_players == 1:
+                _draw_1p()
+        else:
+                _draw_2p()
+        # FIX (HUD last hit enemy): disegna nome + barra energia del nemico
+        # colpito al centro dell'HUD. Solo se c'è un nemico valido.
+        if _last_hit_enemy_name != "" and _last_hit_enemy_max_hp > 0:
+                _draw_last_hit_enemy()
+        # Boss HP bar (shown during boss fights)
+        # FIX (doppia barra boss): disabilitato perché BossRoomController
+        # disegna già la sua barra HP vicino al nome del boss.
+        # if _show_boss_bar and _boss_max_hp > 0:
+        #         _draw_boss_bar()
+
+
+# FIX (HUD last hit enemy): disegna nome nemico + barra energia al centro.
+# Usa lo stesso gradiente verde→arancione→rosso della barra player.
+func _draw_last_hit_enemy() -> void:
+        # FIX (posizionamento): spostato più a destra (center_x = 1100 invece di 960)
+        # per evitare sovrapposizione con "Treasures remaining" a x=700.
+        var center_x: float = 1100.0
+        var bar_w: float = 180.0
+        var bar_h: float = 8.0
+        # FIX (margine): bar_y aumentato da 30 a 38 per più spazio tra nome e barra
+        var bar_y: float = 38.0
+        var bar_x: float = center_x - bar_w * 0.5
+        # Etichetta "ENEMY" sopra la barra (y=10, più in alto)
+        # TASK 44: localizzata ("NEMICO:" in IT — inizio nome spostato a +75
+        # perché l'etichetta italiana è un carattere più lunga).
+        _draw_label_colored(I18n.t("hud.enemy"), bar_x, 10.0, Color(0.9, 0.5, 0.5))
+        # Nome del nemico (più spazio: +70 invece di +50)
+        _draw_label_colored(_last_hit_enemy_name, bar_x + 75, 10.0, Color(1.0, 0.9, 0.5))
+        # Background barra
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.95), true)
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 1.0)
+        # Calcola ratio e colore (gradiente verde→arancione→rosso)
+        var r: float = float(_last_hit_enemy_hp) / float(_last_hit_enemy_max_hp) if _last_hit_enemy_max_hp > 0 else 0.0
+        r = clampf(r, 0.0, 1.0)
+        if r > 0.0:
+                var bar_col: Color
+                if r > 0.5:
+                        var t: float = (1.0 - r) * 2.0
+                        bar_col = Color(t * 1.0, 0.9 - t * 0.3, 0.0)
+                else:
+                        var t2: float = (0.5 - r) * 2.0
+                        bar_col = Color(1.0, 0.6 - t2 * 0.5, 0.0)
+                # Barra energia
+                draw_rect(Rect2(bar_x, bar_y, bar_w * r, bar_h), bar_col, true)
+                # Highlight superiore
+                var hl_col: Color = Color(bar_col.r + 0.2, bar_col.g + 0.2, bar_col.b + 0.2, 0.6)
+                draw_rect(Rect2(bar_x, bar_y, bar_w * r, 3.0), hl_col, true)
+        # HP numerico (es. "3/5")
+        var hp_text: String = str(_last_hit_enemy_hp) + "/" + str(_last_hit_enemy_max_hp)
+        _draw_label_colored(hp_text, bar_x + bar_w + 8, bar_y - 4, Color(1.0, 0.9, 0.5))
+
+
+func _draw_boss_bar() -> void:
+        var bar_x: float = 300.0
+        var bar_y: float = 10.0
+        var bar_w: float = 424.0
+        var bar_h: float = 16.0
+        # Background
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.1, 0.0, 0.0, 0.8), true)
+        # HP fill
+        var hp_ratio: float = float(_boss_hp) / float(_boss_max_hp)
+        var hp_color: Color = Color(0.8, 0.2, 0.1) if hp_ratio < 0.3 else Color(0.9, 0.5, 0.1)
+        draw_rect(Rect2(bar_x + 2, bar_y + 2, (bar_w - 4) * hp_ratio, bar_h - 4), hp_color, true)
+        # Border
+        draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h), Color(0.8, 0.6, 0.2), false, 2)
+        # Label
+        _draw_label_colored(I18n.t("hud.boss"), bar_x + 4, bar_y - 14, Color(0.9, 0.7, 0.3))
+
+
+# --- 1-player layout (mirror UI::render single-player) ---------------------
+func _draw_1p() -> void:
+        # SCORE
+        _draw_label(I18n.t("hud.score"), 10, 10)
+        _draw_label_int(_p1.score, 10, 30, color_score)
+        # LIVES (hearts) — TASK 26: oltre 5 cuori non si disegna la fila
+        # (si sovrapponeva a ENERGY/WPN): si mostra il numero con la "x"
+        # + UN solo simbolo di cuore (es. "6x ♥" = 6 vite).
+        _draw_label(I18n.t("hud.lives"), 150, 10)
+        _draw_lives_row(int(_p1.lives), 160.0, 35.0, 8.0, 24.0)
+        # ENERGY (gradiente verde→arancione→rosso)
+        _draw_label(I18n.t("hud.energy"), 280, 10)
+        _draw_energy_bar(280, 30, 100, 18,
+                float(_p1.energy) / float(_p1.max_energy))
+        # FIX (stamina salti): barra STAMINA sotto la barra vita/energia:
+        # ROSA piena (2 salti disponibili), ARANCIONE dopo il 1° salto,
+        # ROSSA dopo il 2° (lampeggia finché la ricarica non è completa).
+        _draw_stamina_bar(280, 52, 100, 10,
+                _p1.stamina, _p1.stamina_exhausted)
+        # WPN — TASK 26: le armi speciali (reliquie) NON mostrano il nome
+        # (sovrapposizione coi cuori); resta l'header WPN + il contatore AMMO.
+        _draw_label(I18n.t("hud.wpn"), 420, 10)
+        if not str(_p1.weapon_name).is_empty():
+                _draw_label_colored(_p1.weapon_name, 420, 30, _p1.weapon_color)
+        # AMMO (numero colpi invece di barra)
+        _draw_label(I18n.t("hud.ammo"), 570, 10)
+        _draw_label_int(_p1.weapon_ammo, 570, 30, color_ammo)
+        # RELIC (Task 21): stato ARMATURA nello slot libero tra AMMO e la
+        # barra del nemico (x=870..1010). Nessuna armatura = non disegna.
+        _draw_armor_status(_p1, 870, 10)
+        # TRES — TASK 44: localizzata ("Tesori rimasti:" in IT)
+        _draw_label(I18n.t("hud.treasures"), 700, 10)
+        _draw_label_int(_remaining_treasures, 700, 30, color_score)
+
+
+# --- 2-player layout (mirror UI::render two-player) ------------------------
+# FIX (layout 2P su schermo intero): il layout originale era pensato per una
+# finestra ~900px (P2 a x=560): su 1920px la sezione P2 restava pigiata al
+# centro-sinistra con oltre metà schermo vuota. Ora il layout è a tutta
+# larghezza e SPECULARE: P1 a sinistra, tesori al centro, P2 a destra
+# (ogni giocatore ha "il suo angolo" leggibile con la coda dell'occhio).
+func _draw_2p() -> void:
+        # === PLAYER 1 (left) ===
+        _draw_label_colored("P1", 10, 10, color_p1_label)
+        _draw_label_int(_p1.score, 10, 30, color_score)
+        _draw_label(I18n.t("hud.life"), 80, 10)
+        _draw_lives_row(int(_p1.lives), 90.0, 35.0, 6.0, 16.0)
+        _draw_label(I18n.t("hud.en"), 180, 10)
+        _draw_energy_bar(180, 32, 60, 14,
+                float(_p1.energy) / float(_p1.max_energy))
+        # FIX (stamina salti): barra STAMINA sotto la vita, P1 (rosa/arancione/rosso).
+        _draw_stamina_bar(180, 50, 60, 8,
+                _p1.stamina, _p1.stamina_exhausted)
+        if not str(_p1.weapon_name).is_empty():
+                _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
+        _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
+        # RELIC (Task 21): stato ARMATURA di P1 (tra arma e tesori: x=330).
+        _draw_armor_status(_p1, 330, 10)
+
+        # === TREASURES (center) — centrata su schermo 1920px. x=800: il
+        # testo (~170px, fino a ~970) NON collide con la barra "last hit
+        # enemy" che parte da x=1010 (margine 40px) ===
+        _draw_label(I18n.t("hud.treasures"), 800, 10)
+        _draw_label_int(_remaining_treasures, 800, 30, color_score)
+
+        # === PLAYER 2 (right, speculare a P1) ===
+        _draw_label_colored("P2", 1560, 10, color_p2_label)
+        _draw_label_int(_p2.score, 1560, 30, color_score)
+        _draw_label(I18n.t("hud.life"), 1630, 10)
+        _draw_lives_row(int(_p2.lives), 1640.0, 35.0, 6.0, 16.0)
+        _draw_label(I18n.t("hud.en"), 1730, 10)
+        _draw_energy_bar(1730, 32, 60, 14,
+                float(_p2.energy) / float(_p2.max_energy))
+        # FIX (stamina salti): barra STAMINA sotto la vita, P2 (rosa/arancione/rosso).
+        _draw_stamina_bar(1730, 50, 60, 8,
+                _p2.stamina, _p2.stamina_exhausted)
+        if not str(_p2.weapon_name).is_empty():
+                _draw_label_colored(_p2.weapon_name, 1800, 10, _p2.weapon_color)
+        _draw_label_int(_p2.weapon_ammo, 1800, 30, color_score)
+        # RELIC (Task 21): stato ARMATURA di P2 (riga bassa libera sotto
+        # vite/energia: x=1640, i rombi restano dentro la barra di 80px).
+        _draw_armor_status(_p2, 1640, 52)
+
+
+# ----------------------------------------------------------------------------
+# RELIC (Task 21): stato ARMATURA reliquia — nome corto colorato + cariche
+# come rombi (max 10 visibili; oltre si raggruppano x5). Nessuna armatura
+# = non disegna nulla.
+# ----------------------------------------------------------------------------
+func _draw_armor_status(snap: Dictionary, x: float, y: float) -> void:
+        var name_s: String = str(snap.get("armor_name", ""))
+        if name_s == "":
+                return
+        var col: Color = snap.get("armor_color", Color.WHITE)
+        var charges: int = int(snap.get("armor_charges", 0))
+        var armor_max: int = int(snap.get("armor_max", 0))
+        # Nome corto + cariche residue sulla stessa riga (stile WPN/AMMO).
+        _draw_label_colored(name_s + " " + str(charges), x, y, col)
+        # Tacche a rombo sotto il nome (durabilita' residua a colpo d'occhio;
+        # le cariche mancanti restano come fantasmi tenui).
+        var pips: int = mini(charges, 10)
+        var pip_total: int = mini(armor_max, 10)
+        for i in pip_total:
+                var px: float = x + 4.0 + float(i) * 8.0
+                var py: float = y + 20.0
+                if i < pips:
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(px, py - 3.0), Vector2(px + 3.0, py),
+                                Vector2(px, py + 3.0), Vector2(px - 3.0, py)]),
+                                Color(col.r, col.g, col.b, 0.9))
+                else:
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(px, py - 3.0), Vector2(px + 3.0, py),
+                                Vector2(px, py + 3.0), Vector2(px - 3.0, py)]),
+                                Color(col.r, col.g, col.b, 0.18))
+
+
+# ----------------------------------------------------------------------------
+# TASK 26 — fila dei cuori delle vite: fino a 5 cuoricini singoli; oltre,
+# numero + "x" + UN solo cuore (es. "6x ♥" = 6 vite). Evita la sovrapposizione
+# con ENERGY/WPN quando le vite crescono (bonus boss + soglie punteggio).
+# ----------------------------------------------------------------------------
+func _draw_lives_row(lives: int, x: float, y: float, size: float,
+                spacing: float) -> void:
+        if lives <= 5:
+                for i in lives:
+                        _draw_heart(x + float(i) * spacing, y, size)
+                return
+        # Oltre 5: contatore "Nx" + simbolo singolo.
+        var txt: String = str(lives) + "x"
+        _draw_label_colored(txt, x, y - 12.0, color_heart_fill)
+        var font := get_theme_default_font()
+        if font == null:
+                font = ThemeDB.fallback_font
+        var txt_w: float = 34.0
+        if font != null:
+                txt_w = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT,
+                        -1, 16).x
+        _draw_heart(x + txt_w + size + 2.0, y, size)
+
+
+# ----------------------------------------------------------------------------
+# drawHeart(x, y, size): draws a heart at (x, y) with radius `size`.
+# Mirrors UI::drawHeart(target, x, y, size).
+#   * If the PNG heart sprite is loaded, uses it (much higher quality, AI-gen).
+#   * Otherwise falls back to drawDetailedHeart (procedural): two semicircles
+#     + triangle + a small white highlight.
+# The PNG is 32x32; the anchor is at its center (16, 16).
+# ----------------------------------------------------------------------------
+func _draw_heart(x: float, y: float, size: float) -> void:
+        if _heart_loaded and _heart_texture != null:
+                # Scale so the sprite is ~size*2 px wide (mirror UI.cpp:scale = size/16).
+                var scale: float = size / 16.0
+                var w: float = _heart_texture.get_width() * scale
+                var h: float = _heart_texture.get_height() * scale
+                var rect := Rect2(x - w / 2.0, y - h / 2.0, w, h)
+                draw_texture_rect(_heart_texture, rect, false)
+        else:
+                _draw_detailed_heart(x, y, size, color_heart_fill, color_heart_outline)
+
+
+# ----------------------------------------------------------------------------
+# drawDetailedHeart (procedural fallback): mirror of the standalone function
+# in UI.cpp. Two semicircles + triangle + white highlight.
+# ----------------------------------------------------------------------------
+func _draw_detailed_heart(x: float, y: float, size: float,
+                                                  fill: Color, outline: Color) -> void:
+        # Left lobe
+        draw_circle(Vector2(x - size / 2.0, y - size / 4.0), size / 2.0, fill)
+        # Right lobe
+        draw_circle(Vector2(x, y - size / 4.0), size / 2.0, fill)
+        # Bottom triangle (pointed tip)
+        var tip := PackedVector2Array([
+                Vector2(x - size, y),
+                Vector2(x + size, y),
+                Vector2(x, y + size),
+        ])
+        draw_colored_polygon(tip, fill)
+        # Outline (drawn as line segments)
+        _draw_circle_outline(Vector2(x - size / 2.0, y - size / 4.0), size / 2.0, outline, 1.5)
+        _draw_circle_outline(Vector2(x, y - size / 4.0), size / 2.0, outline, 1.5)
+        draw_polyline(tip + PackedVector2Array([tip[0]]), outline, 1.5, true)
+        # White highlight (small dot in upper-left)
+        draw_circle(Vector2(x - size / 3.0, y - size / 4.0), 1.5,
+                Color(1, 1, 1, 200.0 / 255.0))
+
+
+# Draw a circle outline as a polyline (Godot has no direct outline API for
+# CircleShape2D in _draw; we approximate with a thin line loop).
+func _draw_circle_outline(center: Vector2, radius: float,
+                                                  color: Color, width: float) -> void:
+        var pts := PackedVector2Array()
+        var segs: int = 24
+        for i in segs:
+                var a: float = TAU * i / segs
+                pts.append(center + Vector2(cos(a), sin(a)) * radius)
+        draw_polyline(pts + PackedVector2Array([pts[0]]), color, width, true)
+
+
+# Draw a label with a black outline (mirror of drawTextOutlined()).
+func _draw_label(text: String, x: float, y: float) -> void:
+        _draw_label_colored(text, x, y, color_label)
+
+
+func _draw_label_colored(text: String, x: float, y: float, color: Color) -> void:
+        # FIX (font null): get_theme_default_font() può ritornare null se
+        # non c'è un tema assegnato. Usiamo ThemeDB.fallback_font come fallback.
+        var font := get_theme_default_font()
+        if font == null:
+                font = ThemeDB.fallback_font
+        if font == null:
+                return  # nessun font disponibile, non disegnare
+        var font_size: int = 16
+        # 4 shadow copies (offset by ±2 px)
+        for off in [Vector2(-2, 0), Vector2(2, 0), Vector2(0, -2), Vector2(0, 2)]:
+                draw_string(font, Vector2(x + off.x, y + off.y + font_size), text,
+                        HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.BLACK)
+        draw_string(font, Vector2(x, y + font_size), text,
+                HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+
+
+# Draw an integer as outlined text (used for SCORE/TREASURES/AMMO count).
+func _draw_label_int(value: int, x: float, y: float, color: Color) -> void:
+        _draw_label_colored(str(value), x, y, color)
+
+
+# FIX (stamina salti): barra della STAMINA sotto quella della vita.
+# Colore legato ai salti usati (Task 37): ROSA quando è piena (0 salti
+# usati, 2 disponibili), ARANCIONE dopo il 1° salto (metà barra), ROSSA
+# dopo il 2° salto (barra svuotata). Ogni salto consuma 1/2 della barra;
+# si ricarica da sola quando il player non salta. Quando il player è
+# "stanco" (2° salto consecutivo: barra svuotata) la barra LAMPEGGIA in
+# rosso — con una traccia minima visibile anche a barra vuota — finché non
+# si è ricaricata completamente: in quel momento torna ROSA e il player può
+# di nuovo saltare.
+func _draw_stamina_bar(x: float, y: float, w: float, h: float,
+                                           ratio: float, exhausted: bool) -> void:
+        # Sfondo scuro + bordo (stesso stile delle altre barre)
+        draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
+        draw_rect(Rect2(x, y, w, h), color_energy_border, false, 1.5)
+        var r: float = clampf(ratio, 0.0, 1.0)
+        # Il ROSSO del 2° salto deve comparire SUBITO, anche a barra
+        # completamente vuota (r=0): stub minimo che lampegga.
+        var fill_w: float = w * r
+        if exhausted and r <= 0.0:
+                fill_w = w * 0.12
+        if fill_w <= 0.0:
+                return
+        var fill: Color = _stamina_fill_color(r)
+        # Quando il player è esausto (2° salto consecutivo) la barra
+        # LAMPEGGIA in rosso chiaro/scuro finché la ricarica non è completa.
+        if exhausted:
+                var blink_on: bool = fmod(Time.get_ticks_msec() / 1000.0, 0.36) < 0.18
+                fill = Color(1.00, 0.38, 0.38) if blink_on else Color(0.45, 0.06, 0.10)
+        draw_rect(Rect2(x, y, fill_w, h), fill, true)
+        # Highlight superiore (riflesso luce)
+        draw_rect(Rect2(x, y, fill_w, 2.0),
+                Color(minf(fill.r + 0.25, 1.0), minf(fill.g + 0.15, 1.0),
+                        minf(fill.b + 0.25, 1.0), 0.55), true)
+
+
+# Colore del riempimento per numero di salti DISPONIBILI (Task 37):
+#   * ratio >= 1.0  → ROSA       (barra piena: 2 salti disponibili)
+#   * ratio >= 0.5  → ARANCIONE  (dopo il 1° salto: 1 salto disponibile)
+#   * ratio <  0.5  → ROSSO      (dopo il 2° salto: 0 salti disponibili)
+# Pura funzione del ratio (testabile da test_stamina_weapons A9): il
+# lampeggio da esausto vive nel _draw perché dipende dal tempo reale.
+func _stamina_fill_color(ratio: float) -> Color:
+        if ratio >= 0.999:
+                return Color(1.00, 0.42, 0.72)   # ROSA
+        if ratio >= 0.5:
+                return Color(1.00, 0.55, 0.10)   # ARANCIONE
+        return Color(0.92, 0.16, 0.16)           # ROSSO
+
+
+# Draw a horizontal bar (mirror of the energy/ammo bar in UI.cpp).
+# Background = gray rounded rectangle + colored foreground proportional to ratio.
+func _draw_bar(x: float, y: float, w: float, h: float,
+                           ratio: float, fg_color: Color) -> void:
+        # Background (gray with darker outline)
+        draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
+        draw_rect(Rect2(x, y, w, h), color_energy_border, false, 2.0)
+        # Foreground (clamped ratio)
+        var r: float = clampf(ratio, 0.0, 1.0)
+        if r > 0.0:
+                draw_rect(Rect2(x, y, w * r, h), fg_color, true)
+
+
+# FIX (energia gradiente): disegna la barra energia con gradiente
+# verde (100%) → arancione (50%) → rosso (0%). Man mano che l'energia
+# scende, il colore cambia per dare feedback visivo immediato.
+func _draw_energy_bar(x: float, y: float, w: float, h: float, ratio: float) -> void:
+        # Background
+        draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
+        draw_rect(Rect2(x, y, w, h), color_energy_border, false, 2.0)
+        var r: float = clampf(ratio, 0.0, 1.0)
+        if r <= 0.0:
+                return
+        # FIX (gradiente non visibile): prima disegnava 100 strisce da 1px
+        # ciascuna che non si vedevano. Ora disegna 3 segmenti: verde, arancione,
+        # rosso — proporzionali al ratio. Più visibile e performante.
+        var bar_w: float = w * r
+        # Colore principale basato sul ratio
+        var bar_col: Color
+        if r > 0.5:
+                # verde → arancione
+                var t: float = (1.0 - r) * 2.0  # 0 at r=1, 1 at r=0.5
+                bar_col = Color(t * 1.0, 0.9 - t * 0.3, 0.0)
+        else:
+                # arancione → rosso
+                var t2: float = (0.5 - r) * 2.0  # 0 at r=0.5, 1 at r=0
+                bar_col = Color(1.0, 0.6 - t2 * 0.5, 0.0)
+        # Disegna barra piena con colore unico
+        draw_rect(Rect2(x, y, bar_w, h), bar_col, true)
+        # Aggiungi highlight superiore (riflesso luce)
+        var hl_col: Color = Color(bar_col.r + 0.2, bar_col.g + 0.2, bar_col.b + 0.2, 0.6)
+        draw_rect(Rect2(x, y, bar_w, 3.0), hl_col, true)
+        # Outline
+        draw_rect(Rect2(x, y, bar_w, h), Color(0.1, 0.1, 0.1, 0.8), false, 1.0)

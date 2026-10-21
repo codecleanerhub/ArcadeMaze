@@ -1,0 +1,237 @@
+extends Control
+
+# ConfigJoy.gd - Configurazione joystick (2 step per player)
+# Porting di Game.cpp STATE_CONFIG_JOY / STATE_CONFIG_JOY_2
+#
+# Background: uses the same AI-generated crypt/ruderi image as SelectPlayer
+# (bg_select_player.png) for visual consistency across the menu chain. The
+# procedural crypt (EnvironmentArt.draw_crypt_background) is kept as a
+# fallback if the AI image is missing. A subtle dark overlay ensures the
+# label text stays readable on top of the busy art.
+
+signal config_finished
+
+var step: int = 0  # 0 = jump button, 1 = shoot button
+var player_num: int = 1
+var wait_for_release: bool = false
+var _anim_time: float = 0.0  # for animated background elements (torches, fog)
+# AI-generated background texture (loaded once). Same image as SelectPlayer
+# so the menu chain (MainMenu → ConfigJoy → SelectPlayer) feels cohesive.
+var _bg_texture: Texture2D = null
+
+@onready var step_label: Label = $StepLabel
+@onready var player_label: Label = $PlayerLabel
+@onready var hint_label: Label = $HintLabel
+
+func _ready() -> void:
+        # Read which player we're configuring from GameManager (set by MainMenu).
+        if GameManager:
+                player_num = GameManager.config_joy_player
+                step = 0 if GameManager.config_joy_step == 0 else 1
+        player_label.text = I18n.t("joy.player") % player_num
+        _update_step()
+        # Preload the AI-generated crypt/ruderi background (same as SelectPlayer).
+        # FIX (regressione): usa Image.load() per bypassare import.
+        var bg_path := "res://assets/backgrounds/bg_select_player.png"
+        var bg_abs: String = ProjectSettings.globalize_path(bg_path)
+        if FileAccess.file_exists(bg_abs):
+                var bg_img := Image.new()
+                if bg_img.load(bg_abs) == OK:
+                        _bg_texture = ImageTexture.create_from_image(bg_img)
+        # Self-wire: when config finishes, go back to menu.
+        config_finished.connect(_on_config_finished)
+
+func _on_config_finished() -> void:
+        # FIX (dopo la configurazione partiva il gioco): se la configurazione
+        # e' stata aperta dal sottomenu OPTIONS, a fine configurazione si torna
+        # al MENU PRINCIPALE (sottomenu OPTIONS, cursore su CONFIGURE JOYSTICK)
+        # invece di andare in SelectPlayer -> Intro -> partita avviata.
+        # Vale anche per l'annullamento con ESC ("ESC TO CANCEL").
+        if GameManager:
+                if GameManager.config_joy_from_options:
+                        GameManager.config_joy_from_options = false
+                        GameManager.menu_reopen_options = true
+                        GameManager.go_to_menu()
+                        return
+                # Flusso START GAME: joystick non ancora configurato.
+                if GameManager.config_joy_player == 1 and GameManager.num_players == 2:
+                        # P2 also needs config
+                        GameManager.config_joy_player = 2
+                        GameManager.config_joy_step = 0
+                        # Reload this scene for P2
+                        get_tree().reload_current_scene()
+                else:
+                        # Both configured (or 1P): go to select player
+                        GameManager.go_to_select_player()
+
+func _update_step() -> void:
+        match step:
+                0: step_label.text = I18n.t("joy.press_jump")
+                1: step_label.text = I18n.t("joy.press_shoot")
+        # Update the hint label to remind the user they can cancel with ESC.
+        if hint_label:
+                hint_label.text = I18n.t("joy.hint") % (step + 1)
+
+func _process(delta: float) -> void:
+        _anim_time += delta
+        # Redraw the animated background each frame (torches flicker, fog drifts).
+        queue_redraw()
+        # ESC: torna al menu
+        if Input.is_action_just_pressed("ui_cancel"):
+                config_finished.emit()
+                return
+        
+        # FIX (configurati tasti sbagliati): il polling diretto con
+        # Input.is_joy_button_pressed parte sempre da btn=0 e rileva il primo
+        # tasto premuto. Se l'utente tiene premuto X (es. button 2) mentre
+        # preme Y (button 3) per il secondo step, il loop rileva X PRIMA di Y
+        # perché btn=2 < btn=3. Inoltre alcuni controller inviano eventi
+        # "ghost" su button 0 o 1 quando altri vengono premuti.
+        # Usiamo _unhandled_input con InputEventJoypadButton che fornisce il
+        # button_index ESATTO dell'evento appena verificatosi, non un polling.
+        # La logica wait_for_release è gestita qui: aspettiamo che TUTTI i
+        # pulsanti siano rilasciati prima di accettare un nuovo evento.
+        if wait_for_release:
+                # Aspetta che tutti i pulsanti siano rilasciati
+                var any_pressed := false
+                for jid in range(8):
+                        if Input.is_joy_known(jid):
+                                for btn in range(128):
+                                        if Input.is_joy_button_pressed(jid, btn):
+                                                any_pressed = true
+                                                break
+                        if any_pressed:
+                                break
+                if not any_pressed:
+                        wait_for_release = false
+                return
+
+
+# Input event handler: riceve l'evento del joystick ESATTO appena premuto,
+# non un polling. Questo evita il bug dove il tasto sbagliato viene
+# registrato perché il polling parte da btn=0.
+func _unhandled_input(event: InputEvent) -> void:
+        if not (event is InputEventJoypadButton):
+                return
+        # FIX CRASH: InputEventJoypadButton non ha la property 'echo'
+        # (solo InputEventKey ce l'ha). Usa event.pressed per il check.
+        if not event.pressed:
+                return
+        # Se siamo in attesa di release, ignora qualsiasi pressione.
+        if wait_for_release:
+                return
+        var jid: int = event.device
+        var btn: int = event.button_index
+        # Salta i tasti "virtuali" che alcuni controller inviano (es. il
+        # guide button o combo keys che non dovrebbero essere mappati).
+        # Permettiamo btn 0..15 (standard Xbox/PS layout: A/B/X/Y/LB/RB/
+        # Back/Start/LStick/RStick/DPad×4/Touchpad).
+        if btn < 0 or btn > 15:
+                return
+        AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+        match step:
+                0:
+                        # Jump button
+                        # FIX CRITICAL: le chiavi del config dict sono UPPERCASE
+                        # ("JOY_JUMP") non lowercase ("joy_jump"). GDScript
+                        # Dictionary è case-sensitive! ConfigJoy scriveva in
+                        # una chiave "joy_jump" fantasma invece di aggiornare
+                        # "JOY_JUMP", quindi MainGame leggeva -1.
+                        if player_num == 1:
+                                ConfigManager.config["JOY_JUMP"] = btn
+                                # FIX (2P — pad del giocatore 1): salva ANCHE il
+                                # DEVICE del pad su cui P1 ha premuto il tasto.
+                                # Prima P1 era hardcoded a joy_pads[0] (primo pad
+                                # collegato): se i due pad erano collegati in
+                                # ordine diverso, il pad configurato per P2
+                                # guidava P1 (bug utente: "quello che viene
+                                # guidato dal joystick è il giocatore 1").
+                                ConfigManager.config["JOY_ID"] = jid
+                                print("[ConfigJoy] P1 JOY_JUMP = ", btn, " on joy_id ", jid)
+                        else:
+                                ConfigManager.config["JOY2_JUMP"] = btn
+                                ConfigManager.config["JOY2_ID"] = jid
+                                print("[ConfigJoy] P2 JOY2_JUMP = ", btn, " on joy_id ", jid)
+                        step = 1
+                        _update_step()
+                        wait_for_release = true
+                1:
+                        # Shoot button — assicuriamoci che sia diverso da jump
+                        # (lo stesso tasto non può essere sia jump che shoot).
+                        var jump_btn: int = ConfigManager.config["JOY_JUMP"] \
+                                        if player_num == 1 \
+                                        else ConfigManager.config["JOY2_JUMP"]
+                        if btn == jump_btn:
+                                # FIX (tasto fuoco "non funzionava" — bug utente):
+                                # il rifiuto era SILENZIOSO (solo print in
+                                # console): l'utente non capiva che doveva premere
+                                # un ALTRO tasto, rinunciava, e JOY2_SHOOT
+                                # restava -1 -> in gioco il tasto di fuoco non
+                                # rispondeva. Ora mostriamo un messaggio chiaro.
+                                print("[ConfigJoy] same button as jump, ignoring")
+                                if hint_label:
+                                        hint_label.text = I18n.t("joy.same_as_jump")
+                                return
+                        if player_num == 1:
+                                ConfigManager.config["JOY_SHOOT"] = btn
+                                print("[ConfigJoy] P1 JOY_SHOOT = ", btn)
+                                ConfigManager.save_config()
+                                if GameManager.num_players == 2:
+                                        # FIX (config P2 chiesta due volte): lo switch
+                                        # in-place a PLAYER 2 deve aggiornare ANCHE
+                                        # GameManager.config_joy_player, altrimenti
+                                        # _on_config_confirmed vedeva ancora
+                                        # config_joy_player==1 e RICARICAVA la scena
+                                        # facendo ripetere la configurazione di P2.
+                                        player_num = 2
+                                        if GameManager:
+                                                GameManager.config_joy_player = 2
+                                                GameManager.config_joy_step = 0
+                                        step = 0
+                                        player_label.text = I18n.t("joy.player") % 2
+                                        _update_step()
+                                        wait_for_release = true
+                                else:
+                                        config_finished.emit()
+                        else:
+                                ConfigManager.config["JOY2_SHOOT"] = btn
+                                print("[ConfigJoy] P2 JOY2_SHOOT = ", btn)
+                                ConfigManager.save_config()
+                                config_finished.emit()
+                        wait_for_release = true
+        # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
+        # fase di uscita dalla scena (dopo config_finished.emit() che cambia
+        # scena). Aggiungiamo null check prima di chiamare set_input_as_handled.
+        var vp: Viewport = get_viewport()
+        if vp != null:
+                vp.set_input_as_handled()
+
+
+# Draw the background. Uses the same AI crypt/ruderi image as SelectPlayer
+# for visual consistency; falls back to the procedural crypt if the AI image
+# is missing. A subtle dark overlay keeps the label text legible.
+func _draw() -> void:
+        var vp_size: Vector2 = size
+        # Defensive fallback: if the Control root hasn't resolved its anchors
+        # yet (size == 0), use the viewport size directly so the background
+        # is always drawn covering the full screen.
+        if vp_size.x < 1.0 or vp_size.y < 1.0:
+                vp_size = get_viewport_rect().size
+        if _bg_texture != null:
+                # Cover-fit math (same as SelectPlayer/WinScreen/LoseScreen):
+                # scale = max(vp/tex) so the entire viewport is filled with no
+                # black bars, and center the draw rect.
+                var tex_size: Vector2 = _bg_texture.get_size()
+                var scale_x: float = vp_size.x / tex_size.x
+                var scale_y: float = vp_size.y / tex_size.y
+                var bg_scale: float = maxf(scale_x, scale_y)
+                var draw_size: Vector2 = tex_size * bg_scale
+                var draw_pos: Vector2 = (vp_size - draw_size) * 0.5
+                draw_texture_rect(_bg_texture, Rect2(draw_pos, draw_size), false)
+        elif EnvironmentArt:
+                # Fallback: procedural crypt background (if AI image missing)
+                EnvironmentArt.draw_crypt_background(self, vp_size, _anim_time)
+        # Subtle dark overlay (25%) so the labels stand out without crushing
+        # the rich crypt detail. Previous value was 0.45 which made the
+        # already-dark gradient nearly invisible.
+        draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.25), true)

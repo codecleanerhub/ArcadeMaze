@@ -1,0 +1,37 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/core/BossRoomController.gd" id="0_controller"]
+[ext_resource type="Script" path="res://scripts/bosses/Boss.gd" id="1_boss"]
+[ext_resource type="Script" path="res://scripts/core/Player.gd" id="2_player"]
+[ext_resource type="Script" path="res://scripts/ui/HUD.gd" id="3_hud"]
+
+[node name="BossRoom" type="Node2D"]
+script = ExtResource("0_controller")
+
+[node name="Player" type="CharacterBody2D" parent="."]
+script = ExtResource("2_player")
+
+[node name="Sprite2D" type="Sprite2D" parent="Player"]
+
+[node name="Player2" type="CharacterBody2D" parent="."]
+visible = false
+script = ExtResource("2_player")
+
+[node name="Sprite2D" type="Sprite2D" parent="Player2"]
+
+[node name="Boss" type="Node2D" parent="."]
+script = ExtResource("1_boss")
+
+[node name="BossProjectiles" type="Node2D" parent="."]
+
+[node name="BossRoomWeapons" type="Node2D" parent="."]
+
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="HUD" type="Control" parent="HUDLayer"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 80.0
+grow_horizontal = 2
+script = ExtResource("3_hud")

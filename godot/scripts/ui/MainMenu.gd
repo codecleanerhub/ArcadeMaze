@@ -1,0 +1,1175 @@
+# ============================================================================
+# MainMenu.gd  (Control node)
+#
+# Godot port of:
+#   - Game.cpp :: drawMenu()
+#   - Game.cpp :: drawSelectPlayer()  (character wheel portion)
+#
+# Layout (mirror of the SFML build, expressed in 1024x1024 design space):
+#   * Background:   bg_menu.jpg (cover-fit to the window)
+#                   bg_options.png shown when _in_options == true (Options
+#                   submenu with ancient bronze gears / Tomb Raider style)
+#   * Title:        "ARCADE MAZE"  (gold + dark gold shadow)
+#                   becomes "OPTIONS" while the Options submenu is open.
+#   * Ornament:     gold horizontal line + diamond (between title and items)
+#   * Scroll panel: dark parchment-style rounded rectangle (items list)
+#       Main menu (7 items, selected highlighted in yellow + animated flame):
+#           0. NUMBER OF PLAYERS: 1 / 2
+#           1. GAME MODE: STORY / INFINITE
+#           2. TEST MODE: ON / OFF
+#           3. OPTIONS          (opens the Options submenu)
+#           4. START GAME
+#           5. CREDITS
+#           6. HALL OF FAME
+#       Options submenu (4 items — TASK 44 aggiunta LANGUAGE):
+#           0. MUSIC: ON / OFF
+#           1. LANGUAGE: ENGLISH / ITALIANO   (cambia tutti i testi del gioco)
+#           2. CONFIGURE JOYSTICK
+#           3. BACK              (returns to main menu)
+#       TASK 44: ogni testo del menu arriva da I18n.t() (EN default / IT).
+#   * Character wheel: 8 characters (HERO_M, HERO_F, MAGE, ORC, ELF, KNIGHT,
+#                      GOLEM, DRAGON, VAMPIRE) shown side-view.
+#   * Footer:        "By" (gold) + "Marled Software" (ivory)
+#
+# Navigation (matches the original):
+#   * Up/Down (or joystick Y axis) = move selection
+#   * Left/Right (or joystick X axis) = change the selected option's value
+#   * Enter / Space (or joystick confirm) = activate item
+#   * ESC                          = quit (handled by parent) - or back to main
+#                                     menu if the Options submenu is open.
+#
+# Emitted signals:
+#   * start_requested(num_players:int, mode:int, music:bool, p1_char:int, p2_char:int)
+#   * credits_requested()
+#   * configure_joystick_requested(player:int)  # 1 or 2
+# ============================================================================
+extends Control
+
+# Game-mode mirror of GameMode enum (kept in sync with ConfigManager).
+enum GameMode { STORY, INFINITE }
+
+# --- Signals ---------------------------------------------------------------
+signal start_requested(num_players: int, game_mode: int, music: bool,
+                                           p1_char: int, p2_char: int)
+signal credits_requested()
+signal configure_joystick_requested(player: int)
+
+# --- Exposed theme colors (match the SFML palette) -------------------------
+@export var color_title_gold:    Color = Color(1.000, 0.843, 0.000)   # 255,215,0
+@export var color_title_shadow:  Color = Color(0.706, 0.471, 0.157)   # 180,120,40
+@export var color_item_normal:   Color = Color(0.706, 0.706, 0.706)   # 180,180,180
+@export var color_item_selected: Color = Color(1.000, 1.000, 0.000)   # Yellow
+@export var color_footer_by:     Color = Color(1.000, 0.843, 0.392)   # 255,215,100
+@export var color_footer_name:   Color = Color(0.961, 0.922, 0.784)   # 245,235,200
+@export var color_hint:          Color = Color(0.588, 0.588, 0.588)   # 150,150,150
+@export var color_parchment_bg:  Color = Color(0.078, 0.047, 0.031, 0.784)
+@export var color_parchment_border: Color = Color(0.549, 0.392, 0.196)
+
+# --- Internal state (mirrors Game::xxx fields) ----------------------------
+var _menu_item_index: int = 0
+var _num_players: int = 1
+var _game_mode: int = GameMode.STORY
+var _music_enabled: bool = false  # default OFF (user can enable in Options)
+var _test_mode_enabled: bool = false
+var _fullscreen_enabled: bool = true  # BootManager sets fullscreen at startup
+# Character selection (8 characters, matches Player.h:CharacterType).
+var _p1_character: int = 0
+var _p2_character: int = 1
+var _wheel_index: int = 0  # current wheel position (0..7)
+var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
+# --- Options submenu state machine -----------------------------------------
+# When true, the menu shows the Options submenu (MUSIC / CONFIGURE JOYSTICK /
+# BACK) instead of the main menu. The OPTIONS item in the main menu sets this
+# to true; the BACK item (or ESC) sets it back to false.
+var _in_options: bool = false
+const MAIN_MENU_ITEMS: int = 7   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CREDITS, HALL OF FAME
+# TASK 44: il sottomenu OPTIONS ha 4 voci — MUSIC, LANGUAGE (nuova),
+# CONFIGURE JOYSTICK, BACK.
+const OPTIONS_MENU_ITEMS: int = 4  # MUSIC, LANGUAGE, CONFIGURE JOYSTICK, BACK
+const OPTIONS_MAIN_RETURN_INDEX: int = 3  # main menu index of OPTIONS item
+# TASK 44: indice della voce CONFIGURE JOYSTICK nel sottomenu OPTIONS
+# (era 1 prima dell'inserimento di LANGUAGE alla posizione 1).
+const OPTIONS_JOY_CONFIG_INDEX: int = 2
+# FIX (Hall of Fame): indice della voce HALL OF FAME nel menu principale
+const HALL_OF_FAME_MENU_INDEX: int = 6
+# ---
+
+# Animation timer (mirrors menuTime in drawMenu()).
+var _menu_time: float = 0.0
+var _joy_nav_cooldown: float = 0.0  # debounce per navigazione joystick
+var _inactivity_timer: float = 0.0  # 30s inactivity -> demo mode
+const DEMO_INACTIVITY_SECONDS: float = 30.0
+
+# Child nodes (built in _ready).
+var _bg: TextureRect
+var _options_bg: TextureRect  # Themed background shown when _in_options == true
+var _title_label: Label
+var _footer_by: Label
+var _footer_name: Label
+var _hint_label: Label
+var _item_labels: Array[Label] = []
+var _panel: PanelContainer
+var _flame_node: Node2D = null
+var _char_preview_container: HBoxContainer
+# Preview sprites for the 8 characters.
+var _char_sprites: Array[TextureRect] = []
+# Index of the wheel sprite currently highlighted.
+var _wheel_highlight: int = 0
+
+
+# ============================================================================
+# Lifecycle
+# ============================================================================
+func _ready() -> void:
+        set_anchors_preset(Control.PRESET_FULL_RECT)
+        mouse_filter = Control.MOUSE_FILTER_STOP
+        focus_mode = Control.FOCUS_ALL
+        _build_ui()
+        # FIX ("2 giocatori" che si resettava a 1 — bug utente 2P): il numero
+        # di players era una variabile LOCALE (_num_players = 1 di default)
+        # mai risincronizzata da GameManager: ogni ricaricamento della scena (ritorno da
+        # ConfigJoy/Options) mostrava di nuovo "1 PLAYER" anche se il valore
+        # scelto era 2. Ora _ready ripristina numero players e game mode
+        # salvati in GameManager (che sopravvive ai cambi scena), così le
+        # scelte del menu PERSISTONO finché non si cambia partita.
+        if GameManager:
+                _num_players = GameManager.num_players
+                _game_mode = GameManager.game_mode
+        _update_items_text()
+        _update_character_wheel()
+        # TASK 26: primo collocamento del pannello al centro-destra dopo il
+        # layout iniziale (poi il segnale resized lo mantiene centrato).
+        _recenter_menu_panel.call_deferred()
+        # Sync music state from GameManager and start menu music if enabled.
+        if GameManager:
+                _music_enabled = GameManager.music_enabled
+                _test_mode_enabled = GameManager.test_mode_enabled
+        if AudioManager and _music_enabled:
+                AudioManager.set_music_enabled(true)
+                AudioManager.play_menu_music()
+        # Self-wire signals to scene-transition handlers.
+        start_requested.connect(_on_start_requested)
+        credits_requested.connect(_on_credits_requested)
+        configure_joystick_requested.connect(_on_configure_joystick_requested)
+        # FIX (config joystick dal menu OPTIONS): se torniamo al menu dopo
+        # aver configurato il joystick dalle opzioni, riapriamo il sottomenu
+        # OPTIONS col cursore su CONFIGURE JOYSTICK (da lì il giocatore può
+        # premere BACK o riconfigurare), NON il menu principale radice.
+        if GameManager and GameManager.menu_reopen_options:
+                GameManager.menu_reopen_options = false
+                _set_in_options(true)
+                _menu_item_index = OPTIONS_JOY_CONFIG_INDEX  # CONFIGURE JOYSTICK
+                _update_items_text()
+
+
+# ============================================================================
+# Demo mode trigger (30s inactivity)
+# FIX (alternanza demo/Hall of Fame): dopo 30s di inattività il gioco mostra
+# IN ALTERNANZA la demo mode (1ª volta, 3ª, ...) e la schermata Hall of Fame
+# (2ª volta, 4ª, ...). Il contatore vive su GameManager e sopravvive ai
+# cambi scena.
+# ============================================================================
+func _start_demo_mode() -> void:
+        _inactivity_timer = 0.0
+        if GameManager:
+                GameManager.standby_show_count += 1
+                if GameManager.standby_show_count % 2 == 0:
+                        print("[MainMenu] Inactivity timeout, showing HALL OF FAME (alternata)")
+                        GameManager.hof_from_standby = true
+                        GameManager.go_to_hall_of_fame()
+                        return
+        print("[MainMenu] Inactivity timeout, starting demo mode")
+        # TASK 44: LoadingScreen al posto dello schermo nero (la demo è una
+        # scena pesante: carica il labirinto procedurale).
+        if LoadingScreen:
+                LoadingScreen.show_loading()
+        get_tree().change_scene_to_file("res://scenes/DemoMode.tscn")
+
+
+# ============================================================================
+# Signal handlers (wire menu actions to GameManager scene transitions)
+# ============================================================================
+func _on_start_requested(num_players: int, game_mode: int, music: bool,
+                p1_char: int, p2_char: int) -> void:
+        if GameManager:
+                # FIX (config joystick dal menu OPTIONS): questo è il flusso
+                # START GAME: a fine ConfigJoy si prosegue verso SelectPlayer
+                # -> Intro -> partita (NON si torna al menu).
+                GameManager.config_joy_from_options = false
+                GameManager.num_players = num_players
+                GameManager.game_mode = game_mode
+                GameManager.music_enabled = music
+                GameManager.test_mode_enabled = _test_mode_enabled
+                GameManager.player1_character = p1_char
+                GameManager.player2_character = p2_char
+                GameManager.current_level = 1
+                GameManager.config_joy_step = 0
+                # FIX #1 (menu flow): the C++ engine (Game.cpp::startGameAfterSelectPlayer
+                # at line ~8585) routed through STATE_CONFIG_JOY *before* the intro/game
+                # whenever `joy_jump < 0 || joy_shoot < 0` (i.e. joystick not yet
+                # calibrated). The previous Godot port skipped this check entirely,
+                # going straight to SelectPlayer, which meant the user could enter a
+                # game with an unconfigured joystick (Bug #5 root cause).
+                # Now we mirror the C++ flow:
+                #   START GAME
+                #     -> if (1P and p1 joy not ready) OR (2P and either joy not ready):
+                #            CONFIG_JOY (P1, then P2)
+                #     -> else if not yet at SELECT_PLAYER stage:
+                #            SELECT_PLAYER (always mandatory before game)
+                # The "always go to SelectPlayer first" rule matches the user's
+                # explicit requirement and the C++ engine behavior.
+                # FIX (flusso joystick config): la logica corretta è:
+                # 1. Se c'è un joystick collegato E non è configurato → ConfigJoy
+                # 2. Se 2P e un joystick è configurato ma l'altro no → ConfigJoy per entrambi
+                # 3. Se tutti i joystick collegati sono configurati → NON aprire ConfigJoy, vai a SelectPlayer
+                # 4. "Configura joystick" dal menu → apre SEMPRE ConfigJoy (gestito in _activate_current)
+                var need_joy_config: bool = false
+                var joy_pads: Array = Input.get_connected_joypads()
+                if joy_pads.size() > 0 and ConfigManager:
+                        # C'è almeno un joystick collegato: verifica se è configurato
+                        need_joy_config = (not ConfigManager.p1_joystick_ready())
+                        # In 2P, se il primo joystick è configurato ma il secondo no,
+                        # o viceversa, configura entrambi
+                        if num_players == 2 and joy_pads.size() >= 2:
+                                if not ConfigManager.p2_joystick_ready():
+                                        need_joy_config = true
+                if need_joy_config:
+                        # Force joystick config first; ConfigJoy.gd will route to
+                        # SelectPlayer automatically after both players are configured.
+                        GameManager.config_joy_player = 1
+                        GameManager.config_joy_step = 0
+                        GameManager.go_to_config_joy()
+                else:
+                        # Joystick già configurato (o nessun joystick collegato):
+                        # vai direttamente a SelectPlayer → Intro → Game.
+                        GameManager.go_to_select_player()
+
+
+func _on_credits_requested() -> void:
+        if GameManager:
+                GameManager.go_to_credits()
+
+
+func _on_configure_joystick_requested(player: int) -> void:
+        if GameManager:
+                # FIX (dopo la configurazione parte il gioco): ConfigJoy aperta
+                # dal sottomenu OPTIONS deve riportare al MENU PRINCIPALE, non
+                # verso SelectPlayer -> partita. Marciamo la provenienza.
+                GameManager.config_joy_from_options = true
+                GameManager.config_joy_player = player
+                GameManager.config_joy_step = 0
+                GameManager.go_to_config_joy()
+
+
+# FIX (demo mode): un evento rappresenta un'interazione REALE dell'utente
+# solo se è una pressione deliberata: tasto premuto (senza echo repeat),
+# bottone joystick premuto, asse joystick oltre metà corsa, click mouse o
+# touch. Il drift analogico (|asse| < 0.5) NON conta: la demo parte anche
+# con un controller collegato che "respira".
+func _is_real_user_input(event: InputEvent) -> bool:
+        if event is InputEventKey:
+                return event.pressed and not event.echo
+        if event is InputEventJoypadButton:
+                return event.pressed
+        if event is InputEventJoypadMotion:
+                return absf(event.axis_value) > 0.5
+        if event is InputEventMouseButton:
+                return event.pressed
+        if event is InputEventScreenTouch:
+                return event.pressed
+        if event is InputEventAction:
+                return event.pressed
+        return false
+
+
+func _process(delta: float) -> void:
+        _menu_time += delta
+        # Decrement joystick navigation cooldown (debounce)
+        if _joy_nav_cooldown > 0:
+                _joy_nav_cooldown -= delta
+        # Inactivity timer: after 30s of no input, start demo mode
+        _inactivity_timer += delta
+        if _inactivity_timer >= DEMO_INACTIVITY_SECONDS:
+                _start_demo_mode()
+                return
+        # Animated flame flicker for the selected item (visual only).
+        var flicker: float = sin(_menu_time * 15.0) * 1.5
+        for i in _item_labels.size():
+                var lbl: Label = _item_labels[i]
+                if i == _menu_item_index:
+                        lbl.add_theme_color_override("font_color", color_item_selected)
+                        lbl.modulate = Color(1.0, 1.0, 1.0, 0.95 + 0.05 * sin(_menu_time * 8.0))
+                else:
+                        lbl.add_theme_color_override("font_color", color_item_normal)
+                        lbl.modulate = Color(1.0, 1.0, 1.0, 1.0)
+        # Pulse the title (very subtle gold shimmer).
+        if _title_label:
+                _title_label.modulate = Color(
+                        1.0, 1.0, 1.0, 0.92 + 0.08 * sin(_menu_time * 2.0))
+        # Hint text gentle fade.
+        if _hint_label:
+                _hint_label.modulate = Color(1, 1, 1, 0.7 + 0.3 * (0.5 + 0.5 * sin(_menu_time * 1.5)))
+        # Hide unused warning
+        pass # flicker variable used above
+        queue_redraw()
+        # TASK 26 (fix fiamma invisibile): la fiamma della selezione vive su
+        # un nodo DEDICATO aggiunto per ultimo (il _draw del menu finisce
+        # SOTTO i figli come la TextureRect di sfondo: disegnandola lì era
+        # sempre coperta — bug latente pre-Task-26).
+        if _flame_node != null:
+                _flame_node.queue_redraw()
+
+
+# ----------------------------------------------------------------------------
+# TASK 26 — il pannello menu (PanelContainer auto-dimensionato sulle voci)
+# resta CENTRATO sul punto-ancora (75% larghezza, 50% altezza): dopo ogni
+# resize il centro del pannello coincide col centro della metà destra.
+# ----------------------------------------------------------------------------
+func _recenter_menu_panel() -> void:
+        if _panel == null or not is_instance_valid(_panel):
+                return
+        var sz: Vector2 = _panel.size
+        if sz.x <= 0.0 or sz.y <= 0.0:
+                return  # layout non ancora pronto
+        _panel.offset_left = -sz.x * 0.5
+        _panel.offset_right = sz.x * 0.5
+        _panel.offset_top = -sz.y * 0.5
+        _panel.offset_bottom = sz.y * 0.5
+
+
+func _draw() -> void:
+        # Ornament line + central diamond (gold).
+        var orn_y: float = 220.0
+        var orn_gold: Color = Color(0.784, 0.627, 0.196)
+        # Center diamond
+        var cx: float = size.x / 2.0
+        var pts := PackedVector2Array([
+                Vector2(cx, orn_y - 6),
+                Vector2(cx + 8, orn_y),
+                Vector2(cx, orn_y + 6),
+                Vector2(cx - 8, orn_y),
+        ])
+        draw_colored_polygon(pts, orn_gold)
+        # Side lines
+        draw_rect(Rect2(cx - 200, orn_y - 1, 180, 2), orn_gold)
+        draw_rect(Rect2(cx + 20, orn_y - 1, 180, 2), orn_gold)
+        # Small side diamonds
+        for side in [-1, 1]:
+                var dx: float = side * 200.0
+                var dpts := PackedVector2Array([
+                        Vector2(cx + dx, orn_y - 4),
+                        Vector2(cx + dx + side * 4, orn_y),
+                        Vector2(cx + dx, orn_y + 4),
+                        Vector2(cx + dx - side * 4, orn_y),
+                ])
+                draw_colored_polygon(dpts, orn_gold)
+        # TASK 26: la fiamma della selezione NON si disegna qui (il _draw del
+        # menu finisce sotto la TextureRect di sfondo a tutto schermo):
+        # la disegna il nodo dedicato _flame_node (aggiunto per ultimo),
+        # tramite draw_selection_flame() qui sotto.
+
+
+# Posizione della fiamma = bordo sinistro dell'etichetta selezionata
+# (coordinate locali del menu: l'etichetta vive nel PanelContainer, la
+# trasformazione affine copre ogni gerarchia senza assumptioni).
+func _selected_flame_pos() -> Vector2:
+        if _menu_item_index < 0 or _menu_item_index >= _item_labels.size():
+                return Vector2.INF
+        var lbl: Label = _item_labels[_menu_item_index]
+        if lbl == null or not lbl.visible:
+                return Vector2.INF
+        var inv := get_global_transform().affine_inverse()
+        var lp: Vector2 = inv * lbl.get_global_transform().origin
+        return Vector2(lp.x - 30.0, lp.y + lbl.size.y * 0.5)
+
+
+## TASK 26: la fiamma animata viene disegnata sul NODO DEDICATO _flame_node
+## (sopra lo sfondo): chiamata da FlameDrawer._draw().
+func draw_selection_flame(canvas: CanvasItem) -> void:
+        var fp: Vector2 = _selected_flame_pos()
+        if fp == Vector2.INF:
+                return
+        var flicker: float = sin(_menu_time * 15.0) * 1.5
+        # Aura
+        canvas.draw_circle(Vector2(fp.x, fp.y), 8.0,
+                Color(1.0, 0.706, 0.235, 0.314))
+        # Outer red flame
+        canvas.draw_circle(Vector2(fp.x - flicker, fp.y + flicker * 0.3), 4.0 + flicker,
+                Color(0.863, 0.196, 0.078, 0.902))
+        # Inner yellow flame
+        canvas.draw_circle(Vector2(fp.x - 2.5, fp.y + flicker * 0.2), 2.5,
+                Color(1.0, 0.863, 0.392, 0.941))
+
+
+# ============================================================================
+# UI construction
+# ============================================================================
+func _build_ui() -> void:
+        # --- Background texture ---
+        # Full-screen background. STRETCH_KEEP_ASPECT_COVERED ensures the entire
+        # viewport is filled (no black bars) even when the screen aspect ratio
+        # differs from the texture's 1:1 ratio. With aspect="keep" in
+        # project.godot, the viewport is already 1024x1024, so the texture
+        # fills the entire design area perfectly.
+        _bg = TextureRect.new()
+        _bg.name = "Background"
+        _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        # FIX (viewport 1920x1080): STRETCH_SCALE distorce la texture 1024x1024.
+        # STRETCH_KEEP_ASPECT_COVERED riempie il viewport mantenendo l'aspect
+        # ratio della texture (cover-fit, no distorsione, ritaglia i bordi).
+        _bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+        # FIX (regressione): usa Image.load() invece di load() per bypassare
+        # il sistema di import di Godot. load() ritorna null se .godot/ è
+        # stato cancellato e non rigenerato.
+        # FIX (log noise): file_exists() silenzi l'ERROR di Godot se manca.
+        var menu_path: String = ProjectSettings.globalize_path("res://assets/backgrounds/bg_menu.jpg")
+        if FileAccess.file_exists(menu_path):
+                var menu_img := Image.new()
+                if menu_img.load(menu_path) == OK:
+                        _bg.texture = ImageTexture.create_from_image(menu_img)
+        add_child(_bg)
+
+        # --- Options submenu background (themed: ancient bronze gears) ---
+        # Loaded via Image.load() as requested by the task. Initially hidden,
+        # shown only while _in_options == true. Placed as a sibling of _bg so we
+        # can simply toggle visibility when entering/leaving the Options submenu.
+        _options_bg = TextureRect.new()
+        _options_bg.name = "OptionsBackground"
+        _options_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+        _options_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        _options_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+        # Load via Image.load() (returns Error) then wrap in an ImageTexture so
+        # we can fall back gracefully if the file is missing on disk.
+        var opt_abs: String = ProjectSettings.globalize_path("res://assets/backgrounds/bg_options.png")
+        if not FileAccess.file_exists(opt_abs):
+                push_warning("MainMenu: bg_options.png not found at %s" % opt_abs)
+        else:
+                var opt_img := Image.new()
+                if opt_img.load(opt_abs) == OK:
+                        _options_bg.texture = ImageTexture.create_from_image(opt_img)
+                else:
+                        push_warning("MainMenu: bg_options.png exists but failed to load")
+        _options_bg.visible = false
+        add_child(_options_bg)
+
+        # Dark overlay over the background, below the panel
+        var dark := ColorRect.new()
+        dark.set_anchors_preset(Control.PRESET_FULL_RECT)
+        dark.color = Color(0, 0, 0, 0.20)
+        add_child(dark)
+
+        # --- Title ---
+        # Centered horizontally at the top. We set anchors explicitly
+        # (anchor_left=anchor_right=0.5, anchor_top=anchor_bottom=0) and use
+        # symmetric offsets (-280/+280) so the label is exactly 560px wide and
+        # always centered, regardless of how Godot interprets PRESET_FULL_RECT.
+        _title_label = Label.new()
+        _title_label.name = "Title"
+        _title_label.text = "ARCADE MAZE"
+        _title_label.anchor_left = 0.5
+        _title_label.anchor_top = 0.0
+        _title_label.anchor_right = 0.5
+        _title_label.anchor_bottom = 0.0
+        _title_label.offset_left = -300.0
+        _title_label.offset_top = 60.0
+        _title_label.offset_right = 300.0
+        _title_label.offset_bottom = 130.0
+        _title_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        _title_label.add_theme_font_size_override("font_size", 48)
+        _title_label.add_theme_color_override("font_color", color_title_gold)
+        _title_label.add_theme_color_override("font_shadow_color", color_title_shadow)
+        _title_label.add_theme_constant_override("shadow_offset_x", -3)
+        _title_label.add_theme_constant_override("shadow_offset_y", -3)
+        _title_label.add_theme_constant_override("shadow_outline_size", 3)
+        add_child(_title_label)
+
+        # --- Parchment panel — TASK 26 (richiesta utente) ---
+        # PanelContainer: si dimensiona ESATTAMENTE intorno alle voci di menu
+        # (niente margini morti ai lati/sopra/sotto) e resta ricollocato al
+        # CENTRO-DESTRA dello schermo (ancore puntate a x=75%, y=50% con
+        # recentramento a ogni resize: il testo cambia col sottomenu OPTIONS).
+        _panel = PanelContainer.new()
+        _panel.name = "MenuPanel"
+        _panel.anchor_left = 0.75
+        _panel.anchor_top = 0.5
+        _panel.anchor_right = 0.75
+        _panel.anchor_bottom = 0.5
+        _panel.offset_left = 0.0
+        _panel.offset_top = 0.0
+        _panel.offset_right = 0.0
+        _panel.offset_bottom = 0.0
+        _panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+        var stylebox := StyleBoxFlat.new()
+        stylebox.bg_color = color_parchment_bg
+        stylebox.border_color = color_parchment_border
+        stylebox.set_border_width_all(6)
+        stylebox.set_corner_radius_all(8)
+        # TASK 26: margine contenuto minimo — il pannello abbraccia le voci.
+        stylebox.set_content_margin_all(14)
+        _panel.add_theme_stylebox_override("panel", stylebox)
+        _panel.resized.connect(_recenter_menu_panel)
+        add_child(_panel)
+
+        # --- 7 menu item labels inside the panel (VBox gestito dal
+        # PanelContainer: larghezza = voce piu' larga, testo centrato) ---
+        # We create exactly MAIN_MENU_ITEMS labels (7): the main menu uses all 7,
+        # the Options submenu uses the first OPTIONS_MENU_ITEMS (3) and the rest
+        # are hidden via `visible = false` while _in_options == true.
+        var items_container := VBoxContainer.new()
+        items_container.name = "Items"
+        items_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        items_container.grow_vertical = Control.GROW_DIRECTION_BOTH
+        items_container.alignment = BoxContainer.ALIGNMENT_BEGIN
+        items_container.add_theme_constant_override("separation", 22)
+        _panel.add_child(items_container)
+
+        # Initial placeholder texts; the real text is set in _update_items_text()
+        # based on whether the main menu or the Options submenu is active.
+        # TASK 44: i testi veri arrivano da I18n.t() in _update_items_text().
+        var item_texts: Array = [
+                "NUMBER OF PLAYERS:",
+                "GAME MODE:",
+                "TEST MODE:",
+                "OPTIONS",
+                "START GAME",
+                "CREDITS",
+                "HALL OF FAME",
+        ]
+        for txt in item_texts:
+                var lbl := Label.new()
+                lbl.text = txt
+                lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+                lbl.add_theme_font_size_override("font_size", 24)
+                lbl.add_theme_color_override("font_color", color_item_normal)
+                lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
+                lbl.add_theme_constant_override("shadow_offset_x", 1)
+                lbl.add_theme_constant_override("shadow_offset_y", 1)
+                _item_labels.append(lbl)
+                items_container.add_child(lbl)
+
+        # --- Character wheel (8 side-view previews) ---
+        # Hidden by default, shown during character selection.
+        # Anchored to center-bottom with symmetric offsets so it stays centered.
+        _char_preview_container = HBoxContainer.new()
+        _char_preview_container.name = "CharacterWheel"
+        _char_preview_container.anchor_left = 0.5
+        _char_preview_container.anchor_top = 1.0
+        _char_preview_container.anchor_right = 0.5
+        _char_preview_container.anchor_bottom = 1.0
+        _char_preview_container.offset_left = -360.0
+        _char_preview_container.offset_top = -160.0
+        _char_preview_container.offset_right = 360.0
+        _char_preview_container.offset_bottom = -20.0
+        _char_preview_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _char_preview_container.grow_vertical = Control.GROW_DIRECTION_BOTH
+        _char_preview_container.alignment = BoxContainer.ALIGNMENT_CENTER
+        _char_preview_container.add_theme_constant_override("separation", 12)
+        _char_preview_container.visible = false
+        add_child(_char_preview_container)
+
+        # --- Footer ---
+        # Two centered labels at the bottom of the screen.
+        # "By" label (small gold text)
+        _footer_by = Label.new()
+        _footer_by.text = "By"
+        _footer_by.anchor_left = 0.5
+        _footer_by.anchor_top = 1.0
+        _footer_by.anchor_right = 0.5
+        _footer_by.anchor_bottom = 1.0
+        _footer_by.offset_left = -200.0
+        _footer_by.offset_top = -50.0
+        _footer_by.offset_right = 200.0
+        _footer_by.offset_bottom = -30.0
+        _footer_by.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _footer_by.grow_vertical = Control.GROW_DIRECTION_BOTH
+        _footer_by.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _footer_by.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        _footer_by.add_theme_font_size_override("font_size", 18)
+        _footer_by.add_theme_color_override("font_color", color_footer_by)
+        add_child(_footer_by)
+
+        # "Marled Software" label (ivory text)
+        _footer_name = Label.new()
+        _footer_name.text = "Marled Software"
+        _footer_name.anchor_left = 0.5
+        _footer_name.anchor_top = 1.0
+        _footer_name.anchor_right = 0.5
+        _footer_name.anchor_bottom = 1.0
+        _footer_name.offset_left = -200.0
+        _footer_name.offset_top = -30.0
+        _footer_name.offset_right = 200.0
+        _footer_name.offset_bottom = -10.0
+        _footer_name.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _footer_name.grow_vertical = Control.GROW_DIRECTION_BOTH
+        _footer_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _footer_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        _footer_name.add_theme_font_size_override("font_size", 18)
+        _footer_name.add_theme_color_override("font_color", color_footer_name)
+        add_child(_footer_name)
+
+        # --- Hint text (centered at the bottom, above the footer) ---
+        _hint_label = Label.new()
+        _hint_label.text = "UP/DOWN TO SELECT - LEFT/RIGHT TO CHANGE"
+        _hint_label.anchor_left = 0.5
+        _hint_label.anchor_top = 1.0
+        _hint_label.anchor_right = 0.5
+        _hint_label.anchor_bottom = 1.0
+        _hint_label.offset_left = -300.0
+        _hint_label.offset_top = -75.0
+        _hint_label.offset_right = 300.0
+        _hint_label.offset_bottom = -55.0
+        _hint_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+        _hint_label.grow_vertical = Control.GROW_DIRECTION_BOTH
+        _hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        _hint_label.add_theme_font_size_override("font_size", 16)
+        _hint_label.add_theme_color_override("font_color", color_hint)
+        add_child(_hint_label)
+
+        # TASK 26: nodo fiamma della selezione — aggiunto per ULTIMO così
+        # disegna sopra sfondo e pannello (vedi draw_selection_flame).
+        _flame_node = _make_flame_node()
+        add_child(_flame_node)
+
+
+# ----------------------------------------------------------------------------
+# TASK 26 — fiamma della selezione su nodo dedicato (vedi _process).
+# ----------------------------------------------------------------------------
+class FlameDrawer extends Node2D:
+        var owner_menu: CanvasItem = null
+        func _draw() -> void:
+                if owner_menu != null and owner_menu.has_method("draw_selection_flame"):
+                        owner_menu.call("draw_selection_flame", self)
+
+
+func _make_flame_node() -> Node2D:
+        var fn := FlameDrawer.new()
+        fn.owner_menu = self
+        fn.name = "SelectionFlame"
+        return fn
+
+
+# Builds a gold-outlined stylebox for highlighting the selected character slot.
+func _make_highlight_stylebox() -> StyleBoxFlat:
+        var sb := StyleBoxFlat.new()
+        sb.bg_color = Color(0, 0, 0, 0)
+        sb.border_color = color_title_gold
+        sb.set_border_width_all(2)
+        sb.set_corner_radius_all(4)
+        return sb
+
+
+# Returns the resource path of the "side-view" sprite for the given character.
+# Mirrors getCharacterSpriteBase() in Player.h.
+func _character_sprite_path(char_idx: int) -> String:
+        var base_names := [
+                "player1_sheet",          # HERO_M
+                "player2_sheet",           # HERO_F
+                "char_mage_sheet",         # MAGE
+                "char_orc_sheet",          # ORC
+                "char_elf_sheet",          # ELF
+                "char_knight_sheet",       # KNIGHT
+                "char_golem_sheet",        # GOLEM
+                "char_dragon_sheet",       # DRAGON
+                "char_vampire_sheet",      # VAMPIRE (8th in our 8-slot wheel)
+        ]
+        if char_idx < 0 or char_idx >= base_names.size():
+                return ""
+        return "res://assets/sprites/%s.png" % base_names[char_idx]
+
+
+# Returns a friendly display name for a character index.
+# TASK 44: localizzato (I18n "char.*").
+func _character_name(char_idx: int) -> String:
+        var keys := [
+                "char.hero", "char.heroine", "char.mage", "char.orc",
+                "char.elf", "char.knight", "char.golem", "char.dragon",
+                "char.vampire",
+        ]
+        if char_idx < 0 or char_idx >= keys.size():
+                return "???"
+        if I18n:
+                return I18n.t(keys[char_idx])
+        return keys[char_idx]
+
+
+# ============================================================================
+# State updates
+# ============================================================================
+
+# Refresh the text of every menu item to reflect the current selection values.
+# Two display modes (simple state machine):
+#   * _in_options == false  -> main menu (7 items)
+#   * _in_options == true   -> Options submenu (4 items: MUSIC, LANGUAGE,
+#                              CONFIGURE JOYSTICK, BACK). Labels beyond the
+#                              submenu count are hidden via `visible = false`.
+# The title text and the visible background are also swapped here so callers
+# only need to invoke `_update_items_text()` after any state change.
+# TASK 44: tutti i testi passano da I18n.t() — cambiano lingua alla volta
+# quando il giocatore toggola LANGUAGE nel sottomenu.
+func _update_items_text() -> void:
+        if _item_labels.is_empty():
+                return
+        if I18n:
+                _hint_label.text = I18n.t("menu.hint")
+        if _in_options:
+                # --- Options submenu (4 items) ---
+                _item_labels[0].text = I18n.t("menu.music") % (
+                        I18n.t("menu.on") if _music_enabled else I18n.t("menu.off"))
+                _item_labels[0].visible = true
+                # TASK 44 — voce LANGUAGE: mostra l'ENDONIMO della lingua
+                # ("ENGLISH" / "ITALIANO") in entrambe le lingue.
+                _item_labels[1].text = I18n.t("menu.language") % I18n.language_display_name()
+                _item_labels[1].visible = true
+                _item_labels[2].text = I18n.t("menu.configure_joystick")
+                _item_labels[2].visible = true
+                _item_labels[3].text = I18n.t("menu.back")
+                _item_labels[3].visible = true
+                # Hide any extra labels (indices 4..N-1) while inside the Options
+                # submenu so the panel only shows the 4 options items.
+                for i in range(OPTIONS_MENU_ITEMS, _item_labels.size()):
+                        _item_labels[i].visible = false
+                # Swap title + background to the themed Options screen.
+                if _title_label:
+                        _title_label.text = I18n.t("menu.options")
+                if _options_bg:
+                        _options_bg.visible = true
+                if _bg:
+                        _bg.visible = false
+                return
+        # --- Main menu (7 items) ---
+        _item_labels[0].text = I18n.t("menu.num_players") % _num_players
+        _item_labels[0].visible = true
+        _item_labels[1].text = I18n.t("menu.game_mode") % (
+                I18n.t("mode.story") if _game_mode == GameMode.STORY else I18n.t("mode.infinite"))
+        _item_labels[1].visible = true
+        _item_labels[2].text = I18n.t("menu.test_mode") % (
+                I18n.t("menu.on") if _test_mode_enabled else I18n.t("menu.off"))
+        _item_labels[2].visible = true
+        _item_labels[3].text = I18n.t("menu.options")
+        _item_labels[3].visible = true
+        _item_labels[4].text = I18n.t("menu.start")
+        _item_labels[4].visible = true
+        _item_labels[5].text = I18n.t("menu.credits")
+        _item_labels[5].visible = true
+        # FIX (Hall of Fame): 7ª voce di menu
+        _item_labels[6].text = I18n.t("menu.hall_of_fame")
+        _item_labels[6].visible = true
+        # Hide any extra labels beyond MAIN_MENU_ITEMS (defensive; should be none).
+        for i in range(MAIN_MENU_ITEMS, _item_labels.size()):
+                _item_labels[i].visible = false
+        # Restore main-menu title + background.
+        if _title_label:
+                _title_label.text = "ARCADE MAZE"
+        if _options_bg:
+                _options_bg.visible = false
+        if _bg:
+                _bg.visible = true
+
+
+# Updates the visual highlight of the character wheel.
+# Mirrors drawSelectPlayer(): selected character appears brighter (alpha=1.0)
+# and gets a gold outline; others are dimmed (alpha=0.55).
+func _update_character_wheel() -> void:
+        for i in _char_sprites.size():
+                var sprite: TextureRect = _char_sprites[i]
+                var hl: Panel = sprite.get_meta("highlight") as Panel
+                if i == _wheel_highlight:
+                        sprite.modulate = Color(1, 1, 1, 1.0)
+                        sprite.scale = Vector2(1.15, 1.15)
+                        if hl != null:
+                                hl.visible = true
+                else:
+                        sprite.modulate = Color(1, 1, 1, 0.55)
+                        sprite.scale = Vector2(1.0, 1.0)
+                        if hl != null:
+                                hl.visible = false
+
+
+# ============================================================================
+# Input handling
+# ============================================================================
+
+func _unhandled_input(event: InputEvent) -> void:
+        # FIX (demo mode non partiva dopo 30s di standby — ROOT CAUSE): il timer
+        # di inattività veniva resettato da QUALSIASI evento, inclusi:
+        #   * InputEventJoypadMotion con valori TINY (drift analogico: molti
+        #     joystick emettono continuously micro-oscillazioni degli assi;
+        #     questi eventi RAW raggiungono _unhandled_input anche sotto la
+        #     deadzone delle action) → il timer non arrivava MAI a 30s;
+        #   * InputEventMouseMotion (movimenti involontari del mouse).
+        # Ora il timer si resetta SOLO su input REALE dell'utente.
+        if _is_real_user_input(event):
+                _inactivity_timer = 0.0
+        # Keyboard navigation
+        if event is InputEventKey and event.pressed and not event.echo:
+                var key: int = event.keycode
+                match key:
+                        KEY_UP:
+                                _move_selection(-1)
+                        KEY_DOWN:
+                                _move_selection(1)
+                        KEY_LEFT:
+                                _change_option(-1)
+                        KEY_RIGHT:
+                                _change_option(1)
+                        KEY_ENTER, KEY_SPACE:
+                                _activate_current()
+                        KEY_ESCAPE:
+                                # If the Options submenu is open, ESC goes back to the main
+                                # menu instead of quitting the game.
+                                if _in_options:
+                                        _set_in_options(false)
+                                else:
+                                        # Quit the game from the main menu.
+                                        get_tree().quit()
+
+        # FIX #2 (menu navigation broken with joystick):
+        # The previous implementation only listened to JOY_AXIS_LEFT_X/Y (the
+        # analog sticks) and JOY_BUTTON_A. Many arcade-style controllers and
+        # D-pads on Windows/Linux expose the D-pad as JOY_BUTTON_DPAD_UP/
+        # DOWN/LEFT/RIGHT (button indices 11..14) — these were silently ignored.
+        # We now also handle the D-pad as discrete buttons (matching what we
+        # added to project.godot's input map).
+        elif event is InputEventJoypadMotion:
+                var ax: float = event.axis_value
+                if event.axis == JOY_AXIS_LEFT_Y:
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
+                                _move_selection(-1)
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
+                                _move_selection(1)
+                                _joy_nav_cooldown = 0.3
+                elif event.axis == JOY_AXIS_LEFT_X:
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
+                                _change_option(-1)
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
+                                _change_option(1)
+                                _joy_nav_cooldown = 0.3
+                # Some controllers report the D-pad as a hat (axis 6 = X, 7 = Y).
+                # The values jump to ±1.0 instantly, so the same threshold works.
+                # We use numeric axis ids to stay portable across controller types.
+                elif event.axis == 6:  # Hat X (D-pad left/right on many pads)
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
+                                _change_option(-1)
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
+                                _change_option(1)
+                                _joy_nav_cooldown = 0.3
+                elif event.axis == 7:  # Hat Y (D-pad up/down on many pads)
+                        if ax < -0.5 and _joy_nav_cooldown <= 0:
+                                _move_selection(-1)
+                                _joy_nav_cooldown = 0.3
+                        elif ax > 0.5 and _joy_nav_cooldown <= 0:
+                                _move_selection(1)
+                                _joy_nav_cooldown = 0.3
+
+        # Joystick button (confirm + D-pad as buttons)
+        elif event is InputEventJoypadButton and event.pressed:
+                # FIX (avvio partita con tasto fuoco configurato): se l'utente
+                # ha configurato JOY_SHOOT in ConfigJoy, quel tasto attiva anche
+                # la voce di menu corrente (come JOY_BUTTON_A). Permette di
+                # avviare la partita con il tasto di fuoco.
+                var configured_shoot: int = -1
+                # FIX (crash joy_ready): ConfigManager ha p1_joystick_ready(),
+                # non joy_ready(). Usiamo la funzione corretta.
+                if ConfigManager and ConfigManager.p1_joystick_ready():
+                        configured_shoot = ConfigManager.joy_shoot()
+                if configured_shoot >= 0 and event.button_index == configured_shoot:
+                        _activate_current()
+                        return
+                match event.button_index:
+                        JOY_BUTTON_A:
+                                # A button = confirm/activate (mirrors C++ confirm
+                                # which uses joy_jump or joy_shoot fallback)
+                                _activate_current()
+                        JOY_BUTTON_DPAD_UP:
+                                if _joy_nav_cooldown <= 0:
+                                        _move_selection(-1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_DPAD_DOWN:
+                                if _joy_nav_cooldown <= 0:
+                                        _move_selection(1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_DPAD_LEFT:
+                                if _joy_nav_cooldown <= 0:
+                                        _change_option(-1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_DPAD_RIGHT:
+                                if _joy_nav_cooldown <= 0:
+                                        _change_option(1)
+                                        _joy_nav_cooldown = 0.3
+                        JOY_BUTTON_START:
+                                # Start button = also confirm (mirrors C++ behavior)
+                                _activate_current()
+                        JOY_BUTTON_BACK:
+                                # Back/Select button = quit (matches ESC) OR go back from
+                                # the Options submenu to the main menu.
+                                if _in_options:
+                                        _set_in_options(false)
+                                else:
+                                        get_tree().quit()
+                        JOY_BUTTON_B:
+                                # B button = "back" convenience: returns from Options submenu
+                                # to the main menu. If we're already on the main menu, B
+                                # does nothing (so it doesn't accidentally toggle music).
+                                if _in_options:
+                                        _set_in_options(false)
+
+
+# Move the selection cursor up/down by `delta` (-1 or +1), wrapping around.
+# Wraps at MAIN_MENU_ITEMS (6) when in the main menu and at
+# OPTIONS_MENU_ITEMS (3) when inside the Options submenu.
+func _move_selection(delta: int) -> void:
+        var count: int = OPTIONS_MENU_ITEMS if _in_options else MAIN_MENU_ITEMS
+        _menu_item_index = posmod(_menu_item_index + delta, count)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+
+
+# Change the value of the currently-selected option (Left/Right).
+# Behaviour depends on whether the main menu or the Options submenu is open:
+#   * Options submenu (4 items): MUSIC (0) and LANGUAGE (1) are toggleable.
+#                                CONFIGURE JOYSTICK (2) and BACK (3) are
+#                                activated via _activate_current().
+#   * Main menu (7 items):       NUMBER OF PLAYERS (0), GAME MODE (1) and
+#                                TEST MODE (2) are toggleable. OPTIONS (3),
+#                                START GAME (4), CREDITS (5) and HALL OF FAME
+#                                (6) are activated via _activate_current().
+func _change_option(delta: int) -> void:
+        if _in_options:
+                match _menu_item_index:
+                        0:  # MUSIC on/off
+                                _music_enabled = not _music_enabled
+                                # FIX (stato musica desincronizzato): aggiorna
+                                # ANCHE GameManager.music_enabled, così il
+                                # controller di gioco e il tasto M leggono lo
+                                # stesso stato reale (mirror del toggle
+                                # NUMBER OF PLAYERS qui sopra).
+                                if GameManager:
+                                        GameManager.music_enabled = _music_enabled
+                                if AudioManager:
+                                        AudioManager.set_music_enabled(_music_enabled)
+                                        if _music_enabled:
+                                                AudioManager.play_menu_music()
+                        1:
+                                # TASK 44 — LANGUAGE english/italiano: cambia
+                                # ALLA VOLTA ogni testo del menu (e del gioco).
+                                if I18n:
+                                        I18n.toggle_language()
+                        2, 3:
+                                # CONFIGURE JOYSTICK / BACK are activated via
+                                # _activate_current(), not via Left/Right.
+                                pass
+                        _:
+                                pass
+                _update_items_text()
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+                return
+        match _menu_item_index:
+                0:  # Number of players
+                        _num_players = 1 if _num_players == 2 else 2
+                        _wheel_step = 0
+                        # FIX (2P — opzioni sincronizzate subito — bug utente):
+                        # num_players veniva scritto in GameManager SOLO alla
+                        # pressione di START GAME. Aprendo CONFIGURE JOYSTICK
+                        # dal sottomenu OPTIONS, ConfigJoy leggeva
+                        # GameManager.num_players == 1 (stale) e dopo la
+                        # configurazione di P1 TORNAVA al menu senza mai
+                        # chiedere i tasti di P2. Ora il toggle aggiorna
+                        # SUBITO lo stato globale (sovravvive ai cambi scena).
+                        if GameManager:
+                                GameManager.num_players = _num_players
+                1:  # Game mode
+                        _game_mode = GameMode.INFINITE if _game_mode == GameMode.STORY else GameMode.STORY
+                        # FIX (2P — opzioni sincronizzate subito): mirror del
+                        # toggle NUMBER OF PLAYERS (vedi sopra).
+                        if GameManager:
+                                GameManager.game_mode = _game_mode
+                2:  # Test mode on/off
+                        _test_mode_enabled = not _test_mode_enabled
+                        # FIX (opzioni sincronizzate subito): mirror del toggle
+                        # NUMBER OF PLAYERS (vedi sopra).
+                        if GameManager:
+                                GameManager.test_mode_enabled = _test_mode_enabled
+                3, 4, 5, 6:
+                        # OPTIONS / START GAME / CREDITS / HALL OF FAME are not toggleable,
+                        # just activate them.
+                        pass
+                _:
+                        # Move the character wheel selection
+                        _wheel_index = posmod(_wheel_index + delta, 8)
+                        _wheel_highlight = _wheel_index
+                        if _wheel_step == 0:
+                                _p1_character = _wheel_index
+                        else:
+                                _p2_character = _wheel_index
+        _update_items_text()
+        _update_character_wheel()
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+
+
+# Apply the current fullscreen state via DisplayServer.
+# FIX (fullscreen off non funzionava): quando si passa da FULLSCREEN a
+# WINDOWED, Godot non ripristina le dimensioni della finestra. Impostiamo
+# esplicitamente una finestra 1280x720 centrata sullo schermo quando si
+# esce dal fullscreen. Inoltre resettiamo il content_scale_aspect a EXPAND
+# per evitare letterboxing residuo.
+func _apply_fullscreen() -> void:
+        var win: Window = get_window()
+        if _fullscreen_enabled:
+                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+        else:
+                # Passa a windowed mode
+                DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+                # Imposta dimensioni finestra ragionevoli (1280x720, 16:9)
+                if win:
+                        win.size = Vector2i(1280, 720)
+                        # Centra la finestra sullo schermo primario
+                        var screen_id: int = DisplayServer.get_primary_screen()
+                        var screen_size: Vector2i = DisplayServer.screen_get_size(screen_id)
+                        var screen_pos: Vector2i = DisplayServer.screen_get_position(screen_id)
+                        win.position = Vector2i(
+                                screen_pos.x + (screen_size.x - 1280) / 2,
+                                screen_pos.y + (screen_size.y - 720) / 2
+                        )
+                # FIX (menu shiftato in basso a sinistra): il problema è che
+                # il content_scale del root window mantiene le vecchie
+                # impostazioni del fullscreen. Dobbiamo resettare completamente
+                # il content_scale usando set_deferred (perché non possiamo
+                # modificarlo durante _draw).
+                if get_tree():
+                        get_tree().root.set_deferred("content_scale_mode",
+                                Window.CONTENT_SCALE_MODE_CANVAS_ITEMS)
+                        get_tree().root.set_deferred("content_scale_aspect",
+                                Window.CONTENT_SCALE_ASPECT_EXPAND)
+                # Ricrea il background TextureRect e riapplica gli anchor
+                # dopo che il resize è completo (3 frame per sicurezza).
+                _refresh_layout_after_resize_async.call_deferred()
+
+
+# Coroutine che aspetta 3 frame e poi riapplica il layout completo.
+func _refresh_layout_after_resize_async() -> void:
+        await get_tree().process_frame
+        await get_tree().process_frame
+        await get_tree().process_frame
+        var root: Window = get_tree().root
+        if root:
+                root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+                root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+        # Forza il resize del root window per triggerare il ridisegno
+        if get_window():
+                var cur_size := get_window().size
+                get_window().size = Vector2i(cur_size.x + 1, cur_size.y)
+                get_window().size = cur_size
+        set_anchors_preset(Control.PRESET_FULL_RECT)
+        if _bg != null:
+                _bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+        update_minimum_size()
+        queue_redraw()
+
+
+# Helper for the Options submenu state machine. Sets `_in_options` to the
+# requested value, swaps the background + title, resets the cursor, and
+# refreshes the on-screen labels. Centralising the transition here keeps the
+# ESC / JOY_BUTTON_BACK / JOY_BUTTON_B / "BACK" item paths identical.
+# Cursor placement on transition:
+#   * opening Options   -> cursor on MUSIC (index 0)
+#   * closing Options    -> cursor on OPTIONS (index 3) so the player can
+#                           immediately re-open it or move to START GAME.
+func _set_in_options(open_options: bool) -> void:
+        _in_options = open_options
+        _menu_item_index = 0 if open_options else OPTIONS_MAIN_RETURN_INDEX
+        _update_items_text()
+
+
+# Activate the currently-selected menu item (Enter/Space/A button).
+# Behaviour depends on whether the main menu or the Options submenu is open.
+func _activate_current() -> void:
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+        if _in_options:
+                # Options submenu items:
+                #   0 = MUSIC (toggle on/off)
+                #   1 = LANGUAGE (toggle ENGLISH/ITALIANO — TASK 44)
+                #   2 = CONFIGURE JOYSTICK (emit signal; P1 first, P2 if 2 players)
+                #   3 = BACK (return to main menu)
+                match _menu_item_index:
+                        0:
+                                _music_enabled = not _music_enabled
+                                if AudioManager:
+                                        AudioManager.set_music_enabled(_music_enabled)
+                                        if _music_enabled:
+                                                AudioManager.play_menu_music()
+                                _update_items_text()
+                        1:
+                                # TASK 44 — LANGUAGE: anche Invio/A toggola
+                                # (come MUSIC), oltre a Left/Right.
+                                if I18n:
+                                        I18n.toggle_language()
+                                _update_items_text()
+                        2:
+                                configure_joystick_requested.emit(1)
+                        3:
+                                _set_in_options(false)
+                        _:
+                                pass
+                return
+        match _menu_item_index:
+                3:
+                        # OPTIONS - open the Options submenu.
+                        _set_in_options(true)
+                4:
+                        # START GAME - in 2P mode the second player's joystick config
+                        # is requested automatically (handled by parent via signal).
+                        start_requested.emit(_num_players, _game_mode, _music_enabled,
+                                         _p1_character, _p2_character)
+                5:
+                        # CREDITS
+                        credits_requested.emit()
+                HALL_OF_FAME_MENU_INDEX:
+                        # FIX (Hall of Fame): apre la schermata della Hall of
+                        # Fame (classifica dei migliori punteggi).
+                        if GameManager:
+                                GameManager.go_to_hall_of_fame()
+                _:
+                        # Toggleable items (0..2: NUMBER OF PLAYERS, GAME MODE, TEST MODE)
+                        # confirm their current value.
+                        _change_option(1 if _menu_item_index == 0 else 0)
+
+
+# ============================================================================
+# Public API for the parent scene
+# ============================================================================
+
+# Parent calls this after the CONFIGURE JOYSTICK screen returns, to advance to
+# the next step (P2 in 2P mode, or simply refresh state in 1P mode).
+# Since CONFIGURE JOYSTICK is now reached from the Options submenu, we return
+# to that submenu (cursor on CONFIGURE JOYSTICK, item 1) when done.
+func on_joystick_config_done(player: int) -> void:
+        if player == 1 and _num_players == 2:
+                # Need to configure P2 as well.
+                configure_joystick_requested.emit(2)
+        else:
+                # Done configuring. Return to the Options submenu, cursor on the
+                # CONFIGURE JOYSTICK item (index 2 — TASK 44, era 1 prima di
+                # LANGUAGE) so the player can pick BACK.
+                _in_options = true
+                _menu_item_index = OPTIONS_JOY_CONFIG_INDEX
+                _update_items_text()
+
+
+# Pre-select an item (used by external scenes to set focus).
+# `idx` is interpreted relative to the current menu mode (main menu or
+# Options submenu) and clamped to the valid range for that mode.
+func select_item(idx: int) -> void:
+        var count: int = OPTIONS_MENU_ITEMS if _in_options else MAIN_MENU_ITEMS
+        _menu_item_index = clampi(idx, 0, count - 1)
+        _update_items_text()

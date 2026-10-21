@@ -1,0 +1,12 @@
+src/
+build/
+scripts/
+*.o
+*.obj
+*.exe
+CMakeLists.txt
+build_and_run.*
+config.ini
+generator_prompt.txt
+storyboard_intro.md
+tools/

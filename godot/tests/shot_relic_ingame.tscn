@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://shotrelicingame1"]
+
+[ext_resource type="Script" path="res://tests/shot_relic_ingame.gd" id="1"]
+
+[node name="ShotRelicIngame" type="Node2D"]
+script = ExtResource("1")

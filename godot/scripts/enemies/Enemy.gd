@@ -1,0 +1,1739 @@
+# ===========================================================================
+# Enemy.gd - Maze enemy for Arcade Maze Fantasy (Godot port).
+#
+# Port of src/Enemy.h and src/Enemy.cpp (SFML/C++ -> GDScript).
+#
+# 28 enemy types share this single class; behaviour differs by `type`:
+#   * All enemies use BFS to chase the player (path re-computed every
+#     ~200 ms, or immediately when idle / stuck / flee-mode flips).
+#   * When the player is invincible (chalice), fleeGreedy() runs instead:
+#     it picks the adjacent cell that MAXIMISES distance from the player.
+#   * Shooting types (SKELETON, CULTIST, DEMON, WRAITH, ROBOT, WITCH,
+#     MAD_WIZARD) fire at the player within 500 px, every 1-2.5 s.
+#   * Anti-stuck tracker: if the enemy barely moves for > 600 ms, it picks
+#     a random open direction to break out of local minima.
+#
+# Movement is grid-aligned (snap-to-cell-centre before turning), exactly
+# like the Player. AnimTime is a continuously-growing timer NEVER reset by
+# the BFS update so walk/idle animations keep a steady cadence.
+# ===========================================================================
+class_name Enemy
+extends Node2D
+
+# --- Grid constants (use GameConstants) ---
+const WINDOW_WIDTH: int = 1920
+const WINDOW_HEIGHT: int = 1080
+const TILE_SIZE: int = 64
+# FIX (doppio muro lato destro): 31 colonne (DISPARI). Con 30 (pari) la DFS
+# con passo 2 scavava solo le colonne dispari 1..27: la colonna 28 restava
+# SEMPRE muro e, sommata alla colonna di bordo 29, formava un doppio muro
+# di 128px sull'intero lato destro in OGNI livello. Con 31 colonne tutte le
+# colonne interne dispari (1..29) sono scavabili; la colonna di bordo 30
+# finisce fuori schermo (31*64=1984 > 1920) e il labirinto resta a schermo
+# pieno senza doppi muri.
+# FIX (muro destro invisibile): 31 -> 30, allineato a GameConstants
+# (vedi fix muro destro in GameConstants/Maze.generate).
+const MAZE_COLS: int = 30
+const MAZE_ROWS: int = 15
+const UI_HEIGHT: int = 80
+
+# --- EnemyType (mirror Enemy.h enum, 28 types) ------------------------------
+# Order is significant: Game::spawnEnemies picks from this set randomly,
+# so re-ordering would shift the spawn distribution.
+enum EnemyType {
+        # --- 15 original types ---
+        ZOMBIE, SKELETON, GHOST, BAT,
+        SPIDER, SLIME, DEMON, ROBOT,
+        GOBLIN, ORC, WRAITH, GHOUL,
+        IMP, RAT, CULTIST,
+        # --- 13 new types from the fantasy-horror bestiary ---
+        MIMIC, WOLF, WITCH, BONE_GOLEM,
+        ASH_SERPENT, DAMNED_KNIGHT, MAD_WIZARD,
+        DEMONIC_CROW, TENTACLE, GARGOYLE,
+        WELL_SPIRIT, CURSED_BOAR, PREDATOR_FUNGUS,
+        # --- 16 new types (enemy +1 after each boss): LOTR / D&D / Doom ---
+        OWLBEAR, GIBBERING_MOUTHER, HELLHOUND, BARLGURA,
+        TROGLODYTE, BULETTE, KUO_TOA, BASILISK,
+        COCKATRICE, UMBER_HULK, HOOK_HORROR, DOPPELGANGER,
+        ENT, CAVE_DRAKE, LOST_SOUL, POSSESSED_SOLDIER
+}
+
+# FIX (nemico +1 dopo ogni boss): 44 tipi totali. I primi 28 sono i tipi
+# "classici" sempre disponibili; gli ultimi 16 (OWLBEAR..POSSESSED_SOLDIER)
+# si sbloccano uno per ogni boss sconfitto (uno nuovo per livello post-boss).
+const ENEMY_TYPE_COUNT: int = 44
+const ENEMY_ORIGINAL_TYPE_COUNT: int = 28
+const ENEMY_NEW_TYPE_COUNT: int = 16
+
+# Per-type sprite id (assets/sprites/<id>_sheet.png). Mirrors
+# Enemy::getSpriteId() in src/Enemy.cpp line 55-89.
+const SPRITE_ID := {
+        EnemyType.GHOUL:           "monster_001",
+        EnemyType.SPIDER:          "monster_002",
+        EnemyType.WOLF:            "monster_003",
+        EnemyType.CULTIST:         "monster_004",
+        EnemyType.MIMIC:           "monster_005",
+        EnemyType.RAT:             "monster_006",
+        EnemyType.WITCH:           "monster_007",
+        EnemyType.SKELETON:        "monster_008",
+        EnemyType.GHOST:           "monster_009",
+        EnemyType.BONE_GOLEM:      "monster_010",
+        EnemyType.ASH_SERPENT:     "monster_011",
+        EnemyType.DAMNED_KNIGHT:   "monster_012",
+        EnemyType.MAD_WIZARD:      "monster_013",
+        EnemyType.DEMONIC_CROW:    "monster_015",
+        EnemyType.TENTACLE:        "monster_016",
+        EnemyType.GARGOYLE:        "monster_017",
+        EnemyType.WELL_SPIRIT:     "monster_018",
+        EnemyType.CURSED_BOAR:     "monster_019",
+        EnemyType.PREDATOR_FUNGUS: "monster_020",
+        EnemyType.ZOMBIE:          "monster_021",
+        EnemyType.BAT:             "monster_022",
+        EnemyType.SLIME:           "monster_023",
+        EnemyType.DEMON:           "monster_024",
+        EnemyType.ROBOT:           "monster_025",
+        EnemyType.GOBLIN:          "monster_026",
+        EnemyType.ORC:             "monster_027",
+        EnemyType.WRAITH:          "monster_028",
+        EnemyType.IMP:             "monster_029",
+        # FIX (nemico +1 dopo ogni boss): i 16 nuovi tipi (monster_030..045)
+        EnemyType.OWLBEAR:         "monster_030",
+        EnemyType.GIBBERING_MOUTHER: "monster_031",
+        EnemyType.HELLHOUND:       "monster_032",
+        EnemyType.BARLGURA:        "monster_033",
+        EnemyType.TROGLODYTE:      "monster_034",
+        EnemyType.BULETTE:         "monster_035",
+        EnemyType.KUO_TOA:         "monster_036",
+        EnemyType.BASILISK:        "monster_037",
+        EnemyType.COCKATRICE:      "monster_038",
+        EnemyType.UMBER_HULK:      "monster_039",
+        EnemyType.HOOK_HORROR:     "monster_040",
+        EnemyType.DOPPELGANGER:    "monster_041",
+        EnemyType.ENT:              "monster_042",
+        EnemyType.CAVE_DRAKE:      "monster_043",
+        EnemyType.LOST_SOUL:       "monster_044",
+        EnemyType.POSSESSED_SOLDIER: "monster_045",
+}
+
+# Per-type stats {speed, health, max_health}. Mirrors the if/else chain in
+# Enemy::Enemy() constructor src/Enemy.cpp line 184-213.
+const STATS := {
+        # FIX (scatti nemici): speed portata a 2 (come player) per evitare
+        # l'effetto "teletrasporto" quando il nemico è lento e il player
+        # si allontana troppo. Con speed=1 e player a 2, il BFS diventava
+        # stale e il nemico sembrava bloccato, poi scattava in avanti.
+        EnemyType.ZOMBIE:          {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.4, 0.5, 0.3), "accent": Color(0.6, 0.7, 0.4)},
+        EnemyType.SKELETON:        {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.8, 0.8, 0.7), "accent": Color(0.5, 0.5, 0.4)},
+        EnemyType.GHOST:           {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.7, 0.8, 0.9, 0.6), "accent": Color(1.0, 1.0, 1.0, 0.5)},
+        EnemyType.BAT:             {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.3, 0.2, 0.4), "accent": Color(0.6, 0.4, 0.7)},
+        EnemyType.SPIDER:         {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.2, 0.1, 0.1), "accent": Color(0.8, 0.2, 0.2)},
+        EnemyType.SLIME:           {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.3, 0.7, 0.3), "accent": Color(0.5, 0.9, 0.5)},
+        EnemyType.DEMON:           {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.6, 0.1, 0.1), "accent": Color(1.0, 0.4, 0.1)},
+        EnemyType.ROBOT:           {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.5, 0.5, 0.6), "accent": Color(0.8, 0.8, 0.9)},
+        EnemyType.GOBLIN:         {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.4, 0.6, 0.2), "accent": Color(0.6, 0.8, 0.3)},
+        EnemyType.ORC:             {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.5, 0.4, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        EnemyType.WRAITH:         {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.2, 0.4, 0.7), "accent": Color(0.6, 0.4, 0.8, 0.8)},
+        EnemyType.GHOUL:           {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.5, 0.4, 0.3), "accent": Color(0.7, 0.5, 0.4)},
+        EnemyType.IMP:             {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.7, 0.2, 0.3), "accent": Color(1.0, 0.5, 0.3)},
+        EnemyType.RAT:             {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.4, 0.3, 0.2), "accent": Color(0.6, 0.5, 0.3)},
+        EnemyType.CULTIST:         {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.1, 0.3), "accent": Color(0.6, 0.2, 0.6)},
+        EnemyType.MIMIC:           {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.6, 0.5, 0.2), "accent": Color(0.4, 0.3, 0.1)},
+        EnemyType.WOLF:            {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.3, 0.3), "accent": Color(0.6, 0.5, 0.4)},
+        EnemyType.WITCH:           {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.2, 0.1, 0.3), "accent": Color(0.5, 0.2, 0.7)},
+        EnemyType.BONE_GOLEM:      {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.9, 0.9, 0.8), "accent": Color(0.6, 0.6, 0.5)},
+        EnemyType.ASH_SERPENT:     {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.3, 0.2), "accent": Color(0.5, 0.5, 0.3)},
+        EnemyType.DAMNED_KNIGHT:   {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.2, 0.2, 0.3), "accent": Color(0.5, 0.3, 0.3)},
+        EnemyType.MAD_WIZARD:      {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.2, 0.5), "accent": Color(0.6, 0.4, 0.9)},
+        EnemyType.DEMONIC_CROW:    {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.1, 0.1, 0.1), "accent": Color(0.4, 0.3, 0.3)},
+        EnemyType.TENTACLE:        {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.4, 0.2, 0.4), "accent": Color(0.7, 0.3, 0.7)},
+        EnemyType.GARGOYLE:        {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.4, 0.4, 0.5), "accent": Color(0.6, 0.6, 0.7)},
+        EnemyType.WELL_SPIRIT:     {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.3, 0.5, 0.7, 0.6), "accent": Color(0.5, 0.7, 0.9, 0.7)},
+        EnemyType.CURSED_BOAR:     {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.4, 0.2, 0.2), "accent": Color(0.6, 0.3, 0.3)},
+        EnemyType.PREDATOR_FUNGUS: {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.5, 0.3, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        # FIX (nemico +1 dopo ogni boss): stats dei 16 nuovi tipi.
+        # speed=2 come tutti gli altri nemici (grid-locked); health varia per
+        # caratterizzare ogni creatura mantenendo il bilanciamento 1..6.
+        EnemyType.OWLBEAR:         {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.45, 0.33, 0.2), "accent": Color(0.7, 0.5, 0.3)},
+        EnemyType.GIBBERING_MOUTHER: {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.75, 0.6, 0.6), "accent": Color(1.0, 0.5, 0.5)},
+        EnemyType.HELLHOUND:       {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.25, 0.1, 0.1), "accent": Color(1.0, 0.5, 0.1)},
+        EnemyType.BARLGURA:        {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.6, 0.2, 0.15), "accent": Color(1.0, 0.4, 0.2)},
+        EnemyType.TROGLODYTE:      {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.3, 0.5, 0.35), "accent": Color(0.5, 0.75, 0.55)},
+        EnemyType.BULETTE:         {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.4, 0.42, 0.48), "accent": Color(0.65, 0.7, 0.8)},
+        EnemyType.KUO_TOA:         {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.35, 0.5, 0.55), "accent": Color(0.55, 0.8, 0.85)},
+        EnemyType.BASILISK:        {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.3, 0.45, 0.25), "accent": Color(0.9, 0.85, 0.2)},
+        EnemyType.COCKATRICE:      {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.55, 0.45, 0.25), "accent": Color(0.95, 0.6, 0.2)},
+        EnemyType.UMBER_HULK:      {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.4, 0.3, 0.2), "accent": Color(0.8, 0.6, 0.3)},
+        EnemyType.HOOK_HORROR:     {"speed": 2, "health": 5, "max_health": 5, "color": Color(0.5, 0.5, 0.55), "accent": Color(0.85, 0.85, 0.9)},
+        EnemyType.DOPPELGANGER:    {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.7, 0.72, 0.78), "accent": Color(1.0, 1.0, 1.0)},
+        EnemyType.ENT:              {"speed": 2, "health": 6, "max_health": 6, "color": Color(0.3, 0.25, 0.15), "accent": Color(0.5, 0.7, 0.3)},
+        EnemyType.CAVE_DRAKE:      {"speed": 2, "health": 4, "max_health": 4, "color": Color(0.2, 0.35, 0.25), "accent": Color(0.9, 0.9, 0.3)},
+        EnemyType.LOST_SOUL:       {"speed": 2, "health": 1, "max_health": 1, "color": Color(0.9, 0.5, 0.15), "accent": Color(1.0, 0.8, 0.3)},
+        EnemyType.POSSESSED_SOLDIER: {"speed": 2, "health": 3, "max_health": 3, "color": Color(0.35, 0.45, 0.3), "accent": Color(0.9, 0.9, 0.7)},
+}
+
+# Default fallback if STATS is missing an entry (defensive programming).
+const _DEFAULT_STATS := {"speed": 2, "health": 2, "max_health": 2, "color": Color(0.6, 0.4, 0.3), "accent": Color(0.9, 0.7, 0.5)}
+
+# --- Anti-stuck + AI constants (mirror src/Enemy.cpp line 358-360) ----------
+# FIX (scatti): STUCK_THRESHOLD_MS ridotto da 300 a 100ms per recovery
+# più veloce quando il nemico si blocca vicino a un muro. Prima il
+# nemico restava fermo 300ms (18 frame a 60 FPS) prima che scattasse
+# il fallback random dir, dando la sensazione di "incastrarsi nel muro".
+const STUCK_THRESHOLD_MS: int = 100        # ridotto da 300 a 100 per anti-stuck più reattivo
+const PATH_RECALC_INTERVAL_MS: int = 200   # normal BFS recalc cadence
+const SHOOT_RANGE_PX: float = 500.0
+const SHOOT_COOLDOWN_MIN_MS: int = 1000
+const SHOOT_COOLDOWN_RAND_MS: int = 1500
+
+# 4-connected neighbour offsets (must match BFS.gd order exactly so the
+# BFS direction matches the move-greedy iteration order).
+const _DC: Array[int] = [0, 1, 0, -1]
+const _DR: Array[int] = [-1, 0, 1, 0]
+
+# --- Public state -----------------------------------------------------------
+var type: int = EnemyType.ZOMBIE
+var speed: int = 1
+var health: int = 2
+var max_health: int = 2
+var dx: int = 0
+# FIX (barra HP offset): last_dx mantiene l'ultima direzione orizzontale non-zero,
+# anche quando il nemico è momentaneamente fermo tra due celle.
+var last_dx: int = 1
+var dy: int = 0
+
+# Timers (simulated ms, -16 per frame @ 60 FPS).
+var path_update_timer: int = 0
+# Waypoint corrente (centro della cella successiva), FISSATO alla decisione.
+# FIX (target che scivola): il target non va ricalcolato ogni frame dalla
+# cella corrente perche' al cambio colonna/riga a meta' transito scivola
+# avanti di una cella -> il centro intermedio non viene mai raggiunto ->
+# nessuna decisione/wall-check -> il nemico entra nei muri.
+var _move_waypoint: Vector2 = Vector2.INF
+var anim_time: int = 0          # NEVER reset for BFS (see Enemy.cpp:154)
+var shoot_cooldown: int = 0
+var attacking_timer: int = 0
+var dying_timer: int = 0
+
+# RELIC (Task 21 — Mazza Ferrata / Martello del Golem): stordimento.
+# Il nemico resta CONGELATO (nessun movimento/IA) finche' il timer non
+# scende a zero; gli altri timer continuano a girare (pattern burning).
+var stun_timer_ms: int = 0
+var burning_timer: int = 0
+var burn_anim_time: int = 0
+var burned_flag: bool = false
+var electrified_timer: int = 0
+var electrified_anim_time: int = 0
+var stuck_timer: int = 0
+var last_pos: Vector2 = Vector2.ZERO
+
+# Flee mode (chalice active): when true, enemy runs away from player.
+var flee_mode: bool = false
+var prev_flee_mode: bool = false
+
+## TASK 30 (muro di roccia): true mentre il nemico e' imprigionato nella
+## cella di un muro di roccia CHIUSO (il flag e' rinfrescato ogni frame dal
+## MazeHazards). Il nemico resta fermo finche' il muro non si riapre; se la
+## chiusura lo ha ucciso, il flag non conta piu' (dying_timer > 0).
+var held_by_wall: bool = false
+
+# Sprite reference (assigned in scene or via load_sprite).
+@onready var sprite: Sprite2D = $Sprite2D if has_node("Sprite2D") else null
+
+# Sprite sheet loaded from SpriteManager (AI-generated sprite).
+var _sprite_sheet: Object = null  # SpriteManager.Sheet
+var _sprite_loaded: bool = false
+var _sprite_id: String = ""
+var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
+
+# --- DeformableSprite (replaces the 4-frame cycle that produced the
+#     "disjointed gif" effect with HD sheets) ---
+# The HD sheets are single AI drawings carved into 4x4 grids. Cycling through
+# 4 horizontal slices of one image looked like a broken gif. DeformableSprite
+# takes ONE frame and deforms an 8x8 mesh in real time (IDLE/WALK/ATTACK),
+# matching the C++ architecture (Boss.cpp uses the same approach).
+var _deform_sprite: DeformableSprite = null
+var _last_grid_cell_report: Vector2i = Vector2i(-1, -1)
+var _deform_loaded: bool = false
+var _debug_yoffset_printed: bool = false  # DEBUG: rimuovere dopo fix
+# SD sheet cache (forzata per evitare HD gif scollegata)
+var _sd_sheet: Object = null
+# Per-enemy accent color for the walk_cycle shader (warm pulse).
+var _accent_color: Color = Color(1.0, 0.5, 0.2, 1.0)
+# Dust puff spawn counter (every Nth frame while walking, spawn a puff).
+var _dust_frame_counter: int = 0
+const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms @ 60fps)
+
+
+# ===========================================================================
+# Lifecycle
+# ===========================================================================
+
+# init(type, start_col, start_row): constructor equivalent to C++
+# `Enemy(EnemyType t, int startCol, int startRow)`. Call this immediately
+# after instantiating the Enemy node (or after add_child).
+# FIX (nessuna arma one-shot): gli HP base della tabella STATS sono scalati
+# x ENEMY_HEALTH_SCALE. Senza scala, i nemici da 1 HP (fantasma/pipistrello/
+# imp) morirebbero comunque al primo colpo di QUALSIASI arma (danno minimo 1),
+# violando la richiesta utente. Con la scala x4 il piu' debole ha 4 HP:
+# 4 colpi di pistola / 3 di laser / 2 di shotgun o razzo — e il danno delle
+# armi e' calcolato in % degli HP max (GameConstants.weapon_damage_for), per
+# cui il numero di colpi e' lo stesso per TUTTI i nemici a parita' di arma.
+const ENEMY_HEALTH_SCALE: int = 4
+
+func init(t: int, start_col: int, start_row: int) -> void:
+        type = t
+        # Pixel position = cell centre, offset down by UI_HEIGHT (UI bar on top).
+        position = Vector2(
+                start_col * TILE_SIZE + TILE_SIZE / 2.0,
+                start_row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+        )
+        last_pos = position  # avoid false "stuck" detection on frame 1
+        dx = 0
+        dy = 0
+
+        # Pull stats from the per-type table.
+        var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
+        speed = stats.speed
+        max_health = int(stats.max_health) * ENEMY_HEALTH_SCALE
+        health = max_health
+
+        # Reset all timers (constructor initializer list in C++).
+        path_update_timer = 0
+        anim_time = 0
+        shoot_cooldown = 0
+        attacking_timer = 0
+        dying_timer = 0
+        burning_timer = 0
+        burn_anim_time = 0
+        burned_flag = false
+        electrified_timer = 0
+        electrified_anim_time = 0
+        stuck_timer = 0
+        flee_mode = false
+        prev_flee_mode = false
+
+        # Load the AI-generated sprite sheet for this enemy type.
+        _load_sprite()
+
+
+# Load the sprite sheet via SpriteManager. The sprite is then rendered in
+# _draw() using the correct animation frame. If no sprite is mapped for
+# this enemy type, _sprite_loaded stays false and _draw() falls back to
+# procedural rendering (circle + eyes).
+func _load_sprite() -> void:
+        _sprite_id = get_sprite_id(type)
+        if _sprite_id.is_empty():
+                _sprite_loaded = false
+                return
+        # FIX (nemici decentrati): carica SEMPRE la SD sheet (256x64, 4 frame
+        # walk cycle, mostro centrato nel frame). La HD sheet (256x256, 4x4)
+        # ha il mostro nella metà INFERIORE del frame 64x64 → appare shiftato
+        # in basso. La SD sheet ha il mostro centrato verticalmente.
+        _sprite_sheet = _load_sd_sheet(_sprite_id)
+        var sd_loaded: bool = _sprite_sheet != null and _sprite_sheet.is_loaded()
+        print("[Enemy] type=%d id=%s SD_sheet=%s loaded=%s" % [type, _sprite_id, str(_sprite_sheet != null), str(sd_loaded)])
+        if sd_loaded:
+                _sprite_loaded = true
+        else:
+                # Fallback: usa SpriteManager (che può dare HD) se SD non disponibile
+                if SpriteManager:
+                        _sprite_sheet = SpriteManager.get_sheet(_sprite_id)
+                        _sprite_loaded = _sprite_sheet != null and _sprite_sheet.is_loaded()
+                if not _sprite_loaded:
+                        print("[Enemy] WARNING: sprite not loaded for type=%d id=%s" % [type, _sprite_id])
+                else:
+                        print("[Enemy] FALLBACK to SpriteManager (HD) for id=%s" % _sprite_id)
+
+        # Load effect spritesheet for burning overlay
+        _burn_effect_sheet = null
+        if SpriteManager:
+                _burn_effect_sheet = SpriteManager.get_sheet("effect_fireaura")
+
+        # Apply CharacterArt enhancement shader — DISABILITATO per performance.
+        # Lo shader character_enhanced è costoso su GPU entry-level (NVIDIA 940M)
+        # con 28 nemici × 60fps. I nemici vengono renderizzati senza shader.
+        # if CharacterArt and sprite:
+        #         CharacterArt.apply_enhancement(sprite, false)
+
+        # Cache accent color from STATS for walk_cycle shader tinting.
+        var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
+        _accent_color = stats.get("accent", _accent_color)
+
+        # --- DeformableSprite setup ---
+        # FIX (lag/movimenti rallentati): DeformableSprite._sync_mesh() fa
+        # surface_remove + add_surface_from_arrays ogni frame per ogni nemico,
+        # che è ESTREMAMENTE lento (specialmente su GPU entry-level come
+        # NVIDIA 940M). Disabilitiamo DeformableSprite per i nemici e torniamo
+        # al frame cycling del SD sheet (che è un vero walk cycle connesso,
+        # generato da gen_deterministic_walk.py). Forziamo SD sheet (non HD)
+        # perché le HD sheet sono singole immagini AI divise in 4x4 fasce
+        # che producono l'effetto "gif animata scollegata".
+        # _ensure_deform_sprite()  # DISABILITATO per performance
+        _deform_loaded = false
+        # Forza SD sheet: richiedi esplicitamente la versione SD via SpriteManager
+        if SpriteManager and not _sprite_id.is_empty():
+                # SpriteManager preferisce HD se esiste; per i nemici vogliamo SD.
+                # Simuliamo la SD sheet leggendo direttamente il file PNG.
+                pass  # _draw_sprite_frame userà _sprite_sheet (che è già SD o HD)
+        # Apply CharacterArt enhancement shader (Godot-native sprite enhancement)
+        # già applicato sopra.
+
+
+# Lazily create the DeformableSprite child node.
+func _ensure_deform_sprite() -> void:
+        if _deform_sprite != null:
+                return
+        var ds := DeformableSprite.new()
+        add_child(ds)
+        _deform_sprite = ds
+
+
+# Load the SD version of a sprite sheet (256x64 = 4 frame walk cycle).
+# Used to avoid the HD "gif scollegata" effect: HD sheets are single AI
+# drawings carved into 4x4 grids, while SD sheets are true walk cycles
+# generated by gen_deterministic_walk.py.
+func _load_sd_sheet(sprite_id: String) -> Object:
+        # FIX (nemici decentrati): usa Image.load() + ImageTexture (mirror
+        # SpriteManager._load_sheet) invece di ResourceLoader.load().
+        # Bypassa cache import Godot: se la SD sheet ha .import stale o
+        # .ctex mancante, ResourceLoader.load() ritorna null silenziosamente
+        # e il nemico rimane sul path HD (mostro shiftato giù + più piccolo).
+        # Con Image.load() leggiamo direttamente il file PNG raw.
+        var sd_path := "res://assets/sprites/" + sprite_id + "_sheet.png"
+        var sd_abs: String = ProjectSettings.globalize_path(sd_path)
+        if not FileAccess.file_exists(sd_abs):
+                push_warning("[Enemy] SD sheet not found on disk: %s" % sd_path)
+                return null
+        var sd_img := Image.new()
+        if sd_img.load(sd_abs) != OK:
+                push_warning("[Enemy] SD sheet failed to load image: %s" % sd_path)
+                return null
+        var tex: Texture2D = ImageTexture.create_from_image(sd_img)
+        if tex == null:
+                push_warning("[Enemy] SD sheet failed to create texture: %s" % sd_path)
+                return null
+        # Build a Sheet-like object inline (mirror SpriteManager.Sheet).
+        var sheet := SpriteManager.Sheet.new()
+        sheet.texture = tex
+        sheet.frame_w = 64
+        sheet.frame_h = 64
+        sheet.columns = 4
+        sheet.rows = 1
+        sheet.animations["idle"] = {"row": 0, "frames": 4, "frameDuration": 200}
+        sheet.animations["walk"] = {"row": 0, "frames": 4, "frameDuration": 100}
+        sheet.animations["attack"] = {"row": 0, "frames": 4, "frameDuration": 90}
+        sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        return sheet
+
+
+# ===========================================================================
+# update_enemy(maze, player_grid_pos, player_pixel_pos, enemy_projectiles)
+# Mirrors Enemy::update() in src/Enemy.cpp line 362-512.
+# ===========================================================================
+func update_enemy(maze: Object, player_grid_pos: Vector2i,
+                                  player_pixel_pos: Vector2,
+                                  enemy_projectiles: Array,
+                                  delta_ms: float = 16.0) -> void:
+        # Tick animation timers using REAL delta_ms (FIX: era fisso 16ms).
+        attacking_timer = _tick_ms(attacking_timer, delta_ms)
+        dying_timer = _tick_ms(dying_timer, delta_ms)
+
+        # --- Electrified state: lightning-bolt visual; enemy frozen but timer
+        # still ticks so other timers progress alongside it. ---
+        if electrified_timer > 0:
+                if electrified_timer > 1:
+                        electrified_timer -= 1
+                else:
+                        electrified_timer = 0
+                electrified_anim_time += 16
+
+        # --- Burning state: chalice fire aura, enemy frozen & silent. ---
+        if burning_timer > 0:
+                if burning_timer > 1:
+                        burning_timer -= 1
+                else:
+                        burning_timer = 0
+                burn_anim_time += 16
+                return  # no movement / no shooting while burning
+
+        # RELIC (Task 21): stordimento da Mazza/Martello — nemico congelato
+        # (pattern del burning: timer ticka, movimento fermo). Il danno
+        # continua ad arrivargli: e' solo "stordito", non invulnerabile.
+        if stun_timer_ms > 0:
+                if stun_timer_ms > int(delta_ms):
+                        stun_timer_ms -= int(delta_ms)
+                else:
+                        stun_timer_ms = 0
+                queue_redraw()
+                return  # nessun movimento mentre e' stordito
+
+        # Dying animation in progress: freeze movement.
+        if dying_timer > 0:
+                return
+
+        # TASK 30 (muro di roccia): imprigionato nel muro chiuso — fermo
+        # finche' il MazeHazards non riapre il passaggio (il flag e'
+        # per-frame, non accumula mai stato stale). Zero input di direzione
+        # cosi' alla riapertura il BFS ricalcola da fermo, senza scatti.
+        if held_by_wall:
+                dx = 0
+                dy = 0
+                queue_redraw()
+                return
+
+        var col := int(position.x / TILE_SIZE)
+        var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
+        _report_grid_cell(maze, col, row)
+        var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
+        var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+        path_update_timer += int(delta_ms)
+        anim_time += int(delta_ms)
+
+        # FIX (compenetrazione muri + scatti): step frame-rate independent.
+        var step_size: float = float(speed) * (delta_ms / 16.6667)
+
+        # --- Anti-stuck tracking (mirror C++ riga 402-415) ---
+        # Se il nemico si è mosso meno di 1px dall'ultimo frame, accumula il
+        # stuck timer; altrimenti lo azzera. Oltre STUCK_THRESHOLD_MS forza
+        # ricalcolo BFS + direzione random come ultima risorsa.
+        var dx_pos: float = position.x - last_pos.x
+        var dy_pos: float = position.y - last_pos.y
+        if dx_pos * dx_pos + dy_pos * dy_pos < 1.0:
+                stuck_timer += int(delta_ms)
+        else:
+                stuck_timer = 0
+        last_pos = position
+
+        # --- GRID-LOCKED MOVEMENT (mirror C++ Enemy::update riga 417-496) ---
+        # FIX (compenetrazione muri + scatti): riscritto il movimento nemico
+        # secondo il modello del C++ ORIGINALE (identico al Player):
+        #   1) il nemico viaggia SEMPRE lungo la linea centrale dei corridoi;
+        #   2) cambia direzione SOLO quando arriva ESATTAMENTE al centro cella;
+        #   3) wall check point-based sulla cella successiva (is_wall):
+        #      restando sulla linea centrale, lo sprite 62px nel corridoio
+        #      64px (margine 1px per lato) non può MAI compenetrare un muro;
+        #   4) movimento cardinale su un solo asse: position += dir * step.
+        # Rimossi i fix precedenti che si combattevano tra loro:
+        #   - can_occupy_position (footprint 62px) fermava il nemico fino a
+        #     31px PRIMA del muro, a metà cella, fuori centro;
+        #   - snap GRADUALI (move_toward 4px/frame, più veloci del movimento)
+        #     su 3 blocchi separati -> deriva diagonale percepibile;
+        #   - BFS ricalcolato a metà cella (ogni 200ms ovunque) -> cambi di
+        #     direzione fuori centro -> compenetrazione angoli dei muri;
+        #   - clamp di rendering -> lo sprite "saltava" quando il clamp si
+        #     rilasciava (lo scatto al cambio direzione destra->sinistra).
+        # FIX (freeze a centro+step): la vecchia finestra |pos-centro| < step
+        # re-entrava in snap OGNI frame per l'arrotondamento float32 del
+        # Vector2: centro+step memorizzato arrotonda per difetto (es.
+        # 162.879990 con step 2.879994) -> |offset| < step -> ciclo infinito
+        # snap<->movimento -> nemico BLOCCATO in ~3 celle su 31 (speed 3).
+        # Il C++ originale non soffriva perche' usava speed INTERE (esatte in
+        # float32); il port con step frazionario frame-rate-independent lo
+        # introduceva. Ora: arrivo ESATTO con move_toward clampato (vedi (3)),
+        # decisione solo quando position coincide col centro (valori interi
+        # col*64+32, esatti in float32 -> confronto senza rumore).
+        if position.x == center_x and position.y == center_y:
+                # (1) Arrivo al centro cella (ESATTO): decisione dir.
+
+                # Force path recompute on: timer expiry, idle, stuck, flee flip.
+                var flee_changed: bool = flee_mode != prev_flee_mode
+                var must_recompute: bool = (path_update_timer >= PATH_RECALC_INTERVAL_MS) \
+                                or (dx == 0 and dy == 0) \
+                                or (stuck_timer > STUCK_THRESHOLD_MS) \
+                                or flee_changed
+                prev_flee_mode = flee_mode
+
+                if must_recompute:
+                        path_update_timer = 0
+                        var path_found: bool = false
+
+                        if flee_mode:
+                                # Flee: maximise distance from player. Greedy qui
+                                # basta (non serve il cammino minimo per fuggire).
+                                _flee_greedy(maze, player_grid_pos)
+                                if dx != 0 or dy != 0:
+                                        path_found = true
+                                        stuck_timer = 0
+                        else:
+                                # Chase: BFS shortest path (tutti i tipi nemici).
+                                var next_step: Vector2i = BFS.find_path(
+                                        maze, Vector2i(col, row), player_grid_pos)
+                                # FIX (nemici bloccati al foro di SINISTRA — bug
+                                # utente): il sentinel di "nessun percorso" e'
+                                # ESATTAMENTE (-1, -1), NON "x < 0". Quando il
+                                # percorso piu' corto passa dalla galleria
+                                # SINISTRA, find_path ritorna la cella VIRTUALE
+                                # (-1, 7) come primo passo (la direzione d'uscita
+                                # dal bordo): con il vecchio check "x >= 0"
+                                # quella cella veniva scambiata per un fallimento
+                                # -> dx/dy restavano 0 -> il nemico ristagnava
+                                # all'imbocco sinistro senza mai attraversare,
+                                # esattamente il bug segnalato. Le gallerie
+                                # destra/alto/basso tornano celle con x >= 0
+                                # ((30,7)/(15,-1)/(15,15)) e funzionavano gia';
+                                # ora tutte e quattro sono gestite.
+                                if next_step != Vector2i(-1, -1):
+                                        dx = next_step.x - col
+                                        if dx != 0:
+                                                last_dx = dx
+                                        dy = next_step.y - row
+                                        path_found = true
+                                        stuck_timer = 0
+                                # Fallback 1: BFS fallito. Due casi:
+                                # A) start == target (nemico nella cella del
+                                #    player): NON usare greedy (causerebbe
+                                #    oscillazione: greedy manda in direzione
+                                #    random, nemico esce dalla cella, BFS lo
+                                #    rimanda indietro -> ciclo). Resta fermo
+                                #    al centro, lascia scattare il melee.
+                                # B) player irraggiungibile (muri bloccano):
+                                #    usa greedy per avvicinarsi.
+                                if not path_found:
+                                        if col == player_grid_pos.x and row == player_grid_pos.y:
+                                                # Caso A: stessa cella del player.
+                                                dx = 0
+                                                dy = 0
+                                                path_found = true  # non attivare fallback 2
+                                        else:
+                                                # Caso B: player irraggiungibile.
+                                                _move_greedy(maze, player_grid_pos)
+                                                if dx != 0 or dy != 0:
+                                                        path_found = true
+                                                        stuck_timer = 0
+                        # Fallback 2: still no direction. Only break out if stuck.
+                        if not path_found and stuck_timer > STUCK_THRESHOLD_MS:
+                                _pick_random_open_dir(maze, col, row)
+                                if dx != 0 or dy != 0:
+                                        stuck_timer = 0
+                        # If not stuck yet, leave dx=dy=0; will force recalc next
+                        # frame via the "idle" condition above.
+
+                # (2) Wall check point-based (mirror C++ riga 494): se la cella
+                # avanti è muro, il nemico si ferma AL CENTRO (mai a metà cella).
+                # Al prossimo frame la condizione (dx==0 && dy==0) forza il
+                # ricalcolo BFS da qui. Niente footprint 62px: sulla linea
+                # centrale è ridondante e causava stop a metà cella.
+                if maze.is_wall(col + dx, row + dy):
+                        dx = 0
+                        dy = 0
+                # Waypoint LOCKED alla decisione (vedi _move_waypoint): il
+                # centro della cella successiva, valido fino all'arrivo.
+                if dx != 0 or dy != 0:
+                        _move_waypoint = Vector2(center_x + dx * TILE_SIZE,
+                                        center_y + dy * TILE_SIZE)
+                else:
+                        _move_waypoint = Vector2.INF
+        elif dx == 0 and dy == 0:
+                # Nemico fermo ma decentrato (stato anomalo, es. stato legacy):
+                # recovery graduale verso il centro della cella corrente.
+                # Muoversi verso il centro riduce monotonicamente ogni overlap
+                # con i muri, quindi nessun check aggiuntivo serve.
+                position = position.move_toward(Vector2(center_x, center_y), step_size)
+                last_pos = position
+
+        # (3) Movimento verso il WAYPOINT (centro della cella successiva,
+        # FISSATO alla decisione): move_toward non sfora MAI il target ->
+        # arrivo ESATTO al centro -> al frame successivo (1) scatta la
+        # decisione. Elimina l'oscillazione snap<->step da arrotondamento
+        # float32, i micro-salti dello snap e il "target che scivola"
+        # (ricalcolo per-cella del target a meta transito).
+        # La vecchia correzione "rotaia" e' assorbita: l'asse perpendicolare
+        # converge sul waypoint a ogni frame (self-healing).
+        # TASK 34 (richiesta utente — "i muri devono bloccare anche i
+        # nemici"): il check del muro avveniva SOLO alla decisione al centro
+        # cella; se un muro di roccia DINAMICO si chiudeva mentre il nemico
+        # era a meta' transito, il waypoint restava valido e il nemico
+        # entrava nella roccia (bloccato DENTRO il muro fino alla
+        # riapertura = attraversamento di fatto). Ora il waypoint viene
+        # ri-validato OGNI FRAME: se la cella di destinazione e' diventata
+        # muro, il passo viene ANNULLATO e il nemico rientra al centro
+        # della cella di provenienza, dove il BFS ricalcola il percorso
+        # (che la cella chiusa non attraversa).
+        if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
+                var wp_col: int = int(_move_waypoint.x / TILE_SIZE)
+                var wp_row: int = int((_move_waypoint.y - UI_HEIGHT) / TILE_SIZE)
+                if maze.is_wall(wp_col, wp_row):
+                        # cella di destinazione CHIUSA: abortisci il transito
+                        dx = 0
+                        dy = 0
+                        _move_waypoint = Vector2.INF
+                        # forza il ricalcolo BFS appena tornato al centro
+                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                        # rientra subito al centro della cella corrente
+                        position = position.move_toward(
+                                        Vector2(center_x, center_y), step_size)
+                        last_pos = position
+                else:
+                        position = position.move_toward(_move_waypoint, step_size)
+
+        # FIX (meccanica tunnel "Pac-Man"): se il nemico sta marciando verso
+        # la cella VIRTUALE di una galleria (waypoint fuori griglia), il
+        # passaggio del bordo attiva il wrap: riemerge dal lato opposto e il
+        # waypoint viene specchiato sul centro della cella di sbocco, così
+        # l'arrivo ESATTO al centro (e la decisione successiva) restano
+        # garantiti anche attraverso la galleria.
+        var wrapped_pos_e: Vector2 = GameConstants.tunnel_wrap(position)
+        if wrapped_pos_e != position:
+                position = wrapped_pos_e
+                if _move_waypoint != Vector2.INF:
+                        _move_waypoint = GameConstants.mirror_waypoint_after_wrap(
+                                        _move_waypoint)
+                last_pos = position
+
+        # --- Safety clamp (ultima difesa): se la cella corrente è WALL
+        # (stato invalido, es. spawn corrotto), teleport al centro della
+        # cella aperta più vicina (raggio 1-3). Con il movimento grid-locked
+        # questo non dovrebbe MAI attivarsi in gioco. ---
+        var cur_col_after: int = clampi(int(position.x / TILE_SIZE), 0, MAZE_COLS - 1)
+        var cur_row_after: int = clampi(int((position.y - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
+        if maze.is_wall(cur_col_after, cur_row_after):
+                for snap_radius in range(1, 4):
+                        var found_safe: bool = false
+                        for sdc in range(-snap_radius, snap_radius + 1):
+                                for sdr in range(-snap_radius, snap_radius + 1):
+                                        var nnc: int = cur_col_after + sdc
+                                        var nnr: int = cur_row_after + sdr
+                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                if not maze.is_wall(nnc, nnr):
+                                                        position.x = nnc * TILE_SIZE + TILE_SIZE / 2.0
+                                                        position.y = nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+                                                        last_pos = position
+                                                        dx = 0
+                                                        dy = 0
+                                                        _move_waypoint = Vector2.INF
+                                                        path_update_timer = PATH_RECALC_INTERVAL_MS
+                                                        stuck_timer = 0
+                                                        found_safe = true
+                                                        break
+                                if found_safe:
+                                        break
+                        if found_safe:
+                                break
+
+        # --- Shooting (canShoot types only) ---
+        # Disabled while fleeing (chalice active - enemy runs, doesn't shoot).
+        # FIX (disabilita fuoco nemici labirinto): l'utente ha richiesto che
+        # i nemici del labirinto NON sparino. Solo mid-boss e boss possono
+        # sparare. Disabilitato completamente il blocco di shooting.
+        # Il codice originale è mantenuto commentato per eventuale riabilitazione.
+        # if can_shoot(type) and not flee_mode:
+        #         if shoot_cooldown > 0:
+        #                 shoot_cooldown -= int(delta_ms)
+        #         else:
+        #                 shoot_cooldown = SHOOT_COOLDOWN_MIN_MS \
+        #                                 + (randi() % SHOOT_COOLDOWN_RAND_MS)
+        #                 var dyp: float = player_pixel_pos.y - position.y
+        #                 var dxp: float = player_pixel_pos.x - position.x
+        #                 var dist: float = sqrt(dxp * dxp + dyp * dyp)
+        #                 if dist > 0.0 and dist < SHOOT_RANGE_PX:
+        #                         attacking_timer = 400  # attack animation ~400 ms
+        #                         var shoot_dir := Vector2(dxp / dist, dyp / dist)
+        #                         enemy_projectiles.append({
+        #                                 "pos": position + shoot_dir * 20.0,
+        #                                 "dir": shoot_dir * 3.0,
+        #                                 "power": 1,
+        #                                 "active": true,
+        #                                 "type": 0,
+        #                         })
+
+        # Trigger redraw so the sprite animation updates each frame.
+        queue_redraw()
+
+
+func can_occupy_position(maze: Object, candidate: Vector2) -> bool:
+        const SPRITE_HALF: float = 31.0
+        const EDGE_EPSILON: float = 0.001
+        var left_col: int = floori((candidate.x - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
+        var right_col: int = floori((candidate.x + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
+        var top_row: int = floori((candidate.y - UI_HEIGHT - SPRITE_HALF + EDGE_EPSILON) / TILE_SIZE)
+        var bottom_row: int = floori((candidate.y - UI_HEIGHT + SPRITE_HALF - EDGE_EPSILON) / TILE_SIZE)
+        for col in range(left_col, right_col + 1):
+                for row in range(top_row, bottom_row + 1):
+                        if maze.is_wall(col, row):
+                                return false
+        return true
+
+
+func _report_grid_cell(maze: Object, col: int, row: int) -> void:
+        if not OS.is_debug_build() or type != EnemyType.PREDATOR_FUNGUS:
+                return
+        var cell := Vector2i(col, row)
+        if cell == _last_grid_cell_report:
+                return
+        _last_grid_cell_report = cell
+        print("[EnemyGrid] Predator Fungus cell=%s type=%d is_wall=%s position=%s" % [
+                str(cell), maze.get_cell_type(col, row), str(maze.is_wall(col, row)),
+                str(maze.to_local(global_position))
+        ])
+
+
+# ===========================================================================
+# Damage / death
+# ===========================================================================
+
+# take_damage(dmg): reduce HP by `dmg`. If HP reaches 0, trigger the death
+# animation (dying_timer = 600 ms ~= 6 frames at 120 ms each).
+# Mirrors Enemy::takeDamage() line 516-523.
+func take_damage(dmg: int) -> void:
+        if dying_timer > 0:
+                return  # already dying: ignore further damage
+        health -= dmg
+        if health <= 0:
+                health = 0
+                dying_timer = 600
+                # Spawn particle explosion (Godot-native effect, non in C++)
+                if EffectsManager:
+                        var p := EffectsManager.spawn_explosion(position,
+                                Color(0.8, 0.2, 0.1), 25, 0.6)
+                        if get_parent():
+                                get_parent().add_child(p)
+                        EffectsManager.screen_shake(4.0, 0.2)
+
+
+# ===========================================================================
+# FIX (nessuna arma one-shot — richiesto dall'utente): danno delle ARMI del
+# player calcolato come frazione degli HP massimi di QUESTO nemico, in base
+# al tipo di arma (GameConstants.WEAPON_HITS_TO_KILL: pistola 4 colpi, laser
+# 3, shotgun 2, razzo 2). NESSUNA arma da fuoco uccide in un colpo solo.
+# Gli item magici (mina/dinamite/calice/scettro) e il martello (50%) hanno
+# le loro funzioni dedicate e NON passano da qui.
+# ===========================================================================
+
+## Danno per un colpo di arma da fuoco `weapon_type` ( Weapon.Type ) su
+## questo nemico. Applica il danno internamente e RITORNA il danno inflitto
+## (utile al chiamante per punteggio/HUD).
+## RELIC (Task 21): `fury` = true con la Corazza del Furore — l'arma
+## colpisce come se avesse 1 hit-to-kill in meno (floor 2: mai one-shot).
+func take_weapon_hit(weapon_type: int, fury: bool = false) -> int:
+        var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health, fury)
+        take_damage(dmg)
+        return dmg
+
+
+## RELIC (Task 21): stordisce il nemico per `ms` millisecondi (Mazza
+## Ferrata 1s / Martello del Golem 0.5s). Cumulabile al massimo a 1.5s
+## per evitare stunlock infiniti sui nemici piu' lenti.
+func apply_stun(ms: int) -> void:
+        stun_timer_ms = mini(stun_timer_ms + ms, 1500)
+
+
+## Danno del MARTELLO di Thor: 50% degli HP massimi (2 colpi per uccidere
+## qualunque nemico, come da specifica utente). Ritorna il danno inflitto.
+func take_hammer_hit() -> int:
+        var dmg: int = GameConstants.hammer_damage_for(max_health)
+        take_damage(dmg)
+        return dmg
+
+
+## HP massimi del nemico (scalati x ENEMY_HEALTH_SCALE). Usato da alleati
+## (KnightAlly) e dal controller per i danni percentuali.
+func get_max_health() -> int:
+        return max_health
+
+
+func is_dead() -> bool:
+        return health <= 0
+
+
+func is_dying() -> bool:
+        return dying_timer > 0
+
+
+# is_death_anim_done(): true once HP <= 0 AND the death animation has
+# finished (dyingTimer == 0). Game uses this to finally remove the enemy.
+func is_death_anim_done() -> bool:
+        return health <= 0 and dying_timer == 0
+
+
+# ===========================================================================
+# Burning state (player invincibility from chalice)
+# ===========================================================================
+
+# start_burning(frames): ignite the enemy for `frames` frames. While
+# burning the enemy is frozen; on expiry, Game finalises the death.
+# Sets burnedFlag so Game can detect the burning->death transition and
+# spawn the ash pile + final FireBurst.
+# Mirrors Enemy::startBurning() line 532-537.
+func start_burning(frames: int = 50) -> void:
+        if dying_timer > 0 or burning_timer > 0:
+                return
+        burning_timer = frames
+        burn_anim_time = 0
+        burned_flag = true
+        # Applica shader fuoco (Godot-native, non in C++)
+        if EffectsManager and sprite:
+                EffectsManager.set_burn_effect(sprite, true)
+
+
+func is_burning() -> bool:
+        return burning_timer > 0
+
+
+func was_burned() -> bool:
+        return burned_flag
+
+
+func clear_burned_flag() -> void:
+        burned_flag = false
+
+
+# ===========================================================================
+# Electrified state (lightning bolt from Magic Scepter)
+# ===========================================================================
+
+# start_electrified(frames): shock the enemy for `frames` frames. Visual
+# overlay of blue-white electric arcs. Does NOT kill the enemy - damage
+# is applied by Game (the bolt itself).
+# Mirrors Enemy::startElectrified() line 545-548.
+func start_electrified(frames: int = 30) -> void:
+        electrified_timer = frames
+        electrified_anim_time = 0
+        # Applica shader lightning (Godot-native, non in C++)
+        if EffectsManager and sprite:
+                EffectsManager.set_electrified_effect(sprite, true)
+
+
+func is_electrified() -> bool:
+        return electrified_timer > 0
+
+
+# ===========================================================================
+# Flee mode (chalice of immortality active)
+# ===========================================================================
+
+func set_flee_mode(flee: bool) -> void:
+        flee_mode = flee
+
+
+func is_fleeing() -> bool:
+        return flee_mode
+
+
+# ===========================================================================
+# AI helpers (private)
+# ===========================================================================
+
+# _move_greedy(maze, target): pick the adjacent cell minimising squared
+# distance to target, with a +10 penalty for backtracking. If no cell
+# improves the distance (dead-end), fall back to a random open direction.
+# Mirrors Enemy::moveGreedy() line 252-277.
+func _move_greedy(maze: Object, target: Vector2i) -> void:
+        var col := int(position.x / TILE_SIZE)
+        var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
+        var best_dx: int = 0
+        var best_dy: int = 0
+        var min_dist: float = 999999.0
+        var any_open: bool = false
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
+                if not maze.is_wall(nc, nr):
+                        any_open = true
+                        var dist: float = float((nc - target.x) * (nc - target.x)
+                                        + (nr - target.y) * (nr - target.y))
+                        # Penalise reversing direction (+10 dist).
+                        if _DC[i] == -dx and _DR[i] == -dy:
+                                dist += 10.0
+                        if dist < min_dist:
+                                min_dist = dist
+                                best_dx = _DC[i]
+                                best_dy = _DR[i]
+        # Dead-end fallback: pick a random open direction.
+        if any_open and best_dx == 0 and best_dy == 0:
+                _pick_random_open_dir(maze, col, row)
+                return
+        dx = best_dx
+        if dx != 0: last_dx = dx
+        dy = best_dy
+
+
+# _flee_greedy(maze, target): opposite of greedy - pick the adjacent
+# cell that MAXIMISES distance from the player, with a -10 penalty for
+# running TOWARDS the player. If all directions are penalised to zero,
+# fall back to a random open direction.
+# Mirrors Enemy::fleeGreedy() line 284-312.
+func _flee_greedy(maze: Object, target: Vector2i) -> void:
+        var col := int(position.x / TILE_SIZE)
+        var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
+        var best_dx: int = 0
+        var best_dy: int = 0
+        var max_dist: float = -1.0  # we want to MAXIMISE distance
+        var any_open: bool = false
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
+                if not maze.is_wall(nc, nr):
+                        any_open = true
+                        var dist: float = float((nc - target.x) * (nc - target.x)
+                                        + (nr - target.y) * (nr - target.y))
+                        # Penalise moving toward the player (reverse direction).
+                        if _DC[i] == -dx and _DR[i] == -dy:
+                                dist -= 10.0
+                        if dist > max_dist:
+                                max_dist = dist
+                                best_dx = _DC[i]
+                                best_dy = _DR[i]
+        if not any_open:
+                dx = 0
+                dy = 0
+                return
+        if best_dx == 0 and best_dy == 0:
+                _pick_random_open_dir(maze, col, row)
+                return
+        dx = best_dx
+        if dx != 0: last_dx = dx
+        dy = best_dy
+
+
+# _pick_random_open_dir(maze, col, row): pick one of the 4 cardinal
+# directions whose adjacent cell is not a wall, starting from a random
+# offset so there's no directional bias. Returns true if found.
+# Mirrors Enemy::pickRandomOpenDir() line 319-333.
+func _pick_random_open_dir(maze: Object, col: int, row: int) -> bool:
+        var start: int = randi() % 4
+        for i in range(4):
+                var idx: int = (start + i) % 4
+                var nc: int = col + _DC[idx]
+                var nr: int = row + _DR[idx]
+                if not maze.is_wall(nc, nr):
+                        dx = _DC[idx]
+                        if dx != 0:
+                                last_dx = dx
+                        dy = _DR[idx]
+                        return true
+        dx = 0
+        dy = 0
+        return false
+
+
+# ===========================================================================
+# Static helpers (mirror Enemy.cpp static methods)
+# ===========================================================================
+
+# can_shoot(t): true for ranged enemy types (skeleton/cultist/demon/
+# wraith/robot/witch/mad_wizard). Mirrors Enemy::canShoot() line 108-121.
+# FIX (nuovi nemici): il Soldato Posseduto spara con il fucile e il
+# Basilisco spara il suo sguardo pietrificante (proiettile a distanza).
+static func can_shoot(t: int) -> bool:
+        return t == EnemyType.SKELETON \
+                        or t == EnemyType.CULTIST \
+                        or t == EnemyType.DEMON \
+                        or t == EnemyType.WRAITH \
+                        or t == EnemyType.ROBOT \
+                        or t == EnemyType.WITCH \
+                        or t == EnemyType.MAD_WIZARD \
+                        or t == EnemyType.POSSESSED_SOLDIER \
+                        or t == EnemyType.BASILISK
+
+
+# FIX (nemico +1 dopo ogni boss): true se `t` è uno dei 16 nuovi tipi
+# sbloccati progressivamente dopo ogni boss (usato dall'EnemySpawner per
+# comporre le ondate: slot extra = un nuovo tipo ciascuno).
+static func is_new_unlockable_type(t: int) -> bool:
+        return t >= ENEMY_ORIGINAL_TYPE_COUNT and t < ENEMY_TYPE_COUNT
+
+
+# FIX (nemico +1 dopo ogni boss): ritorna il nuovo tipo sbloccato dopo
+# `boss_index` boss sconfitti (0 = OWLBEAR, 1 = GIBBERING_MOUTHER, ...).
+# Ritorna -1 se l'indice supera i 16 nuovi tipi disponibili.
+static func get_unlockable_type(boss_index: int) -> int:
+        if boss_index < 0 or boss_index >= ENEMY_NEW_TYPE_COUNT:
+                return -1
+        return ENEMY_ORIGINAL_TYPE_COUNT + boss_index
+
+
+# uses_bfs(t): kept for parity with the C++ API. All enemy types use BFS
+# in the current build; this is preserved for future rebalancing hooks.
+static func uses_bfs(_t: int) -> bool:
+        return true
+
+
+# get_sprite_id(t): returns the file id ("monster_001".."monster_029") for
+# this enemy type, or "" if no sprite is mapped. Mirrors Enemy::getSpriteId.
+static func get_sprite_id(t: int) -> String:
+        return SPRITE_ID.get(t, "")
+
+
+# ===========================================================================
+# Accessors
+# ===========================================================================
+
+func get_grid_pos() -> Vector2i:
+        return Vector2i(
+                int(position.x / TILE_SIZE),
+                int((position.y - UI_HEIGHT) / TILE_SIZE)
+        )
+
+func get_pixel_pos() -> Vector2:
+        return position
+
+func get_type() -> int:
+        return type
+
+
+# FIX (HUD last hit enemy): ritorna il nome leggibile del tipo di nemico.
+# Usato dall'HUD per mostrare il nome del nemico colpito.
+func get_enemy_name() -> String:
+        # TASK 44: nomi localizzati (EN default / IT) — chiavi I18n "enemy.*".
+        var keys := {
+                EnemyType.ZOMBIE: "enemy.zombie",
+                EnemyType.SKELETON: "enemy.skeleton",
+                EnemyType.GHOST: "enemy.ghost",
+                EnemyType.BAT: "enemy.bat",
+                EnemyType.SPIDER: "enemy.spider",
+                EnemyType.SLIME: "enemy.slime",
+                EnemyType.DEMON: "enemy.demon",
+                EnemyType.ROBOT: "enemy.robot",
+                EnemyType.GOBLIN: "enemy.goblin",
+                EnemyType.ORC: "enemy.orc",
+                EnemyType.WRAITH: "enemy.wraith",
+                EnemyType.GHOUL: "enemy.ghoul",
+                EnemyType.IMP: "enemy.imp",
+                EnemyType.RAT: "enemy.rat",
+                EnemyType.CULTIST: "enemy.cultist",
+                EnemyType.MIMIC: "enemy.mimic",
+                EnemyType.WOLF: "enemy.wolf",
+                EnemyType.WITCH: "enemy.witch",
+                EnemyType.BONE_GOLEM: "enemy.bone_golem",
+                EnemyType.ASH_SERPENT: "enemy.ash_serpent",
+                EnemyType.DAMNED_KNIGHT: "enemy.damned_knight",
+                EnemyType.MAD_WIZARD: "enemy.mad_wizard",
+                EnemyType.DEMONIC_CROW: "enemy.demonic_crow",
+                EnemyType.TENTACLE: "enemy.tentacle",
+                EnemyType.GARGOYLE: "enemy.gargoyle",
+                EnemyType.WELL_SPIRIT: "enemy.well_spirit",
+                EnemyType.CURSED_BOAR: "enemy.cursed_boar",
+                EnemyType.PREDATOR_FUNGUS: "enemy.predator_fungus",
+                EnemyType.OWLBEAR: "enemy.owlbear",
+                EnemyType.GIBBERING_MOUTHER: "enemy.gibbering_mouther",
+                EnemyType.HELLHOUND: "enemy.hellhound",
+                EnemyType.BARLGURA: "enemy.barlgura",
+                EnemyType.TROGLODYTE: "enemy.troglodyte",
+                EnemyType.BULETTE: "enemy.bulette",
+                EnemyType.KUO_TOA: "enemy.kuo_toa",
+                EnemyType.BASILISK: "enemy.basilisk",
+                EnemyType.COCKATRICE: "enemy.cockatrice",
+                EnemyType.UMBER_HULK: "enemy.umber_hulk",
+                EnemyType.HOOK_HORROR: "enemy.hook_horror",
+                EnemyType.DOPPELGANGER: "enemy.doppelganger",
+                EnemyType.ENT: "enemy.ent",
+                EnemyType.CAVE_DRAKE: "enemy.cave_drake",
+                EnemyType.LOST_SOUL: "enemy.lost_soul",
+                EnemyType.POSSESSED_SOLDIER: "enemy.possessed_soldier",
+        }
+        if I18n and keys.has(type):
+                return I18n.t(keys[type])
+        return "Enemy"
+
+
+# ===========================================================================
+# Rendering: _draw() renders the enemy.
+# When a sprite is loaded (AI-generated PNG), we render the correct animation
+# frame via draw_texture_rect. Otherwise we fall back to procedural shapes
+# (circle + eyes) so the game is still playable if assets are missing.
+# ===========================================================================
+func _draw() -> void:
+        # --- PRIMARY: render AI-generated sprite if loaded ---
+        # _draw_sprite_frame() handles death/attack/walk/idle animations
+        if _sprite_loaded and _sprite_sheet != null:
+                _draw_sprite_frame()
+                # Overlay effects on top of the sprite
+                if is_burning():
+                        # Draw fire aura spritesheet if loaded
+                        if _burn_effect_sheet != null and _burn_effect_sheet.is_loaded():
+                                var burn_progress: float = 1.0 - float(burning_timer) / 50.0
+                                var burn_frame: int = int(burn_progress * 4) % 4
+                                var burn_at: AtlasTexture = _burn_effect_sheet.get_frame_texture("idle", burn_frame)
+                                if burn_at != null:
+                                        draw_texture_rect(burn_at, Rect2(-24, -24, 48, 48), false)
+                        else:
+                                # Fallback: simple flame circles
+                                draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.5))
+                                draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.7))
+                if is_electrified():
+                        for i in range(4):
+                                var angle: float = i * PI / 2.0 + anim_time * 0.1
+                                var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
+                                var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
+                                draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+                # FIX (barra HP rimossa): la barra HP non viene più disegnata
+                # sopra i nemici. Le info del nemico colpito vengono mostrate
+                # nell'HUD in alto (last hit enemy name + energy bar).
+                return
+
+        # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
+        # If burning, draw flame overlay
+        if is_burning():
+                draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.6))
+                draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.8))
+
+        # If electrified, draw electric arcs
+        if is_electrified():
+                for i in range(4):
+                        var angle: float = i * PI / 2.0 + anim_time * 0.1
+                        var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
+                        var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
+                        draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+
+        # Draw enemy body (procedural fallback based on type)
+        var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
+        var body_color: Color = stats.get("color", Color(0.6, 0.4, 0.3))
+        var accent_color: Color = stats.get("accent", Color(0.9, 0.7, 0.5))
+
+        # Main body circle
+        draw_circle(Vector2.ZERO, 16.0, body_color)
+        draw_circle(Vector2.ZERO, 12.0, accent_color)
+
+        # Eyes (facing direction)
+        var eye_offset: Vector2 = Vector2(dx, dy) * 4.0
+        draw_circle(Vector2(-4, -2) + eye_offset, 2.0, Color.WHITE)
+        draw_circle(Vector2(4, -2) + eye_offset, 2.0, Color.WHITE)
+        draw_circle(Vector2(-4, -2) + eye_offset, 1.0, Color.BLACK)
+        draw_circle(Vector2(4, -2) + eye_offset, 1.0, Color.BLACK)
+
+        # Type-specific procedural details (28 unique fallbacks).
+        # Mirrors Enemy::renderPrimitives() in src/Enemy.cpp line 885-1449.
+        _draw_primitive_fallback()
+
+        # FIX (barra HP rimossa): la barra HP non viene più disegnata sopra i
+        # nemici. Le info del nemico colpito vengono mostrate nell'HUD in alto.
+
+        # Flee mode indicator (fear exclamation mark - rendered as yellow triangle)
+        if flee_mode:
+                # Simple yellow "!" indicator drawn as triangle + circle
+                var excl_color := Color(1.0, 1.0, 0.0, 0.9)
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(-3.0, -28.0),
+                        Vector2(3.0, -28.0),
+                        Vector2(0.0, -18.0),
+                ]), excl_color)
+                draw_circle(Vector2(0.0, -14.0), 2.0, excl_color)
+
+
+# Draw the current animation frame from the AI-generated sprite sheet.
+# Mirrors C++ Enemy::draw() which uses SpriteSheet::getFrameTexture.
+#
+# FIX (gif-animata-scollegata bug):
+# When the DeformableSprite is loaded (preferred path), we delegate the
+# rendering to it and only update its animation mode + the walk_cycle shader
+# uniforms. This produces smooth 60fps mesh deformation of a single frame
+# instead of cycling through 4 horizontal slices of an HD AI drawing.
+# The old AtlasTexture frame-cycling path is kept as a fallback for cases
+# where the SD sheet can't be loaded.
+func _draw_sprite_frame() -> void:
+        # Update the DeformableSprite if loaded (preferred path).
+        if _deform_loaded and _deform_sprite != null:
+                _update_deform_sprite_animation()
+                # The deform sprite draws itself via MeshInstance2D; we don't
+                # need to call draw_texture_rect here. But we DO need to draw
+                # the burning/electrified overlays and the HP bar.
+                # The walk_cycle shader update happens via EffectsManager.
+                var is_moving: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified() and not is_dying()
+                var walk_phase: float = 1.0 if is_moving else 0.0
+                if EffectsManager:
+                        EffectsManager.update_walk_cycle(self, walk_phase,
+                                last_dx >= 0, anim_time * 0.001, 8.0)
+                # Spawn dust puff periodically while walking.
+                if is_moving:
+                        _dust_frame_counter += 1
+                        if _dust_frame_counter >= DUST_PUFF_INTERVAL:
+                                _dust_frame_counter = 0
+                                _spawn_dust_puff_if_possible()
+                else:
+                        _dust_frame_counter = 0
+                return
+
+        # --- Fallback: AtlasTexture frame cycling (HD/SD sheet) ---
+        if not _sprite_loaded or _sprite_sheet == null:
+                return
+        # FIX (gif animata scollegata): le HD sheet sono singole immagini AI
+        # divise in 4x4 fasce → il frame cycle mostra 4 slice dello stesso
+        # disegno. Usiamo la SD sheet (256x64 = 4 frame vero walk cycle)
+        # caricandola direttamente se la HD è stata caricata da SpriteManager.
+        var active_sheet: Object = _sprite_sheet
+        if _sprite_sheet.rows == 4 and _sprite_sheet.columns == 4:
+                # HD sheet: cerca di caricare la SD sheet
+                if _sd_sheet == null:
+                        _sd_sheet = _load_sd_sheet(_sprite_id)
+                if _sd_sheet != null:
+                        active_sheet = _sd_sheet
+        if active_sheet == null:
+                active_sheet = _sprite_sheet
+        # Determine animation name and frame index.
+        # Priority: death > attack > walk > idle (mirror C++ Enemy::draw)
+        var anim_name: String = "idle"
+        var frame: int = 0
+        var frame_duration: int = 200  # ms per frame
+        var is_moving2: bool = (dx != 0 or dy != 0) and not is_burning() and not is_electrified()
+        # Death animation (6 frames @ 120ms)
+        if is_dying():
+                anim_name = "death"
+                frame_duration = 120
+                var fc_death: int = active_sheet.get_frame_count("death")
+                if fc_death > 0:
+                        var elapsed_death: int = 600 - dying_timer
+                        frame = clampi(elapsed_death / frame_duration, 0, fc_death - 1)
+                else:
+                        _draw_death_fallback()
+                        return
+        # Attack animation (6 frames @ 100ms)
+        elif attacking_timer > 0 and active_sheet.get_frame_count("attack") > 0:
+                anim_name = "attack"
+                frame_duration = 100
+                var fc_attack: int = active_sheet.get_frame_count("attack")
+                var elapsed_attack: int = 400 - attacking_timer
+                frame = clampi(elapsed_attack / frame_duration, 0, fc_attack - 1)
+        # Walk animation (6 frames @ 100ms with bob)
+        elif is_moving2 and active_sheet.get_frame_count("walk") > 0:
+                anim_name = "walk"
+                frame_duration = 100
+                var fc_walk: int = active_sheet.get_frame_count("walk")
+                frame = (int(anim_time) / frame_duration) % fc_walk
+        # Idle (frame 0 fisso, come C++ che evita separazione busto/bacino)
+        else:
+                anim_name = "idle"
+                frame_duration = 200
+                frame = 0  # SEMPRE frame 0 (non cycling)
+        # Get the AtlasTexture for this frame.
+        var at: AtlasTexture = active_sheet.get_frame_texture(anim_name, frame)
+        if at == null:
+                # Fallback: try idle frame 0
+                at = active_sheet.get_frame_texture("idle", 0)
+                if at == null:
+                        return
+        # Draw centered. FIX (allineamento nemico/player, fix definitivo):
+        # Il player usa Sprite2D scale 1.3 (64x64 → 83.2x83.2, centered=true,
+        # offset=(0,0) quando non salta). Per allineare PERFETTAMENTE il
+        # nemico al player (stessa altezza visiva, stesso centro), usiamo:
+        #   - target_size = 64 * 1.3 = 83.2 (identica scala del player)
+        #   - Y_OFFSET = 0 (centered, nessun hack di offset verticale)
+        # Gli hack precedenti (Y_OFFSET = -2, -6, -8, -12, -16, -24) tentavano
+        # di compensare il fatto che il nemico veniva disegnato con scala
+        # diversa (1.25 invece di 1.3) e quindi appariva "più basso". Con la
+        # stessa scala 1.3 e Y_OFFSET=0, il nemico è centrato esattamente
+        # come il player. Eventuali piccoli scarti di content position
+        # (alcuni mostri hanno content y=0..60 invece di 0..56) sono
+        # trascurabili (1-2px) e non causano i problemi di collisione
+        # descritti dal giocatore (che erano in realtà dovuti al nemico
+        # che si fermava ~30px fuori dal centro cella, fixato nello
+        # update_enemy).
+        # FIX (attraversamento muri visivo al cambio direzione):
+        # Lo sprite del nemico era 64*1.3=83px wide, ma la cella è 64px.
+        # Quindi lo sprite estendeva 9.6px in ogni cella adiacente → quando
+        # il nemico era al centro cella, lo sprite overlapava le celle
+        # adiacenti (spesso muri). Al cambio direzione vicino a un muro,
+        # questo overlap era particolarmente visibile → percepito come
+        # "attraversamento muro".
+        # Match the 31px collision half-extent; 64px rendered 1px beyond it
+        # and allowed the sprite corner to overlap a diagonal wall on turns.
+        # FIX (dimensione nemici, richiesta utente "poco più grandi"):
+        # 62 -> 68px. Il contenuto reale degli sheet SD (~53-61px visibili su
+        # frame 64px) cresce di ~10% e resta entro il corridoio da 64px
+        # (il movimento grid-locked mantiene lo sprite sulla linea centrale:
+        # l'eventuale padding trasparente che sfora è invisibile).
+        # 62 -> 68 -> 78px (richiesta utente "ancora un po' più grandi":
+        # il passaggio 62->68 (+10%) non era percepibile perché il contenuto
+        # reale degli sheet SD è ~53-61px su frame 64. Con 78px il nemico è
+        # chiaramente più massiccio e resta sotto il player (83px) mantenendo
+        # la gerarchia visiva player > miniboss (82) > nemici (78) > tesori
+        # (73.6px). Il contenuto ~57-67px resta dentro i corridoi da 64px sulla
+        # linea centrale.
+        var target_size: float = 78.0
+        var tw: float = target_size
+        var th: float = target_size
+        var bob_y: float = 0.0
+        const Y_OFFSET: float = 0.0
+        var draw_pos: Vector2 = Vector2(-tw * 0.5, -th * 0.5 + bob_y + Y_OFFSET)
+        # FIX (compenetrazione visiva muri): clamp di rendering RIMOSSO.
+        # Con il movimento grid-locked (vedi update_enemy) il nemico viaggia
+        # SEMPRE sulla linea centrale dei corridoi: lo sprite 62px nel
+        # corridoio 64px non può sovrapporsi ad alcun muro, quindi nessun
+        # clamp è necessario. Il clamp precedente spostava lo sprite rispetto
+        # alla posizione logica e produceva un "salto" visivo quando si
+        # rilasciava (lo scatto al cambio direzione destra -> sinistra).
+        # Flip horizontally if facing left (dx < 0).
+        # FIX (scheletro ruota a sinistra): il quinto parametro di
+        # draw_texture_rect è "transpose" che RUOTA lo sprite di 90°,
+        # NON lo flip orizzontalmente.
+        # NOTA: AtlasTexture in Godot 4.7 NON ha la property flip_h
+        # (esiste solo su Sprite2D/Sprite3D), quindi non si può fare
+        # flipped_at.flip_h = true.
+        #
+        # FIX (nemico disegnato +62px a destra quando guarda a sinistra —
+        # "cambia direzione sopra il muro, solo direzioni verticali"): il
+        # vecchio trick del Rect2 con LARGHEZZA NEGATIVA
+        # (Rect2(draw_pos.x + tw, draw_pos.y, -tw, th)) NON specchia lo
+        # sprite in Godot 4.7.2: il rect viene normalizzato e la texture
+        # viene disegnata con larghezza positiva a partire da
+        # draw_pos.x + tw → lo sprite appariva spostato di +62px (una
+        # cella intera!) verso destra. Conseguenze:
+        #   * in movimento ORIZZONTALE lo sprite spostato restava comunque
+        #     dentro la fascia del corridoio → poco visibile;
+        #   * appena il nemico girava in VERTICALE lo sprite finiva sopra
+        #     la colonna-muro adiacente → "il nemico cammina sul muro";
+        #   * il player non ne soffriva perché usa Sprite2D.flip_h nativo.
+        # Verificato con test di rendering su Godot 4.7.2 reale (il rect
+        # negativo sposta il blob di +62px; draw_set_transform no).
+        # Metodo corretto: draw_set_transform con scala X = -1 specchia le
+        # draw successive attorno a un asse verticale. Usando come pivot il
+        # CENTRO X del rect, lo sprite resta esattamente nello stesso rect,
+        # solo specchiato.
+        var dest_rect: Rect2 = Rect2(draw_pos, Vector2(tw, th))
+        # FIX (scatto visivo da fermo): flip basato su last_dx, non dx:
+        # da fermo (dx==0) lo sprite mantiene l'orientamento invece di
+        # "sbloccarsi" di colpo verso destra.
+        if last_dx < 0:
+                draw_set_transform(
+                        Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                        0.0, Vector2(-1.0, 1.0))
+                draw_texture_rect(at, dest_rect, false)
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+        else:
+                draw_texture_rect(at, dest_rect, false)
+
+
+# Update the DeformableSprite's animation mode based on current state.
+# Priority: death > attack > walk > idle (mirrors C++ Enemy::draw).
+func _update_deform_sprite_animation() -> void:
+        if _deform_sprite == null:
+                return
+        var mode: int = DeformableSprite.AnimMode.IDLE
+        # Keep the deformed sprite within the 64px maze cell, like the fallback.
+        var scale_val: float = 62.0 / 64.0
+        var flipped: bool = last_dx < 0
+        if is_dying():
+                # DeformableSprite has no "death" mode; use IDLE with a fade-out
+                # handled separately. The death fallback draws an explosion circle.
+                mode = DeformableSprite.AnimMode.IDLE
+        elif attacking_timer > 0:
+                mode = DeformableSprite.AnimMode.ATTACK
+        elif (dx != 0 or dy != 0) and not is_burning() and not is_electrified():
+                mode = DeformableSprite.AnimMode.WALK
+        else:
+                mode = DeformableSprite.AnimMode.IDLE
+        # Position: deform sprite is centered on the enemy position (already
+        # offset by -32,-32 in _load_sprite). The bob is added here.
+        # FIX (barra HP lag): rimosso bob_y dal deform sprite. Sync perfetto.
+        var bob_y: float = 0.0
+        # Center the deform sprite on the enemy position.
+        # Sprite is 64x64 scaled by scale_val → visual size = 64*scale_val.
+        # Offset = -(visual_size)/2 = -32*scale_val.
+        _deform_sprite.position = Vector2(-32.0 * scale_val, -32.0 * scale_val + bob_y)
+        _deform_sprite.update(float(anim_time) * 0.001, mode, scale_val, flipped)
+
+
+# Spawn a dust puff at the enemy's feet (called every Nth frame while walking).
+# The puff is added as a sibling of the enemy (to the parent scene tree) so
+# it persists after the enemy moves on. The puff auto-frees after its lifetime.
+func _spawn_dust_puff_if_possible() -> void:
+        if EffectsManager == null:
+                return
+        var parent_node: Node = get_parent()
+        if parent_node == null:
+                return
+        var puff: GPUParticles2D = EffectsManager.spawn_dust_puff(
+                position + Vector2(0, 14.0),  # at the enemy's feet
+                _accent_color)
+        if puff != null:
+                parent_node.add_child(puff)
+                # Auto-free after the puff's lifetime (0.4s + safety margin).
+                # Use a callable bound to the puff reference; Godot 4.7's
+                # SceneTreeTimer.timeout signal accepts any Callable.
+                var timer: SceneTreeTimer = get_tree().create_timer(0.6)
+                timer.timeout.connect(_on_dust_puff_timeout.bind(puff))
+
+
+# Bound callback for the dust puff auto-free timer.
+func _on_dust_puff_timeout(puff: GPUParticles2D) -> void:
+        if is_instance_valid(puff):
+                puff.queue_free()
+                if EffectsManager:
+                        EffectsManager.notify_dust_puff_freed()
+
+
+# ===========================================================================
+# Internal helpers
+# ===========================================================================
+
+# _tick(t): decrement a simulated-ms timer by 16 ms, floored at 0.
+# Matches the `if (t > 16) t -= 16; else t = 0;` idiom in Enemy.cpp.
+static func _tick(t: int) -> int:
+        return t - 16 if t > 16 else 0
+
+# FIX (nemici a scatti): tick basato su delta_ms reale.
+static func _tick_ms(t: int, delta_ms: float) -> int:
+        var new_t: int = t - int(delta_ms)
+        return new_t if new_t > 0 else 0
+
+
+# Death animation fallback when sprite sheet has no "death" animation.
+# Draws an expanding fading circle (mirror C++ primitive fallback).
+func _draw_death_fallback() -> void:
+        var progress: float = 1.0 - float(dying_timer) / 600.0
+        var radius: float = 16.0 + progress * 20.0
+        draw_circle(Vector2.ZERO, radius,
+                Color(1.0, 0.3, 0.1, 1.0 - progress))
+        # Inner brighter circle
+        draw_circle(Vector2.ZERO, radius * 0.6,
+                Color(1.0, 0.6, 0.2, (1.0 - progress) * 0.7))
+
+
+# ===========================================================================
+# _draw_primitive_fallback(): type-specific procedural details drawn ON TOP
+# of the base circle + eyes. Each of the 28 enemy types gets unique
+# distinguishing features (arms, horns, wings, ears, hat, etc.) so the
+# fallback is still readable when the AI-generated sprite sheet is missing.
+# Mirrors Enemy::renderPrimitives() in src/Enemy.cpp line 885-1449.
+# ===========================================================================
+func _draw_primitive_fallback() -> void:
+        match type:
+                EnemyType.ZOMBIE:
+                        # Braccia verdi penzolanti + gamba
+                        draw_rect(Rect2(-18, -2, 12, 8), Color(0.39, 0.59, 0.31))
+                        draw_rect(Rect2(6, -2, 12, 8), Color(0.39, 0.59, 0.31))
+                        draw_rect(Rect2(-8, 8, 8, 12), Color(0.24, 0.31, 0.16))
+                EnemyType.SKELETON:
+                        # Arco convesso + freccia
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -8), Vector2(14, -4),
+                                Vector2(12, 8), Vector2(6, 4),
+                        ]), Color(0.55, 0.27, 0.07))
+                        draw_rect(Rect2(-2, -1, 16, 1), Color(0.9, 0.9, 0.85))
+                EnemyType.GHOST:
+                        # Corpoco trasparente fluttuante: wisps sotto
+                        draw_circle(Vector2(-8, 14), 4, Color(0.59, 0.78, 1.0, 0.4))
+                        draw_circle(Vector2(8, 14), 4, Color(0.59, 0.78, 1.0, 0.4))
+                        draw_circle(Vector2(0, 16), 4, Color(0.59, 0.78, 1.0, 0.4))
+                EnemyType.BAT:
+                        # Ali (quadrilateri simili a ventagli)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-20, -8),
+                                Vector2(-16, 4), Vector2(-4, 4),
+                        ]), Color(0.31, 0.0, 0.31))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(20, -8),
+                                Vector2(16, 4), Vector2(4, 4),
+                        ]), Color(0.31, 0.0, 0.31))
+                EnemyType.SPIDER:
+                        # 8 zampe (4 per lato)
+                        for i in 4:
+                                var y_off: float = -2.0 + i * 3.0
+                                draw_line(Vector2(-8, y_off), Vector2(-20, y_off - 4),
+                                        Color(0.78, 0.78, 0.78), 1.5)
+                                draw_line(Vector2(8, y_off), Vector2(20, y_off - 4),
+                                        Color(0.78, 0.78, 0.78), 1.5)
+                EnemyType.SLIME:
+                        # Blob gelatinoso: highlights
+                        draw_circle(Vector2(-5, 2), 1.5, Color(0.78, 0.95, 0.78))
+                        draw_circle(Vector2(5, 2), 1.5, Color(0.78, 0.95, 0.78))
+                EnemyType.DEMON:
+                        # Corna + ali
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -16), Vector2(-12, -26), Vector2(-4, -18),
+                        ]), Color(0.31, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -16), Vector2(12, -26), Vector2(4, -18),
+                        ]), Color(0.31, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-12, -4), Vector2(-24, -8),
+                                Vector2(-20, 8), Vector2(-8, 6),
+                        ]), Color(0.47, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(12, -4), Vector2(24, -8),
+                                Vector2(20, 8), Vector2(8, 6),
+                        ]), Color(0.47, 0.0, 0.0))
+                EnemyType.ROBOT:
+                        # Antenna + LED + cingoli
+                        draw_rect(Rect2(-1, -28, 2, 8), Color(0.31, 0.31, 0.31))
+                        draw_circle(Vector2(0, -29), 2, Color(1.0, 0.2, 0.2))
+                        draw_rect(Rect2(-14, 12, 28, 6), Color(0.12, 0.12, 0.12))
+                EnemyType.GOBLIN:
+                        # Orecchie appuntite + pugnale
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -10), Vector2(-16, -8), Vector2(-8, -6),
+                        ]), Color(0.27, 0.71, 0.27))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -10), Vector2(16, -8), Vector2(8, -6),
+                        ]), Color(0.27, 0.71, 0.27))
+                        draw_rect(Rect2(8, -2, 2, 8), Color(0.78, 0.78, 0.78))
+                EnemyType.ORC:
+                        # Armatura + zanne
+                        draw_rect(Rect2(-8, -6, 16, 8), Color(0.39, 0.39, 0.39))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-6, -12), Vector2(-8, -6), Vector2(-2, -10),
+                        ]), Color(1.0, 1.0, 0.78))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(6, -12), Vector2(8, -6), Vector2(2, -10),
+                        ]), Color(1.0, 1.0, 0.78))
+                EnemyType.WRAITH:
+                        # Mantello fluttuante + cappuccio
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, -16), Vector2(14, -4),
+                                Vector2(12, 14), Vector2(-12, 14),
+                                Vector2(-14, -4),
+                        ]), Color(0.16, 0.0, 0.24, 0.78))
+                        draw_circle(Vector2(0, -16), 8, Color(0.08, 0.0, 0.12))
+                EnemyType.GHOUL:
+                        # Corpo decomposto: artigli
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-12, -2), Vector2(-18, 2), Vector2(-12, 4),
+                        ]), Color(0.78, 0.78, 0.78))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(12, -2), Vector2(18, 2), Vector2(12, 4),
+                        ]), Color(0.78, 0.78, 0.78))
+                EnemyType.IMP:
+                        # Piccolo con ali + corna
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-16, -12),
+                                Vector2(-12, -2), Vector2(-2, 2),
+                        ]), Color(0.47, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(16, -12),
+                                Vector2(12, -2), Vector2(2, 2),
+                        ]), Color(0.47, 0.0, 0.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-4, -16), Vector2(-8, -22), Vector2(-2, -16),
+                        ]), Color(0.08, 0.08, 0.08))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(4, -16), Vector2(8, -22), Vector2(2, -16),
+                        ]), Color(0.08, 0.08, 0.08))
+                EnemyType.RAT:
+                        # Coda lunga + muso
+                        draw_line(Vector2(-12, 4), Vector2(-20, 8),
+                                Color(1.0, 0.78, 0.78), 2)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -4), Vector2(18, -4), Vector2(12, 4),
+                        ]), Color(0.39, 0.35, 0.31))
+                EnemyType.CULTIST:
+                        # Tunica con cappuccio + pugnale
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, -14), Vector2(12, -4),
+                                Vector2(8, 14), Vector2(-8, 14),
+                                Vector2(-12, -4),
+                        ]), Color(0.31, 0.0, 0.31))
+                        draw_rect(Rect2(8, 2, 2, 10), Color(0.78, 0.78, 0.78))
+                EnemyType.MIMIC:
+                        # Forziere con denti
+                        draw_rect(Rect2(-14, -4, 28, 14), Color(0.43, 0.27, 0.12))
+                        draw_rect(Rect2(-14, -10, 28, 6), Color(0.31, 0.20, 0.08))
+                        for i in 5:
+                                var tx: float = -12.0 + i * 6.0
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(tx, -4), Vector2(tx + 4, -4),
+                                        Vector2(tx + 2, 2),
+                                ]), Color(1.0, 1.0, 0.86))
+                EnemyType.WOLF:
+                        # Coda arruffata + orecchie
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-14, -2), Vector2(-22, -8),
+                                Vector2(-20, 2), Vector2(-14, 2),
+                        ]), Color(0.24, 0.24, 0.27))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -16), Vector2(-6, -22), Vector2(0, -18),
+                        ]), Color(0.31, 0.31, 0.35))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -16), Vector2(12, -22), Vector2(6, -18),
+                        ]), Color(0.31, 0.31, 0.35))
+                EnemyType.WITCH:
+                        # Cappello a punta + pozione
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-12, -22), Vector2(12, -22), Vector2(2, -38),
+                        ]), Color(0.08, 0.08, 0.08))
+                        draw_rect(Rect2(8, 2, 4, 8), Color(0.39, 1.0, 0.39, 0.78))
+                EnemyType.BONE_GOLEM:
+                        # Gabbia toracica + teschio grande
+                        for i in 3:
+                                draw_rect(Rect2(-14, -4.0 + i * 5.0, 28, 2),
+                                        Color(0.47, 0.47, 0.39))
+                        draw_rect(Rect2(-9, -28, 18, 14), Color(0.86, 0.86, 0.78))
+                EnemyType.ASH_SERPENT:
+                        # Serpente sinuoso + lingua biforcuta
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-16, 8), Vector2(-8, 2),
+                                Vector2(-2, 8), Vector2(8, 2),
+                                Vector2(14, 8), Vector2(-2, -2),
+                        ]), Color(0.47, 0.43, 0.39))
+                        draw_line(Vector2(14, -4), Vector2(20, -4),
+                                Color(1.0, 0.31, 0.31), 1)
+                EnemyType.DAMNED_KNIGHT:
+                        # Armatura nera + crepa luminosa + spada
+                        draw_rect(Rect2(-11, -8, 22, 20), Color(0.16, 0.16, 0.20))
+                        draw_rect(Rect2(-11, -26, 16, 14), Color(0.12, 0.12, 0.16))
+                        draw_rect(Rect2(-4, -4, 2, 8), Color(1.0, 0.47, 0.0))
+                        draw_rect(Rect2(12, -12, 2, 18), Color(0.71, 0.71, 0.71))
+                EnemyType.MAD_WIZARD:
+                        # Cappello con stella + pergamene fluttuanti
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-10, -24), Vector2(10, -24), Vector2(4, -42),
+                        ]), Color(0.16, 0.08, 0.24))
+                        draw_circle(Vector2(2, -32), 2, Color(1.0, 1.0, 0.39))
+                        draw_rect(Rect2(-18, -6, 6, 8), Color(0.86, 0.78, 0.55))
+                        draw_rect(Rect2(12, -4, 6, 8), Color(0.86, 0.78, 0.55))
+                EnemyType.DEMONIC_CROW:
+                        # Ali nere + becco metallico
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-2, -4), Vector2(-20, -12),
+                                Vector2(-16, 4), Vector2(-2, 4),
+                        ]), Color(0.08, 0.08, 0.12))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(2, -4), Vector2(20, -12),
+                                Vector2(16, 4), Vector2(2, 4),
+                        ]), Color(0.08, 0.08, 0.12))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -12), Vector2(14, -10), Vector2(8, -8),
+                        ]), Color(0.71, 0.71, 0.78))
+                EnemyType.TENTACLE:
+                        # Tentacolo con ventose
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-4, 12), Vector2(-10, 4),
+                                Vector2(-6, -8), Vector2(2, -12),
+                                Vector2(8, -4), Vector2(6, 12),
+                        ]), Color(0.39, 0.31, 0.47))
+                        for i in 3:
+                                draw_circle(Vector2(-6.0 + i * 4.0, -4.0 + i * 4.0),
+                                        1.5, Color(0.71, 0.59, 0.78))
+                EnemyType.GARGOYLE:
+                        # Ali di pietra + corna
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-10, -6), Vector2(-20, -12),
+                                Vector2(-22, -4), Vector2(-18, 2), Vector2(-12, -2),
+                        ]), Color(0.27, 0.27, 0.30))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(10, -6), Vector2(20, -12),
+                                Vector2(22, -4), Vector2(18, 2), Vector2(12, -2),
+                        ]), Color(0.27, 0.27, 0.30))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-8, -24), Vector2(-12, -30), Vector2(-6, -26),
+                        ]), Color(0.31, 0.31, 0.33))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(8, -24), Vector2(12, -30), Vector2(6, -26),
+                        ]), Color(0.31, 0.31, 0.33))
+                EnemyType.WELL_SPIRIT:
+                        # Corpo acquoso + bolle
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, -20), Vector2(12, -8),
+                                Vector2(10, 10), Vector2(-10, 10), Vector2(-12, -8),
+                        ]), Color(0.47, 0.78, 1.0, 0.5))
+                        for i in 3:
+                                draw_circle(Vector2(-8.0 + i * 6.0, 4),
+                                        1.0 + (i % 2), Color(0.78, 0.94, 1.0, 0.71))
+                EnemyType.CURSED_BOAR:
+                        # Zanne + 4 zampe
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(10, -4), Vector2(16, -2), Vector2(10, 2),
+                        ]), Color(0.78, 0.78, 0.71))
+                        for i in 4:
+                                draw_rect(Rect2(-12.0 + i * 8.0, 8, 4, 6),
+                                        Color(0.24, 0.18, 0.14))
+                EnemyType.PREDATOR_FUNGUS:
+                        # Cappello fungo + macchie luminose
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-16, -2), Vector2(-12, -14),
+                                Vector2(0, -18), Vector2(12, -14), Vector2(16, -2),
+                        ]), Color(0.71, 0.31, 0.78))
+                        for i in 3:
+                                draw_circle(Vector2(-8.0 + i * 6.0, -12),
+                                        1.5, Color(1.0, 0.86, 0.39))
+                _:
+                        pass

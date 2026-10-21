@@ -1,0 +1,1389 @@
+## MiniBoss.gd - Maze mini-boss (1 per level, spawns at the magic portal).
+## ============================================================
+## Godot port of `src/MiniBoss.{h,cpp}`.
+##
+## 51 unique types inspired by LOTR + D&D (17), Narnia (7), The Witcher (10),
+## Doom (10) and Fantasy hybrids (7). Each type has its own sprite, stats and
+## weapon (axe, mace, sword, dagger, chain, club, whip, tentacles).
+##
+## Stats:
+##   * HP:   18..38 + (level - 1) * 3
+##   * Size: 32..40 px (must fit in TILE_SIZE=48 corridors)
+##   * Speed: 1..2 px/frame (always slower than the player)
+##   * Score reward: 5000 + type*300 (so type 0 = 5000, type 50 = 20000)
+##
+## AI:
+##   * BFS pathfinding toward the player (recomputed every 300ms)
+##   * Persistent targetPos between BFS calls (smooth movement every frame)
+##   * Meele attack: range/weapon-specific, 1.2s cooldown, 400ms swing anim
+##   * FLEE mode: when the player is invincible (chalice), the mini-boss
+##     runs AWAY (greedy maximum-distance heuristic).
+##
+## Burning state (player invincibility contact):
+##   * startBurning() sets burningTimer = 50 frames (~0.8s)
+##   * While burning: the mini-boss is frozen, has a fire-aura overlay
+##   * At end of burning: burnedFlag becomes true; Game finalizes death
+##   * Because mini-boss HP is 18..38, a single burn deals ~40% HP
+##     (2-3 contacts needed to fully kill)
+extends Node2D
+class_name MiniBoss
+
+# Mirrors C++ enum MiniBossType (51 types).
+enum Type {
+        MB_GOBLIN_CHIEFTAIN, MB_CAVE_TROLL, MB_ORC_BERSERKER, MB_WARG_RIDER,
+        MB_URUK_HAI, MB_NAZGUL, MB_OGRE_BRUTE, MB_GNOLL_PACKLORD,
+        MB_BUGBEAR_CHIEF, MB_MINOTAUR, MB_WIGHT_LORD, MB_CAVE_GIANT,
+        MB_DEATH_KNIGHT, MB_ILLITHID, MB_ETTIN, MB_FOMORIAN, MB_BALROG_CULTIST,
+        MB_FENRIS_WOLF, MB_WHITE_WITCH_GUARD, MB_NARNIA_MINOTAUR,
+        MB_DWARF_BERSERKER, MB_WITCH_KNIGHT, MB_TALKING_BEAST, MB_ICE_GIANT_NARNIA,
+        MB_LESHEN, MB_BRUXA, MB_KATAKAN, MB_FIEND, MB_WITCHER_GOLEM,
+        MB_NOONWRAITH, MB_FOGLET, MB_GRAVE_HAG, MB_MANTICORE_WITCHER,
+        MB_CYCLOPS_WITCHER,
+        MB_DOOM_IMP, MB_PINKY_DEMON, MB_REVENANT, MB_CACODEMON, MB_HELL_KNIGHT,
+        MB_MANCUBUS, MB_ARCHVILE, MB_BARON_OF_HELL, MB_PAIN_ELEMENTAL,
+        MB_DOOM_CYBERDEMON,
+        MB_SHADOW_ASSASSIN, MB_CRYSTAL_GOLEM, MB_VOID_WALKER, MB_BLOOD_ELEMENTAL,
+        MB_STORM_TITAN, MB_PLAGUE_LORD, MB_VOID_SERPENT
+}
+
+const MINIBOSS_TYPE_COUNT := 51
+
+enum Weapon {
+        MBW_AXE,       # ascia (tagliente, danno medio)
+        MBW_MACE,      # mazza (contundente, danno alto)
+        MBW_SWORD,     # spada (tagliente, danno medio-alto)
+        MBW_DAGGER,    # pugnale (tagliente, danno basso ma veloce)
+        MBW_CHAIN,     # catena (contundente, danno alto, raggio lungo)
+        MBW_CLUB,      # mazzafrusto (contundente, danno molto alto)
+        MBW_WHIP,      # frusta (tagliente, raggio lunghissimo)
+        MBW_TENTACLES  # tentacoli (danno medio, effetto mente)
+}
+
+# Constants (must match C++ Utils.h)
+const TILE_SIZE := 64
+# FIX (muro destro invisibile): 31 -> 30 colonne. Con 31 il muro di bordo
+# (col 30, x 1920..1984) finiva FUORI SCHERMO e i corridoi della col 29
+# arrivano al bordo senza muro visibile. Con 30 colonne il bordo (col 29)
+# è l'ultima colonna visibile (30*64=1920 esatto). Vedi Maze.generate per
+# l'apertura della colonna 28 che evita il doppio muro.
+const MAZE_COLS := 30
+const MAZE_ROWS := 15
+const UI_HEIGHT := 80
+const WINDOW_WIDTH := 1920
+const WINDOW_HEIGHT := 1080
+
+# Direzioni cardinali (stesso ordine di Enemy.gd/BFS.gd).
+const _DC: Array[int] = [0, 1, 0, -1]
+const _DR: Array[int] = [-1, 0, 1, 0]
+# Anti-stuck: se il mini-boss non si muove da questo tempo, forza una
+# direzione random aperta (mirror Enemy.gd STUCK_THRESHOLD_MS).
+const STUCK_THRESHOLD_MS: int = 100
+
+@export var mb_type: int = Type.MB_GOBLIN_CHIEFTAIN
+@export var level: int = 1
+
+# Position in pixels (top-left origin, +Y down).
+var pos: Vector2 = Vector2.ZERO:
+        set(v):
+                pos = v
+                position = v
+
+var size: int = 32
+var speed: int = 1  # FIX: max 95% player speed (player=2, enemy=1)
+var health: int = 18
+var max_health: int = 18
+var weapon: int = Weapon.MBW_AXE
+var dx: int = 1
+var dy: int = 1
+
+# Timers (in ms, decremented each frame; matches C++).
+var attack_cooldown_ms: int = 0
+var attacking_timer_ms: int = 0
+var dying_timer_ms: int = 0
+var burning_timer_ms: int = 0
+var burn_anim_time_ms: int = 0
+var anim_time: float = 0.0
+
+# Burning flag (finalization of death).
+var burned_flag: bool = false
+# Flee mode (player invincible via chalice).
+var flee_mode: bool = false
+
+# Facing (per flip sprite e attacco): ultima direzione orizzontale non-zero.
+var last_dx: int = 1
+# Anti-stuck tracking (mirror Enemy.gd): ms dall'ultimo movimento > 1px.
+var stuck_timer_ms: int = 0
+var last_pos: Vector2 = Vector2.ZERO
+# Waypoint LOCKED alla decisione (mirror Enemy.gd 13feb64): il centro della
+# cella successiva, valido fino all'arrivo. move_toward non sfora MAI il
+# target -> arrivo ESATTO al centro -> elimina l'oscillazione snap<->step
+# da arrotondamento float32 e assorbe la vecchia correzione "rotaia".
+var _move_waypoint: Vector2 = Vector2.INF
+
+# Sprite (loaded lazily on first render via SpriteManager).
+var sprite_id: String = ""
+var sprite_loaded: bool = false
+var sprite_sheet = null  # SpriteManager.Sheet
+
+# --- DeformableSprite (replaces 4-frame cycle that produced the
+#     "disjointed gif" effect with HD sheets) ---
+# Same approach as Enemy.gd: load ONE frame into a DeformableSprite and
+# animate it via mesh deformation (no frame cycling, no disjointed gif).
+var _deform_sprite: DeformableSprite = null
+var _deform_loaded: bool = false
+# SD sheet cache (forced to avoid HD gif effect)
+var _sd_sheet: Object = null
+# Per-miniboss accent color for walk_cycle shader.
+var _accent_color: Color = Color(0.86, 0.63, 0.16, 1.0)
+# Dust puff spawn counter.
+var _dust_frame_counter: int = 0
+const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms)
+
+# Maze reference (set by Game). Must expose `is_wall(col, row) -> bool`.
+var maze: Node = null
+
+
+# ----- Signals -----
+signal died(miniboss: MiniBoss)
+signal burned_out(miniboss: MiniBoss)
+
+
+# ============================================================
+# Factory / Setup
+# ============================================================
+func setup(t: int, lvl: int, start_col: int, start_row: int) -> void:
+        mb_type = t
+        level = lvl
+        pos = Vector2(start_col * TILE_SIZE + TILE_SIZE / 2.0,
+                                  start_row * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
+        max_health = get_base_health(t) + (level - 1) * 3
+        health = max_health
+        speed = get_base_speed(t)
+        size = get_base_size(t)
+        weapon = get_weapon_for_type(t)
+        dx = 1 if (randi() % 2 == 0) else -1
+        dy = 1 if (randi() % 2 == 0) else -1
+        sprite_id = get_sprite_id(t)
+        _load_sprite()
+
+
+func _load_sprite() -> void:
+        if SpriteManager == null:
+                sprite_loaded = false
+                print("[MiniBoss] SpriteManager is null!")
+                return
+        # FIX: assicurati che SpriteManager abbia caricato gli sheet
+        if not SpriteManager.has_method("get_sheet"):
+                sprite_loaded = false
+                return
+        sprite_sheet = SpriteManager.get_sheet(sprite_id)
+        if sprite_sheet == null:
+                # FIX: forza caricamento se non è in cache
+                print("[MiniBoss] get_sheet returned null for id=", sprite_id, ", trying load_all...")
+                if SpriteManager.has_method("load_all"):
+                        SpriteManager.load_all()
+                        sprite_sheet = SpriteManager.get_sheet(sprite_id)
+        sprite_loaded = sprite_sheet != null and sprite_sheet.is_loaded()
+        if not sprite_loaded:
+                print("[MiniBoss] WARNING: sprite not loaded for type=%d id=%s" % [mb_type, sprite_id])
+        else:
+                print("[MiniBoss] Sprite loaded OK for type=%d id=%s" % [mb_type, sprite_id])
+        # Apply CharacterArt enhancement shader (strong variant for minibosses)
+        # MiniBoss renders via draw_texture_rect on self (CanvasItem), so we
+        # apply the material to the node itself rather than a child Sprite2D.
+        # Apply CharacterArt enhancement shader — DISABILITATO per performance.
+        # if CharacterArt:
+        #         CharacterArt.apply_enhancement_to_canvas_item(self, true)
+
+        # Cache accent color for walk_cycle shader tinting.
+        _accent_color = _get_accent_color()
+
+        # --- DeformableSprite setup ---
+        # FIX (lag): disabilitato per performance (come Enemy). Il _sync_mesh
+        # ogni frame è troppo lento. Torniamo al frame cycling del SD sheet.
+        # _ensure_deform_sprite()  # DISABILITATO per performance
+        _deform_loaded = false
+
+
+# Lazily create the DeformableSprite child node.
+func _ensure_deform_sprite() -> void:
+        if _deform_sprite != null:
+                return
+        var ds := DeformableSprite.new()
+        add_child(ds)
+        _deform_sprite = ds
+
+
+# Load the SD version of a sprite sheet (256x64 = 4 frame walk cycle).
+# Used to avoid the HD "gif scollegata" effect.
+func _load_sd_sheet(sprite_id: String) -> Object:
+        var sd_path := "res://assets/sprites/" + sprite_id + "_sheet.png"
+        # FIX (miniboss procedurale): usava load() (ResourceLoader) che ritorna
+        # null se .godot/imported/ è vuoto o non rigenerato. Ora usa
+        # Image.load() + ImageTexture come SpriteManager._load_sheet.
+        var sd_abs: String = ProjectSettings.globalize_path(sd_path)
+        if not FileAccess.file_exists(sd_abs):
+                return null
+        var img := Image.new()
+        if img.load(sd_abs) != OK:
+                return null
+        var tex := ImageTexture.create_from_image(img)
+        if tex == null:
+                return null
+        var sheet := SpriteManager.Sheet.new()
+        sheet.texture = tex
+        sheet.frame_w = 64
+        sheet.frame_h = 64
+        sheet.columns = 4
+        sheet.rows = 1
+        sheet.animations["idle"] = {"row": 0, "frames": 4, "frameDuration": 200}
+        sheet.animations["walk"] = {"row": 0, "frames": 4, "frameDuration": 100}
+        sheet.animations["attack"] = {"row": 0, "frames": 4, "frameDuration": 90}
+        sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        return sheet
+
+
+# ============================================================
+# Stats tables (mirror C++ MiniBoss::getXxxForType)
+# ============================================================
+
+static func get_sprite_id(t: int) -> String:
+        # miniboss_01..miniboss_51 (1-based).
+        var n := t + 1
+        return "miniboss_%02d" % n
+
+
+static func get_weapon_for_type(t: int) -> int:
+        # Compact lookup table indexed by type.
+        const TABLE := [
+                Weapon.MBW_AXE,       Weapon.MBW_CLUB,      Weapon.MBW_AXE,       Weapon.MBW_SWORD,
+                Weapon.MBW_SWORD,     Weapon.MBW_DAGGER,    Weapon.MBW_MACE,      Weapon.MBW_AXE,
+                Weapon.MBW_CHAIN,     Weapon.MBW_AXE,       Weapon.MBW_SWORD,     Weapon.MBW_CLUB,
+                Weapon.MBW_SWORD,     Weapon.MBW_TENTACLES,  Weapon.MBW_MACE,      Weapon.MBW_CLUB,
+                Weapon.MBW_WHIP,
+                # Narnia (7)
+                Weapon.MBW_CLUB,      Weapon.MBW_SWORD,     Weapon.MBW_AXE,       Weapon.MBW_AXE,
+                Weapon.MBW_SWORD,     Weapon.MBW_CLUB,      Weapon.MBW_MACE,
+                # Witcher (10)
+                Weapon.MBW_TENTACLES, Weapon.MBW_DAGGER,    Weapon.MBW_DAGGER,    Weapon.MBW_MACE,
+                Weapon.MBW_MACE,      Weapon.MBW_SWORD,     Weapon.MBW_DAGGER,    Weapon.MBW_DAGGER,
+                Weapon.MBW_SWORD,     Weapon.MBW_CLUB,
+                # Doom (10)
+                Weapon.MBW_DAGGER,    Weapon.MBW_CHAIN,      Weapon.MBW_AXE,       Weapon.MBW_CHAIN,
+                Weapon.MBW_MACE,      Weapon.MBW_MACE,       Weapon.MBW_WHIP,      Weapon.MBW_AXE,
+                Weapon.MBW_TENTACLES, Weapon.MBW_CHAIN,
+                # Hybrids (7)
+                Weapon.MBW_DAGGER,    Weapon.MBW_MACE,       Weapon.MBW_DAGGER,    Weapon.MBW_WHIP,
+                Weapon.MBW_MACE,      Weapon.MBW_CHAIN,      Weapon.MBW_TENTACLES,
+        ]
+        if t < 0 or t >= TABLE.size():
+                return Weapon.MBW_AXE
+        return TABLE[t]
+
+
+static func get_base_health(t: int) -> int:
+        const TABLE := [
+                18, 35, 22, 20, 25, 24, 32, 22, 26, 30, 28, 35, 30, 26, 34, 33, 28,  # LOTR/D&D
+                28, 26, 30, 24, 28, 26, 35,                                          # Narnia
+                30, 24, 28, 35, 34, 26, 24, 22, 32, 36,                              # Witcher
+                22, 30, 26, 28, 34, 36, 30, 32, 26, 38,                              # Doom
+                24, 34, 28, 30, 36, 32, 30,                                          # Hybrids
+        ]
+        if t < 0 or t >= TABLE.size():
+                return 12
+        return TABLE[t]
+
+
+static func get_base_speed(t: int) -> int:
+        # FIX: all speeds capped at 1 (95% of player speed 2)
+        const TABLE := [
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                  # LOTR/D&D
+                1, 1, 1, 1, 1, 1, 1,                                                 # Narnia
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                        # Witcher
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                        # Doom
+                1, 1, 1, 1, 1, 1, 1,                                                 # Hybrids
+        ]
+        if t < 0 or t >= TABLE.size():
+                return 1
+        return TABLE[t]
+
+
+static func get_base_size(t: int) -> int:
+        # All non-LOTR/D&D types default to 34 (matches C++ default branch).
+        const TABLE := [
+                32, 40, 34, 36, 34, 36, 38, 32, 36, 38, 36, 40, 36, 34, 40, 40, 36,  # LOTR/D&D
+        ]
+        if t < 0 or t >= TABLE.size():
+                return 34
+        return TABLE[t]
+
+
+func get_attack_damage() -> int:
+        match weapon:
+                Weapon.MBW_AXE:       return 18
+                Weapon.MBW_MACE:      return 12
+                Weapon.MBW_SWORD:     return 16
+                Weapon.MBW_DAGGER:    return 12
+                Weapon.MBW_CHAIN:     return 10
+                Weapon.MBW_CLUB:      return 15
+                Weapon.MBW_WHIP:      return 15
+                Weapon.MBW_TENTACLES: return 14
+        return 15
+
+
+func get_attack_range() -> float:
+        match weapon:
+                Weapon.MBW_AXE:       return 36.0
+                Weapon.MBW_MACE:      return 34.0
+                Weapon.MBW_SWORD:     return 38.0
+                Weapon.MBW_DAGGER:    return 30.0
+                Weapon.MBW_CHAIN:     return 48.0
+                Weapon.MBW_CLUB:      return 36.0
+                Weapon.MBW_WHIP:      return 56.0
+                Weapon.MBW_TENTACLES: return 42.0
+        return 34.0
+
+
+func get_score_reward() -> int:
+        return 5000 + mb_type * 300
+
+
+func is_dead() -> bool:
+        return health <= 0
+
+
+func is_attacking() -> bool:
+        return attacking_timer_ms > 0
+
+
+func is_burning() -> bool:
+        return burning_timer_ms > 0
+
+
+func is_dying() -> bool:
+        return dying_timer_ms > 0
+
+
+func is_fleeing() -> bool:
+        return flee_mode
+
+
+func was_burned() -> bool:
+        return burned_flag
+
+
+func clear_burned_flag() -> void:
+        burned_flag = false
+
+
+func set_flee_mode(flee: bool) -> void:
+        flee_mode = flee
+
+
+func take_damage(dmg: int) -> void:
+        health -= dmg
+        if health < 0:
+                health = 0
+
+
+# Ritorna la posizione corrente in pixel (coordinate schermo).
+# FIX (crash scepter lightning): MainGameController._fire_lightning_strike
+# chiama mini_boss.get_pixel_pos() ma MiniBoss non aveva questo metodo,
+# causando "Invalid call. Nonexistent function 'get_pixel_pos'" crash
+# quando il player raccoglie il bastone del fulmine e il mini-boss è
+# presente nel livello. Mirror di Enemy.get_pixel_pos() e Player.get_pixel_pos().
+func get_pixel_pos() -> Vector2:
+        return pos
+
+
+# Ritorna gli HP massimi del mini-boss. Usato da _fire_lightning_strike
+# per calcolare il 35% di danno da infliggere con il fulmine.
+func get_max_health() -> int:
+        return max_health
+
+
+# FIX (HUD last hit enemy): ritorna il nome del mini-boss per l'HUD.
+func get_enemy_name() -> String:
+        # TASK 44: localizzato ("tipo" in italiano).
+        if I18n:
+                return I18n.t("misc.miniboss") % mb_type
+        return "Mini-Boss (type %d)" % mb_type
+
+
+# Start burning state (player invincibility contact). 50 frames = ~0.8s.
+func start_burning(frames: int = 50) -> void:
+        if dying_timer_ms > 0 or burning_timer_ms > 0:
+                return
+        burning_timer_ms = frames
+        burn_anim_time_ms = 0
+        burned_flag = true
+
+
+# ============================================================
+# Update
+# ============================================================
+
+# `maze_ref` exposes `is_wall(col, row) -> bool`.
+# `player_grid_pos` is the player position in maze coordinates.
+# `player_pixel_pos` is the player's screen position (for meele range).
+func update_step(maze_ref: Node, player_grid_pos: Vector2i,
+                player_pixel_pos: Vector2, delta_ms: int) -> void:
+        maze = maze_ref
+        anim_time += float(delta_ms) * 0.001
+
+        if is_dead():
+                if dying_timer_ms > 0:
+                        dying_timer_ms = maxi(0, dying_timer_ms - delta_ms)
+                return
+
+        # Burning state: frozen, just decrement timer + play fire overlay.
+        if burning_timer_ms > 0:
+                burning_timer_ms = maxi(0, burning_timer_ms - 1)
+                burn_anim_time_ms += delta_ms
+                if burning_timer_ms == 0:
+                        burned_out.emit(self)
+                return
+
+        # Decrement timers.
+        if attack_cooldown_ms > 0:
+                attack_cooldown_ms = maxi(0, attack_cooldown_ms - delta_ms)
+        if attacking_timer_ms > 0:
+                attacking_timer_ms = maxi(0, attacking_timer_ms - delta_ms)
+
+        # FIX (scatti miniboss - root cause): il movimento waypoint+footprint
+        # (_can_occupy_position 62px) fermava il miniboss a metà cella e il
+        # clamp di rendering spostava lo sprite di 8px quando c'era un muro
+        # sotto: scatti continui. Riscritto GRID-LOCKED come Enemy.gd
+        # (commit 7e67533, modello fedele al C++ originale):
+        #   1) viaggio SEMPRE sulla linea centrale dei corridoi;
+        #   2) cambio direzione SOLO al centro cella (snap max step_size px);
+        #   3) wall check point-based is_wall(col+dx, row+dy);
+        #   4) movimento cardinale su un solo asse + self-healing.
+        var col := int(pos.x / TILE_SIZE)
+        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+        var center_x: float = col * TILE_SIZE + TILE_SIZE / 2.0
+        var center_y: float = row * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT
+        # FIX (scatti): step frame-rate independent (era speed px/frame fisso).
+        var step_size: float = float(speed) * (float(delta_ms) / 16.6667)
+
+        # --- Anti-stuck tracking (mirror Enemy.gd) ---
+        var dx_pos: float = pos.x - last_pos.x
+        var dy_pos: float = pos.y - last_pos.y
+        if dx_pos * dx_pos + dy_pos * dy_pos < 1.0:
+                stuck_timer_ms += delta_ms
+        else:
+                stuck_timer_ms = 0
+        last_pos = pos
+
+        # FIX (miniboss congelato contro il muro — ROOT CAUSE): la vecchia
+        # finestra |pos-centro| < step_size re-entrava in snap OGNI frame:
+        # dopo il primo move_toward dal centro, pos = centro + step, e per
+        # l'arrotondamento float32/float64 (centro+step memorizzato per
+        # difetto) |pos-centro| < step resta VERO per sempre -> ciclo infinito
+        # snap(centro)->move(centro+step) con movimento netto ZERO per frame.
+        # Effetto in gioco: il miniboss attraversa 1-2 celle, poi si ferma al
+        # centro cella con l'animazione di camminata attiva (dx!=0) e lo
+        # sprite che "spinge" contro il muro del corridoio senza avanzare
+        # mai più. Confermato con simulazione 1:1 (scripts/sim_miniboss_stuck.py):
+        # 30/30 seed congelati al primo incrocio centro+step.
+        # FIX (mirror Enemy.gd riga 494 / KnightAlly.gd riga 230): la decisione
+        # parte SOLO quando pos coincide ESATTAMENTE col centro (col*64+32 è
+        # esatto in float32, e move_toward clampa l'arrivo SUL target ->
+        # confronto senza rumore di arrotondamento).
+        if pos.x == center_x and pos.y == center_y:
+                # (1) Arrivo al centro cella (ESATTO): decisione direzione.
+                if flee_mode:
+                        # FLEE (calice): massimizza la distanza dal player.
+                        _flee_greedy(player_grid_pos)
+                        if dx != 0 or dy != 0:
+                                stuck_timer_ms = 0
+                else:
+                        var next := _bfs_path(Vector2i(col, row), player_grid_pos)
+                        if next != Vector2i(-1, -1):
+                                dx = next.x - col
+                                if dx != 0:
+                                        last_dx = dx
+                                dy = next.y - row
+                                stuck_timer_ms = 0
+                        elif col == player_grid_pos.x and row == player_grid_pos.y:
+                                # Stessa cella del player: resta al centro,
+                                # lascia scattare il melee (mirror Enemy.gd).
+                                dx = 0
+                                dy = 0
+                        else:
+                                # Player irraggiungibile: avvicinati greedy.
+                                _move_greedy(player_grid_pos)
+
+                # Anti-stuck: direzione random aperta come ultima risorsa.
+                if dx == 0 and dy == 0 and stuck_timer_ms > STUCK_THRESHOLD_MS:
+                        if _pick_random_open_dir(col, row):
+                                stuck_timer_ms = 0
+
+                # (2) Wall check point-based: se la cella avanti è muro, fermo.
+                if maze != null and maze.is_wall(col + dx, row + dy):
+                        dx = 0
+                        dy = 0
+                # Waypoint LOCKED alla decisione (mirror Enemy.gd): il centro
+                # della cella successiva, valido fino all'arrivo.
+                if dx != 0 or dy != 0:
+                        _move_waypoint = Vector2(center_x + dx * TILE_SIZE,
+                                        center_y + dy * TILE_SIZE)
+                else:
+                        _move_waypoint = Vector2.INF
+        elif _move_waypoint == Vector2.INF:
+                # Fermo ma decentrato, SENZA waypoint (stato anomalo): recovery
+                # graduale verso il centro della cella corrente. FIX: la
+                # condizione ora è "waypoint assente" e NON più "dx==0 e dy==0"
+                # perché la vecchia melee attack scriveva dx=±1 a metà cella
+                # SENZA waypoint -> né il recovery né il movimento scattavano
+                # -> secondo percorso di congelamento. Con waypoint INF il
+                # recovery converge sempre al centro, dove la decisione (1)
+                # riparte (a prescindere da dx/dy residui).
+                pos = pos.move_toward(Vector2(center_x, center_y), step_size)
+                last_pos = pos
+                dx = 0
+                dy = 0
+
+        # (3) Movimento verso il WAYPOINT (centro della cella successiva,
+        # FISSATO alla decisione): move_toward non sfora MAI il target ->
+        # arrivo ESATTO al centro -> al frame successivo (1) scatta la
+        # decisione. Elimina l'oscillazione snap<->step da arrotondamento
+        # float32, i micro-salti dello snap e il "target che scivola".
+        # La vecchia correzione "rotaia" è assorbita: l'asse perpendicolare
+        # converge sul waypoint a ogni frame (self-healing).
+        # TASK 34 (richiesta utente — "i muri devono bloccare anche i
+        # nemici", mirror Enemy.gd): il waypoint viene ri-validato OGNI
+        # FRAME contro is_wall; se un muro di roccia DINAMICO si chiude
+        # sulla cella di destinazione mentre il miniboss è a metà transito,
+        # il passo viene ANNULLATO e il miniboss rientra al centro della
+        # cella di provenienza (mai compenetrazione nella roccia chiusa).
+        if (dx != 0 or dy != 0) and _move_waypoint != Vector2.INF:
+                var wp_col: int = int(_move_waypoint.x / TILE_SIZE)
+                var wp_row: int = int((_move_waypoint.y - UI_HEIGHT) / TILE_SIZE)
+                if maze != null and maze.is_wall(wp_col, wp_row):
+                        # cella di destinazione CHIUSA: abortisci il transito
+                        dx = 0
+                        dy = 0
+                        _move_waypoint = Vector2.INF
+                        # rientra subito al centro della cella corrente
+                        pos = pos.move_toward(
+                                        Vector2(center_x, center_y), step_size)
+                        last_pos = pos
+                else:
+                        pos = pos.move_toward(_move_waypoint, step_size)
+
+        # FIX (meccanica tunnel "Pac-Man"): se il miniboss sta marciando verso
+        # la cella VIRTUALE di una galleria (waypoint fuori griglia), il
+        # passaggio del bordo attiva il wrap: riemerge dal lato opposto e il
+        # waypoint viene specchiato sul centro della cella di sbocco, così
+        # l'arrivo ESATTO al centro (e la decisione successiva) restano
+        # garantiti anche attraverso la galleria.
+        var wrapped_pos_m: Vector2 = GameConstants.tunnel_wrap(pos)
+        if wrapped_pos_m != pos:
+                pos = wrapped_pos_m
+                if _move_waypoint != Vector2.INF:
+                        _move_waypoint = GameConstants.mirror_waypoint_after_wrap(
+                                        _move_waypoint)
+                last_pos = pos
+
+        # --- Safety clamp (ultima difesa, mirror Enemy.gd): se la cella
+        # corrente è WALL (stato invalido, es. spawn corrotto), teleport al
+        # centro della cella aperta più vicina (raggio 1-3). Con il movimento
+        # grid-locked non dovrebbe MAI attivarsi in gioco. ---
+        var cur_col_after: int = clampi(int(pos.x / TILE_SIZE), 0, MAZE_COLS - 1)
+        var cur_row_after: int = clampi(int((pos.y - UI_HEIGHT) / TILE_SIZE), 0, MAZE_ROWS - 1)
+        if maze != null and maze.is_wall(cur_col_after, cur_row_after):
+                for snap_radius in range(1, 4):
+                        var found_safe: bool = false
+                        for sdc in range(-snap_radius, snap_radius + 1):
+                                for sdr in range(-snap_radius, snap_radius + 1):
+                                        var nnc: int = cur_col_after + sdc
+                                        var nnr: int = cur_row_after + sdr
+                                        if nnc > 0 and nnc < MAZE_COLS - 1 \
+                                                        and nnr > 0 and nnr < MAZE_ROWS - 1:
+                                                if not maze.is_wall(nnc, nnr):
+                                                        pos = Vector2(
+                                                                        nnc * TILE_SIZE + TILE_SIZE / 2.0,
+                                                                        nnr * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
+                                                        last_pos = pos
+                                                        dx = 0
+                                                        dy = 0
+                                                        _move_waypoint = Vector2.INF
+                                                        stuck_timer_ms = 0
+                                                        found_safe = true
+                                                        break
+                                if found_safe:
+                                        break
+                        if found_safe:
+                                break
+
+        # Meele attack.
+        var atk_d := player_pixel_pos - pos
+        var atk_dist := atk_d.length()
+        if atk_dist < get_attack_range() and attack_cooldown_ms == 0:
+                attacking_timer_ms = 400
+                attack_cooldown_ms = 1200
+                # FIX (congelamento #2): la vecchia scrittura dx=±1 in base
+                # alla posizione del player (SENZA wall check e SENZA
+                # waypoint) poteva lasciare dx!=0 a metà cella senza waypoint
+                # -> movimento saltato + recovery saltato -> freeze. Il
+                # movimento usa SOLO il waypoint; dx/dy si decidono SOLO al
+                # centro. L'attacco ora aggiorna solo il FACING (last_dx):
+                # il miniboss si gira verso il player quando colpisce.
+                if atk_d.x > 0.5:
+                        last_dx = 1
+                elif atk_d.x < -0.5:
+                        last_dx = -1
+
+        position = pos
+        # FIX (animazione miniboss congelata): senza queue_redraw() il _draw()
+        # viene chiamato una sola volta (al primo frame) e l'animazione resta
+        # bloccata su frame=0 idle. Mirror di Enemy.gd:504 (che chiama
+        # queue_redraw() alla fine di update_enemy).
+        queue_redraw()
+
+
+func _bfs_path(start: Vector2i, target: Vector2i) -> Vector2i:
+        if start == target:
+                return Vector2i(-1, -1)
+        if maze == null:
+                return Vector2i(-1, -1)
+
+        var queue: Array = [[start, Vector2i(-1, -1)]]  # [cell, first_step]
+        var visited := {start: true}
+        var dirs := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
+        # FIX (cap iterazioni): 200 -> 600. Il maze 30x15 ha ~450 celle (~200+
+        # aperte): con cap 200 la BFS troncava i path lunghi e il miniboss
+        # ripiegava sul greedy subottimale.
+        var iter := 0
+        while queue.size() > 0 and iter < 600:
+                iter += 1
+                var entry: Array = queue.pop_front()
+                var cur: Vector2i = entry[0]
+                var first: Vector2i = entry[1]
+                if cur == target:
+                        return first if first != Vector2i(-1, -1) else Vector2i(-1, -1)
+                for d in dirs:
+                        var next: Vector2i = cur + d
+                        # FIX (tunnel Pac-Man): fuori griglia e' valido SOLO se
+                        # e' la cella VIRTUALE di una galleria: il vicino di
+                        # grafo reale e' la cella di bordo OPPOSTA (wrap), ma il
+                        # PRIMO PASSO dal punto di partenza resta la cella
+                        # virtuale (la direzione d'uscita: es. (14,-1) = su),
+                        # cosi' dx/dy e waypoint restano cardinali e validi.
+                        var first_cell: Vector2i = next
+                        if next.x < 0 or next.x >= MAZE_COLS or next.y < 0 or next.y >= MAZE_ROWS:
+                                if not GameConstants.is_tunnel_virtual_cell(next.x, next.y):
+                                        continue
+                                next = GameConstants.tunnel_partner(cur.x, cur.y)
+                                if next.x < 0:
+                                        continue
+                        if maze.is_wall(next.x, next.y):
+                                continue
+                        if visited.has(next):
+                                continue
+                        visited[next] = true
+                        var nf: Vector2i = first if first != Vector2i(-1, -1) else first_cell
+                        queue.append([next, nf])
+        return Vector2i(-1, -1)
+
+
+# Greedy avvicinamento al player (BFS irraggiungibile): sceglie la cella
+# aperta adiacente che MINIMIZZA la distanza (mirror Enemy.gd _move_greedy).
+# Imposta direttamente dx/dy (niente waypoint: le decisioni si prendono
+# SOLO al centro cella nel movimento grid-locked).
+func _move_greedy(target_grid: Vector2i) -> void:
+        var col := int(pos.x / TILE_SIZE)
+        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+        var best_dx: int = 0
+        var best_dy: int = 0
+        var min_dist: float = 999999.0
+        var any_open: bool = false
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
+                if maze != null and maze.is_wall(nc, nr):
+                        continue
+                any_open = true
+                var dist: float = float((nc - target_grid.x) * (nc - target_grid.x)
+                                + (nr - target_grid.y) * (nr - target_grid.y))
+                # Penalizza l'inversione di marcia (+10 dist).
+                if _DC[i] == -dx and _DR[i] == -dy:
+                        dist += 10.0
+                if dist < min_dist:
+                        min_dist = dist
+                        best_dx = _DC[i]
+                        best_dy = _DR[i]
+        # Dead-end: direzione random aperta.
+        if any_open and best_dx == 0 and best_dy == 0:
+                _pick_random_open_dir(col, row)
+                return
+        dx = best_dx
+        if dx != 0:
+                last_dx = dx
+        dy = best_dy
+
+
+# FLEE mode (player invincibile col calice): sceglie la cella aperta
+# adiacente che MASSIMIZZA la distanza dal player (mirror Enemy.gd
+# _flee_greedy). Imposta direttamente dx/dy.
+func _flee_greedy(target_grid: Vector2i) -> void:
+        var col := int(pos.x / TILE_SIZE)
+        var row := int((pos.y - UI_HEIGHT) / TILE_SIZE)
+        var best_dx: int = 0
+        var best_dy: int = 0
+        var max_dist: float = -1.0
+        var any_open: bool = false
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
+                if maze != null and maze.is_wall(nc, nr):
+                        continue
+                any_open = true
+                var dist: float = float((nc - target_grid.x) * (nc - target_grid.x)
+                                + (nr - target_grid.y) * (nr - target_grid.y))
+                # Penalizza la fuga VERSO il player (inversione).
+                if _DC[i] == -dx and _DR[i] == -dy:
+                        dist -= 10.0
+                if dist > max_dist:
+                        max_dist = dist
+                        best_dx = _DC[i]
+                        best_dy = _DR[i]
+        if not any_open:
+                dx = 0
+                dy = 0
+                return
+        if best_dx == 0 and best_dy == 0:
+                _pick_random_open_dir(col, row)
+                return
+        dx = best_dx
+        if dx != 0:
+                last_dx = dx
+        dy = best_dy
+
+
+# Direzione random aperta (anti-stuck / dead-end), partendo da un offset
+# random per evitare bias direzionale (mirror Enemy.gd).
+func _pick_random_open_dir(col: int, row: int) -> bool:
+        var start: int = randi() % 4
+        for i in range(4):
+                var idx: int = (start + i) % 4
+                var nc: int = col + _DC[idx]
+                var nr: int = row + _DR[idx]
+                if maze != null and not maze.is_wall(nc, nr):
+                        dx = _DC[idx]
+                        if dx != 0:
+                                last_dx = dx
+                        dy = _DR[idx]
+                        return true
+        dx = 0
+        dy = 0
+        return false
+
+
+# ============================================================
+# Rendering
+# ============================================================
+
+func _draw() -> void:
+        if sprite_loaded and sprite_sheet != null:
+                _draw_with_sprite()
+        else:
+                _draw_primitives()
+        # Weapon swing overlay (when attacking) - drawn on top of the body so
+        # the weapon appears in front of the mini-boss during the swing arc.
+        # Mirrors the C++ weapon branch in src/MiniBoss.cpp line 199-308.
+        if attacking_timer_ms > 0:
+                _draw_weapon_swing(weapon, _get_facing_angle())
+        # Burning overlay always on top.
+        if burning_timer_ms > 0:
+                _draw_burning_overlay()
+
+
+# Facing angle (radians): 0.0 = right, PI = left. Used by _draw_weapon_swing
+# to flip the weapon to the side the mini-boss is facing.
+# FIX (orientamento da fermo): basato su last_dx come Enemy.gd, così da
+# fermo (dx==0) mantiene l'ultimo orientamento invece di tornare a destra.
+func _get_facing_angle() -> float:
+        if last_dx < 0:
+                return PI
+        return 0.0
+
+
+func _draw_with_sprite() -> void:
+        var scale_val := float(size) / 64.0
+        if scale_val < 1.0:
+                scale_val = 1.0
+        var bob_y := sin(anim_time * 3.0) * 1.0
+        # FIX (scatto visivo da fermo): flip basato su last_dx, non dx.
+        var flipped := last_dx < 0
+
+        # --- FIX (gif-animata-scollegata): prefer DeformableSprite ---
+        # When loaded, delegate rendering to the deform sprite (mesh deformation
+        # of one frame) instead of cycling through 4 unrelated HD AI slices.
+        if _deform_loaded and _deform_sprite != null:
+                # Determine animation mode (mirror C++ priority: death > attack > walk > idle).
+                var mode: int = DeformableSprite.AnimMode.IDLE
+                if dying_timer_ms > 0:
+                        mode = DeformableSprite.AnimMode.IDLE
+                elif attacking_timer_ms > 0:
+                        mode = DeformableSprite.AnimMode.ATTACK
+                elif (dx != 0 or dy != 0) and burning_timer_ms == 0:
+                        mode = DeformableSprite.AnimMode.WALK
+                _deform_sprite.position = Vector2(-32.0 * scale_val,
+                        -32.0 * scale_val + bob_y)
+                _deform_sprite.update(anim_time, mode, scale_val, flipped)
+                # Update the walk_cycle shader uniforms on this CanvasItem.
+                var walk_phase: float = 1.0 if mode == DeformableSprite.AnimMode.WALK else 0.0
+                if EffectsManager:
+                        EffectsManager.update_walk_cycle(self, walk_phase,
+                                last_dx >= 0, anim_time, 8.0)
+                # Spawn dust puff periodically while walking.
+                if mode == DeformableSprite.AnimMode.WALK:
+                        _dust_frame_counter += 1
+                        if _dust_frame_counter >= DUST_PUFF_INTERVAL:
+                                _dust_frame_counter = 0
+                                _spawn_dust_puff_if_possible()
+                else:
+                        _dust_frame_counter = 0
+                # Aura + HP bar + shadow still drawn on top of the deform sprite.
+                var accent := _get_accent_color()
+                var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
+                draw_circle(Vector2(0, 0), aura_r,
+                        Color(accent.r, accent.g, accent.b, 0.15))
+                # FIX (barra rossa rimossa): la barra HP non viene più disegnata
+                # sopra il MiniBoss. Le info vengono mostrate nell'HUD.
+                # _draw_hp_bar(scale_val)
+                var sh_r := float(size) * 0.4 * scale_val
+                draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
+                        Color(0.05, 0.05, 0.05, 0.4))
+                return
+
+        # --- Fallback: AtlasTexture frame cycling (when SD sheet can't load) ---
+        # FIX (gif scollegata): forziamo SD sheet come per Enemy.
+        # FIX (parse error): sprite_sheet è untyped (var sprite_sheet = null),
+        # quindi `var active_sheet := sprite_sheet` non può inferire il tipo.
+        # Usiamo tipo esplicito Variant per evitare l'errore di type inference.
+        var active_sheet: Variant = sprite_sheet
+        if sprite_sheet != null and sprite_sheet.rows == 4 and sprite_sheet.columns == 4:
+                # HD sheet → cerca SD
+                if _sd_sheet == null:
+                        _sd_sheet = _load_sd_sheet(sprite_id)
+                if _sd_sheet != null:
+                        active_sheet = _sd_sheet
+        if active_sheet == null:
+                active_sheet = sprite_sheet
+        # Animation: death > attack > walk > idle
+        var anim_name := "idle"
+        var frame := 0
+        var frame_duration := 200
+        if dying_timer_ms > 0 and active_sheet.get_frame_count("death") > 0:
+                anim_name = "death"
+                frame_duration = 120
+                var elapsed := 600 - dying_timer_ms
+                var fc: int = active_sheet.get_frame_count("death")
+                frame = elapsed / frame_duration
+                frame = clampi(frame, 0, fc - 1)
+        elif attacking_timer_ms > 0 and active_sheet.get_frame_count("attack") > 0:
+                anim_name = "attack"
+                frame_duration = 50
+                var elapsed := 400 - attacking_timer_ms
+                var fc: int = active_sheet.get_frame_count("attack")
+                frame = elapsed / frame_duration
+                frame = clampi(frame, 0, fc - 1)
+        elif (dx != 0 or dy != 0) and active_sheet.get_frame_count("walk") > 0:
+                anim_name = "walk"
+                frame_duration = 100
+                var fc: int = active_sheet.get_frame_count("walk")
+                frame = (int(anim_time * 1000.0) / frame_duration) % fc
+        elif active_sheet.get_frame_count("idle") > 0:
+                anim_name = "idle"
+                frame = 0
+
+        var at: AtlasTexture = null
+        if active_sheet != null:
+                at = active_sheet.get_frame_texture(anim_name, frame)
+        if at != null:
+                # FIX (scatti miniboss - rendering): disegno CENTRATO senza
+                # offset +8px e SENZA clamp di rendering. Lo sprite viaggia
+                # sulla linea centrale dei corridoi (movimento grid-locked in
+                # update_step), quindi non può compenetrare i muri. Il clamp
+                # precedente spostava lo sprite di 8px quando la cella sotto
+                # era muro e lo rilasciava quando era aperta: il miniboss
+                # "sfarfallava" verticalmente ad ogni cella (GLI SCATTI).
+                # FIX (dimensione): 64 -> 70 -> 82px per rendere il mini-boss
+                # visivamente più imponente dei nemici (ora 78px, era 68: il
+                # passaggio 70->82 mantiene la gerarchia miniboss > nemici
+                # dopo l'aumento richiesto degli sprite nemici); il contenuto
+                # reale degli sheet (~55-59px su frame 64) resta nei corridoi.
+                var tw: float = 82.0
+                var th: float = 82.0
+                var draw_pos := Vector2(-tw / 2.0, -th / 2.0 + bob_y)
+                var dest_rect := Rect2(draw_pos, Vector2(tw, th))
+                if flipped:
+                        # FIX (flip corretto in Godot 4.7.2, mirror commit cfc2fea
+                        # di Enemy.gd): il trick del Rect2 con width negativa NON
+                        # specchia lo sprite — lo disegna spostato di +tw px a
+                        # destra. Metodo corretto: draw_set_transform con scala
+                        # X = -1 e pivot sul CENTRO X del rect -> lo sprite resta
+                        # esattamente nel rect, solo specchiato.
+                        draw_set_transform(
+                                Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                                0.0, Vector2(-1.0, 1.0))
+                        draw_texture_rect(at, dest_rect, false)
+                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                else:
+                        draw_texture_rect(at, dest_rect, false)
+
+        # FIX (pallino procedurale accanto al miniboss, 4° tentativo — root
+        # cause definitiva): l'utente vedeva un "pallino che si muove con il
+        # miniboss" perché l'aura (draw_circle r=22-30 alpha 0.15 con accent
+        # color) veniva disegnata SOPRA lo sprite PNG, creando un alone
+        # colorato che sembrava un secondo miniboss procedurale. Lo stesso
+        # per la shadow (draw_circle scura ai piedi). Quando lo sprite PNG
+        # è caricato, questi effetti procedurali sono RIDONDANTI e causano
+        # confusione visiva. Rimossi completamente — lo sprite PNG ha già
+        # la sua ombra integrata. Vengono mantenuti solo in _draw_primitives
+        # (fallback quando sprite non disponibile).
+        # var accent := _get_accent_color()
+        # var aura_r := float(size) * 0.7 * scale_val + sin(anim_time * 2.0) * 2.0
+        # draw_circle(Vector2(0, 0), aura_r, Color(accent.r, accent.g, accent.b, 0.15))
+
+        # FIX (barra rossa rimossa): la barra HP non viene più disegnata sopra
+        # il MiniBoss. Le info del MiniBoss colpito vengono mostrate nell'HUD.
+        # _draw_hp_bar(scale_val)
+
+        # FIX (pallino procedurale): shadow rimossa — ridondante con sprite PNG
+        # var sh_r := float(size) * 0.4 * scale_val
+        # draw_circle(Vector2(0, float(size) * scale_val * 0.5), sh_r,
+        #                       Color(0.05, 0.05, 0.05, 0.4))
+
+
+# Spawn a dust puff at the miniboss's feet (called every Nth frame while walking).
+func _spawn_dust_puff_if_possible() -> void:
+        if EffectsManager == null:
+                return
+        var parent_node: Node = get_parent()
+        if parent_node == null:
+                return
+        var puff: GPUParticles2D = EffectsManager.spawn_dust_puff(
+                pos + Vector2(0, float(size) * 0.4),  # at the feet
+                _accent_color)
+        if puff != null:
+                parent_node.add_child(puff)
+                var timer: SceneTreeTimer = get_tree().create_timer(0.6)
+                timer.timeout.connect(_on_dust_puff_timeout.bind(puff))
+
+
+# Bound callback for the dust puff auto-free timer.
+func _on_dust_puff_timeout(puff: GPUParticles2D) -> void:
+        if is_instance_valid(puff):
+                puff.queue_free()
+                if EffectsManager:
+                        EffectsManager.notify_dust_puff_freed()
+
+
+func _get_accent_color() -> Color:
+        match mb_type:
+                Type.MB_GOBLIN_CHIEFTAIN: return Color(0.86, 0.63, 0.16)
+                Type.MB_CAVE_TROLL:       return Color(0.78, 0.71, 0.63)
+                Type.MB_ORC_BERSERKER:    return Color(0.63, 0.16, 0.16)
+                Type.MB_WARG_RIDER:       return Color(0.78, 0.71, 0.63)
+                Type.MB_URUK_HAI:         return Color(0.78, 0.31, 0.31)
+                Type.MB_NAZGUL:           return Color(0.63, 0.16, 0.16)
+                Type.MB_OGRE_BRUTE:       return Color(0.63, 0.50, 0.44)
+                Type.MB_GNOLL_PACKLORD:   return Color(0.86, 0.63, 0.16)
+                Type.MB_BUGBEAR_CHIEF:    return Color(0.19, 0.16, 0.14)
+                Type.MB_MINOTAUR:         return Color(0.86, 0.63, 0.16)
+                Type.MB_WIGHT_LORD:       return Color(0.47, 0.78, 0.78)
+                Type.MB_CAVE_GIANT:       return Color(0.78, 0.71, 0.63)
+                Type.MB_DEATH_KNIGHT:     return Color(0.47, 0.78, 0.78)
+                Type.MB_ILLITHID:         return Color(0.63, 0.47, 0.78)
+                Type.MB_ETTIN:            return Color(0.63, 0.16, 0.16)
+                Type.MB_FOMORIAN:         return Color(0.19, 0.16, 0.14)
+                Type.MB_BALROG_CULTIST:   return Color(0.86, 0.63, 0.16)
+                # Narnia + Witcher + Doom + Hybrids default to gold.
+                _: return Color(0.86, 0.63, 0.16)
+
+
+func _draw_hp_bar(scale_val: float) -> void:
+        var bar_w := float(size) * 0.9 * scale_val
+        var bar_h := 4.0
+        var bar_y := -float(size) * scale_val * 0.5 - 35.0
+        draw_rect(Rect2(-bar_w * 0.5, bar_y, bar_w, bar_h), Color(0.05, 0.05, 0.05))
+        var ratio := float(health) / float(max_health)
+        if ratio < 0.0: ratio = 0.0
+        var hp_col := Color(0.86, 0.24, 0.24) if ratio > 0.5 else Color(0.63, 0.16, 0.16)
+        draw_rect(Rect2(-bar_w * 0.5, bar_y, bar_w * ratio, bar_h), hp_col)
+
+
+# Procedural fallback (mirrors C++ renderPrimitives at src/MiniBoss.cpp:582-776).
+# Draws aura, body, head, eyes, then type-specific details for the 17 main
+# LOTR/D&D mini-boss types via `match mb_type:`. Each branch adds 1-4
+# distinctive features (ears, horns, crown, cloak, tentacles, second head,
+# fire aura, etc.) so the procedural fallback is still distinguishable per
+# type even when the AI-generated sprite sheet is missing.
+func _draw_primitives() -> void:
+        var body_col := _get_body_color()
+        var accent := _get_accent_color()
+        var breath := sin(anim_time * 3.0) * 1.0
+
+        # Aura
+        var aura_r := float(size) * 0.7 + sin(anim_time * 2.0) * 2.0
+        draw_circle(Vector2.ZERO, aura_r, Color(accent.r, accent.g, accent.b, 0.15))
+
+        # Body
+        var body_w := float(size) * 0.7
+        var body_h := float(size) * 0.9
+        draw_rect(Rect2(-body_w * 0.5, -body_h * 0.5 + 2, body_w, body_h + breath), body_col)
+
+        # Head
+        var head_r := float(size) * 0.25
+        var head_y := -body_h * 0.5 - head_r * 0.3
+        draw_circle(Vector2(0, head_y), head_r, body_col)
+
+        # Eyes
+        var eye_r := 1.5
+        draw_circle(Vector2(-head_r * 0.5, head_y), eye_r, accent)
+        draw_circle(Vector2(head_r * 0.5, head_y), eye_r, accent)
+
+        # --- Type-specific details (17 LOTR/D&D mini-boss types) ---
+        match mb_type:
+                Type.MB_GOBLIN_CHIEFTAIN:
+                        # Orecchie appuntite + corona d'oro
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r, head_y - 2),
+                                Vector2(-head_r - 6, head_y - 4),
+                                Vector2(-head_r + 2, head_y + 4),
+                        ]), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r, head_y - 2),
+                                Vector2(head_r + 6, head_y - 4),
+                                Vector2(head_r - 2, head_y + 4),
+                        ]), body_col)
+                        draw_rect(Rect2(-head_r, head_y - head_r - 4,
+                                        head_r * 2.0, 3.0), Color(0.86, 0.63, 0.16))
+                        for i in 3:
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(-head_r + i * head_r - 1.0, head_y - head_r - 4),
+                                        Vector2(-head_r + i * head_r + 1.0, head_y - head_r - 4),
+                                        Vector2(-head_r + i * head_r, head_y - head_r - 8),
+                                ]), Color(1.0, 0.86, 0.16))
+                Type.MB_CAVE_TROLL:
+                        # Grosso + grigio: extra bulk + zanne
+                        draw_rect(Rect2(-body_w * 0.5 - 3, -body_h * 0.4, 3, body_h * 0.8), body_col)
+                        draw_rect(Rect2(body_w * 0.5, -body_h * 0.4, 3, body_h * 0.8), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r * 0.5, head_y + head_r * 0.5),
+                                Vector2(-head_r * 0.7, head_y + head_r * 1.2),
+                                Vector2(-head_r * 0.2, head_y + head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r * 0.5, head_y + head_r * 0.5),
+                                Vector2(head_r * 0.7, head_y + head_r * 1.2),
+                                Vector2(head_r * 0.2, head_y + head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                Type.MB_ORC_BERSERKER:
+                        # Orecchie + cicatrici + frothing
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r, head_y - 2),
+                                Vector2(-head_r - 6, head_y - 4),
+                                Vector2(-head_r + 2, head_y + 4),
+                        ]), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r, head_y - 2),
+                                Vector2(head_r + 6, head_y - 4),
+                                Vector2(head_r - 2, head_y + 4),
+                        ]), body_col)
+                        draw_line(Vector2(-head_r * 0.5, head_y - head_r * 0.5),
+                                Vector2(head_r * 0.5, head_y + head_r * 0.5),
+                                Color(0.86, 0.31, 0.31), 1)
+                        draw_circle(Vector2(0, head_y + head_r * 0.7), 2,
+                                Color(1.0, 1.0, 1.0, 0.78))
+                        draw_circle(Vector2(-2, head_y + head_r * 0.8), 1.5,
+                                Color(1.0, 1.0, 1.0, 0.78))
+                        draw_circle(Vector2(2, head_y + head_r * 0.8), 1.5,
+                                Color(1.0, 1.0, 1.0, 0.78))
+                Type.MB_WARG_RIDER:
+                        # Cavaliere su lupo: corpo lupo sotto + orecchie + occhio rosso
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-body_w * 0.7, body_h * 0.4),
+                                Vector2(-body_w * 0.3, body_h * 0.5),
+                                Vector2(body_w * 0.3, body_h * 0.5),
+                                Vector2(body_w * 0.7, body_h * 0.4),
+                                Vector2(body_w * 0.8, body_h * 0.6),
+                                Vector2(-body_w * 0.8, body_h * 0.6),
+                        ]), Color(0.16, 0.16, 0.16))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-body_w * 0.6, body_h * 0.4),
+                                Vector2(-body_w * 0.7, body_h * 0.3),
+                                Vector2(-body_w * 0.5, body_h * 0.45),
+                        ]), Color(0.16, 0.16, 0.16))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(body_w * 0.6, body_h * 0.4),
+                                Vector2(body_w * 0.7, body_h * 0.3),
+                                Vector2(body_w * 0.5, body_h * 0.45),
+                        ]), Color(0.16, 0.16, 0.16))
+                        draw_circle(Vector2(body_w * 0.55, body_h * 0.45), 1.5,
+                                Color(1.0, 0.2, 0.0))
+                Type.MB_URUK_HAI:
+                        # Marchio bianco sulla fronte (linea verticale)
+                        draw_rect(Rect2(-1, head_y - head_r * 0.8, 2, head_r),
+                                Color(0.94, 0.94, 0.94))
+                Type.MB_NAZGUL:
+                        # Mantello nero incappucciato
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(0, head_y - head_r),
+                                Vector2(body_w * 0.9, body_h * 0.5),
+                                Vector2(-body_w * 0.9, body_h * 0.5),
+                        ]), Color(0.05, 0.05, 0.05, 0.86))
+                        draw_circle(Vector2(0, head_y), head_r, Color(0.02, 0.02, 0.02))
+                Type.MB_OGRE_BRUTE:
+                        # Grosso ventre
+                        draw_circle(Vector2(0, body_h * 0.2), body_w * 0.55, body_col)
+                        draw_circle(Vector2(0, body_h * 0.2), 1.5,
+                                Color(0.16, 0.12, 0.08))
+                Type.MB_GNOLL_PACKLORD:
+                        # Testa iena: muso elongato + orecchie + criniera
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r, head_y - 1),
+                                Vector2(head_r + 8, head_y),
+                                Vector2(head_r, head_y + 3),
+                        ]), body_col)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r, head_y - 2),
+                                Vector2(-head_r - 5, head_y - 6),
+                                Vector2(-head_r, head_y + 2),
+                        ]), body_col)
+                        for i in 3:
+                                var mx: float = -head_r * 0.5 + i * head_r * 0.4
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(mx, head_y - head_r),
+                                        Vector2(mx + 2, head_y - head_r),
+                                        Vector2(mx + 1, head_y - head_r - 4),
+                                ]), accent)
+                Type.MB_BUGBEAR_CHIEF:
+                        # Pelliccia (zigzag outline laterale)
+                        for i in 6:
+                                var fy: float = -body_h * 0.4 + i * body_h * 0.16
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(-body_w * 0.5, fy),
+                                        Vector2(-body_w * 0.5 - 4, fy + 2),
+                                        Vector2(-body_w * 0.5 - 2, fy + 4),
+                                        Vector2(-body_w * 0.5, fy + 6),
+                                ]), Color(0.27, 0.20, 0.16))
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(body_w * 0.5, fy),
+                                        Vector2(body_w * 0.5 + 4, fy + 2),
+                                        Vector2(body_w * 0.5 + 2, fy + 4),
+                                        Vector2(body_w * 0.5, fy + 6),
+                                ]), Color(0.27, 0.20, 0.16))
+                Type.MB_MINOTAUR:
+                        # Testa toro: corna + muso
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-head_r * 0.7, head_y - head_r * 0.5),
+                                Vector2(-head_r * 1.6, head_y - head_r * 1.4),
+                                Vector2(-head_r * 0.4, head_y - head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(head_r * 0.7, head_y - head_r * 0.5),
+                                Vector2(head_r * 1.6, head_y - head_r * 1.4),
+                                Vector2(head_r * 0.4, head_y - head_r * 0.5),
+                        ]), Color(0.78, 0.78, 0.71))
+                        draw_rect(Rect2(-3, head_y + head_r * 0.5, 6, 4), body_col)
+                Type.MB_WIGHT_LORD:
+                        # Armatura spettrale (semi-trasparente + runa glowing)
+                        draw_rect(Rect2(-body_w * 0.4, -body_h * 0.3,
+                                        body_w * 0.8, body_h * 0.6),
+                                Color(accent.r, accent.g, accent.b, 0.3))
+                        draw_circle(Vector2(0, 0), 2,
+                                Color(0.47, 0.86, 0.86, 0.9))
+                Type.MB_CAVE_GIANT:
+                        # Grosso + primitivo: extra bulk + mazza
+                        draw_rect(Rect2(-body_w * 0.6, -body_h * 0.4,
+                                        body_w * 1.2, body_h * 0.8),
+                                Color(body_col.r, body_col.g, body_col.b, 0.5))
+                        draw_rect(Rect2(body_w * 0.5, -body_h * 0.3, 6, body_h * 0.7),
+                                Color(0.39, 0.27, 0.13))
+                Type.MB_DEATH_KNIGHT:
+                        # Elmo teschio
+                        draw_rect(Rect2(-head_r, head_y - head_r,
+                                        head_r * 2.0, head_r * 2.0),
+                                Color(0.94, 0.94, 0.86))
+                        draw_circle(Vector2(-head_r * 0.4, head_y), 2, Color(0.02, 0.02, 0.02))
+                        draw_circle(Vector2(head_r * 0.4, head_y), 2, Color(0.02, 0.02, 0.02))
+                        draw_rect(Rect2(-head_r * 0.6, head_y + head_r * 0.5,
+                                        head_r * 1.2, 2), Color(0.05, 0.05, 0.05))
+                Type.MB_ILLITHID:
+                        # Tentacoli facciali (4 piccoli attorno alla bocca)
+                        for i in 4:
+                                var ang: float = (i - 1.5) * 0.4
+                                var bx: float = cos(ang) * head_r * 0.7
+                                var by: float = head_y + head_r * 0.3 + sin(ang) * head_r * 0.3
+                                draw_line(Vector2(bx, by),
+                                        Vector2(bx + cos(ang) * 6, by + 6),
+                                        body_col, 1.5)
+                Type.MB_ETTIN:
+                        # Due teste: seconda testa piu' piccola a destra
+                        var head2_r := head_r * 0.8
+                        var head2_x := head_r + head2_r
+                        draw_circle(Vector2(head2_x, head_y - head2_r * 0.3),
+                                head2_r, body_col)
+                        draw_circle(Vector2(head2_x - head2_r * 0.5,
+                                        head_y - head2_r * 0.3), eye_r, accent)
+                Type.MB_FOMORIAN:
+                        # Deforme + un occhio
+                        draw_circle(Vector2(0, head_y), head_r * 0.6, Color(1.0, 1.0, 1.0))
+                        draw_circle(Vector2(0, head_y), head_r * 0.4,
+                                Color(0.08, 0.08, 0.16))
+                        draw_circle(Vector2(0, head_y), head_r * 0.2, Color(0.0, 0.0, 0.0))
+                Type.MB_BALROG_CULTIST:
+                        # Aura di fuoco (6 fiamme pulsanti attorno)
+                        for i in 6:
+                                var fang: float = (i / 6.0) * TAU + anim_time * 2.0
+                                var fr: float = float(size) * 0.55 + sin(anim_time * 4.0 + i) * 3.0
+                                draw_circle(Vector2(cos(fang) * fr, sin(fang) * fr),
+                                        2.5, Color(1.0, 0.63, 0.16, 0.86))
+                _:
+                        pass
+
+        # FIX (barra rossa rimossa): la barra HP non viene più disegnata sopra
+        # il MiniBoss neanche nel path procedurale. Le info vengono mostrate
+        # nell'HUD in alto.
+        # _draw_hp_bar(1.0)
+
+
+# ===========================================================================
+# _draw_weapon_swing(weapon_type, angle): draws the equipped weapon in the
+# mini-boss's hand during the attack animation (attacking_timer_ms > 0).
+# The `angle` parameter (radians) orients the weapon: 0.0 = facing right,
+# PI = facing left (mirrored). Mirrors the C++ weapon branch in
+# src/MiniBoss.cpp line 199-308 (8 weapon types).
+# ===========================================================================
+func _draw_weapon_swing(weapon_type: int, angle: float) -> void:
+        # Weapon anchor: to the right of the body when angle ~ 0, mirrored when
+        # angle ~ PI. A small wobble simulates the swing motion.
+        var body_w := float(size) * 0.7
+        var facing_left := absf(angle - PI) < 0.5
+        var dir_x := -1.0 if facing_left else 1.0
+        var swing_off := sin((400.0 - float(attacking_timer_ms)) * 0.02) * 2.0
+        var wx: float = dir_x * (body_w * 0.6 + swing_off)
+        var wy: float = 0.0
+        var col_dark := Color(0.19, 0.16, 0.14)
+        var col_pale := Color(0.78, 0.71, 0.63)
+        var col_mid := Color(0.38, 0.31, 0.28)
+        var col_gold := Color(0.86, 0.63, 0.16)
+        match weapon_type:
+                Weapon.MBW_AXE:
+                        # Manico + lama triangolare
+                        draw_rect(Rect2(wx, wy - 6, 1.5, 12), col_dark)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(wx, wy - 6),
+                                Vector2(wx + dir_x * 8, wy - 4),
+                                Vector2(wx + dir_x * 1, wy + 2),
+                        ]), col_pale)
+                Weapon.MBW_MACE, Weapon.MBW_CLUB:
+                        # Manico + testa sferica con spuntoni
+                        draw_rect(Rect2(wx, wy - 7, 1.5, 14), col_dark)
+                        draw_circle(Vector2(wx, wy - 9), 4, col_mid)
+                        for i in 6:
+                                var sa: float = i * PI / 3.0
+                                draw_colored_polygon(PackedVector2Array([
+                                        Vector2(wx + cos(sa) * 4, wy - 9 + sin(sa) * 4),
+                                        Vector2(wx + cos(sa) * 6, wy - 9 + sin(sa) * 6),
+                                        Vector2(wx + cos(sa) * 4.5, wy - 9 + sin(sa) * 4.5),
+                                ]), col_pale)
+                Weapon.MBW_SWORD:
+                        # Lama dritta + elsa
+                        draw_rect(Rect2(wx, wy - 12, 1.5, 14), col_pale)
+                        draw_rect(Rect2(wx - 1.5, wy + 1, 5, 1.5), col_gold)
+                Weapon.MBW_DAGGER:
+                        # Pugnale corto + guardia
+                        draw_rect(Rect2(wx, wy - 6, 1.2, 8), col_pale)
+                        draw_rect(Rect2(wx - 0.9, wy + 1, 3, 1), col_gold)
+                Weapon.MBW_CHAIN:
+                        # Catena (3 anelli) + palla
+                        for i in 3:
+                                draw_circle(Vector2(wx + dir_x * i * 4, wy - 6), 1.5, col_dark)
+                        draw_circle(Vector2(wx + dir_x * 12, wy - 9.5), 3.5, col_mid)
+                Weapon.MBW_WHIP:
+                        # Frusta (4 segmenti curvi)
+                        for i in 4:
+                                var seg_y: float = wy - 8 + i * 4
+                                draw_rect(Rect2(wx + dir_x * i * 2, seg_y, 1, 4), col_dark)
+                Weapon.MBW_TENTACLES:
+                        # Tentacoli gia' disegnati come dettaglio del tipo (ILLITHID).
+                        pass
+                _:
+                        pass
+
+
+func _get_body_color() -> Color:
+        match mb_type:
+                Type.MB_GOBLIN_CHIEFTAIN: return Color(0.16, 0.31, 0.24)
+                Type.MB_CAVE_TROLL:       return Color(0.38, 0.31, 0.28)
+                Type.MB_ORC_BERSERKER:    return Color(0.16, 0.31, 0.24)
+                Type.MB_WARG_RIDER:       return Color(0.19, 0.16, 0.14)
+                Type.MB_URUK_HAI:         return Color(0.19, 0.16, 0.14)
+                Type.MB_NAZGUL:           return Color(0.05, 0.05, 0.05)
+                Type.MB_OGRE_BRUTE:       return Color(0.38, 0.31, 0.28)
+                Type.MB_GNOLL_PACKLORD:   return Color(0.63, 0.50, 0.44)
+                Type.MB_BUGBEAR_CHIEF:    return Color(0.38, 0.31, 0.28)
+                Type.MB_MINOTAUR:         return Color(0.19, 0.16, 0.14)
+                Type.MB_WIGHT_LORD:       return Color(0.16, 0.31, 0.24)
+                Type.MB_CAVE_GIANT:       return Color(0.38, 0.31, 0.28)
+                Type.MB_DEATH_KNIGHT:     return Color(0.05, 0.05, 0.05)
+                Type.MB_ILLITHID:         return Color(0.63, 0.47, 0.78)
+                Type.MB_ETTIN:            return Color(0.38, 0.31, 0.28)
+                Type.MB_FOMORIAN:         return Color(0.38, 0.31, 0.28)
+                Type.MB_BALROG_CULTIST:   return Color(0.63, 0.16, 0.16)
+                _: return Color(0.38, 0.31, 0.28)
+
+
+func _draw_burning_overlay() -> void:
+        # Fire aura: 3 radial glow layers + flames + sparks.
+        var burn_progress := 1.0 - float(burning_timer_ms) / 50.0
+        var intensity := 1.0
+        if burn_progress < 0.2:
+                intensity = 0.5 + burn_progress * 2.5
+        elif burn_progress > 0.8:
+                intensity = 1.0 - (burn_progress - 0.8) * 1.5
+        intensity = max(0.3, intensity)
+
+        var pulse := 1.0 + sin(burn_anim_time_ms * 0.02) * 0.1
+        var cy := -8.0  # center of the mini-boss body
+
+        # Outer / mid / inner glow
+        draw_circle(Vector2(0, cy), 28.0 * pulse,
+                                Color(1.0, 0.39, 0.0, 0.35 * intensity))
+        draw_circle(Vector2(0, cy), 20.0 * pulse,
+                                Color(0.78, 0.31, 0.31, 0.47 * intensity))
+        draw_circle(Vector2(0, cy), 12.0 * pulse,
+                                Color(0.86, 0.63, 0.16, 0.63 * intensity))
+
+        # 8 procedural flames around the body.
+        for i in range(8):
+                var a := (float(i) / 8.0) * TAU + burn_anim_time_ms * 0.005
+                var ring_r := 18.0
+                var fx := cos(a) * ring_r
+                var fy := cy + sin(a) * ring_r
+                var flame_h := (10.0 + sin(burn_anim_time_ms * 0.02 + i * 0.7) * 5.0 + 5.0) * intensity
+                var flame_w := 4.0
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(fx - flame_w, fy),
+                        Vector2(fx + flame_w, fy),
+                        Vector2(fx + sin(burn_anim_time_ms * 0.02 + i) * 3.0, fy - flame_h),
+                ]), Color(0.86, 0.63, 0.16, 0.86 * intensity))
+
+        # 4 white sparks.
+        for i in range(4):
+                var sx := sin(burn_anim_time_ms * 0.015 + i * 1.2) * 12.0
+                var sy := cy - 10.0 - float((int(burn_anim_time_ms * 0.2 + i * 8)) % 30)
+                draw_circle(Vector2(sx, sy), 1.2, Color(1.0, 1.0, 1.0, 0.86 * intensity))
+
+        # 3 smoke particles.
+        for i in range(3):
+                var sx := sin(burn_anim_time_ms * 0.01 + i * 2.0) * 8.0
+                var sy := cy - 15.0 - float((int(burn_anim_time_ms * 0.15 + i * 15)) % 40)
+                draw_circle(Vector2(sx, sy), 2.5 + i * 0.5,
+                                        Color(0.71, 0.67, 0.63, 0.43 * intensity))
