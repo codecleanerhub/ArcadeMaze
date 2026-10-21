@@ -1,8 +1,11 @@
-## shot_parchments.gd — TASK 35 + TASK 36: screenshot delle pergamene evento.
+## shot_parchments.gd — TASK 35 + TASK 36 + TASK 38: screenshot delle
+## pergamene evento.
 ## 1) pergamena TERREMOTO a terra vicino al player (glow arancio);
 ## 2) pergamena VORAGINI + ondata di 4 voragini magiche viola in scena;
 ## 3) TASK 36: FULMINE che si abbatte al suolo all'apparizione (spawn
-##    reale: saetta + onda d'urto + bagliore d'impatto + flash schermo).
+##    reale: saetta + onda d'urto + bagliore d'impatto + flash schermo);
+## 4) TASK 38: ONDA DI LUCE in corsa nel labirinto (fronte ad anello +
+##    scia di bagliore additivo che si diffonde su tutto il labirinto).
 extends Node2D
 
 const MainGameScene = preload("res://scenes/MainGame.tscn")
@@ -114,4 +117,22 @@ func _process(delta: float) -> void:
                                 crop3.save_png(
                                         "/home/z/my-project/download/parchment_lightning_crop.png")
                                 print("[SHOTP] salvato parchment_lightning.png + crop")
+                                stage = 7
+                                t = 0.0
+                7:
+                        # TASK 38: ONDA DI LUCE in corsa — cattura a ~0.45s
+                        # dallo spawn (fronte a meta' espansione nel
+                        # labirinto: anello + scia di bagliore additivo).
+                        if t > 0.2:
+                                main.screen_flash_timer_ms = 0
+                                var img4: Image = get_viewport().get_texture().get_image()
+                                img4.save_png("/home/z/my-project/download/parchment_lightwave.png")
+                                var c4: Vector2 = main.scroll_quake_item.position
+                                var crop4: Image = img4.get_region(Rect2i(
+                                                int(c4.x) - 240, int(c4.y) - 240,
+                                                480, 480))
+                                crop4.resize(960, 960, Image.INTERPOLATE_NEAREST)
+                                crop4.save_png(
+                                        "/home/z/my-project/download/parchment_lightwave_crop.png")
+                                print("[SHOTP] salvato parchment_lightwave.png + crop")
                                 get_tree().quit(0)

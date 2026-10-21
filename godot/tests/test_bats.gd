@@ -114,6 +114,10 @@ func _phaseA_constants() -> void:
 func _phaseB_scheduling() -> void:
         main.is_paused = true
         main.start_level(10)
+        # TASK 38 (spawn guard): il player nasce con 3s di immortalita' —
+        # azzerata perche' la fase D verifica proprio il danno del morso
+        # su un player vulnerabile.
+        main.player.spawn_guard_ms = 0
         if main.bat_events_left != 1:
                 _fail("B: eventi pipistrelli al liv 10 = %d, atteso 1"
                                 % main.bat_events_left)

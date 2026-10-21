@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testspawnguard1"]
+
+[ext_resource type="Script" path="res://tests/test_spawn_guard.gd" id="1"]
+
+[node name="TestSpawnGuard" type="Node"]
+script = ExtResource("1")

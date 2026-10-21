@@ -60,6 +60,10 @@ func _physics_process(delta: float) -> void:
                         p2.energy = 1
                         p2.damage_timer = 0
                         p2.invincible_timer = 0
+                        # TASK 38 (spawn guard): il player nasce con 3s di
+                        # immortalita' — azzerata perche' qui si testa la
+                        # MORTE reale che apre la schermata continue.
+                        p2.spawn_guard_ms = 0
                         p2.take_damage()  # ultima energia -> lives 0
                         # Il check gira a fine frame: forziamolo subito.
                         main._check_player_elimination()
@@ -101,6 +105,7 @@ func _physics_process(delta: float) -> void:
                         p2.energy = 1
                         p2.damage_timer = 0
                         p2.invincible_timer = 0
+                        p2.spawn_guard_ms = 0  # TASK 38: guardia post-continue a zero
                         p2.take_damage()
                         main._check_player_elimination()
                         if main._continue_pending_player != 2:
@@ -123,6 +128,7 @@ func _physics_process(delta: float) -> void:
                         p1.energy = 1
                         p1.damage_timer = 0
                         p1.invincible_timer = 0
+                        p1.spawn_guard_ms = 0  # TASK 38: guardia di nascita a zero
                         p1.take_damage()
                         main._check_player_elimination()
                         # P1 eliminato subito (0 crediti) e game over.

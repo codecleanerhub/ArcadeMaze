@@ -130,6 +130,10 @@ func _phaseB_generation() -> void:
         for item in main.collectibles_node.get_children():
                 item.queue_free()
         main.start_level(7)
+        # TASK 38 (spawn guard): il player nasce con 3s di immortalita' —
+        # azzerata qui perche' questo test verifica proprio i DANNI reali
+        # di muri e ganasce su un player vulnerabile.
+        main.player.spawn_guard_ms = 0
         # Nemico di test: il PRIMO vivo del livello APPENA generato
         # (start_level rigenera lo spawner: selezionarlo prima puntava a
         # nemici freed e i test C saltavano in silenzio).

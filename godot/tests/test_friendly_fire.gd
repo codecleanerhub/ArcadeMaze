@@ -103,6 +103,11 @@ func _physics_process(delta: float) -> void:
                                 # deterministico (nessuna interferenza IA).
                                 for e in main.spawner.enemies:
                                         e.take_damage(99999)
+                                # TASK 38 (spawn guard): i player nascono con 3s
+                                # di immortalita' — azzerata perche' il fuoco
+                                # amico del test deve colpire DA SUBITO.
+                                main.player.spawn_guard_ms = 0
+                                main.player2.spawn_guard_ms = 0
                                 # Rimuove gli item a terra (medikit/pozione
                                 # potrebbero alterare l'energia al pickup).
                                 for item in main.collectibles_node.get_children():
@@ -346,6 +351,11 @@ func _physics_process(delta: float) -> void:
                                 brp2.set_position_abs(700.0, 500.0)
                                 brp1.energy = 2
                                 brp2.energy = 1
+                                # TASK 38 (spawn guard): l'ingresso in boss
+                                # room riarma la guardia di nascita — azzerata
+                                # perche' l'F1 verifica il colpo fatale reale.
+                                brp1.spawn_guard_ms = 0
+                                brp2.spawn_guard_ms = 0
                                 brp1.damage_timer = 0
                                 brp2.damage_timer = 0
                                 _fake_shot(brp1, brp2)

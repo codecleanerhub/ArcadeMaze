@@ -132,6 +132,10 @@ func _phaseB_generation() -> void:
         for item in main.collectibles_node.get_children():
                 item.queue_free()
         main.start_level(12)
+        # TASK 38 (spawn guard): il player nasce con 3s di immortalita' —
+        # azzerata perche' le fasi C/E verificano i DANNI reali di barili
+        # e massi su un player vulnerabile.
+        main.player.spawn_guard_ms = 0
         test_enemy = null
         for e in main.spawner.enemies:
                 if not e.is_dead():

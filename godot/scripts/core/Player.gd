@@ -10,6 +10,9 @@
 # When energy reaches 0 a life is lost and the player respawns. The player is
 # invulnerable for ~1 s after taking damage (damageTimer), or fully invincible
 # while the chalice effect is active (invincibleTimer).
+# TASK 38: alla NASCITA e alla RINASCITA dopo una morte il player LAMPEGGIA
+# per 3 secondi (spawn_guard_ms) e in quel periodo e' IMMORTALE, per dare il
+# tempo di allontanarsi dai nemici.
 #
 # Timers are stored in "simulated ms" (decremented by 16 per frame @ 60 FPS),
 # exactly mirroring the C++ implementation so balance stays identical.
@@ -145,6 +148,7 @@ var max_jump_time: int = 40   # frames the jump lasts (Player.h:138)
 var jump_offset: float = 0.0 # visual arc offset, computed via sin(progress*pi)*25
 var damage_timer: int = 0    # post-hit invulnerability (~1 s)
 var invincible_timer: int = 0  # chalice-of-immortality total invuln (ms)
+var spawn_guard_ms: int = 0   # TASK 38: immortalita'+lampeggio alla nascita/rinascita (3 s)
 var speed_boost_timer: int = 0 # temporary post-jump-over-enemy speed boost (ms)
 var permanent_speed_boost: bool = false  # winged boots: persists until death
 
@@ -182,6 +186,14 @@ var next_life_threshold: int = 100000  # extra life every 100k points
 const STAMINA_JUMP_COST: float = 1.0 / 2.0
 const STAMINA_RECHARGE_FULL_MS: float = 2400.0   # barra vuota → piena in 2.4s
 const STAMINA_RECHARGE_DELAY_MS: float = 720.0   # la ricarica parte ~0.72s dopo l'ATTERRAGGIO dell'ultimo salto (così 2 salti in catena restano tali a qualunque framerate)
+
+## TASK 38 — nascita/rinascita: dopo lo spawn (nuovo livello, continue o
+## respawn post-morte) il player e' IMMORTALE e LAMPEGGIA per 3 secondi,
+## per dare il tempo di allontanarsi dai nemici.
+const SPAWN_GUARD_MS: int = 3000
+## Periodo del lampeggio della guardia (~4 Hz, acceso per il 60% del ciclo:
+## mai invisibile del tutto, per non perdere il player di vista).
+const SPAWN_GUARD_BLINK_MS: float = 250.0
 const STAMINA_CLICK_COOLDOWN_MS: float = 280.0   # anti-spam del click a vuoto
 var stamina: float = 1.0                 # 1.0 = piena, 0.0 = vuota
 var stamina_exhausted: bool = false      # true dopo il 2° salto consecutivo → blocco fino a ricarica completa
@@ -650,6 +662,9 @@ func reset_position() -> void:
         permanent_speed_boost = false  # fix: no speed boost after death
         invincible_timer = 0
         jump_offset = 0.0
+        # TASK 38 (nascita/rinascita): 3 secondi di immortalita' con
+        # lampeggio, per dare il tempo di allontanarsi dai nemici.
+        spawn_guard_ms = SPAWN_GUARD_MS
         # FIX (stamina): al respawn le "gambe" sono riposate (barra piena).
         stamina = 1.0
         stamina_exhausted = false
@@ -957,6 +972,7 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         anim_time += int(delta_ms)
         speed_boost_timer = _tick_timer_ms(speed_boost_timer, delta_ms)
         invincible_timer = _tick_timer_ms(invincible_timer, delta_ms)
+        spawn_guard_ms = _tick_timer_ms(spawn_guard_ms, delta_ms)
 
         # FIX (stamina): ricarica della barra quando il player non salta.
         # La ricarica parte un attimo dopo l'ultimo salto (delay): 3 salti
@@ -1550,8 +1566,10 @@ func is_stamina_exhausted() -> bool:
 
 # is_invulnerable(): true if either post-hit invuln OR chalice invincibility
 # is active. Mirrors Player::isInvulnerable() line 133.
+# TASK 38: compresa la guardia di nascita/rinascita (3s di immortalita'
+# con lampeggio dopo lo spawn).
 func is_invulnerable() -> bool:
-        return damage_timer > 0 or invincible_timer > 0
+        return damage_timer > 0 or invincible_timer > 0 or spawn_guard_ms > 0
 
 
 # set_invincible_timer(ms): total invulnerability duration from the
@@ -1839,6 +1857,22 @@ func _update_sprite() -> void:
                         ghost_pulse)
         else:
                 sprite.modulate = tint
+
+        # TASK 38 (nascita/rinascita): durante la guardia di 3s il player
+        # LAMPEGGIA. Si usa il modulate del NODO (propagato a TUTTI i figli
+        # e al disegno proprio: carattere, arma in mano, martello, aurole e
+        # proiettili pulsano insieme — il corpo intero lampeggia, non solo
+        # lo sprite). La tinta P2 e lo stato fantasma restano intatti: si
+        # agisce solo sul canale alpha del nodo.
+        if spawn_guard_ms > 0:
+                var blink_phase: float = fmod(float(spawn_guard_ms),
+                                SPAWN_GUARD_BLINK_MS)
+                if blink_phase < SPAWN_GUARD_BLINK_MS * 0.6:
+                        modulate = Color(1.0, 1.0, 1.0, 1.0)
+                else:
+                        modulate = Color(1.0, 1.0, 1.0, 0.15)
+        else:
+                modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 
 # ===========================================================================

@@ -234,6 +234,11 @@ func _phaseAB() -> bool:
 func _prepare_maze() -> void:
         # Congela il loop: da qui solo chiamate dirette (pattern test FF F1).
         main.is_paused = true
+        # TASK 38 (spawn guard): il player nasce con 3s di immortalita' —
+        # azzerata perche' le fasi C-F verificano assorbimenti, spine e
+        # aura su un player VULNERABILE (deterministico, niente timing).
+        main.player.spawn_guard_ms = 0
+        main.player2.spawn_guard_ms = 0
         # Nemici: tienine 3, elimina il resto; posizioni sotto controllo.
         test_enemies.clear()
         var alive: Array = []
@@ -539,6 +544,9 @@ func _phaseF_armors_maze() -> void:
         p.last_dy = 0
         p.damage_timer = 0
         p.invincible_timer = 0
+        # TASK 38 (spawn guard): eventuale guardia di nascita/rinascita a
+        # zero — le fasi F verificano spine e aura su player vulnerabile.
+        p.spawn_guard_ms = 0
 
         # F1: Scaglie del Drago — riflettono il proiettile NEMICO (labirinto):
         # direzione OPPOSTA, potenza del MIGLIOR colpo (max 5).

@@ -28,6 +28,10 @@ const LightningArcFx = preload("res://scripts/entities/LightningArcEffect.gd")
 ## TASK 36 — fulmine che si abbatte al suolo all'apparizione delle
 ## pergamene evento (effetto visivo pronunciato + flash + shake).
 const LightningStrikeFx = preload("res://scripts/entities/LightningStrikeEffect.gd")
+
+## TASK 38 — onda di luce che si diffonde per TUTTO il labirinto dopo il
+## fulmine delle pergamene (esplosione di luce dal punto d'impatto).
+const MazeLightWaveFx = preload("res://scripts/entities/MazeLightWaveEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, tra proiettile-nemico 24.5 e miniboss 35).
 const FF_HIT_RADIUS_SQ: float = 625.0
@@ -2611,6 +2615,27 @@ func _spawn_scroll_item(is_quake: bool) -> void:
         var strike: Node2D = LightningStrikeFx.new()
         strike.setup(item.position, tint)
         collectibles_node.add_child(strike)
+        # TASK 38 — ONDA DI LUCE: dopo il lampo, un bagliore che si diffonde
+        # per TUTTO il labirinto come un'esplosione di luce. L'ondata nasce
+        # dal punto in cui il fulmine colpisce il pavimento e si estende
+        # fino all'angolo piu' lontano del labirinto (materiale additivo:
+        # illumina davvero pavimento e muri al suo passaggio).
+        var wave: Node2D = MazeLightWaveFx.new()
+        var maze_origin: Vector2 = Vector2(0.0, float(C.UI_HEIGHT))
+        var maze_far: float = 0.0
+        for corner in [
+                        maze_origin,
+                        maze_origin + Vector2(
+                                        float(C.MAZE_COLS * C.TILE_SIZE), 0.0),
+                        maze_origin + Vector2(
+                                        0.0, float(C.MAZE_ROWS * C.TILE_SIZE)),
+                        maze_origin + Vector2(
+                                        float(C.MAZE_COLS * C.TILE_SIZE),
+                                        float(C.MAZE_ROWS * C.TILE_SIZE)),
+                ]:
+                maze_far = maxf(maze_far, item.position.distance_to(corner))
+        wave.setup(item.position, tint, maze_far + 60.0)
+        collectibles_node.add_child(wave)
         screen_flash_timer_ms = 110
         if EffectsManager:
                 EffectsManager.screen_shake(7.0, 0.55)

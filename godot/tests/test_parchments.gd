@@ -1,12 +1,14 @@
 ## test_parchments.gd — Test funzionale runtime (headless) delle due
-## PERGAMENE EVENTO del Task 35 + modifiche TASK 36:
+## PERGAMENE EVENTO del Task 35 + modifiche TASK 36 + TASK 38:
 ##   A. COSTANTI: finestra di apparizione, timing vita/blink, rollback
 ##      PARCHMENTS_ENABLED, grace level 5; TASK 36: soglia vivi 30%,
 ##      max 2 apparizioni con 1 solo uso, finestra 2a apparizione.
 ##   B. SCHEDULING: start_level(10) -> entrambe WAIT con timer in finestra;
 ##      timer forzato + vivi >= 30% -> BEACON (bagliore sulla cella);
 ##      telegrafo scaduto -> FULMINE + pergamena a TERRA (lifetime 10s+2s)
-##      e contatore apparizioni incrementato.
+##      e contatore apparizioni incrementato. TASK 38: allo spawn nasce
+##      anche l'ONDA DI LUCE additiva con raggio fino all'angolo piu'
+##      lontano del labirinto (copre TUTTA la sua dimensione).
 ##   C. CONDIZIONE 30% (TASK 36): con i vivi TRA il 30% e il 50% lo spawn
 ##      ORA e' CONSENTITO (prima no); con i vivi SOTTO il 30% il timer
 ##      scaduto NON spawna nulla e riprova dopo PARCHMENT_RETRY_MS.
@@ -205,6 +207,45 @@ func _phaseB_scheduling() -> void:
                 _fail("B: fulmine che si abbatte al suolo mancante")
         else:
                 _ok("B: apparizione eclatante (FULMINE al suolo, 1/2 apparizioni)")
+        # TASK 38: ONDA DI LUCE che si diffonde per TUTTO il labirinto
+        # (nodo presente + materiale ADDITIVO + raggio che raggiunge
+        # l'angolo piu' lontano del labirinto dal punto d'impatto).
+        var has_wave: bool = false
+        var wave_additive: bool = false
+        var wave_r: float = 0.0
+        for n in main.collectibles_node.get_children():
+                if n.get_script() == main.MazeLightWaveFx:
+                        has_wave = true
+                        wave_r = float(n.get("_max_radius"))
+                        var wmat = n.get("material")
+                        wave_additive = wmat is CanvasItemMaterial \
+                                        and wmat.blend_mode \
+                                        == CanvasItemMaterial.BLEND_MODE_ADD
+                        break
+        var maze_origin: Vector2 = Vector2(0.0, float(C.UI_HEIGHT))
+        var expect_r: float = 0.0
+        for corner in [
+                        maze_origin,
+                        maze_origin + Vector2(
+                                        float(C.MAZE_COLS * C.TILE_SIZE), 0.0),
+                        maze_origin + Vector2(
+                                        0.0, float(C.MAZE_ROWS * C.TILE_SIZE)),
+                        maze_origin + Vector2(
+                                        float(C.MAZE_COLS * C.TILE_SIZE),
+                                        float(C.MAZE_ROWS * C.TILE_SIZE)),
+                ]:
+                expect_r = maxf(expect_r,
+                                main.scroll_quake_item.position.distance_to(corner))
+        if not has_wave:
+                _fail("B: onda di luce del labirinto mancante")
+        elif not wave_additive:
+                _fail("B: onda di luce senza materiale additivo")
+        elif wave_r < expect_r:
+                _fail("B: raggio onda %.0f < distanza angolo piu' lontano %.0f"
+                                % [wave_r, expect_r])
+        else:
+                _ok("B: ondata di luce dal fulmine su tutto il labirinto "
+                                + "(raggio %.0f px, additiva)" % wave_r)
         # anche la pergamena voragini: portala a terra per i test successivi
         main.scroll_chasm_timer_ms = 1.0
         main._update_parchments(16.0)
