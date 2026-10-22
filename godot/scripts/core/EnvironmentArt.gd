@@ -20,6 +20,32 @@ extends Node
 var _texture_cache: Dictionary = {}
 
 
+## TASK 48 (pixellab-v2) — override PNG delle texture ambientali.
+## Se esiste assets/sprites/env/{name}.png (generato PixelLab v2,
+## 128x128, stile gotico coerente coi boss/player rigenerati) viene
+## usato AL POSTO del disegno procedurale. Rollback: cancellare il PNG
+## (o rinominare la cartella env/) e il fallback procedurale riprende.
+func _try_png_override(name: String) -> Texture2D:
+        var path := "res://assets/sprites/env/%s.png" % name
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img := Image.new()
+        if img.load(abs_path) != OK:
+                return null
+        return ImageTexture.create_from_image(img)
+
+
+func _cached_or_png(key: String, maker: Callable) -> Texture2D:
+        if _texture_cache.has(key):
+                return _texture_cache[key]
+        var tex: Texture2D = _try_png_override(key)
+        if tex == null:
+                tex = maker.call()
+        _texture_cache[key] = tex
+        return tex
+
+
 # ============================================================================
 # API pubblica
 # ============================================================================
@@ -40,51 +66,27 @@ func get_treasure_texture(treasure_type: int) -> Texture2D:
 
 
 func get_coffin_texture() -> Texture2D:
-        if _texture_cache.has("coffin"):
-                return _texture_cache["coffin"]
-        var tex := _make_coffin()
-        _texture_cache["coffin"] = tex
-        return tex
+        return _cached_or_png("coffin", _make_coffin)
 
 
 func get_column_texture() -> Texture2D:
-        if _texture_cache.has("column"):
-                return _texture_cache["column"]
-        var tex := _make_column()
-        _texture_cache["column"] = tex
-        return tex
+        return _cached_or_png("column", _make_column)
 
 
 func get_rubble_texture() -> Texture2D:
-        if _texture_cache.has("rubble"):
-                return _texture_cache["rubble"]
-        var tex := _make_rubble()
-        _texture_cache["rubble"] = tex
-        return tex
+        return _cached_or_png("rubble", _make_rubble)
 
 
 func get_skull_texture() -> Texture2D:
-        if _texture_cache.has("skull"):
-                return _texture_cache["skull"]
-        var tex := _make_skull()
-        _texture_cache["skull"] = tex
-        return tex
+        return _cached_or_png("skull", _make_skull)
 
 
 func get_cobweb_texture() -> Texture2D:
-        if _texture_cache.has("cobweb"):
-                return _texture_cache["cobweb"]
-        var tex := _make_cobweb()
-        _texture_cache["cobweb"] = tex
-        return tex
+        return _cached_or_png("cobweb", _make_cobweb)
 
 
 func get_torch_texture() -> Texture2D:
-        if _texture_cache.has("torch"):
-                return _texture_cache["torch"]
-        var tex := _make_wall_torch()
-        _texture_cache["torch"] = tex
-        return tex
+        return _cached_or_png("torch", _make_wall_torch)
 
 
 func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
