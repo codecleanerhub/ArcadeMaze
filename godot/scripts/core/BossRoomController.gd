@@ -1989,10 +1989,11 @@ func _draw() -> void:
         # la zona HUD completamente libera e nitida.
         draw_rect(Rect2(0, C.UI_HEIGHT, vp_size.x, vp_size.y - C.UI_HEIGHT),
                 Color(0, 0, 0, 0.25), true)
-        # FIX (decorazioni procedurali fatte male): rimosse le decorazioni
-        # (colonne, teschi, bare) disegnate proceduralmente che apparivano
-        # male e mal distribuite. Lo sfondo PNG AI è sufficiente.
-        # _render_boss_room_decorations()
+        # TASK 50: ARCHITETTURE BLOODBORNE — riabilitato il render delle
+        # decorazioni DOPO l'overlay scuro (i props PixelLab 256x256 a
+        # dimensioni per-tipo fino a 170px incorniciano l'arena e risaltano
+        # sull'ambiente; posizioni viewport-relative, zona di gioco libera).
+        _render_boss_room_decorations()
         # FIX (nome boss in alto): disegna il nome del boss stilizzato
         # in alto al centro (mirror C++ Game.cpp drawBossBanner).
         if boss != null:
@@ -2090,10 +2091,31 @@ func _draw() -> void:
                         Color(proj_col.r + 0.3, proj_col.g + 0.3, proj_col.b + 0.3))
 
 
-# Disegna decorazioni ambiente: bare, colonne, ruderi, teschi sul pavimento.
-# Posizionate in modo deterministico (non casuale ogni frame).
+# Disegna decorazioni ambiente: ARCHITETTURE BLOODBORNE (TASK 50).
+# 10 props PixelLab 256x256 ispirati a Yharnam (colonne ricche, archi
+# rotti, statue, candelieri, altare, obelischi, doccioni, inferriate,
+# candelabri, sarcofaghi) disegnati a dimensioni per-tipo (fino a 170px:
+# il Task 48 li relegava a 64px e il vecchio codice procedurale usava
+# coordinate 1024 su viewport 1920 — per questo apparivano "semplici
+# pilastri" mal distribuiti e il render era stato commentato).
+# Posizioni FRAZIONI del viewport: identiche su ogni risoluzione, simmetriche,
+# zona centrale di gioco libera. Solo layer visivo: niente collisioni.
 var _decorations_spawned: bool = false
-var _boss_room_decorations: Array = []  # [{type, pos}]
+var _boss_room_decorations: Array = []  # [{type, pos, size}]
+
+# TASK 50 — dimensione di rendering per tipo (px su schermo 1920x1080).
+const DECOR_SIZES := {
+        "column_ornate": 170.0,
+        "arch": 150.0,
+        "statue": 140.0,
+        "chandelier": 120.0,
+        "altar": 130.0,
+        "obelisk": 150.0,
+        "gargoyle": 110.0,
+        "gate": 120.0,
+        "candelabra": 100.0,
+        "sarcophagus": 120.0,
+}
 
 func _render_boss_room_decorations() -> void:
         if not EnvironmentArt:
@@ -2106,32 +2128,58 @@ func _render_boss_room_decorations() -> void:
         for dec in _boss_room_decorations:
                 var tex: Texture2D = null
                 match dec.type:
-                        "coffin": tex = EnvironmentArt.get_coffin_texture()
-                        "column": tex = EnvironmentArt.get_column_texture()
-                        "rubble": tex = EnvironmentArt.get_rubble_texture()
-                        "skull": tex = EnvironmentArt.get_skull_texture()
+                        "column_ornate": tex = EnvironmentArt.get_column_ornate_texture()
+                        "arch": tex = EnvironmentArt.get_arch_texture()
+                        "statue": tex = EnvironmentArt.get_statue_texture()
+                        "chandelier": tex = EnvironmentArt.get_chandelier_texture()
+                        "altar": tex = EnvironmentArt.get_altar_texture()
+                        "obelisk": tex = EnvironmentArt.get_obelisk_texture()
+                        "gargoyle": tex = EnvironmentArt.get_gargoyle_texture()
+                        "gate": tex = EnvironmentArt.get_gate_texture()
+                        "candelabra": tex = EnvironmentArt.get_candelabra_texture()
+                        "sarcophagus": tex = EnvironmentArt.get_sarcophagus_texture()
                 if tex:
-                        var s: float = 64.0  # dimensione decorazione
+                        var s: float = dec.size
                         draw_texture_rect(tex,
                                 Rect2(dec.pos.x - s / 2, dec.pos.y - s / 2, s, s), false)
 
 
 func _spawn_boss_room_decorations() -> void:
         _boss_room_decorations.clear()
-        # Posiziona decorazioni in punti fissi (non sopra l'arena centrale)
-        # Bare negli angoli
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(80, 150)})
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(944, 150)})
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(80, 850)})
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(944, 850)})
-        # Colonne ai lati (4 per lato)
-        for i in range(4):
-                var y: float = 200.0 + float(i) * 180.0
-                _boss_room_decorations.append({"type": "column", "pos": Vector2(50, y)})
-                _boss_room_decorations.append({"type": "column", "pos": Vector2(974, y)})
-        # Ruderi sparsi
-        for pos in [Vector2(250, 300), Vector2(780, 280), Vector2(300, 800), Vector2(750, 820)]:
-                _boss_room_decorations.append({"type": "rubble", "pos": pos})
-        # Teschi sul pavimento (piccoli, decorativi)
-        for pos in [Vector2(200, 500), Vector2(824, 500), Vector2(400, 250), Vector2(624, 750)]:
-                _boss_room_decorations.append({"type": "skull", "pos": pos})
+        var vp: Vector2 = get_viewport_rect().size
+        # Frazioni (fx, fy) del viewport -> identiche su ogni risoluzione.
+        # Composizione simmetrica che incornicia l'arena lasciando libera
+        # la zona centrale di gioco (x 0.31-0.69, y 0.28-0.83).
+        var layout := [
+                # --- lati: colonne cattedrali DOMINANTI (le piu' grandi) ---
+                ["column_ornate", 0.050, 0.520],
+                ["column_ornate", 0.950, 0.520],
+                # --- fascia alta: candelieri appesi + archi rotti + doccioni
+                # che fiancheggiano il nome del boss + altare centrale ---
+                ["chandelier", 0.292, 0.140],
+                ["chandelier", 0.708, 0.140],
+                ["arch", 0.198, 0.215],
+                ["arch", 0.802, 0.215],
+                ["gargoyle", 0.385, 0.160],
+                ["gargoyle", 0.615, 0.160],
+                ["altar", 0.500, 0.225],
+                # --- cintura mediana: candelabri + statue in preghiera ---
+                ["candelabra", 0.156, 0.575],
+                ["candelabra", 0.844, 0.575],
+                ["statue", 0.110, 0.805],
+                ["statue", 0.890, 0.805],
+                # --- fascia bassa: obelischi + sarcofaghi + inferriate ---
+                ["obelisk", 0.271, 0.915],
+                ["obelisk", 0.729, 0.915],
+                ["sarcophagus", 0.406, 0.925],
+                ["sarcophagus", 0.594, 0.925],
+                ["gate", 0.050, 0.915],
+                ["gate", 0.950, 0.915],
+        ]
+        for entry in layout:
+                _boss_room_decorations.append({
+                        "type": entry[0],
+                        "pos": Vector2(float(entry[1]) * vp.x,
+                                        float(entry[2]) * vp.y),
+                        "size": DECOR_SIZES.get(entry[0], 100.0),
+                })

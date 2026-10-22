@@ -89,6 +89,61 @@ func get_torch_texture() -> Texture2D:
         return _cached_or_png("torch", _make_wall_torch)
 
 
+# ============================================================================
+# TASK 50 — ARCHITETTURE ARENA BLOODBORNE (props PixelLab 256x256).
+# 10 props gotici ispirati a Yharnam, piu' ricchi e grandi dei 6 del
+# Task 48 (128x128). Fallback procedurale assente: se il PNG manca il prop
+# semplicemente non viene disegnato (rollback = cancellare il PNG).
+# NOTA CACHE (bug fix Task 50): usare _cached_or_png, MAI _try_png_override
+# diretto — senza cache il BossRoom (che ridisegna ogni frame) creerebbe
+# ~1000 ImageTexture/secondo esaurendo la VRAM: le texture nuove falliscono
+# l'upload e renderizzano come quadrati bianchi pieni.
+# ============================================================================
+
+func _make_no_texture() -> Texture2D:
+        return null
+
+
+func get_column_ornate_texture() -> Texture2D:
+        return _cached_or_png("column_ornate", _make_no_texture)
+
+
+func get_arch_texture() -> Texture2D:
+        return _cached_or_png("arch", _make_no_texture)
+
+
+func get_statue_texture() -> Texture2D:
+        return _cached_or_png("statue", _make_no_texture)
+
+
+func get_chandelier_texture() -> Texture2D:
+        return _cached_or_png("chandelier", _make_no_texture)
+
+
+func get_altar_texture() -> Texture2D:
+        return _cached_or_png("altar", _make_no_texture)
+
+
+func get_obelisk_texture() -> Texture2D:
+        return _cached_or_png("obelisk", _make_no_texture)
+
+
+func get_gargoyle_texture() -> Texture2D:
+        return _cached_or_png("gargoyle", _make_no_texture)
+
+
+func get_gate_texture() -> Texture2D:
+        return _cached_or_png("gate", _make_no_texture)
+
+
+func get_candelabra_texture() -> Texture2D:
+        return _cached_or_png("candelabra", _make_no_texture)
+
+
+func get_sarcophagus_texture() -> Texture2D:
+        return _cached_or_png("sarcophagus", _make_no_texture)
+
+
 func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
         var key: String = "weapon_%d" % weapon_type
         if _texture_cache.has(key):
