@@ -115,6 +115,25 @@ static var BOSS_SHOOT_SFX_ENABLED: bool = true
 #                          al comportamento pre-Task-46).
 static var BOSS_FRAME_ANIM_ENABLED: bool = true
 
+## TASK 49 — SINCRONIZZAZIONE ATTACCO (wind-up -> lancio)
+#   BOSS_ATTACK_SYNC_ENABLED -> il proiettile e il SFX di sparo partono al
+#                          frame di RILASCIO dell'animazione d'attacco invece
+#                          che al primo frame: prima il colpo usciva mentre il
+#                          boss era ancora in posa di carica (per il Mimico
+#                          Colossale la bocca era ancora chiusa!), con posa e
+#                          proiettile/suono distanziati di ~270ms. Ora la posa
+#                          di lancio, il proiettile e il suono appaiono nello
+#                          STESSO frame. Il delay di 280ms = frame 3 @ 11 FPS
+#                          (11 FPS = rate ATTACK del cycling frame): e' il
+#                          frame di rilascio verificato via VLM per Mimico
+#                          (bocca spalancata) e Golem (impatto dello smash).
+#                          false = sparo immediato al frame 0 (rollback al
+#                          comportamento pre-Task-49).
+static var BOSS_ATTACK_SYNC_ENABLED: bool = true
+
+## Delay (ms) tra l'inizio della posa d'attacco e lo sparo effettivo.
+const BOSS_ATTACK_WINDUP_MS: int = 280
+
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
 

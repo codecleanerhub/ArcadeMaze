@@ -70,6 +70,10 @@ var shoot_timer_ms: int = 0
 var attacking_timer_ms: int = 0
 var anim_time: float = 0.0
 
+# TASK 49 — sparo differito: >0 = attacco in "wind-up", il colpo parte
+# quando il contatore raggiunge 0 (frame di rilascio dell'animazione).
+var pending_shot_ms: int = 0
+
 # DeformableSprite node (lazy-init on first render).
 var deform_sprite: DeformableSprite = null
 var deform_loaded: bool = false
@@ -261,6 +265,17 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
         else:
                 attacking_timer_ms = 0
 
+        # TASK 49 — SYNC posa/proiettile/suono: lo sparo parte quando la posa
+        # d'attacco raggiunge il frame di RILASCIO (frame 3 @ 11 FPS ~ 280ms
+        # dall'inizio del timer), non al frame 0. La mira resta fresca (usa
+        # la posizione del player al momento del lancio).
+        if pending_shot_ms > 0:
+                if pending_shot_ms > delta_ms:
+                        pending_shot_ms -= delta_ms
+                else:
+                        pending_shot_ms = 0
+                        _shoot_pattern(player_x, player_y, projectiles_out)
+
         # Diagonal movement.
         pos.x += float(dx) * float(speed)
         pos.y += float(dy) * float(speed)
@@ -279,7 +294,11 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
         if shoot_timer_ms > base_cd:
                 shoot_timer_ms = 0
                 attacking_timer_ms = 500
-                _shoot_pattern(player_x, player_y, projectiles_out)
+                if C.BOSS_ATTACK_SYNC_ENABLED:
+                        # TASK 49: prima il wind-up (posa), poi il colpo.
+                        pending_shot_ms = C.BOSS_ATTACK_WINDUP_MS
+                else:
+                        _shoot_pattern(player_x, player_y, projectiles_out)
 
         # Update the deformable sprite.
         if deform_loaded and deform_sprite != null:
