@@ -43,6 +43,21 @@ const BOSS_TYPE_COUNT := 17
 const MAZE_LEVELS_PER_BOSS := 3
 const TOTAL_LEVELS_PER_BOSS := MAZE_LEVELS_PER_BOSS + 1  # 4
 
+# TASK 49b — sync per-boss: frame di RILASCIO dell'attacco (riga 1 dello
+# sheet, 6 frame @ 11 FPS) auditato su TUTTI i 17 boss (VLM + analisi pixel
+# degli effetti: veleno/fiamma/raggio per frame). Default = frame 3
+# (C.BOSS_ATTACK_WINDUP_MS = 280ms, 15/17 boss). Override per i boss che
+# rilasciano su un altro frame (ms = frame * 90.9 + 8, stesso scarto del
+# default 3 -> 280):
+#   - DRAGO ANTICO (boss_035): la fiamma eruppe dalle fauci a F4
+#     (getto 1892px in F4 vs 8px nei frame 0-3) -> 372ms = F4;
+#   - BEHOLDER (boss_037): il raggio centrale spara a F2 (estensione
+#     massima a F2, gia' in decadimento da F3) -> 190ms = F2.
+const ATTACK_WINDUP_OVERRIDES := {
+        Type.BOSS_DRAGON: 372,
+        Type.BOSS_BEHOLDER: 190,
+}
+
 const WINDOW_WIDTH := 1920
 const WINDOW_HEIGHT := 1080
 const UI_HEIGHT := 80
@@ -266,7 +281,8 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                 attacking_timer_ms = 0
 
         # TASK 49 — SYNC posa/proiettile/suono: lo sparo parte quando la posa
-        # d'attacco raggiunge il frame di RILASCIO (frame 3 @ 11 FPS ~ 280ms
+        # d'attacco raggiunge il frame di RILASCIO dell'animazione (per-boss:
+        # vedi ATTACK_WINDUP_OVERRIDES; default frame 3 @ 11 FPS ~ 280ms
         # dall'inizio del timer), non al frame 0. La mira resta fresca (usa
         # la posizione del player al momento del lancio).
         if pending_shot_ms > 0:
@@ -296,7 +312,8 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                 attacking_timer_ms = 500
                 if C.BOSS_ATTACK_SYNC_ENABLED:
                         # TASK 49: prima il wind-up (posa), poi il colpo.
-                        pending_shot_ms = C.BOSS_ATTACK_WINDUP_MS
+                        # TASK 49b: wind-up per-boss (frame di rilascio auditato).
+                        pending_shot_ms = _attack_windup_ms()
                 else:
                         _shoot_pattern(player_x, player_y, projectiles_out)
 
@@ -379,6 +396,15 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
 # ============================================================
 # Shooting patterns (per type)
 # ============================================================
+
+## TASK 49b — wind-up (ms) di QUESTO boss: default 280ms (frame 3 @ 11 FPS,
+## valido per 15/17 boss), override ATTACK_WINDUP_OVERRIDES per i boss il cui
+## frame di rilascio auditato e' diverso (Drago=F4, Beholder=F2).
+func _attack_windup_ms() -> int:
+        if ATTACK_WINDUP_OVERRIDES.has(boss_type):
+                return int(ATTACK_WINDUP_OVERRIDES[boss_type])
+        return C.BOSS_ATTACK_WINDUP_MS
+
 
 ## TASK 26 — tipo di "munizione" primario del boss (BossProjKind): usato
 ## per lo SFX di sparo COERENTE col proiettile (masso=tonfo, ragnatela=

@@ -9,7 +9,11 @@
 ##   4) allo scadere del wind-up il colpo parte ESATTAMENTE sul frame di
 ##      rilascio (frame 3 @ 11 FPS): proiettile e posa nello stesso frame —
 ##      per il Mimico Colossale e' il frame con la bocca spalancata;
-##   5) il flag di rollback BOSS_ATTACK_SYNC_ENABLED e' ON di default.
+##   5) il flag di rollback BOSS_ATTACK_SYNC_ENABLED e' ON di default;
+##   6) TASK 49b — wind-up PER-BOSS (audit VLM+pixel dei 17 sheet): il
+##      DRAGO ANTICO (boss_035) rilascia a F4 (372ms) e il BEHOLDER
+##      (boss_037) a F2 (190ms): il colpo deve partire ESATTAMENTE su
+##      quei frame, non sul default F3.
 ##
 ## Soggetto: MIMICO COLOSSALE (livello 52 -> boss index 13, sheet boss_025
 ## 6x2, 3 goo stream per sparo) — lo stesso boss della segnalazione utente.
@@ -107,6 +111,80 @@ func _ready() -> void:
         # decrementarlo: decrementi effettivi = 18 -> 500 - 288 = 212.
         _ok(boss.attacking_timer_ms == 500 - 18 * 16,
                         "attacking_timer_ms = %d (atteso %d: follow-through resta visibile)" % [boss.attacking_timer_ms, 500 - 18 * 16])
+
+        # ---- 5) TASK 49b: DRAGO ANTICO (liv 24 -> idx 6, boss_035) F4/372ms ----
+        var outd: Array = []
+        var drag := BossScript.new()
+        add_child(drag)
+        drag.setup(24, 1920, 1080)
+        drag._draw()
+        if not drag.deform_loaded:
+                _fail_quit(drag, "boss_035 (drago) non caricato")
+                return
+        _ok(drag.sprite_id == "boss_035",
+                        "boss del test 49b/1 = Drago Antico (%s)" % drag.sprite_id)
+        drag.shoot_timer_ms = 2000
+        drag.update_step(500.0, 500.0, 16, outd)
+        _ok(outd.is_empty(), "drago: NESSUN proiettile al trigger (fireball in gola)")
+        _ok(drag.pending_shot_ms == 372,
+                        "drago: pending_shot_ms = %d (atteso 372 = F4)"
+                        % drag.pending_shot_ms)
+        # 23 update (368ms decrementati, pending 4): la fiamma NON e' ancora
+        # uscita dalle fauci (F3 = gathering in gola).
+        for i in range(23):
+                drag.update_step(500.0, 500.0, 16, outd)
+                if outd.size() > 0:
+                        break
+        _ok(outd.is_empty() and drag.pending_shot_ms == 4,
+                        "drago: 23 update SENZA spari prematuri (pending %d, atteso 4)"
+                        % drag.pending_shot_ms)
+        # 24° decremento (384ms): F4 = fiamma che eruppe dalle fauci.
+        drag.update_step(500.0, 500.0, 16, outd)
+        _ok(outd.size() == 5,
+                        "drago: 5 fiamme del respiro al rilascio (avute: %d)"
+                        % outd.size())
+        _ok(_sheet_row(drag) == 1 and _sheet_col(drag) == 4,
+                        "drago: frame di rilascio = F%d (atteso 4: fiamma dalle fauci @ 11 FPS)"
+                        % _sheet_col(drag))
+        remove_child(drag)
+        drag.queue_free()
+
+        # ---- 6) TASK 49b: BEHOLDER (liv 36 -> idx 9, boss_037) F2/190ms ----
+        var outb: Array = []
+        var beh := BossScript.new()
+        add_child(beh)
+        beh.setup(36, 1920, 1080)
+        beh._draw()
+        if not beh.deform_loaded:
+                _fail_quit(beh, "boss_037 (beholder) non caricato")
+                return
+        _ok(beh.sprite_id == "boss_037",
+                        "boss del test 49b/2 = Beholder (%s)" % beh.sprite_id)
+        beh.shoot_timer_ms = 2000
+        beh.update_step(500.0, 500.0, 16, outb)
+        _ok(outb.is_empty(), "beholder: NESSUN proiettile al trigger (occhio in carica)")
+        _ok(beh.pending_shot_ms == 190,
+                        "beholder: pending_shot_ms = %d (atteso 190 = F2)"
+                        % beh.pending_shot_ms)
+        # 11 update (176ms decrementati, pending 14): il raggio NON e' ancora
+        # partito (F1 = flare dell'occhio).
+        for i in range(11):
+                beh.update_step(500.0, 500.0, 16, outb)
+                if outb.size() > 0:
+                        break
+        _ok(outb.is_empty() and beh.pending_shot_ms == 14,
+                        "beholder: 11 update SENZA spari prematuri (pending %d, atteso 14)"
+                        % beh.pending_shot_ms)
+        # 12° decremento (192ms): F2 = raggio dall'occhio centrale.
+        beh.update_step(500.0, 500.0, 16, outb)
+        _ok(outb.size() >= 4,
+                        "beholder: 4-5 raggi oculari al rilascio (avuti: %d)"
+                        % outb.size())
+        _ok(_sheet_row(beh) == 1 and _sheet_col(beh) == 2,
+                        "beholder: frame di rilascio = F%d (atteso 2: raggio @ 11 FPS)"
+                        % _sheet_col(beh))
+        remove_child(beh)
+        beh.queue_free()
 
         # ---- 4) rollback: flag OFF = sparo immediato (comportamento pre-49) ----
         C.BOSS_ATTACK_SYNC_ENABLED = false
