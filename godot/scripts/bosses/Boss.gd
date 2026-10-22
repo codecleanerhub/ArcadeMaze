@@ -342,6 +342,12 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                                 if fidx >= _frame_cols:
                                         fidx = _frame_cols - 1
                         elif mode == DeformableSprite.AnimMode.WALK:
+                                # TASK 48 — riga walk dedicata (riga 2) per gli
+                                # sheet PixelLab v2 a 3 righe (idle/attack/walk);
+                                # sheet a 1-2 righe: walk sulla riga idle (0),
+                                # comportamento legacy invariato.
+                                if _frame_rows > 2:
+                                        frow = 2
                                 fidx = int(anim_time * 8.3) % _frame_cols
                         else:  # IDLE
                                 fidx = int(anim_time * 5.5) % _frame_cols

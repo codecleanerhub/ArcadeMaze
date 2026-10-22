@@ -2,7 +2,7 @@
   "image": "boss_032_sheet.png",
   "frameWidth": 64,
   "frameHeight": 64,
-  "columns": 4,
+  "columns": 6,
   "rows": 2,
   "anchor": {
     "x": 32,
@@ -11,17 +11,17 @@
   "animations": {
     "idle": {
       "row": 0,
-      "frames": 4,
+      "frames": 6,
       "frameDuration": 180
     },
     "walk": {
       "row": 0,
-      "frames": 4,
+      "frames": 6,
       "frameDuration": 120
     },
     "attack": {
       "row": 1,
-      "frames": 4,
+      "frames": 6,
       "frameDuration": 90
     },
     "death": {
