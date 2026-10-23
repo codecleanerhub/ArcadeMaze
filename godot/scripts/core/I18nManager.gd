@@ -216,6 +216,11 @@ const TEXTS: Dictionary = {
                 "it": "GIOCATORE %d — SCEGLI LA TUA RELIQUIA",
         },
         "bonus.chose": {"en": "PLAYER %d CHOSE: %s", "it": "IL GIOCATORE %d HA SCELTO: %s"},
+        # TASK 51 (P1): conferma tenendo premuto il fuoco
+        "bonus.hold_hint": {
+                "en": "HOLD FIRE TO CONFIRM",
+                "it": "TIENI PREMUTO IL FUOCO PER CONFERMARE",
+        },
         "bonus.family_melee": {"en": "MELEE", "it": "MISCHIA"},
         "bonus.family_ranged": {"en": "RANGED", "it": "DISTANZA"},
         "bonus.family_armor": {"en": "ARMOR", "it": "ARMATURA"},

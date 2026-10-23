@@ -121,9 +121,10 @@ func _phaseA_constants() -> void:
         elif C.PARCHMENT_VISIBLE_MS != 16000 or C.PARCHMENT_BLINK_MS != 2000:
                 _fail("A: vita a terra %d+%d, attesa 16000+2000 (+50%% TASK 41)"
                                 % [C.PARCHMENT_VISIBLE_MS, C.PARCHMENT_BLINK_MS])
-        elif C.SCROLL_CHASM_COUNT != 4 or C.SCROLL_CHASM_WAVE_MS != 4000 \
+        elif C.SCROLL_CHASM_COUNT != 4 or C.SCROLL_CHASM_WAVE_MS != 5600 \
                         or C.SCROLL_CHASM_WAVES != 3:
-                _fail("A: costanti voragini errate (%d/%d/%d)"
+                _fail("A: costanti voragini errate (%d/%d/%d) — TASK 51 P2: \
+ondata 5600ms (+40%% durata)"
                                 % [C.SCROLL_CHASM_COUNT, C.SCROLL_CHASM_WAVE_MS,
                                         C.SCROLL_CHASM_WAVES])
         elif C.SCROLL_QUAKE_DAMAGE_PCT != 0.5 or C.SCROLL_QUAKE_KILL_PCT != 0.5:

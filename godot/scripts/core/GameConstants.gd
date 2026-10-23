@@ -1190,8 +1190,10 @@ const SCROLL_QUAKE_KILL_POINTS: int = 5000
 ## Pergamena delle voragini: numero di voragini per ondata, durata di
 ## ogni ondata, ondate totali, distanza minima tra voragini (Manhattan,
 ## in celle) e durata della dissolvenza tra le ondate.
+## TASK 51 (P2, richiesta utente): durata effetto +40% -> ogni ondata
+## dura 5600ms invece di 4000ms (3 ondate = 16.8s totali vs 12s).
 const SCROLL_CHASM_COUNT: int = 4
-const SCROLL_CHASM_WAVE_MS: int = 4000
+const SCROLL_CHASM_WAVE_MS: int = 5600
 const SCROLL_CHASM_WAVES: int = 3
 const SCROLL_CHASM_MIN_GAP: int = 5
 const SCROLL_CHASM_FADE_MS: int = 350
@@ -1370,11 +1372,11 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Spadone del Cavaliere", "short": "SPADONE",
                 "name_en": "Knight's Greatsword", "short_en": "GREATSWORD",
                 "color": Color(0.82, 0.86, 0.94), "power": 3, "hits": 2,
-                "shots": 33, "shape": "sector", "radius_px": 128.0,
-                "arc_deg": 120.0, "fire_cd": 320,
+                "shots": 33, "shape": "sector", "radius_px": 150.0,
+                "arc_deg": 150.0, "fire_cd": 260, "max_targets": 4,
                 "png_grip_deg": -90.0,
-                "desc": "Arco ampio (2 celle): fende tutti i nemici davanti a te.",
-                "desc_en": "Wide arc (2 tiles): cleaves every enemy in front of you.",
+                "desc": "Arco amplissimo: fende fino a 4 nemici davanti a te.",
+                "desc_en": "Huge arc: cleaves up to 4 enemies in front of you.",
         },
         {
                 "id": "axe", "type": RelicType.AXE, "family": "mischia",

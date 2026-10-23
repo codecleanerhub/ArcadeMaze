@@ -459,6 +459,10 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # RELIC (Task 21): stordimento da Mazza/Martello — nemico congelato
         # (pattern del burning: timer ticka, movimento fermo). Il danno
         # continua ad arrivargli: e' solo "stordito", non invulnerabile.
+        # TASK 51 (P3): il knockback visivo decade SEMPRE, anche sotto stun
+        # (la spinta dura 200ms, lo stun 400ms — senza questo tick la
+        # spinta rimarrebbe congelata per tutto lo stun).
+        _tick_knockback(delta_ms)
         if stun_timer_ms > 0:
                 if stun_timer_ms > int(delta_ms):
                         stun_timer_ms -= int(delta_ms)
@@ -818,6 +822,55 @@ func apply_stun(ms: int) -> void:
         stun_timer_ms = mini(stun_timer_ms + ms, 1500)
 
 
+# ============================================================================
+# TASK 51 (P3) — KNOCKBACK VISIVO da armi reliquia a distanza
+# ============================================================================
+## Spinta visiva di ~24px in direzione opposta al player: e' un OFFSET
+## PURAMENTE GRAFICO che decade in ~200ms. La posizione logica (griglia
+## BFS, collisioni, pathing) NON cambia: il nemico "scivola" via dal colpo
+## e torna al suo posto, senza rompere il movimento grid-locked.
+const KNOCKBACK_DECAY_MS: float = 200.0
+var _knock_dir: Vector2 = Vector2.ZERO   # direzione della spinta (unit)
+var _knock_mag: float = 0.0              # intensita' iniziale (px)
+var _knock_vec: Vector2 = Vector2.ZERO   # spinta residua (px, decade a 0)
+var _knock_timer_ms: float = 0.0
+
+
+## Applica la spinta: `dir` punta DAL player verso il nemico (viene
+## normalizzata internamente). `dist_px` = intensita' in pixel.
+func apply_knockback(dir: Vector2, dist_px: float = 24.0) -> void:
+        if dir.length_squared() < 0.0001:
+                return
+        _knock_dir = dir.normalized()
+        _knock_mag = dist_px
+        _knock_timer_ms = KNOCKBACK_DECAY_MS
+        _knock_vec = _knock_dir * _knock_mag
+        queue_redraw()
+
+
+## Decadimento ASSOLUTO (deterministico): offset = mag * (t_residuo/T)^2.
+## Curva ease-out sul ritorno: il nemico schizza via di 24px e rientra
+## veloce all'inizio, con atterraggio morbido sull posizione di griglia.
+## Chiamato in update_enemy PRIMA dell'early-return dello stun (il
+## knockback dura 200ms ma lo stun 400ms: la spinta deve continuare a
+## decrescere anche mentre il nemico e' congelato).
+func _tick_knockback(delta_ms: float) -> void:
+        if _knock_timer_ms <= 0.0 and _knock_vec.length_squared() < 0.01:
+                return
+        _knock_timer_ms = maxf(0.0, _knock_timer_ms - delta_ms)
+        if _knock_timer_ms <= 0.0:
+                _knock_vec = Vector2.ZERO
+        else:
+                var k: float = _knock_timer_ms / KNOCKBACK_DECAY_MS
+                _knock_vec = _knock_dir * (_knock_mag * k * k)
+        queue_redraw()
+
+
+## Offset da sommare al rendering (usato da _draw via draw_set_transform).
+func knockback_visual_offset() -> Vector2:
+        return _knock_vec
+
+
 ## Danno del MARTELLO di Thor: 50% degli HP massimi (2 colpi per uccidere
 ## qualunque nemico, come da specifica utente). Ritorna il danno inflitto.
 func take_hammer_hit() -> int:
@@ -1134,6 +1187,10 @@ func get_enemy_name() -> String:
 # (circle + eyes) so the game is still playable if assets are missing.
 # ===========================================================================
 func _draw() -> void:
+        # TASK 51 (P3): offset visivo del knockback — sposta TUTTO il render
+        # del nemico senza toccare la posizione logica (pathing BFS intatto).
+        if _knock_vec.length_squared() > 0.01:
+                draw_set_transform(_knock_vec)
         # --- PRIMARY: render AI-generated sprite if loaded ---
         # _draw_sprite_frame() handles death/attack/walk/idle animations
         if _sprite_loaded and _sprite_sheet != null:
@@ -1383,12 +1440,15 @@ func _draw_sprite_frame() -> void:
         # FIX (scatto visivo da fermo): flip basato su last_dx, non dx:
         # da fermo (dx==0) lo sprite mantiene l'orientamento invece di
         # "sbloccarsi" di colpo verso destra.
+        # TASK 51 (P3): il pivot del mirror e il reset ASSORBONO l'offset
+        # knockback (draw_set_transform e' assoluto, non componibile: senza
+        # questo il nemico specchiato perderebbe la spinta visiva).
         if last_dx < 0:
                 draw_set_transform(
-                        Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                        Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0) + _knock_vec,
                         0.0, Vector2(-1.0, 1.0))
                 draw_texture_rect(at, dest_rect, false)
-                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                draw_set_transform(_knock_vec, 0.0, Vector2.ONE)
         else:
                 draw_texture_rect(at, dest_rect, false)
 

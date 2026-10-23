@@ -1597,6 +1597,20 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 # (calice/scettro) restano kill istantanei.
                                 enemy.take_weapon_hit(int(proj.get("type", 0)), fury)
                                 hit_ids.append(enemy)
+                                # TASK 51 (P3) — KNOCKBACK da armi reliquia a
+                                # DISTANZA: spinta visiva ~24px in direzione
+                                # opposta al player + stun 400ms (cap 1.5s).
+                                # Le mischia non sparano proiettili: se il
+                                # proiettile ha una def reliquia di famiglia
+                                # "distanza" e' un arco/balestra/bomba/ecc.
+                                var kdef: Dictionary = C.get_relic_def(
+                                                int(proj.get("type", 0)))
+                                if not kdef.is_empty() \
+                                                and kdef.get("family", "") == "distanza":
+                                        var kdir: Vector2 = (e_pos - p.get_pixel_pos()).normalized()
+                                        enemy.apply_knockback(kdir, 24.0)
+                                        if not enemy.is_dead():
+                                                enemy.apply_stun(400)
                                 # RELIC (Task 21) — Verga della Tempesta: il
                                 # fulmine salta ai nemici vicini al bersaglio.
                                 if proj.has("chain"):
@@ -1743,12 +1757,27 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
         var p_pos: Vector2 = p.get_pixel_pos()
         var hits: int = 0
         var primary_hits: Array = []
+        # TASK 51 (P4) — Spadone "max_targets": cap esplicito di nemici per
+        # fendente (4 per lo Spadone buffato). Se il def NON ha max_targets
+        # il comportamento resta quello storico (tutti i nemici nella shape).
+        # Selettore NEAREST-FIRST: con piu' nemici nell'arco di quanti ne
+        # possa colpire, vincono i piu' vicini (colpo "fisico" che parte
+        # dal player, non dall'angolo piu' comodo).
+        var max_targets: int = int(def.get("max_targets", 0))
+        var in_shape: Array = []
         for enemy in spawner.enemies:
                 if enemy.is_dead():
                         continue
                 var e_pos: Vector2 = enemy.get_pixel_pos()
                 if not C.relic_melee_in_shape(def, aim, p_pos, e_pos):
                         continue
+                in_shape.append([p_pos.distance_squared_to(e_pos), enemy])
+        in_shape.sort_custom(func(a, b): return a[0] < b[0])
+        for pair in in_shape:
+                if max_targets > 0 and hits >= max_targets:
+                        break
+                var enemy = pair[1]
+                var e_pos: Vector2 = enemy.get_pixel_pos()
                 enemy.take_damage(C.relic_melee_damage(def, enemy.max_health, fury))
                 primary_hits.append(enemy)
                 hits += 1

@@ -48,6 +48,16 @@ var _wait_ms: float = 0.0
 var _last_choice_text: String = ""
 var _t: float = 0.0  # tempo per animazioni
 
+# TASK 51 (P1): la conferma avviene TENENDO PREMUTO il fuoco (il tap
+# istantaneo non conferma piu'). Sotto la carta selezionata appare una
+# barra che si riempie in HOLD_CONFIRM_MS: a riempimento completo la
+# reliquia e' confermata. Se il tasto viene rilasciato la barra si
+# svuota (si puo' cambiare idea / cambiare carta senza confermare).
+const HOLD_CONFIRM_MS: float = 450.0
+var _hold_ms: float = 0.0
+var _hold_frac: float = 0.0   # 0..1, per il rendering della barra
+var _hold_chooser: int = -1   # reset hold quando cambia il chooser
+
 # Pannello di disegno (Control full-rect figlio del layer).
 var _panel: Control = null
 
@@ -95,16 +105,21 @@ func _physics_process(delta: float) -> void:
                 if _wait_ms == 0.0 and chooser_idx < choosers.size():
                         selection = 0
                 return
-        _poll_current_chooser()
+        _poll_current_chooser(delta * 1000.0)
 
 
 # ============================================================================
 # Input (tastiera + joystick di entrambi i player, mirror BossRoom)
 # ============================================================================
-func _poll_current_chooser() -> void:
+func _poll_current_chooser(delta_ms: float) -> void:
         if chooser_idx >= choosers.size():
                 _finish()
                 return
+        # TASK 51 (P1): cambio chooser -> la pressione accumulata si azzera.
+        if _hold_chooser != chooser_idx:
+                _hold_chooser = chooser_idx
+                _hold_ms = 0.0
+                _hold_frac = 0.0
         var is_p1: bool = (chooser_idx == 0)
         var moved: int = 0
         var confirmed: bool = false
@@ -137,26 +152,38 @@ func _poll_current_chooser() -> void:
         if moved != 0 and not offerings.is_empty():
                 selection = int(fposmod(float(selection + moved), float(offerings.size())))
 
-        # --- Conferma ---
+        # --- Conferma TASK 51 (P1): TENENDO PREMUTO il fuoco ---
+        # Il tap singolo non conferma: il tasto va tenuto per
+        # HOLD_CONFIRM_MS. La barra di riempimento sotto la carta
+        # selezionata mostra il progresso; muoversi non azzera la
+        # pressione (si puo' correggere la mira), rilasciare si'.
+        var fire_held: bool = false
         if is_p1:
-                if Input.is_action_just_pressed("shoot") \
-                                or Input.is_action_just_pressed("confirm"):
-                        confirmed = true
+                fire_held = Input.is_action_pressed("shoot") \
+                                or Input.is_action_pressed("confirm")
                 var p1_joy2: int = _resolve_p1_joy()
-                if not confirmed and p1_joy2 >= 0:
+                if not fire_held and p1_joy2 >= 0:
                         var btn: int = ConfigManager.joy_shoot() if ConfigManager else -1
                         if btn < 0:
                                 btn = JOY_BUTTON_B
-                        confirmed = _joy_edge(p1_joy2, btn)
+                        fire_held = Input.is_joy_button_pressed(p1_joy2, btn)
         else:
-                if Input.is_action_just_pressed("p2_shoot"):
-                        confirmed = true
+                fire_held = Input.is_action_pressed("p2_shoot")
                 var p2_joy2: int = _resolve_p2_joy()
-                if not confirmed and p2_joy2 >= 0:
+                if not fire_held and p2_joy2 >= 0:
                         var btn2: int = ConfigManager.joy2_shoot() if ConfigManager else -1
                         if btn2 < 0:
                                 btn2 = JOY_BUTTON_B
-                        confirmed = _joy_edge(p2_joy2, btn2)
+                        fire_held = Input.is_joy_button_pressed(p2_joy2, btn2)
+        if fire_held and not offerings.is_empty():
+                _hold_ms += delta_ms
+        else:
+                _hold_ms = 0.0
+        _hold_frac = clampf(_hold_ms / HOLD_CONFIRM_MS, 0.0, 1.0)
+        if _hold_ms >= HOLD_CONFIRM_MS:
+                _hold_ms = 0.0
+                _hold_frac = 0.0
+                confirmed = true
 
         if confirmed:
                 _apply_choice(offerings[selection])
@@ -372,6 +399,28 @@ func _draw_relic_card(p: Control, font: Font, def: Dictionary,
                         Vector2(cx - 12.0, ay), Vector2(cx + 12.0, ay),
                         Vector2(cx, ay + 10.0)]),
                         Color(col.r, col.g, col.b, 0.9))
+                # TASK 51 (P1): BARRA DI CONFERMA "tieni premuto il fuoco".
+                # Traccia rossa scura + riempimento color reliquia che cresce
+                # con _hold_frac; a fondo corsa la reliquia e' confermata.
+                # Sopra la barra il hint localizzato (solo se la pressione e'
+                # in corso o la carta e' selezionata da poco).
+                var bar_w: float = rect.size.x - 48.0
+                var bar_rect: Rect2 = Rect2(
+                        cx - bar_w * 0.5, rect.position.y + rect.size.y - 20.0,
+                        bar_w, 8.0)
+                p.draw_rect(bar_rect, Color(0.10, 0.05, 0.05, 0.85), true)
+                p.draw_rect(bar_rect, Color(0.45, 0.30, 0.20, 0.9), false, 1.0)
+                if _hold_frac > 0.005:
+                        p.draw_rect(Rect2(bar_rect.position,
+                                        Vector2(bar_w * _hold_frac, bar_rect.size.y)),
+                                Color(col.r, col.g, col.b, 0.55 + 0.45 * _hold_frac), true)
+                        # bagliore della punta che avanza
+                        p.draw_circle(Vector2(bar_rect.position.x + bar_w * _hold_frac,
+                                        bar_rect.position.y + 4.0), 5.0,
+                                Color(1.0, 0.95, 0.8, 0.5 * _hold_frac))
+                _draw_text_centered(p, font, I18n.t("bonus.hold_hint"),
+                        Vector2(cx, rect.position.y + rect.size.y - 30.0), 14,
+                        Color(0.9, 0.82, 0.6, 0.75))
 
 
 ## TASK 23: icona della reliquia sulla carta. PRIMA il PNG ad alta qualità

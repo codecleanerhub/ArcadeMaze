@@ -2148,33 +2148,40 @@ func _spawn_boss_room_decorations() -> void:
         _boss_room_decorations.clear()
         var vp: Vector2 = get_viewport_rect().size
         # Frazioni (fx, fy) del viewport -> identiche su ogni risoluzione.
-        # Composizione simmetrica che incornicia l'arena lasciando libera
-        # la zona centrale di gioco (x 0.31-0.69, y 0.28-0.83).
+        # TASK 51 (P10, richiesta utente): RIMOSSI archi (finestre gotiche
+        # in alto) e inferriate (in basso) — segnalati come elementi da
+        # togliere. Gli elementi restanti sono stati RIDISTRIBUITI:
+        #   * i doccioni prendono il posto degli archi in alto (piu'
+        #     esterni, incorniciano il nome del boss senza finestre);
+        #   * gli obelischi scendono negli angoli bassi (dove c'erano le
+        #     inferriate) chiudendo la composizione;
+        #   * due candelabri riempiono la fascia bassa dove stavano gli
+        #     obelischi, mantenendo la simmetria a speccio.
+        # Zona centrale di gioco libera (x 0.31-0.69, y 0.28-0.83).
         var layout := [
                 # --- lati: colonne cattedrali DOMINANTI (le piu' grandi) ---
                 ["column_ornate", 0.050, 0.520],
                 ["column_ornate", 0.950, 0.520],
-                # --- fascia alta: candelieri appesi + archi rotti + doccioni
+                # --- fascia alta: candelieri appesi + doccioni esterni
                 # che fiancheggiano il nome del boss + altare centrale ---
                 ["chandelier", 0.292, 0.140],
                 ["chandelier", 0.708, 0.140],
-                ["arch", 0.198, 0.215],
-                ["arch", 0.802, 0.215],
-                ["gargoyle", 0.385, 0.160],
-                ["gargoyle", 0.615, 0.160],
+                ["gargoyle", 0.175, 0.195],
+                ["gargoyle", 0.825, 0.195],
                 ["altar", 0.500, 0.225],
                 # --- cintura mediana: candelabri + statue in preghiera ---
                 ["candelabra", 0.156, 0.575],
                 ["candelabra", 0.844, 0.575],
                 ["statue", 0.110, 0.805],
                 ["statue", 0.890, 0.805],
-                # --- fascia bassa: obelischi + sarcofaghi + inferriate ---
-                ["obelisk", 0.271, 0.915],
-                ["obelisk", 0.729, 0.915],
+                # --- fascia bassa: candelabri + obelischi d'angolo +
+                # sarcofaghi centrali (niente piu' inferriate) ---
+                ["candelabra", 0.290, 0.900],
+                ["candelabra", 0.710, 0.900],
+                ["obelisk", 0.068, 0.905],
+                ["obelisk", 0.932, 0.905],
                 ["sarcophagus", 0.406, 0.925],
                 ["sarcophagus", 0.594, 0.925],
-                ["gate", 0.050, 0.915],
-                ["gate", 0.950, 0.915],
         ]
         for entry in layout:
                 _boss_room_decorations.append({
