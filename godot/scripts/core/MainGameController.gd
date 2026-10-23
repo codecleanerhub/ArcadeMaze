@@ -2986,7 +2986,9 @@ func _fire_freeze_ray(p: CharacterBody2D) -> void:
                                         e_pos, Color(0.55, 0.85, 1.0), 18, 0.5)
                         collectibles_node.add_child(burst)
                 if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.BURST_FROST)
+                        # TASK 50b: suono dedicato della cristallizzazione
+                        # (schiocco vetroso + crescita cristalli + tonfo)
+                        AudioManager.play_sound(AudioManager.SoundType.FREEZE_HIT)
 
         # --- Mid-boss nella traiettoria: troppo potente per congelare,
         # subisce il 50% degli HP max + stordimento (come il martello). ---
@@ -3010,7 +3012,8 @@ func _fire_freeze_ray(p: CharacterBody2D) -> void:
                                                 mb_pos, Color(0.55, 0.85, 1.0), 14, 0.45)
                                 collectibles_node.add_child(burst_mb)
                         if AudioManager:
-                                AudioManager.play_sound(AudioManager.SoundType.BURST_FROST)
+                                # TASK 50b: cristallizzazione anche sul mid-boss
+                                AudioManager.play_sound(AudioManager.SoundType.FREEZE_HIT)
 
         # --- Visual: raggio congelante + screen flash leggero ---------------
         var beam: Node2D = IceBeamFx.new()

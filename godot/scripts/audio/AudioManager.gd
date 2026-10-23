@@ -129,13 +129,18 @@ enum SoundType {
         # TASK 50 (pergamena del GHIACCIO): FREEZE_RAY = sparo del raggio
         #   congelante — sweep discendente cristallino (il freddo "cala")
         #   con soffio di brina e coda di ghiaccio che si solidifica
-        #   (~0.5s). L'impatto su ogni nemico riusa BURST_FROST.
-        FREEZE_RAY
+        #   (~0.5s).
+        # TASK 50b: FREEZE_HIT = COLPO del raggio sul nemico — il blocco di
+        #   ghiaccio cristallizza attorno alla creatura: schiocco vetroso,
+        #   crepitio di espansione con ping di cristalli che crescono e
+        #   tonfo freddo della solidificazione (~0.55s).
+        FREEZE_RAY,
+        FREEZE_HIT
 }
 # NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
 # dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
-# 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 = 55 (0..54).
-const SOUND_TYPE_COUNT: int = 55
+# 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 + 1 Task 50b = 56 (0..55).
+const SOUND_TYPE_COUNT: int = 56
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -591,6 +596,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.BURST_LIGHTNING: s = _sfx_burst_lightning()
                 SoundType.BURST_POISON:    s = _sfx_burst_poison()
                 SoundType.FREEZE_RAY:      s = _sfx_freeze_ray()
+                SoundType.FREEZE_HIT:      s = _sfx_freeze_hit()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1417,6 +1423,56 @@ func _sfx_freeze_ray() -> PackedFloat32Array:
                         crackle = noise_gen() * 0.5
                 var v: float = 0.5 * sine_wave(t * 190.0) + crackle
                 s.append(1500.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+
+# --- FREEZE_HIT (~0.55s) TASK 50b: COLPO del raggio congelante sul nemico —
+# cristallizzazione istantanea del blocco di ghiaccio che lo ingloba:
+# schiocco vetroso iniziale, crepitio di espansione con ping di cristalli
+# che crescono verso l'alto e tonfo grave della solidificazione finale.
+func _sfx_freeze_hit() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Schiocco vetroso (0.09s): crack secco ad alta frequenza, attacco
+        # immediato (il freddo aggredisce la carne in un istante)
+        var c1: int = int(SR * 0.09)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 26.0) * (1.0 - exp(-t * 90.0))
+                var snap: float = 0.0
+                if i < int(SR * 0.004):
+                        snap = noise_gen() * 0.9
+                var v: float = 0.55 * noise_gen() + snap \
+                                + 0.20 * pulse_wave(t * 3400.0, 0.2)
+                s.append(2600.0 / 32767.0 * _soft_clip(v * env))
+        # Crescita dei cristalli (0.28s): crepitio che dirada + 5 ping
+        # ascendenti sempre piu' acuti (il ghiaccio si espande)
+        var c2: int = int(SR * 0.28)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 5.5)
+                var shimmer: float = 0.0
+                for k in 5:
+                        var tk: float = 0.02 + float(k) * 0.045
+                        var dt: float = t - tk
+                        if dt >= 0.0:
+                                var fk: float = 1500.0 + float(k) * 420.0
+                                shimmer += 0.16 * sine_wave(dt * fk) * exp(-dt * 22.0)
+                # crepitio: impulsi sparsi la cui densita' cala nel tempo
+                var rate: float = 900.0 * exp(-t * 8.0) + 90.0
+                if int(t * rate) != int((t - 1.0 / SR) * rate) and t > 0.0:
+                        shimmer += 0.30 * noise_gen()
+                var v: float = shimmer + 0.16 * noise_gen() * exp(-t * 9.0)
+                s.append(2200.0 / 32767.0 * _soft_clip(v * env))
+        # Tonfo della solidificazione (0.18s): battuta grave + ultima
+        # scintilla di brina che si spegne
+        var c3: int = int(SR * 0.18)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 26.0)) * exp(-t * 11.0)
+                var v: float = 0.55 * sine_wave(t * 150.0) \
+                                + 0.25 * sine_wave(t * 300.0) \
+                                + 0.12 * noise_gen() * exp(-t * 14.0)
+                s.append(1700.0 / 32767.0 * _soft_clip(v * env))
         return s
 
 
