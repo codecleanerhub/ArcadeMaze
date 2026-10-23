@@ -255,6 +255,8 @@ var _armor_aura_timer_ms: float = 0.0
 # del personaggio (calcolata una volta per carattere dal frame 0 dello sheet;
 # -1.0 = nessun hue dominante -> solo tinta metallo).
 var _armor_outfit_on: bool = false
+# TASK 51 (P8): true quando sta usando lo sheet XHD CORAZZATO
+var _armored_sheet_on: bool = false
 var _cloth_hue: float = -1.0
 var _cloth_hue_valid: bool = false
 const _CLOTH_HUE_WINDOW: float = 0.09
@@ -273,8 +275,11 @@ func equip_relic_armor(def: Dictionary) -> void:
         energy = max_energy  # cura piena all'equipaggiamento
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
-        # TASK 25: il vestito del player cambia colore (shader armor_outfit)
-        # oltre all'aura procedurale esistente.
+        # TASK 51 (P8): ARMATURA INTEGRATA — swap allo sprite corazzato
+        # (se non gia' attivo); il ricolor vestito resta solo come fallback
+        # per i personaggi senza sheet corazzato.
+        if not _armored_sheet_on:
+                load_character_sprite()
         _apply_armor_outfit_visual()
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
@@ -291,6 +296,9 @@ func restore_relic_armor(saved: Dictionary) -> void:
         energy = max_energy
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
+        # TASK 51 (P8): il carry tra scene ricarica lo sprite corazzato.
+        if not _armored_sheet_on:
+                load_character_sprite()
         # TASK 25: ri-applica l'outfit dopo il carry tra scene.
         _apply_armor_outfit_visual()
 
@@ -416,6 +424,11 @@ func _break_relic_armor() -> void:
         _armor_aura_timer_ms = 0.0
         # TASK 25: il vestito torna al colore originale.
         _revert_armor_outfit_visual()
+        # TASK 51 (P8): l'armatura fisica SPARISCE di dosso — torna allo
+        # sprite normale.
+        if _armored_sheet_on:
+                _armored_sheet_on = false
+                load_character_sprite()
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
 
@@ -739,20 +752,43 @@ func load_character_sprite() -> void:
                 # definizione maggiore. Flag di rollback: GameConstants.SPRITE_XHD_ENABLED.
                 # Con XHD attivo la texture 256px viene disegnata con scala
                 # 1/4 => dimensione A SCHERMO identica (64*1.3=83px).
+                # TASK 51 (P8) — ARMATURA INTEGRATA NELLO SPRITE: se il
+                # player ha un'armatura reliquia equipaggiata e esiste lo
+                # sheet XHD corazzato ({char}_armored_xhd_sheet.png), quello
+                # SOSTITUISCE lo sheet normale (armatura disegnata addosso,
+                # non piu' solo il ricolor vestito del Task 25). Con lo
+                # sprite corazzato i walk/jump dedicati NON si caricano
+                # (il ciclo 4f del main sheet copre il passo; salto =
+                # frame 0 + offset Y) e la tinta vira verso il colore
+                # dell'armatura per mantenere l'identita' del tipo.
                 var xhd_tex: Texture2D = _try_load_xhd_texture(base.get_file())
+                var armored_mode: bool = false
+                if has_relic_armor():
+                        var arm_tex: Texture2D = _try_load_xhd_texture(
+                                        base.get_file() + "_armored")
+                        if arm_tex != null:
+                                xhd_tex = arm_tex
+                                armored_mode = true
                 if xhd_tex != null:
                         _character_sheet_texture = xhd_tex
                         _character_sheet_path = base
                         _frame_px = GameConstants.SPRITE_XHD_FRAME_PX
                         sprite.modulate = tint
+                        if armored_mode:
+                                var acol: Color = armor_relic.get("color", Color.WHITE)
+                                sprite.modulate = tint.lerp(acol, 0.28)
                         sprite.flip_h = false
+                        _armored_sheet_on = armored_mode
                         # Walk/jump dedicati in variante XHD (fallback: null,
-                        # il ciclo walk usa comunque il main sheet).
+                        # il ciclo walk usa comunque il main sheet). In moda'
+                        # corazzato si usano SOLO i frame del main sheet.
                         _walk_sheet_textures.resize(4)
-                        for i in 4:
-                                _walk_sheet_textures[i] = _try_load_xhd_texture(
-                                        "%s_walk%d" % [base.get_file(), i])
-                        _jump_sheet_texture = _try_load_xhd_texture(base.get_file() + "_jump")
+                        if not armored_mode:
+                                for i in 4:
+                                        _walk_sheet_textures[i] = _try_load_xhd_texture(
+                                                        "%s_walk%d" % [base.get_file(), i])
+                        _jump_sheet_texture = null if armored_mode \
+                                        else _try_load_xhd_texture(base.get_file() + "_jump")
                         _apply_character_frame(0)
                         sprite_loaded = true
                         var px_scale: float = 1.3 * (64.0 / float(_frame_px))
@@ -764,8 +800,10 @@ func load_character_sprite() -> void:
                                 CharacterArt.apply_enhancement(sprite, false)
                         # TASK 25: apply_enhancement ha appena sostituito il
                         # materiale: ri-applica l'outfit se c'e' un'armatura.
+                        # TASK 51 (P8): con lo sprite CORAZZATO il ricolor
+                        # vestito e' ridondante (l'armatura e' gia' disegnata).
                         _armor_outfit_on = false
-                        if has_relic_armor():
+                        if has_relic_armor() and not armored_mode:
                                 _apply_armor_outfit_visual()
                         return
                 _frame_px = 64
