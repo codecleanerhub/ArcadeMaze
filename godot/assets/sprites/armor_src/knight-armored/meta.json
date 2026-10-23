@@ -1,0 +1,19 @@
+{
+ "id": "4d944c64-6e03-4881-9653-4f38d0b465ad",
+ "name": "arcade-char_knight-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A full-body depiction of a valorous knight clad in intricate, dark gothic plate armor featuring sharp, spiked pauldrons and deep, etched silver filigree patterns. A vivid crimson red tabard with ornate gold-threaded trim is draped over the chest, secured by a heavy, polished buckle. The knight wears a closed visor helmet topped with a dramatic, flowing crimson plume. A small, round shield is strapped to the side, and a decorative longsword is sheathed at the hip. The armor exhibits high-contrast metallic shading with subtle, cool-toned rim lighting to emphasize the sharp silhouettes and gothic contours. The character stands in a confident, wide-legged combat stance, rendered with crisp, selective outlines and refined highlight placement to ensure readability and dramatic depth.",
+ "created_at": "2026-10-22T19:12:48.512835+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "56d4b735-7a69-4de2-8304-22ab6a3b6abf",
+   "animation_type": "custom-The knight executes a rhythmic"
+  }
+ ]
+}

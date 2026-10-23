@@ -1,0 +1,19 @@
+{
+ "id": "f4a635f1-b0cc-48bf-a84a-68c2b3a4bc07",
+ "name": "arcade-player1-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A full-body depiction of a slender gunslinger hero clad in a fusion of classic Western attire and ornate gothic plate armor. He wears a wide-brimmed brown cowboy hat atop an exposed, resolute face. Over a crisp white shirt and black vest, he dons a polished steel breastplate adorned with intricate, dark engraved filigree, paired with rounded, riveted pauldrons. A vivid crimson cloth tabard with shimmering gold trim drapes across his torso, contrasting with his dark trousers and heavy leather boots. Steel gauntlets and greaves provide protection, while a vintage revolver rests in a worn leather holster at his hip. The figure is rendered with high-contrast shading to accentuate the metallic sheen of the steel, featuring crisp, selective outlines for clarity and subtle rim lighting to define his silhouette against the low top-down perspective.",
+ "created_at": "2026-10-22T17:50:07.311808+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "4cb1cb72-854b-4cbf-8e48-f303983ad02f",
+   "animation_type": "custom-The character executes a confi"
+  }
+ ]
+}

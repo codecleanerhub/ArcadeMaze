@@ -1,0 +1,19 @@
+{
+ "id": "b83cd33c-6343-4d4b-b9e6-977a968d0218",
+ "name": "arcade-char_orc-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A hulking orc brute in a wide, powerful stance, clad in a mix of rugged leather and intricate gothic plate armor. The torso features a polished steel breastplate adorned with delicate, deep-etched filigree, layered over a vibrant crimson tabard with shimmering gold-thread trim. The character wears heavy, riveted pauldrons, articulated steel gauntlets, and matching greaves over a worn leather base. The orc\u2019s skin is a mottled deep green with a yellowish, muscular underbelly visible at the waist. The face displays a heavy, protruding jaw with sharp, small tusks and a determined, stoic expression. Finished with selective dark outlines to define the heavy plate segments against the softer cloth and skin textures, utilizing high-contrast shading to emphasize the metallic sheen of the steel and the depth of the musculature.",
+ "created_at": "2026-10-22T18:40:34.646785+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "1819c70d-f12a-48ea-a38e-bc9c428b191d",
+   "animation_type": "custom-The massive warrior executes a"
+  }
+ ]
+}

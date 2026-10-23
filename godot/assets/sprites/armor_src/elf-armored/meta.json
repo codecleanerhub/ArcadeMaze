@@ -1,0 +1,19 @@
+{
+ "id": "55ac76b7-a493-43db-a5bf-88f9edf00912",
+ "name": "arcade-char_elf-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A full-body, high-detail depiction of a slim elf ranger standing in a heroic, grounded stance. The character wears an intricate layer of dark green hooded cloak over ornate gothic plate armor, featuring a polished steel breastplate adorned with delicate, deep-etched filigree. The armor includes rounded, riveted pauldrons, articulated steel gauntlets, and matching greaves, all layered over a worn brown leather base. A vivid crimson cloth tabard with ornate gold trim is draped across the torso, secured at the waist. A small, elegant recurve bow is strapped to the back. The face is uncovered, displaying sharp, alert features and pointed ears. The composition utilizes high-contrast shading and subtle rim lighting to define the metallic textures of the steel, with selective, crisp dark outlines to ensure clarity, rendered in a 3/4 low top-down perspective.",
+ "created_at": "2026-10-22T18:56:46.910379+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "946dbc74-cdc7-4a9c-95e5-dc401c29d94b",
+   "animation_type": "custom-The character initiates a rhyt"
+  }
+ ]
+}

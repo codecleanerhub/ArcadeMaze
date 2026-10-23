@@ -1,0 +1,19 @@
+{
+ "id": "ceb2e2cc-4377-4de7-9c2b-bac4eaee119c",
+ "name": "arcade-player2-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A full-body depiction of a slender female adventurer in a layered ensemble, featuring a polished steel breastplate adorned with intricate gothic filigree engravings over a white tank top and dark trousers. She wears rounded, riveted steel pauldrons, gauntlets, and greaves, with a vivid crimson tabard edged in ornate gold trim draped over her torso. A small leather satchel is secured at her hip, and sturdy leather boots ground her stance. Her long, flowing blonde hair cascades over her shoulders, framing an alert and brave expression. The armor displays high-contrast metallic shading with subtle rim lighting to emphasize the material texture. Crisp, selective outlines define the silhouette, with fine highlights on the steel surfaces to provide a sharp, readable finish.",
+ "created_at": "2026-10-22T18:05:01.708614+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "4ac89bb4-cedc-43f6-9760-d69c810b6af4",
+   "animation_type": "custom-The character executes a rhyth"
+  }
+ ]
+}
