@@ -42,7 +42,8 @@ func _physics_process(delta: float) -> void:
                         if t > 1.8:
                                 var n: int = boss_room._boss_room_decorations.size()
                                 print("[SHOT-ENV] decorazioni spawnate: ", n,
-                                                " (attese 19)")
+                                                " (attese 17 — TASK 51 P10:\
+ rimosse 2 finestre + 2 inferriate, +2 candelabri)")
                                 _capture("env50_overview")
                                 stage = 1
                                 t = 0.0
