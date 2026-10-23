@@ -230,6 +230,12 @@ var last_pos: Vector2 = Vector2.ZERO
 var flee_mode: bool = false
 var prev_flee_mode: bool = false
 
+# TASK 50 (pergamena del GHIACCIO): nemico CONGELATO dal raggio
+# congelante. Conta come uccisione one-shot (health = 0) ma lo sprite
+# NON viene rimosso: resta sul labirinto, fermo, avvolto in una massa
+# di ghiaccio trasparente fino alla fine del livello.
+var frozen: bool = false
+
 ## TASK 30 (muro di roccia): true mentre il nemico e' imprigionato nella
 ## cella di un muro di roccia CHIUSO (il flag e' rinfrescato ogni frame dal
 ## MazeHazards). Il nemico resta fermo finche' il muro non si riapre; se la
@@ -434,6 +440,11 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                   player_pixel_pos: Vector2,
                                   enemy_projectiles: Array,
                                   delta_ms: float = 16.0) -> void:
+        # TASK 50: nemico congelato — niente AI, niente movimento, niente
+        # spari, niente animazione. Resta una statua di ghiaccio (viva solo
+        # nel rendering) fino alla fine del livello.
+        if frozen:
+                return
         # Tick animation timers using REAL delta_ms (FIX: era fisso 16ms).
         attacking_timer = _tick_ms(attacking_timer, delta_ms)
         dying_timer = _tick_ms(dying_timer, delta_ms)
@@ -782,6 +793,8 @@ func _report_grid_cell(maze: Object, col: int, row: int) -> void:
 func take_damage(dmg: int) -> void:
         if dying_timer > 0:
                 return  # already dying: ignore further damage
+        if frozen:
+                return  # TASK 50: gia' congelato (ucciso): ignora altri danni
         health -= dmg
         if health <= 0:
                 health = 0
@@ -819,6 +832,8 @@ func take_weapon_hit(weapon_type: int, fury: bool = false) -> int:
 ## Ferrata 1s / Martello del Golem 0.5s). Cumulabile al massimo a 1.5s
 ## per evitare stunlock infiniti sui nemici piu' lenti.
 func apply_stun(ms: int) -> void:
+        if frozen:
+                return  # TASK 50: il congelamento prevale sullo stordimento
         stun_timer_ms = mini(stun_timer_ms + ms, 1500)
 
 
@@ -889,14 +904,36 @@ func is_dead() -> bool:
         return health <= 0
 
 
+## TASK 50 (pergamena del GHIACCIO): il nemico e' congelato?
+func is_frozen() -> bool:
+        return frozen
+
+
+## TASK 50: CONGELAMENTO one-shot dal raggio congelante. Il nemico muore
+## (health = 0 -> is_dead() = true: contatore vivi, punti, portale) ma NON
+## gioca l'animazione di morte e NON viene rimosso: resta sul labirinto
+## come statua di ghiaccio trasparente fino alla fine del livello.
+func freeze_kill() -> void:
+        frozen = true
+        health = 0
+        dying_timer = 0
+        burning_timer = 0
+        electrified_timer = 0
+        stun_timer_ms = 0
+        flee_mode = false
+        queue_redraw()
+
+
 func is_dying() -> bool:
         return dying_timer > 0
 
 
 # is_death_anim_done(): true once HP <= 0 AND the death animation has
 # finished (dyingTimer == 0). Game uses this to finally remove the enemy.
+# TASK 50: un nemico CONGELATO non e' MAI "death anim done" — non deve
+# essere rimosso dal pool (lo sprite resta sul labirinto per sempre).
 func is_death_anim_done() -> bool:
-        return health <= 0 and dying_timer == 0
+        return health <= 0 and dying_timer == 0 and not frozen
 
 
 # ===========================================================================
@@ -911,6 +948,8 @@ func is_death_anim_done() -> bool:
 func start_burning(frames: int = 50) -> void:
         if dying_timer > 0 or burning_timer > 0:
                 return
+        if frozen:
+                return  # TASK 50: il ghiaccio prevale sul fuoco (gia' ucciso)
         burning_timer = frames
         burn_anim_time = 0
         burned_flag = true
@@ -940,6 +979,8 @@ func clear_burned_flag() -> void:
 # is applied by Game (the bolt itself).
 # Mirrors Enemy::startElectrified() line 545-548.
 func start_electrified(frames: int = 30) -> void:
+        if frozen:
+                return  # TASK 50: il ghiaccio prevale sull'elettricita'
         electrified_timer = frames
         electrified_anim_time = 0
         # Applica shader lightning (Godot-native, non in C++)
@@ -1195,6 +1236,11 @@ func _draw() -> void:
         # _draw_sprite_frame() handles death/attack/walk/idle animations
         if _sprite_loaded and _sprite_sheet != null:
                 _draw_sprite_frame()
+                # TASK 50: massa di ghiaccio trasparente sopra lo sprite
+                # congelato (il mostro resta visibile in trasparenza).
+                if frozen:
+                        _draw_ice_block()
+                        return
                 # Overlay effects on top of the sprite
                 if is_burning():
                         # Draw fire aura spritesheet if loaded
@@ -1220,6 +1266,10 @@ func _draw() -> void:
                 return
 
         # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
+        # TASK 50: ghiaccio anche sul fallback procedurale.
+        if frozen:
+                _draw_ice_block()
+                return
         # If burning, draw flame overlay
         if is_burning():
                 draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.6))
@@ -1266,6 +1316,49 @@ func _draw() -> void:
                         Vector2(0.0, -18.0),
                 ]), excl_color)
                 draw_circle(Vector2(0.0, -14.0), 2.0, excl_color)
+
+
+## TASK 50 (pergamena del GHIACCIO): massa di ghiaccio trasparente che
+## avvolge il nemico congelato. Il mostro resta VISIBILE in trasparenza:
+## (1) velo azzurro morbido sopra lo sprite, (2) cristallo irregolare a
+## 7 lati semi-trasparente, (3) sfaccettature interne piu' chiare,
+## (4) sparkle bianchi deterministici + glint centrale. La forma e'
+## DETERMINISTICA (LCG seedato sul tipo) perche' _draw() non puo' usare
+## RNG runtime: il blocco deve restare IDENTICO a ogni ridisegno.
+func _draw_ice_block() -> void:
+        # 1) velo ghiacciato morbido sopra lo sprite (il mostro traspare)
+        draw_circle(Vector2.ZERO, 19.0, Color(0.55, 0.8, 1.0, 0.22))
+        draw_circle(Vector2.ZERO, 13.0, Color(0.65, 0.88, 1.0, 0.16))
+        # 2) cristallo irregolare a 7 lati (jitter deterministico da tipo)
+        var seedv: int = (type + 1) * 2654435761
+        var pts := PackedVector2Array()
+        var n_sides: int = 7
+        for i in n_sides:
+                var ang: float = TAU * float(i) / float(n_sides) + 0.35
+                seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                var jitter: float = float((seedv >> 16) % 1000) / 1000.0
+                var rad: float = 20.0 + jitter * 6.0
+                pts.append(Vector2(cos(ang), sin(ang)) * rad)
+        draw_colored_polygon(pts, Color(0.62, 0.85, 1.0, 0.34))
+        # bordo luminoso del cristallo
+        for i in pts.size():
+                var pa: Vector2 = pts[i]
+                var pb: Vector2 = pts[(i + 1) % pts.size()]
+                draw_line(pa, pb, Color(0.85, 0.96, 1.0, 0.75), 1.5)
+        # 3) sfaccettature interne dal centro
+        for i in range(0, pts.size(), 2):
+                draw_line(Vector2.ZERO, pts[i], Color(0.8, 0.93, 1.0, 0.35), 1.0)
+        # 4) sparkle deterministici + glint centrale a croce
+        for _k in 4:
+                seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                var sx: float = float((seedv >> 8) % 32) - 16.0
+                seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                var sy: float = float((seedv >> 8) % 32) - 16.0
+                draw_circle(Vector2(sx, sy), 1.6, Color(0.95, 1.0, 1.0, 0.85))
+        draw_line(Vector2(-3.0, -3.0), Vector2(3.0, 3.0),
+                        Color(1.0, 1.0, 1.0, 0.9), 1.0)
+        draw_line(Vector2(-3.0, 3.0), Vector2(3.0, -3.0),
+                        Color(1.0, 1.0, 1.0, 0.9), 1.0)
 
 
 # Draw the current animation frame from the AI-generated sprite sheet.

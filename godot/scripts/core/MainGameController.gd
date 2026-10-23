@@ -32,6 +32,10 @@ const LightningStrikeFx = preload("res://scripts/entities/LightningStrikeEffect.
 ## TASK 38 — onda di luce che si diffonde per TUTTO il labirinto dopo il
 ## fulmine delle pergamene (esplosione di luce dal punto d'impatto).
 const MazeLightWaveFx = preload("res://scripts/entities/MazeLightWaveEffect.gd")
+
+## TASK 50 — raggio congelante della pergamena del ghiaccio (beam dal
+## player fino al primo muro, con brina e anello di impatto).
+const IceBeamFx = preload("res://scripts/entities/IceBeamEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, tra proiettile-nemico 24.5 e miniboss 35).
 const FF_HIT_RADIUS_SQ: float = 625.0
@@ -143,10 +147,23 @@ var scroll_chasm_phase: int = ScrollPhase.DONE
 var scroll_chasm_timer_ms: float = 0.0
 var scroll_chasm_item: Node2D = null
 var scroll_chasm_beacon: Sprite2D = null
+# TASK 50 — PERGAMENA DEL GHIACCIO: stessa macchina a stati delle altre
+# due (WAIT -> BEACON -> GROUND -> DONE, stesse tempistiche), ma la
+# raccolta EQUIPAGGIA il player: il fuoco spara il raggio congelante
+# (2 colpi). Il beam congela i nemici per TUTTO il livello.
+var scroll_freeze_phase: int = ScrollPhase.DONE
+var scroll_freeze_timer_ms: float = 0.0
+var scroll_freeze_item: Node2D = null
+var scroll_freeze_beacon: Sprite2D = null
 ## TASK 36 — apparizioni gia' consumate in questo livello (per TIPO):
 ## il budget e' PARCHMENT_MAX_SPAWNS (2), ma l'USO e' uno solo.
 var scroll_quake_spawns_used: int = 0
 var scroll_chasm_spawns_used: int = 0
+var scroll_freeze_spawns_used: int = 0
+## TASK 50 — equip della pergamena del ghiaccio: 0 = nessuno, 1 = P1,
+## 2 = P2; colpi rimasti del raggio congelante.
+var freeze_scroll_player: int = 0
+var freeze_charges_left: int = 0
 var _scroll_rng := RandomNumberGenerator.new()
 # FIX (2P): in modalità due giocatori il mini boss immortale NON è uno ma
 # DUE, uno per player, e si differenziano SOLO nel colore: quello che
@@ -1023,6 +1040,11 @@ func _handle_input() -> void:
                                 print("[Dynamite] Joy fire pressed, throwing!")
                                 _throw_dynamite()
                                 player.shoot_cooldown = 300
+                        elif freeze_scroll_player == 1 and freeze_charges_left > 0 \
+                                        and not is_boss_state and player.shoot_cooldown == 0:
+                                # TASK 50: il fuoco spara il RAGGIO
+                                # CONGELANTE (2 colpi, solo nel labirinto).
+                                _fire_freeze_ray(player)
                         elif hammer_player == 1 and hammer_thrown == null:
                                 # FIX (martello di Thor): il fuoco lancia IL
                                 # MARTELLO (fino a 2 volte, poi scompare).
@@ -1062,6 +1084,10 @@ func _handle_input() -> void:
                 if dynamite_equipped and dynamite_player == 1:
                         _throw_dynamite()
                         player.shoot_cooldown = 300
+                elif freeze_scroll_player == 1 and freeze_charges_left > 0 \
+                                and not is_boss_state and player.shoot_cooldown == 0:
+                        # TASK 50: raggio congelante da tastiera (P1).
+                        _fire_freeze_ray(player)
                 elif hammer_player == 1 and hammer_thrown == null:
                         # FIX (martello di Thor): lancio da tastiera (P1).
                         _throw_hammer(player)
@@ -1175,6 +1201,11 @@ func _handle_input() -> void:
                                 if dynamite_equipped and dynamite_player == 2:
                                         _throw_dynamite()
                                         player2.shoot_cooldown = 300
+                                elif freeze_scroll_player == 2 and freeze_charges_left > 0 \
+                                                and not is_boss_state:
+                                        # TASK 50: raggio congelante P2 joystick
+                                        # (l'outer check richiede gia' cooldown 0).
+                                        _fire_freeze_ray(player2)
                                 elif hammer_player == 2 and hammer_thrown == null:
                                         # FIX (martello di Thor): lancio P2 joystick.
                                         _throw_hammer(player2)
@@ -1190,6 +1221,11 @@ func _handle_input() -> void:
                         if dynamite_equipped and dynamite_player == 2:
                                 _throw_dynamite()
                                 player2.shoot_cooldown = 300
+                        elif freeze_scroll_player == 2 and freeze_charges_left > 0 \
+                                        and not is_boss_state:
+                                # TASK 50: raggio congelante P2 tastiera
+                                # (l'outer check richiede gia' cooldown 0).
+                                _fire_freeze_ray(player2)
                         elif hammer_player == 2 and hammer_thrown == null:
                                 # FIX (martello di Thor): lancio P2 tastiera.
                                 _throw_hammer(player2)
@@ -2454,8 +2490,13 @@ func _reset_parchments(level: int) -> void:
         _free_scroll_visuals()
         scroll_quake_phase = ScrollPhase.DONE
         scroll_chasm_phase = ScrollPhase.DONE
+        scroll_freeze_phase = ScrollPhase.DONE
         scroll_quake_spawns_used = 0
         scroll_chasm_spawns_used = 0
+        scroll_freeze_spawns_used = 0
+        # TASK 50: l'equip della pergamena del ghiaccio NON sopravvive al
+        # cambio livello (i colpi non usati sono persi, come il martello).
+        _unequip_freeze_scroll()
         if not C.PARCHMENTS_ENABLED or level < C.PARCHMENT_GRACE_LEVEL:
                 return
         _scroll_rng.seed = hash("scrolls_v1_%d" % level)
@@ -2465,6 +2506,14 @@ func _reset_parchments(level: int) -> void:
         scroll_chasm_phase = ScrollPhase.WAIT
         scroll_chasm_timer_ms = float(_scroll_rng.randi_range(
                 C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS))
+        # TASK 50: la pergamena del ghiaccio usa le STESSE finestre
+        # temporali delle altre due (stesse tempistiche di apparizione).
+        # Il suo draw RNG avviene DOPO quake e chasm: le sequenze dei due
+        # eventi esistenti restano IDENTICHE ai livelli precedenti.
+        if C.SCROLL_FREEZE_ENABLED:
+                scroll_freeze_phase = ScrollPhase.WAIT
+                scroll_freeze_timer_ms = float(_scroll_rng.randi_range(
+                        C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS))
 
 
 ## Libera item a terra e beacon di entrambe le pergamene (fine livello /
@@ -2487,6 +2536,15 @@ func _free_scroll_visuals() -> void:
                 if is_instance_valid(scroll_chasm_beacon):
                         scroll_chasm_beacon.queue_free()
                 scroll_chasm_beacon = null
+        # TASK 50: pulizia difensiva anche della pergamena del ghiaccio.
+        if scroll_freeze_item != null:
+                if is_instance_valid(scroll_freeze_item):
+                        scroll_freeze_item.queue_free()
+                scroll_freeze_item = null
+        if scroll_freeze_beacon != null:
+                if is_instance_valid(scroll_freeze_beacon):
+                        scroll_freeze_beacon.queue_free()
+                scroll_freeze_beacon = null
 
 
 ## Macchina a stati delle due pergamene (WAIT -> BEACON -> GROUND -> DONE).
@@ -2497,6 +2555,7 @@ func _free_scroll_visuals() -> void:
 func _update_parchments(delta_ms: float) -> void:
         _update_one_scroll(delta_ms, true)   # terremoto
         _update_one_scroll(delta_ms, false)  # voragini
+        _update_freeze_scroll(delta_ms)      # TASK 50: ghiaccio
 
 
 func _update_one_scroll(delta_ms: float, is_quake: bool) -> void:
@@ -2718,6 +2777,261 @@ func _consume_scroll_ground(is_quake: bool, collected: bool) -> void:
                 scroll_quake_phase = ScrollPhase.DONE
         else:
                 scroll_chasm_phase = ScrollPhase.DONE
+
+
+# ============================================================================
+# TASK 50 — PERGAMENA DEL GHIACCIO. Copia DIRETTA della macchina a stati
+# delle altre due pergamene (WAIT -> BEACON -> GROUND -> DONE) con le
+# STESSE costanti (PARCHMENT_*): tempistiche di apparizione identiche.
+# Differenze: colore celeste-ghiaccio, kind FREEZE_SCROLL e raccolta che
+# EQUIPAGGIA il player invece di attivare un evento immediato.
+# ============================================================================
+
+func _update_freeze_scroll(delta_ms: float) -> void:
+        match scroll_freeze_phase:
+                ScrollPhase.WAIT:
+                        scroll_freeze_timer_ms -= delta_ms
+                        if scroll_freeze_timer_ms <= 0.0:
+                                # budget apparizioni esaurito?
+                                if scroll_freeze_spawns_used >= C.PARCHMENT_MAX_SPAWNS:
+                                        scroll_freeze_phase = ScrollPhase.DONE
+                                        return
+                                # condizione: almeno il 30% dei nemici vivi
+                                var alive: int = spawner.alive_count()
+                                var total: int = maxi(1, spawner.initial_count)
+                                if float(alive) >= float(total) * C.PARCHMENT_MIN_ALIVE_PCT:
+                                        _start_freeze_beacon()
+                                        return
+                                # troppi morti: riprova piu' tardi
+                                scroll_freeze_timer_ms = float(C.PARCHMENT_RETRY_MS)
+                ScrollPhase.BEACON:
+                        scroll_freeze_timer_ms -= delta_ms
+                        if scroll_freeze_beacon != null \
+                                        and is_instance_valid(scroll_freeze_beacon):
+                                var k: float = 1.0 - scroll_freeze_timer_ms \
+                                                / float(C.PARCHMENT_TELEGRAPH_MS)
+                                var pulse_k: float = 0.75 + 0.25 * sin(
+                                                _time_now() * 16.0)
+                                scroll_freeze_beacon.scale = Vector2.ONE \
+                                                * (0.55 + k * 0.75) * pulse_k
+                                scroll_freeze_beacon.rotation += delta_ms / 900.0
+                        if scroll_freeze_timer_ms <= 0.0:
+                                _spawn_freeze_item()
+                                return
+                ScrollPhase.GROUND:
+                        # il lifetime (16s + 2s blink) vive nel Collectibles;
+                        # qui si vigilano scomparsa (active=false) e validita'.
+                        if scroll_freeze_item == null \
+                                        or not is_instance_valid(scroll_freeze_item) \
+                                        or not scroll_freeze_item.active:
+                                _consume_freeze_ground(false)
+                ScrollPhase.DONE:
+                        pass
+
+
+## Fase BEACON: bagliore/aura CELESTE GHIACCIO sulla cella scelta.
+func _start_freeze_beacon() -> void:
+        var cell := _random_empty_cell()
+        if cell == Vector2i(-1, -1):
+                scroll_freeze_timer_ms = float(C.PARCHMENT_RETRY_MS)
+                return
+        var pos: Vector2 = _cell_to_pixel(cell)
+        var beacon := Sprite2D.new()
+        var tex: Texture2D = load("res://assets/sprites/parchment/beacon_glow.png")
+        if tex != null:
+                beacon.texture = tex
+        beacon.position = pos
+        beacon.scale = Vector2.ONE * 0.55
+        # celeste ghiaccio per la pergamena del congelamento
+        beacon.modulate = Color(0.35, 0.8, 1.0, 0.85)
+        beacon.z_index = 5
+        collectibles_node.add_child(beacon)
+        scroll_freeze_beacon = beacon
+        scroll_freeze_phase = ScrollPhase.BEACON
+        scroll_freeze_timer_ms = float(C.PARCHMENT_TELEGRAPH_MS)
+        scroll_freeze_item = null
+        set_meta("scroll_freeze_cell", cell)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.0, 0.2)
+
+
+## Fase GROUND: il bagliore si spegne, il FULMINE SI ABBATE AL SUOLO
+## (tinta ghiaccio) e la pergamena celeste appare.
+func _spawn_freeze_item() -> void:
+        var cell: Vector2i = get_meta("scroll_freeze_cell", Vector2i(-1, -1))
+        if scroll_freeze_beacon != null and is_instance_valid(scroll_freeze_beacon):
+                scroll_freeze_beacon.queue_free()
+        if cell == Vector2i(-1, -1):
+                cell = _random_empty_cell()
+        if cell == Vector2i(-1, -1):
+                _consume_freeze_ground(false)
+                return
+        var item: Collectibles = _create_collectible(
+                        CollectiblesClass.Kind.FREEZE_SCROLL, _cell_to_pixel(cell))
+        item.scroll_lifetime_ms = float(C.PARCHMENT_VISIBLE_MS + C.PARCHMENT_BLINK_MS)
+        collectibles_node.add_child(item)
+        scroll_freeze_item = item
+        scroll_freeze_beacon = null
+        scroll_freeze_phase = ScrollPhase.GROUND
+        scroll_freeze_spawns_used += 1
+        # FULMINE che si abbatte al suolo, tinto CELESTE GHIACCIO
+        var tint := Color(0.35, 0.8, 1.0)
+        var strike: Node2D = LightningStrikeFx.new()
+        strike.setup(item.position, tint)
+        collectibles_node.add_child(strike)
+        # ONDA DI LUCE che si diffonde dal punto d'impatto (pattern Task 38)
+        var wave: Node2D = MazeLightWaveFx.new()
+        wave.setup(item.position, tint, 900.0)
+        collectibles_node.add_child(wave)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.SCROLL_LIGHTNING)
+        if EffectsManager:
+                EffectsManager.screen_shake(3.0, 0.3)
+
+
+## Fine della fase GROUND (raccolta o scadenza a terra). Se NON raccolta
+## puo' riapparire (max PARCHMENT_MAX_SPAWNS per livello); se RACCOLTA
+## (equipaggiata) l'evento e' chiuso per il resto del livello.
+func _consume_freeze_ground(collected: bool) -> void:
+        if scroll_freeze_item != null and is_instance_valid(scroll_freeze_item):
+                if not collected:
+                        if EffectsManager:
+                                var puff := EffectsManager.spawn_explosion(
+                                                scroll_freeze_item.position,
+                                                Color(0.55, 0.75, 0.9), 8, 0.4)
+                                collectibles_node.add_child(puff)
+                scroll_freeze_item.queue_free()
+        scroll_freeze_item = null
+        scroll_freeze_beacon = null
+        if not collected:
+                if scroll_freeze_spawns_used < C.PARCHMENT_MAX_SPAWNS:
+                        scroll_freeze_phase = ScrollPhase.WAIT
+                        scroll_freeze_timer_ms = float(_scroll_rng.randi_range(
+                                C.PARCHMENT_NEXT_MIN_MS, C.PARCHMENT_NEXT_MAX_MS))
+                        return
+        scroll_freeze_phase = ScrollPhase.DONE
+
+
+## Rimuove l'equip della pergamena del ghiaccio dal player che la tiene
+## (fine colpi, cambio livello, reset difensivo).
+func _unequip_freeze_scroll() -> void:
+        if freeze_scroll_player != 0:
+                var p: CharacterBody2D = player if freeze_scroll_player == 1 else player2
+                if p != null and is_instance_valid(p) \
+                                and p.has_method("set_freeze_scroll_equipped"):
+                        p.set_freeze_scroll_equipped(false)
+        freeze_scroll_player = 0
+        freeze_charges_left = 0
+
+
+## TASK 50 — SPARO DEL RAGGIO CONGELANTE. Hitscan dalla posizione del
+## player lungo la direzione di fuoco: congela TUTTI i nemici la cui
+## distanza dalla traiettoria e' entro SCROLL_FREEZE_HIT_RADIUS_PX (il
+## beam attraversa i nemici e si ferma al primo muro). Ogni nemico
+## congelato = uccisione one-shot (sprite CONGELATO sul posto per tutto
+## il livello). Il mid-boss subisce il 50% degli HP max + stordimento.
+## Consuma UNO dei 2 colpi; a zero colpi la pergamena scompare.
+func _fire_freeze_ray(p: CharacterBody2D) -> void:
+        var shoot_dx: int = p.dx if p.dx != 0 else p.last_dx
+        var shoot_dy: int = p.dy if p.dy != 0 else p.last_dy
+        if shoot_dx == 0 and shoot_dy == 0:
+                shoot_dx = 1  # fallback: spara a destra (come shoot())
+        var dir := Vector2(float(shoot_dx), float(shoot_dy)).normalized()
+        var muzzle: Vector2 = p.get_pixel_pos() + Vector2(0.0, -12.0) \
+                        + dir * 20.0
+
+        # --- Hitscan: cammina lungo il raggio fino al primo muro -----------
+        var max_len: float = float(C.SCROLL_FREEZE_RANGE_CELLS * C.TILE_SIZE)
+        var beam_end: Vector2 = muzzle + dir * max_len
+        var step: float = C.SCROLL_FREEZE_STEP_PX
+        var travelled: float = 0.0
+        while travelled < max_len:
+                travelled += step
+                var probe: Vector2 = muzzle + dir * travelled
+                var col: int = int(probe.x) / C.TILE_SIZE
+                var row: int = int(probe.y - C.UI_HEIGHT) / C.TILE_SIZE
+                if col < 0 or col >= C.MAZE_COLS or row < 0 or row >= C.MAZE_ROWS:
+                        beam_end = probe
+                        break
+                if maze.get_cell_type(col, row) != C.CellType.EMPTY:
+                        beam_end = probe - dir * (step * 0.5)
+                        break
+
+        # --- Congela i nemici colpiti dalla traiettoria ---------------------
+        var hit_r_sq: float = C.SCROLL_FREEZE_HIT_RADIUS_PX * C.SCROLL_FREEZE_HIT_RADIUS_PX
+        var frozen_count: int = 0
+        for enemy in spawner.enemies:
+                if enemy == null or not is_instance_valid(enemy):
+                        continue
+                if enemy.is_dead():
+                        continue
+                # distanza punto-segmento (muzzle -> beam_end)
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                var ap: Vector2 = e_pos - muzzle
+                var ab: Vector2 = beam_end - muzzle
+                var ab_len_sq: float = ab.length_squared()
+                var tproj: float = ap.dot(ab) / ab_len_sq if ab_len_sq > 0.0 else 0.0
+                tproj = clampf(tproj, 0.0, 1.0)
+                var closest: Vector2 = muzzle + ab * tproj
+                if e_pos.distance_squared_to(closest) > hit_r_sq:
+                        continue
+                enemy.freeze_kill()
+                frozen_count += 1
+                p.add_score(C.SCROLL_FREEZE_POINTS)
+                # esplosione di brina + frantumazione ghiaccio sul nemico
+                if EffectsManager:
+                        var burst := EffectsManager.spawn_explosion(
+                                        e_pos, Color(0.55, 0.85, 1.0), 18, 0.5)
+                        collectibles_node.add_child(burst)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.BURST_FROST)
+
+        # --- Mid-boss nella traiettoria: troppo potente per congelare,
+        # subisce il 50% degli HP max + stordimento (come il martello). ---
+        if mini_boss != null and is_instance_valid(mini_boss) \
+                        and not mini_boss.is_dead():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                var ap_mb: Vector2 = mb_pos - muzzle
+                var ab_mb: Vector2 = beam_end - muzzle
+                var tmb: float = ap_mb.dot(ab_mb) / ab_mb.length_squared()
+                tmb = clampf(tmb, 0.0, 1.0)
+                var closest_mb: Vector2 = muzzle + ab_mb * tmb
+                if mb_pos.distance_squared_to(closest_mb) <= hit_r_sq:
+                        var mb_max: int = mini_boss.get_max_health()
+                        var mb_dmg: int = maxi(1, int(round(
+                                        float(mb_max) * C.SCROLL_FREEZE_MINIBOSS_DMG_PCT)))
+                        mini_boss.take_damage(mb_dmg)
+                        if mini_boss.has_method("apply_stun"):
+                                mini_boss.apply_stun(C.SCROLL_FREEZE_MINIBOSS_STUN_MS)
+                        if EffectsManager:
+                                var burst_mb := EffectsManager.spawn_explosion(
+                                                mb_pos, Color(0.55, 0.85, 1.0), 14, 0.45)
+                                collectibles_node.add_child(burst_mb)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.BURST_FROST)
+
+        # --- Visual: raggio congelante + screen flash leggero ---------------
+        var beam: Node2D = IceBeamFx.new()
+        beam.setup(muzzle, beam_end)
+        collectibles_node.add_child(beam)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.5, 0.2)
+
+        # --- Consumo del colpo ----------------------------------------------
+        freeze_charges_left -= 1
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.FREEZE_RAY)
+        p.shoot_cooldown = 300
+        p.shoot_anim_timer = 300
+        var shooter_id: int = freeze_scroll_player
+        if freeze_charges_left <= 0:
+                _unequip_freeze_scroll()
+                print("[Parchment] Player ", shooter_id,
+                                " ha esaurito i colpi del raggio congelante")
+        print("[Parchment] Raggio congelante: ", frozen_count,
+                        " nemici congelati (colpi rimasti: ", freeze_charges_left, ")")
 
 
 ## Cella EMPTY casuale non-tunnel e libera da collectible a terra.
@@ -3371,6 +3685,28 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 collectibles_node.add_child(burst_c)
                         print("[Parchment] Player ", player_id,
                                         " ha letto la pergamena delle voragini")
+                CollectiblesClass.Kind.FREEZE_SCROLL:
+                        # TASK 50 (pergamena del GHIACCIO): il player la
+                        # EQUIPAGGIA — il tasto di fuoco spara il raggio
+                        # congelante (2 colpi, poi la pergamena scompare).
+                        # Congela i nemici per TUTTO il livello: conta come
+                        # uccisione one-shot ma lo sprite resta sul
+                        # labirinto, congelato nel ghiaccio trasparente.
+                        item.active = false
+                        _consume_freeze_ground(true)
+                        freeze_scroll_player = player_id
+                        freeze_charges_left = C.SCROLL_FREEZE_CHARGES
+                        p.set_freeze_scroll_equipped(true)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+                                AudioManager.play_sound(AudioManager.SoundType.BURST_FROST)
+                        if EffectsManager:
+                                var burst_f := EffectsManager.spawn_pickup_burst(
+                                        p.get_pixel_pos(), Color(0.35, 0.8, 1.0))
+                                collectibles_node.add_child(burst_f)
+                        print("[Parchment] Player ", player_id,
+                                        " ha equipaggiato la pergamena del ghiaccio (",
+                                        C.SCROLL_FREEZE_CHARGES, " colpi)")
 
 
 # ============================================================================
@@ -3691,6 +4027,10 @@ func _build_session_snapshot() -> Dictionary:
         # --- Martello ---
         if hammer_player != 0:
                 snap["hammer"] = {"player": hammer_player, "uses_left": hammer_uses_left}
+        # --- TASK 50: pergamena del ghiaccio equipaggiata ---
+        if freeze_scroll_player != 0:
+                snap["freeze_scroll"] = {"player": freeze_scroll_player,
+                                "charges_left": freeze_charges_left}
         # --- Dinamite (se in mano senza essere scoppiata) ---
         snap["dynamite_equipped"] = dynamite_equipped
         snap["dynamite_player"] = dynamite_player
@@ -3852,6 +4192,17 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 hammer_uses_left = int(hammer_snap.get("uses_left", 0))
         player.set_hammer_equipped(hammer_player == 1 and hammer_uses_left > 0)
         player2.set_hammer_equipped(hammer_player == 2 and hammer_uses_left > 0)
+        # --- TASK 50: pergamena del ghiaccio in spalla al player giusto ---
+        var freeze_snap: Dictionary = snap.get("freeze_scroll", {})
+        freeze_scroll_player = 0
+        freeze_charges_left = 0
+        if not freeze_snap.is_empty():
+                freeze_scroll_player = int(freeze_snap.get("player", 1))
+                freeze_charges_left = int(freeze_snap.get("charges_left", 0))
+        player.set_freeze_scroll_equipped(
+                        freeze_scroll_player == 1 and freeze_charges_left > 0)
+        player2.set_freeze_scroll_equipped(
+                        freeze_scroll_player == 2 and freeze_charges_left > 0)
         # --- Dinamite equipaggiata (senza miccia evoluta: riparte da 7s) ---
         dynamite_equipped = bool(snap.get("dynamite_equipped", false))
         dynamite_fuse_timer_ms = int(snap.get("dynamite_fuse_ms", 7000)) \

@@ -1057,6 +1057,7 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                 _update_sprite()
                 # FIX (martello di Thor): sync dello sprite in mano.
                 _update_hammer_sprite()
+                _update_freeze_scroll_sprite()
                 queue_redraw()
                 return
         ghost_timer_ms = _tick_timer_ms(ghost_timer_ms, delta_ms)
@@ -1228,6 +1229,7 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         # FIX (martello di Thor): sync dello sprite in mano (posizione/lato
         # rispetto al facing del player + bagliore elettrico).
         _update_hammer_sprite()
+        _update_freeze_scroll_sprite()
         # Trigger redraw so projectiles/aura/muzzle flash update visually.
         queue_redraw()
 
@@ -2103,6 +2105,65 @@ static var _hammer_tex: Texture2D = null
 # del parent resterebbe coperto dal corpo: i child Node2D renderizzano dopo
 # il canvas del parent).
 var _hammer_sprite: Sprite2D = null
+
+# TASK 50 (pergamena del GHIACCIO): pergamena equipaggiata — fluttua sopra
+# la spalla del player con bagliore ghiacciato finché ha colpi disponibili.
+var _freeze_scroll_equipped: bool = false
+static var _freeze_scroll_tex: Texture2D = null
+var _freeze_scroll_sprite: Sprite2D = null
+
+
+func set_freeze_scroll_equipped(equipped: bool) -> void:
+        _freeze_scroll_equipped = equipped
+        _ensure_freeze_scroll_sprite()
+        if _freeze_scroll_sprite != null and is_instance_valid(_freeze_scroll_sprite):
+                _freeze_scroll_sprite.visible = equipped
+
+
+func is_freeze_scroll_equipped() -> bool:
+        return _freeze_scroll_equipped
+
+
+# Crea (una volta sola) lo Sprite2D della pergamena del ghiaccio.
+func _ensure_freeze_scroll_sprite() -> void:
+        if _freeze_scroll_sprite != null and is_instance_valid(_freeze_scroll_sprite):
+                return
+        if _freeze_scroll_tex == null:
+                var abs_path: String = ProjectSettings.globalize_path(
+                                "res://assets/sprites/parchment/freeze_scroll.png")
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                _freeze_scroll_tex = ImageTexture.create_from_image(img)
+        if _freeze_scroll_tex == null:
+                return  # senza PNG niente pergamena in spalla
+        _freeze_scroll_sprite = Sprite2D.new()
+        _freeze_scroll_sprite.name = "FreezeScrollSprite"
+        _freeze_scroll_sprite.texture = _freeze_scroll_tex
+        _freeze_scroll_sprite.scale = Vector2(0.28, 0.28)  # ~36px
+        _freeze_scroll_sprite.centered = true
+        _freeze_scroll_sprite.visible = false
+        add_child(_freeze_scroll_sprite)
+
+
+# Aggiorna posizione/rotazione/aura della pergamena del ghiaccio: fluttua
+# sopra la spalla con bob sinusoide e pulsazione ciano-ghiaccio.
+func _update_freeze_scroll_sprite() -> void:
+        if _freeze_scroll_sprite == null or not is_instance_valid(_freeze_scroll_sprite):
+                return
+        if not _freeze_scroll_equipped:
+                _freeze_scroll_sprite.visible = false
+                return
+        var x_sign: float = 1.0 if last_dx >= 0 else -1.0
+        _freeze_scroll_sprite.visible = true
+        var bob: float = sin(float(anim_time) * 0.005) * 3.0
+        _freeze_scroll_sprite.position = Vector2(
+                        16.0 * x_sign, -26.0 + bob - jump_offset)
+        _freeze_scroll_sprite.rotation = x_sign * deg_to_rad(12.0) \
+                        + 0.06 * sin(float(anim_time) * 0.003)
+        var glow: float = 0.5 + 0.5 * sin(float(anim_time) * 0.007)
+        _freeze_scroll_sprite.modulate = Color(1.0, 1.0, 1.0).lerp(
+                        Color(0.45, 0.85, 1.0), 0.18 + 0.30 * glow)
 
 
 func set_hammer_equipped(equipped: bool) -> void:

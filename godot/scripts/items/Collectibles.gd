@@ -53,6 +53,14 @@ enum Kind {
                          # i nemici che vi cadono sopra vengono uccisi, il player e'
                          # immune. 3 ontate da 4s con riposizionamento (12s totali).
                          # Stesse meccaniche di apparizione della pergamena terremoto.
+        FREEZE_SCROLL,    # TASK 50 (pergamena del GHIACCIO): alla raccolta il
+                         # player la EQUIPAGGIA — il tasto di fuoco spara un
+                         # RAGGIO CONGELANTE (2 colpi). I nemici colpiti dal
+                         # beam vengono congelati per tutto il livello: conta
+                         # come uccisione one-shot ma lo sprite resta sul
+                         # labirinto, fermo, dentro un blocco di ghiaccio
+                         # trasparente che lascia vedere il mostro. Stesse
+                         # meccaniche di apparizione delle altre pergamene.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -171,6 +179,11 @@ func _apply_kind_defaults() -> void:
                 Kind.CHASM_SCROLL:
                         pulse = 0.0
                         bob_offset = 0.0
+                Kind.FREEZE_SCROLL:
+                        pulse = 0.0
+                        bob_offset = 0.0
+                        # NB: come le altre pergamene, scroll_lifetime_ms e'
+                        # impostato dal controller PRIMA dell'add_child.
 
 
 # =========================================================
@@ -212,6 +225,8 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                 Kind.QUAKE_SCROLL:
                         _update_scroll_lifetime(delta_ms)
                 Kind.CHASM_SCROLL:
+                        _update_scroll_lifetime(delta_ms)
+                Kind.FREEZE_SCROLL:
                         _update_scroll_lifetime(delta_ms)
 
         # FIX (calice non raccoglibile): RIMOSSA la self-collision a 16px.
@@ -379,6 +394,9 @@ func _draw() -> void:
                 Kind.CHASM_SCROLL: _draw_parchment(
                                 "res://assets/sprites/parchment/chasm_scroll.png",
                                 Color(0.7, 0.45, 1.0))
+                Kind.FREEZE_SCROLL: _draw_parchment(
+                                "res://assets/sprites/parchment/freeze_scroll.png",
+                                Color(0.35, 0.8, 1.0))
 
 
 func _draw_mine() -> void:

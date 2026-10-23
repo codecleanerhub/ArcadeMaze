@@ -125,12 +125,17 @@ enum SoundType {
         WEAKNESS_HIT,
         BURST_FROST,
         BURST_LIGHTNING,
-        BURST_POISON
+        BURST_POISON,
+        # TASK 50 (pergamena del GHIACCIO): FREEZE_RAY = sparo del raggio
+        #   congelante — sweep discendente cristallino (il freddo "cala")
+        #   con soffio di brina e coda di ghiaccio che si solidifica
+        #   (~0.5s). L'impatto su ogni nemico riusa BURST_FROST.
+        FREEZE_RAY
 }
 # NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
 # dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
-# 46 voci storiche (0..45) + 8 del Task 39 = 54 (0..53).
-const SOUND_TYPE_COUNT: int = 54
+# 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 = 55 (0..54).
+const SOUND_TYPE_COUNT: int = 55
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -585,6 +590,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.BURST_FROST:     s = _sfx_burst_frost()
                 SoundType.BURST_LIGHTNING: s = _sfx_burst_lightning()
                 SoundType.BURST_POISON:    s = _sfx_burst_poison()
+                SoundType.FREEZE_RAY:      s = _sfx_freeze_ray()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1369,6 +1375,48 @@ func _sfx_burst_poison() -> PackedFloat32Array:
                                                 * sin(PI * dt / 0.09)
                 var v: float = gurgle + 0.22 * noise_gen() * exp(-t * 6.0)
                 s.append(1600.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+
+# --- FREEZE_RAY (~0.5s) TASK 50: sparo del raggio congelante — sweep
+# discendente cristallino (il freddo "cade"), soffio di brina e coda di
+# ghiaccio che si solidifica.
+func _sfx_freeze_ray() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Zap congelante discendente (0.14s): 2300 -> 750 Hz
+        var c1: int = int(SR * 0.14)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 16.0)
+                var f: float = 2300.0 - 1550.0 * (t / 0.14)
+                var v: float = sine_wave(t * f) * 0.7 \
+                                + 0.25 * pulse_wave(t * f * 2.0, 0.3)
+                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+        # Soffio di brina + shimmer cristallino (0.20s)
+        var c2: int = int(SR * 0.20)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 9.0)
+                var shimmer: float = 0.0
+                # 4 ping di ghiaccio a scalare, sempre piu' gravi
+                for k in 4:
+                        var tk: float = 0.015 + float(k) * 0.042
+                        var dt: float = t - tk
+                        if dt >= 0.0:
+                                var fk: float = 2900.0 - float(k) * 500.0
+                                shimmer += 0.20 * sine_wave(dt * fk) * exp(-dt * 30.0)
+                var v: float = shimmer + 0.30 * noise_gen() * exp(-t * 12.0)
+                s.append(1900.0 / 32767.0 * _soft_clip(v * env))
+        # Solidificazione (0.16s): tonfo freddo + micro-crepak del ghiaccio
+        var c3: int = int(SR * 0.16)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 20.0)) * exp(-t * 10.0)
+                var crackle: float = 0.0
+                if int(i % int(SR * 0.031)) < 3:
+                        crackle = noise_gen() * 0.5
+                var v: float = 0.5 * sine_wave(t * 190.0) + crackle
+                s.append(1500.0 / 32767.0 * _soft_clip(v * env))
         return s
 
 

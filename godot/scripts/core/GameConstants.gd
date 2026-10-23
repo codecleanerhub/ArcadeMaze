@@ -1199,6 +1199,45 @@ const SCROLL_CHASM_MIN_GAP: int = 5
 const SCROLL_CHASM_FADE_MS: int = 350
 const SCROLL_CHASM_KILL_POINTS: int = 5000
 
+## TASK 50 (pergamena del GHIACCIO): raccolta = il player la EQUIPAGGIA.
+## Il tasto di fuoco spara un RAGGIO CONGELANTE (2 colpi): congela i
+## nemici colpiti dal beam per TUTTO il livello — conta come uccisione
+## one-shot (punti + contatore vivi) ma lo sprite NON scompare: resta
+## sul labirinto, fermo, dentro una massa di ghiaccio trasparente che
+## lascia vedere il mostro. Il mid-boss e' troppo potente per essere
+## congelato: il raggio gli infligge il 50% degli HP max (come il
+## martello). Nella boss room il raggio non si puo' usare (l'evento e'
+## una meccanica del labirinto). Stesse tempistiche di apparizione
+## delle altre pergamene (beacon -> fulmine -> 16s a terra + 2s blink,
+## max 2 apparizioni per livello se non raccolta).
+## Rollback: GameConstants.SCROLL_FREEZE_ENABLED = false.
+static var SCROLL_FREEZE_ENABLED: bool = true
+
+## Colpi del raggio congelante per raccolta.
+const SCROLL_FREEZE_CHARGES: int = 2
+
+## Punti per ogni nemico congelato (come le altre pergamene evento).
+const SCROLL_FREEZE_POINTS: int = 5000
+
+## Gittata massima del raggio (in celle del labirinto). Il beam si
+## ferma al primo muro incontrato.
+const SCROLL_FREEZE_RANGE_CELLS: int = 9
+
+## Raggio di colpibilita' del beam attorno alla sua traiettoria (px):
+## un nemico e' colpito se la traiettoria passa entro questa distanza
+## dal suo centro (leggermente piu' larga del raggio di collisione
+## nemico-player per un feel generoso).
+const SCROLL_FREEZE_HIT_RADIUS_PX: float = 20.0
+
+## Passo di campionamento della traiettoria hitscan (px).
+const SCROLL_FREEZE_STEP_PX: float = 4.0
+
+## Danno del raggio al MID-BOSS (frazione HP max, come il martello).
+const SCROLL_FREEZE_MINIBOSS_DMG_PCT: float = 0.5
+
+## Stordimento del mid-boss quando il raggio lo colpisce (ms).
+const SCROLL_FREEZE_MINIBOSS_STUN_MS: int = 1000
+
 
 # ============================================================================
 # RELIC (Task 21): i TYPE delle 12 armi reliquia (6 mischia + 6 distanza)
