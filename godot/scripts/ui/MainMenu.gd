@@ -304,6 +304,9 @@ func _process(delta: float) -> void:
                         lbl.modulate = Color(1.0, 1.0, 1.0, 1.0)
         # Pulse the title (very subtle gold shimmer).
         if _title_label:
+                # TASK 51 (P5): il titolo ORO testuale resta solo nel
+                # sottomenu OPTIONS; nel menu principale c'e' il LOGO sangue.
+                _title_label.visible = _in_options
                 _title_label.modulate = Color(
                         1.0, 1.0, 1.0, 0.92 + 0.08 * sin(_menu_time * 2.0))
         # Hint text gentle fade.
@@ -339,7 +342,10 @@ func _recenter_menu_panel() -> void:
 
 func _draw() -> void:
         # Ornament line + central diamond (gold).
-        var orn_y: float = 220.0
+        # TASK 51 (P5): con il logo sangue (menu principale) l'ornamento
+        # scende sotto le gocce animate; in OPTIONS torna al posto storico.
+        var logo_mode: bool = _gothic_node != null and not _in_options
+        var orn_y: float = 262.0 if logo_mode else 220.0
         var orn_gold: Color = Color(0.784, 0.627, 0.196)
         # Center diamond
         var cx: float = size.x / 2.0
@@ -634,6 +640,10 @@ func _build_ui() -> void:
         # disegna sopra sfondo e pannello (vedi draw_selection_flame).
         _flame_node = _make_flame_node()
         add_child(_flame_node)
+        # TASK 51 (P5): nodo gotico (logo sangue + gocce animate + pipistrelli)
+        # DOPO la fiamma: la schermata principale deve essere d'impatto.
+        _gothic_node = _make_gothic_node()
+        add_child(_gothic_node)
 
 
 # ----------------------------------------------------------------------------
@@ -651,6 +661,207 @@ func _make_flame_node() -> Node2D:
         fn.owner_menu = self
         fn.name = "SelectionFlame"
         return fn
+
+
+# ----------------------------------------------------------------------------
+# TASK 51 (P5) — SCHERMATA INIZIALE GOTICA: logo "ARCADE MAZE" rosso
+# sangue PixelLab + GOCCE ANIMATE (character blood-drop: si formano, si
+# allungano, si staccano e cadono con splash) + STORMO DI PIPISTRELLI
+# (character menu-bat, volo a 6 frame). Nodo dedicato aggiunto per ULTIMO
+# (dopo la fiamma): disegna sopra sfondo e pannello.
+# ----------------------------------------------------------------------------
+var _gothic_node: Node2D = null
+
+
+class GothicDrawer extends Node2D:
+        var owner_menu: CanvasItem = null
+        var logo: Texture2D = null
+        var drops: Array[Texture2D] = []
+        var bats: Array[Texture2D] = []
+        var t: float = 0.0
+        # ciclo goccia (s): FORMA -> SI ALLUNGA -> CADUTA -> SPLASH
+        const DROP_CYCLE: float = 3.4
+        const DROP_LEAD: Array[float] = [0.0, 0.9, 1.9, 2.7, 0.5]
+        const DROP_ANCHOR_X: Array[float] = [0.10, 0.29, 0.47, 0.68, 0.88]
+        const DROP_H: float = 46.0
+        const DROP_W: float = 28.0
+        const FALL_TRAVEL: float = 170.0
+        # stormo: [speed, y, scala, fase, dir]
+        const BAT_PARAMS := [
+                [88.0, 88.0, 0.44, 0.0, 1.0],
+                [58.0, 208.0, 0.30, 1.3, -1.0],
+                [108.0, 148.0, 0.52, 2.1, 1.0],
+                [46.0, 286.0, 0.26, 0.7, -1.0],
+                [72.0, 56.0, 0.36, 3.4, 1.0],
+                [98.0, 244.0, 0.40, 1.8, -1.0],
+        ]
+
+        func _process(delta: float) -> void:
+                t += delta
+                queue_redraw()
+
+        func _draw() -> void:
+                if owner_menu == null:
+                        return
+                # Solo menu principale (in OPTIONS resta il titolo testuale)
+                var in_options: bool = bool(owner_menu.get("_in_options"))
+                if in_options or logo == null:
+                        return
+                var vp: Vector2 = owner_menu.size
+                if vp.x < 2.0 or vp.y < 2.0:
+                        return
+                # --- LOGO sangue (ARCADE MAZE, pixflux 2 parole) ---
+                var lw: float = minf(660.0, vp.x * 0.42)
+                var lh: float = lw * float(logo.get_height()) / maxf(logo.get_width(), 1.0)
+                var lx: float = vp.x * 0.5 - lw * 0.5
+                var ly: float = 30.0
+                # alone rosso cupo dietro il logo (pulsazione lenta)
+                var glow_a: float = 0.10 + 0.05 * sin(t * 1.7)
+                draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
+                                maxf(lw, lh) * 0.62, Color(0.42, 0.04, 0.05, glow_a))
+                draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
+                                maxf(lw, lh) * 0.42, Color(0.50, 0.05, 0.05, glow_a * 1.4))
+                # logo con shimmer sottile (mai blink: deve restare leggibile)
+                draw_texture_rect(logo, Rect2(lx, ly, lw, lh), false,
+                                Color(1.0, 1.0, 1.0, 0.93 + 0.07 * sin(t * 1.9)))
+                # --- GOCCE ANIMATE sotto le lettere ---
+                if drops.size() >= 6:
+                        var anchor_y: float = ly + lh - 7.0
+                        for i in DROP_ANCHOR_X.size():
+                                _draw_title_drop(
+                                                lx + lw * DROP_ANCHOR_X[i],
+                                                anchor_y, DROP_LEAD[i])
+                # --- STORMO DI PIPISTRELLI ---
+                if bats.size() >= 6:
+                        _draw_bat_flock(vp)
+
+        ## Goccia appesa: FORMA -> SI ALLUNGA -> SI STACCA E CADE -> SPLASH.
+        ## (Versione TITOLO: a differenza della loading, qui la goccia CADE
+        ## — "gocce animate in movimento" — con caduta accelerata e piccolo
+        ## splash che svanisce.)
+        func _draw_title_drop(dx: float, attach_y: float, lead: float) -> void:
+                var phase: float = fposmod(t + lead, DROP_CYCLE)
+                var t01: float = phase / DROP_CYCLE
+                var n: int = drops.size()
+                # frame ping-pong 0..5..0
+                var fposv: float = pingpong(t01 * float(n * 2 - 2), float(n - 1))
+                var i0: int = clampi(int(fposv), 0, n - 1)
+                if t01 < 0.34:
+                        # FORMA
+                        var k: float = t01 / 0.34
+                        var s: float = 0.22 + 0.78 * (1.0 - pow(1.0 - k, 2.2))
+                        var a: float = clampf(t01 / 0.05, 0.0, 1.0)
+                        draw_texture_rect(drops[i0],
+                                        Rect2(dx - DROP_W * s * 0.5, attach_y,
+                                                        DROP_W * s, DROP_H * s),
+                                        false, Color(1, 1, 1, a))
+                elif t01 < 0.60:
+                        # SI ALLUNGA (stretch verticale, top ancorato)
+                        var k: float = (t01 - 0.34) / 0.26
+                        var st: float = 1.0 + 0.38 * sin(k * PI * 0.5)
+                        var sw: float = 1.0 - 0.10 * k
+                        draw_texture_rect(drops[i0],
+                                        Rect2(dx - DROP_W * sw * 0.5, attach_y,
+                                                        DROP_W * sw, DROP_H * st),
+                                        false, Color(1, 1, 1, 1.0))
+                elif t01 < 0.78:
+                        # SI STACCA E CADE: residuo che si asciuga + goccia
+                        # in caduta accelerata
+                        var k: float = (t01 - 0.60) / 0.18
+                        # residuo all'ancora
+                        var rs: float = 1.0 - 0.55 * k
+                        draw_texture_rect(drops[0],
+                                        Rect2(dx - DROP_W * 0.28 * rs, attach_y,
+                                                        DROP_W * 0.56 * rs, DROP_H * 0.40 * rs),
+                                        false, Color(1, 1, 1, 0.75 * (1.0 - k)))
+                        # goccia che cade (frame piu' allungato, squash)
+                        var prog: float = k * k
+                        var fy: float = attach_y + 14.0 + FALL_TRAVEL * prog
+                        var fsq: float = 1.0 + 0.22 * prog
+                        draw_texture_rect(drops[n - 1],
+                                        Rect2(dx - DROP_W * 0.36, fy - DROP_H * 0.30 * fsq,
+                                                        DROP_W * 0.72, DROP_H * 0.60 * fsq),
+                                        false, Color(1, 1, 1, 1.0 - 0.15 * k))
+                else:
+                        # SPLASH: 3 cerchi rossi che si aprono e svaniscono
+                        var k: float = (t01 - 0.78) / 0.22
+                        var sy: float = attach_y + 14.0 + FALL_TRAVEL
+                        var blood: Color = Color(0.58, 0.06, 0.05)
+                        var fade: float = 1.0 - k
+                        draw_circle(Vector2(dx, sy), 3.0 + 13.0 * k,
+                                        Color(blood.r, blood.g, blood.b, 0.35 * fade))
+                        draw_circle(Vector2(dx, sy), 2.0 + 8.0 * k,
+                                        Color(blood.r, blood.g, blood.b, 0.50 * fade))
+                        draw_circle(Vector2(dx, sy), 1.2 + 4.0 * k,
+                                        Color(0.75, 0.12, 0.10, 0.65 * fade))
+                        # puntino bagnato che resta all'ancora
+                        draw_circle(Vector2(dx, attach_y + 1.0), 2.2,
+                                        Color(0.45, 0.05, 0.04, 0.5))
+
+        ## Stormo: 6 pipistrelli con velocita'/quota/scala/fase/direzione
+        ## deterministiche. Attraversano lo schermo in banda alta (sopra il
+        ## pannello menu), avvolti quando escono.
+        func _draw_bat_flock(vp: Vector2) -> void:
+                for bp in BAT_PARAMS:
+                        var speed: float = bp[0]
+                        var by0: float = bp[1]
+                        var scale: float = bp[2]
+                        var phase: float = bp[3]
+                        var dir: float = bp[4]
+                        # posizione orizzontale ciclica (wrapping)
+                        var span: float = vp.x + 320.0
+                        var x: float = fposmod(t * speed + phase * 137.0, span) - 160.0
+                        # bob verticale organico
+                        var by: float = by0 + sin(t * 1.7 + phase * 2.3) * 14.0 \
+                                        + sin(t * 3.1 + phase) * 5.0
+                        # frame di volo (battito ~10 fps, sfasato per bat)
+                        var f: int = int((t * 10.0 + phase * 4.0)) % 6
+                        var bw: float = 256.0 * scale
+                        var bh: float = 256.0 * scale
+                        if dir < 0.0:
+                                # specchia attorno al centro (pivot mirror)
+                                draw_set_transform(Vector2(x, by), 0.0,
+                                                Vector2(-1.0, 1.0))
+                                draw_texture_rect(bats[f],
+                                                Rect2(-bw * 0.5, -bh * 0.5, bw, bh),
+                                                false, Color(0.82, 0.78, 0.9, 0.92))
+                                draw_set_transform(Vector2.ZERO)
+                        else:
+                                draw_texture_rect(bats[f],
+                                                Rect2(x - bw * 0.5, by - bh * 0.5, bw, bh),
+                                                false, Color(0.82, 0.78, 0.9, 0.92))
+
+
+func _make_gothic_node() -> Node2D:
+        var gn := GothicDrawer.new()
+        gn.owner_menu = self
+        gn.name = "GothicTitle"
+        # logo sangue (pixflux ARCADE + MAZE composti)
+        gn.logo = _load_menu_png("res://assets/ui/title_logo.png")
+        # gocce blood-drop PixelLab (stessi frame della loading screen)
+        for i in 6:
+                var dt: Texture2D = _load_menu_png(
+                                "res://assets/loading/drop_pl_%d.png" % i)
+                if dt != null:
+                        gn.drops.append(dt)
+        # pipistrelli del menu
+        for i in 6:
+                var bt: Texture2D = _load_menu_png(
+                                "res://assets/ui/bat_fly_%d.png" % i)
+                if bt != null:
+                        gn.bats.append(bt)
+        return gn
+
+
+## Caricamento PNG diretto (pattern Collectibles: Image.load, niente .import)
+func _load_menu_png(path: String) -> Texture2D:
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img: Image = Image.new()
+        if img.load(abs_path) != OK:
+                return null
+        return ImageTexture.create_from_image(img)
 
 
 # Builds a gold-outlined stylebox for highlighting the selected character slot.
