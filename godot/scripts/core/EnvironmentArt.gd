@@ -149,12 +149,29 @@ func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
         if _texture_cache.has(key):
                 return _texture_cache[key]
         var tex: Texture2D = null
+        # TASK 51 (P7): RIDISEGNO ARMI PixelLab — PNG in sprites/weapons/
+        # ha la precedenza; il disegno procedurale resta come fallback
+        # (rollback: cancellare i PNG).
+        var wpn_name: String = ""
         match weapon_type:
-                0: tex = _make_weapon_pistol()
-                1: tex = _make_weapon_shotgun()
-                2: tex = _make_weapon_rocket()
-                3: tex = _make_weapon_laser()
-                _: tex = _make_weapon_pistol()
+                0: wpn_name = "pistol"
+                1: wpn_name = "shotgun"
+                2: wpn_name = "rocket"
+                3: wpn_name = "laser"
+        if wpn_name != "":
+                var wpath: String = "res://assets/sprites/weapons/weapon_%s.png" % wpn_name
+                var wabs: String = ProjectSettings.globalize_path(wpath)
+                if FileAccess.file_exists(wabs):
+                        var wimg := Image.new()
+                        if wimg.load(wabs) == OK:
+                                tex = ImageTexture.create_from_image(wimg)
+        if tex == null:
+                match weapon_type:
+                        0: tex = _make_weapon_pistol()
+                        1: tex = _make_weapon_shotgun()
+                        2: tex = _make_weapon_rocket()
+                        3: tex = _make_weapon_laser()
+                        _: tex = _make_weapon_pistol()
         _texture_cache[key] = tex
         return tex
 

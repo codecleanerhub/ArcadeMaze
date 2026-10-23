@@ -2890,6 +2890,38 @@ func _draw_equipped_weapon() -> void:
         # Offset aggiuntivo per sporgere dal corpo
         var x_off: float = 22.0
 
+        # TASK 51 (P7): RIDISEGNO ARMI — sprite PixelLab in mano (stessi
+        # PNG dei pickup, cache condivisa in EnvironmentArt). Il pivot e'
+        # il GRIP dell'arma (~22% dalla coda); specchiata col facing.
+        # Fallback procedurale sotto se il PNG manca.
+        var wtex: Texture2D = null
+        if EnvironmentArt:
+                wtex = EnvironmentArt.get_weapon_pickup_texture(
+                                int(current_weapon.type))
+        if wtex != null and int(current_weapon.type) <= 3:
+                var src_w: float = wtex.get_width()
+                var src_h: float = wtex.get_height()
+                var disp_len: float = 58.0
+                match current_weapon.type:
+                        WeaponType.PISTOL: disp_len = 42.0
+                        WeaponType.SHOTGUN: disp_len = 66.0
+                        WeaponType.ROCKET: disp_len = 58.0
+                        WeaponType.LASER: disp_len = 56.0
+                var disp_h: float = disp_len * src_h / maxf(src_w, 1.0)
+                if facing_right:
+                        draw_set_transform(Vector2(x_off, y), 0.0, Vector2.ONE)
+                        draw_texture_rect(wtex,
+                                        Rect2(-disp_len * 0.20, -disp_h * 0.5,
+                                                        disp_len, disp_h), false)
+                else:
+                        draw_set_transform(Vector2(-x_off, y), 0.0,
+                                        Vector2(-1.0, 1.0))
+                        draw_texture_rect(wtex,
+                                        Rect2(-disp_len * 0.20, -disp_h * 0.5,
+                                                        disp_len, disp_h), false)
+                draw_set_transform(Vector2.ZERO)
+                return
+
         match current_weapon.type:
                 WeaponType.PISTOL:
                         # FIX (pistol troppo piccolo): ingrandito del 50% per
