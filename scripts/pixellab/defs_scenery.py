@@ -8,6 +8,42 @@ Nuovi file sheet (i vecchi PNG statici restano come fallback):
 from __future__ import annotations
 
 ENTITIES: dict = {
+    # ---------------- pergamene evento (Task 55) ----------------
+    # Rigenerate pixel-art: sono le UNICHE pergamene smooth legacy rimaste;
+    # usate sia come pickup nel labirinto sia come icona card bonus.
+    "quake_scroll": {
+        "kind": "static",
+        "target": "parchment/quake_scroll.png",
+        "size": (128, 128),
+        "description": (
+            "ancient parchment scroll rolled and sealed with red wax, cracked stone "
+            "tablet symbol of earthquake carved on it, brown aged paper, side view, "
+            "centered, fantasy pixel art pickup, readable silhouette, transparent "
+            "background"
+        ),
+    },
+    "chasm_scroll": {
+        "kind": "static",
+        "target": "parchment/chasm_scroll.png",
+        "size": (128, 128),
+        "description": (
+            "ancient parchment scroll rolled with purple magical seal, dark void "
+            "portal symbol painted on it, brown aged paper, side view, centered, "
+            "fantasy pixel art pickup, readable silhouette, transparent background"
+        ),
+    },
+    "freeze_scroll": {
+        "kind": "static",
+        "target": "parchment/freeze_scroll.png",
+        "size": (128, 128),
+        "description": (
+            "ancient parchment scroll rolled with icy blue crystal seal, snowflake "
+            "and ice shard symbol painted on it, brown aged paper, side view, "
+            "centered, fantasy pixel art pickup, readable silhouette, transparent "
+            "background"
+        ),
+    },
+    # ---------------- animati Task 54 ----------------
     "maze_torch": {
         "kind": "anim",
         "target": "env/torch_sheet.png",

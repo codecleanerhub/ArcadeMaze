@@ -355,10 +355,51 @@ func _draw_diamond(ci: Control, c: Vector2, r: float, col: Color) -> void:
 
 
 # ============================================================================
-# ICONE procedurali (fantasy stilizzate, ~72px, centrate in c)
+# ICONE — TASK 55: PNG PixelLab-first (item rigenerati Task 53 + pergamene
+# Task 55), con pulse "respirato". Fallback: disegno procedurale Task 51d.
 # ============================================================================
+## Mapping kind -> PNG dell'item PixelLab (coerenza col pickup a terra).
+const ICON_PNG_BY_KIND: Dictionary = {
+        Collectibles.Kind.HAMMER: "res://assets/sprites/collectibles/item_hammer.png",
+        Collectibles.Kind.DYNAMITE: "res://assets/sprites/collectibles/item_dynamite.png",
+        Collectibles.Kind.SCEPTER: "res://assets/sprites/collectibles/item_scepter.png",
+        Collectibles.Kind.SPEED_BOOTS: "res://assets/sprites/collectibles/item_speedboots.png",
+        Collectibles.Kind.POTION: "res://assets/sprites/collectibles/item_potion.png",
+        Collectibles.Kind.MINE: "res://assets/sprites/collectibles/item_mine.png",
+        Collectibles.Kind.CHALICE: "res://assets/sprites/collectibles/item_chalice.png",
+        Collectibles.Kind.KNIGHT_STATUE: "res://assets/sprites/collectibles/item_knight_statue.png",
+        Collectibles.Kind.QUAKE_SCROLL: "res://assets/sprites/parchment/quake_scroll.png",
+        Collectibles.Kind.CHASM_SCROLL: "res://assets/sprites/parchment/chasm_scroll.png",
+        Collectibles.Kind.FREEZE_SCROLL: "res://assets/sprites/parchment/freeze_scroll.png",
+}
+
+static var _icon_tex_cache: Dictionary = {}
+
+static func _icon_texture(kind: int) -> Texture2D:
+        if _icon_tex_cache.has(kind):
+                return _icon_tex_cache[kind]
+        var tex: Texture2D = null
+        var path: String = ICON_PNG_BY_KIND.get(kind, "")
+        if not path.is_empty():
+                var abs_path: String = ProjectSettings.globalize_path(path)
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                tex = ImageTexture.create_from_image(img)
+        _icon_tex_cache[kind] = tex
+        return tex
+
+
 func _draw_icon(ci: Control, c: Vector2) -> void:
         var t := _t
+        # --- TASK 55: PNG PixelLab con pulse respirato (fallback proc sotto) ---
+        var png_tex: Texture2D = _icon_texture(bonus_kind)
+        if png_tex != null:
+                var breathe: float = 1.0 + sin(t * 2.2) * 0.05
+                var w: float = 104.0 * breathe
+                ci.draw_texture_rect(png_tex,
+                        Rect2(c - Vector2(w * 0.5, w * 0.5), Vector2(w, w)), false)
+                return
         match bonus_kind:
                 Collectibles.Kind.HAMMER:
                         # Mjolnir: manico + testa squadrata + scintille
