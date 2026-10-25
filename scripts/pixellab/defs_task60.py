@@ -145,4 +145,36 @@ ENTITIES: dict = {
             "game projectile, readable silhouette, transparent background"
         ),
     },
+    # ---------------- 60c — overlay stati nemici (D) ------------------------
+    # Simmetrici a effect_fireaura (PNG): blocco di ghiaccio per i nemici
+    # congelati + archetti elettrici per i folgorati.
+    # PIVOT iceblock: animate-v3 ha fallito la QA 2 volte (cubetto troppo
+    # statico, diff 0.2-1.8%) — integrato STATICo dalla base gia' pagata
+    # (integrate_iceblock_static.py -> effect_iceblock.png) con animazione
+    # procedurale in codice (sparkles/pulsazione, pattern ibrido Task 57).
+    # L'entry anim e' stata RIMOSSA per non ripagare 5 generazioni.
+    # La semitrasparenza del ghiaccio e' applicata in codice (modulate),
+    # il PNG e' un cristallo pieno perche' l'alpha graduato in
+    # generazione e' inaffidabile.
+    # Nomi: la convenzione SpriteManager e' {id}_sheet.png a root sprites.
+    "effect_shockarc": {
+        "kind": "anim",
+        "target": "effect_shockarc_sheet.png",
+        "description": (
+            "ring of four jagged cyan lightning bolts arcing around an "
+            "invisible creature, electric arcs with bright yellow white "
+            "cores forming a circular crown, front view, centered, fantasy "
+            "pixel art status effect overlay, readable silhouette, "
+            "transparent background"
+        ),
+        "action": (
+            "lightning bolts flickering and jumping, arcs jitter and swap "
+            "positions around the ring, circle shape stable and centered, "
+            "no color drift, no camera movement"
+        ),
+        "frame_count": 4,
+        "frame_px": 64,
+        "feet_y": 58,
+        "anchor": (32, 58),
+    },
 }

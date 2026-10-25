@@ -254,6 +254,14 @@ var _faces_left_native: bool = false
 var _sprite_loaded: bool = false
 var _sprite_id: String = ""
 var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
+var _shock_effect_sheet: Object = null  # TASK 60c: Sheet archetti folgorati
+
+# TASK 60c — texture statica del blocco di ghiaccio PixelLab (cristallo
+# pieno; la semitrasparenza e' applicata in codice col modulate). Cache
+# statica condivisa tra tutti i nemici: caricata UNA volta, null se il
+# PNG manca (rollback = cancellare effect_iceblock.png).
+static var _ice_tex: Texture2D = null
+static var _ice_tex_checked: bool = false
 
 # --- DeformableSprite (replaces the 4-frame cycle that produced the
 #     "disjointed gif" effect with HD sheets) ---
@@ -378,6 +386,10 @@ func _load_sprite() -> void:
         _burn_effect_sheet = null
         if SpriteManager:
                 _burn_effect_sheet = SpriteManager.get_sheet("effect_fireaura")
+        # TASK 60c — sheet archetti elettrici (stesso pattern del fireaura)
+        _shock_effect_sheet = null
+        if SpriteManager:
+                _shock_effect_sheet = SpriteManager.get_sheet("effect_shockarc")
 
         # Apply CharacterArt enhancement shader — DISABILITATO per performance.
         # Lo shader character_enhanced è costoso su GPU entry-level (NVIDIA 940M)
@@ -1352,11 +1364,7 @@ func _draw() -> void:
                                 draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.5))
                                 draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.7))
                 if is_electrified():
-                        for i in range(4):
-                                var angle: float = i * PI / 2.0 + anim_time * 0.1
-                                var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
-                                var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
-                                draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+                        _draw_shock_overlay()
                 # FIX (barra HP rimossa): la barra HP non viene più disegnata
                 # sopra i nemici. Le info del nemico colpito vengono mostrate
                 # nell'HUD in alto (last hit enemy name + energy bar).
@@ -1374,11 +1382,7 @@ func _draw() -> void:
 
         # If electrified, draw electric arcs
         if is_electrified():
-                for i in range(4):
-                        var angle: float = i * PI / 2.0 + anim_time * 0.1
-                        var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
-                        var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
-                        draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+                _draw_shock_overlay()
 
         # Draw enemy body (procedural fallback based on type)
         var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
@@ -1415,14 +1419,75 @@ func _draw() -> void:
                 draw_circle(Vector2(0.0, -14.0), 2.0, excl_color)
 
 
+# TASK 60c — overlay FOLGORATO PNG-first: sheet effect_shockarc (4 frame,
+# jitter 10 fps come il fireaura) se caricato; altrimenti archetti
+# procedurali 1:1 col C++.
+func _draw_shock_overlay() -> void:
+        if _shock_effect_sheet != null and _shock_effect_sheet.is_loaded():
+                # anim_time e' in MILLISECONDI: 10 frame/s, pari al fireaura
+                var f: int = int(anim_time * 0.01) % 4
+                var at: AtlasTexture = _shock_effect_sheet.get_frame_texture("idle", f)
+                if at != null:
+                        draw_texture_rect(at, Rect2(-26, -26, 52, 52), false)
+                        return
+        # fallback procedurale (archetti rotanti, 1:1 col C++)
+        for i in range(4):
+                var angle: float = i * PI / 2.0 + anim_time * 0.1
+                var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
+                var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
+                draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+
+
+# TASK 60c — texture del cristallo di ghiaccio PixelLab (statica, cache
+# condivisa). Null se il PNG manca -> fallback procedurale completo.
+static func _get_ice_texture() -> Texture2D:
+        if not _ice_tex_checked:
+                _ice_tex_checked = true
+                var abs_p := ProjectSettings.globalize_path(
+                                "res://assets/sprites/effect_iceblock.png")
+                if FileAccess.file_exists(abs_p):
+                        var img := Image.new()
+                        if img.load(abs_p) == OK:
+                                _ice_tex = ImageTexture.create_from_image(img)
+        return _ice_tex
+
+
 ## TASK 50 (pergamena del GHIACCIO): massa di ghiaccio trasparente che
-## avvolge il nemico congelato. Il mostro resta VISIBILE in trasparenza:
-## (1) velo azzurro morbido sopra lo sprite, (2) cristallo irregolare a
-## 7 lati semi-trasparente, (3) sfaccettature interne piu' chiare,
-## (4) sparkle bianchi deterministici + glint centrale. La forma e'
-## DETERMINISTICA (LCG seedato sul tipo) perche' _draw() non puo' usare
-## RNG runtime: il blocco deve restare IDENTICO a ogni ridisegno.
+## avvolge il nemico congelato. Il mostro resta VISIBILE in trasparenza.
+## TASK 60c — IBRIDO PNG-first (pattern Task 57): (1) cristallo PixelLab
+## statico con modulate alpha, (2) sparkles procedurali animati + glint,
+## (3) fallback procedurale originale 7-lati se il PNG manca (determini-
+## stico, LCG seedato sul tipo, perche' _draw() non puo' usare RNG).
 func _draw_ice_block() -> void:
+        var ice_tex: Texture2D = _get_ice_texture()
+        if ice_tex != null:
+                # velo morbido che blenda lo sprite col cristallo
+                draw_circle(Vector2.ZERO, 19.0, Color(0.55, 0.8, 1.0, 0.22))
+                # cristallo con pulsazione lieve (anim_time in ms); modulate
+                # 0.45: compromesso tra "blocco di ghiaccio" leggibile e
+                # mostro che traspare (il procedurale era a alpha 0.34+veli)
+                var pulse := 1.0 + 0.03 * sin(anim_time * 0.004)
+                var sz := 52.0 * pulse
+                draw_texture_rect(ice_tex,
+                                Rect2(-sz * 0.5, -sz * 0.5, sz, sz),
+                                false, Color(1.0, 1.0, 1.0, 0.45))
+                # sparkles deterministici che twinkleano (ruotano col tipo)
+                var seedv: int = (type + 1) * 2654435761
+                for _k in 4:
+                        seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                        var sx: float = float((seedv >> 8) % 32) - 16.0
+                        seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                        var sy: float = float((seedv >> 8) % 32) - 16.0
+                        var tw: float = 0.6 + 0.4 * sin(anim_time * 0.007 + float(_k) * 1.7)
+                        draw_circle(Vector2(sx, sy), 1.6,
+                                        Color(0.95, 1.0, 1.0, 0.85 * tw))
+                # glint centrale a croce
+                draw_line(Vector2(-3.0, -3.0), Vector2(3.0, 3.0),
+                                Color(1.0, 1.0, 1.0, 0.9), 1.0)
+                draw_line(Vector2(-3.0, 3.0), Vector2(3.0, -3.0),
+                                Color(1.0, 1.0, 1.0, 0.9), 1.0)
+                return
+        # ---- fallback procedurale (originale) ----
         # 1) velo ghiacciato morbido sopra lo sprite (il mostro traspare)
         draw_circle(Vector2.ZERO, 19.0, Color(0.55, 0.8, 1.0, 0.22))
         draw_circle(Vector2.ZERO, 13.0, Color(0.65, 0.88, 1.0, 0.16))
