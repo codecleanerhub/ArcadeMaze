@@ -144,13 +144,27 @@ def dominant_hues(img: Image.Image, top: int = 5) -> list[float]:
 
 def check_chromatic_fidelity(gen: Image.Image, ref: Image.Image,
                              tol_hue: float = 40.0, min_match: float = 0.34) -> list[str]:
-    """Almeno 1/3 degli hue dominanti del generato deve stare vicino al reference."""
+    """Almeno 1/3 degli hue dominanti del generato deve stare vicino al reference.
+
+    ECCEZIONE monocromia: se il generato non ha hue saturi ma anche il
+    reference è prevalentemente neutro (item scuri tipo mina di ferro),
+    il check passa — l'assenza di hue È la fedeltà cromatica giusta."""
     ref_hues = dominant_hues(ref)
     if not ref_hues:
-        return []
+        return []  # reference già neutro: niente da matchare
     gen_hues = dominant_hues(gen, top=8)
     if not gen_hues:
-        return ["nessun hue saturo nel generato"]
+        # il generato è monocromo: passa SOLO se il reference è per lo più neutro
+        rgba = ref.convert("RGBA")
+        counts: dict[tuple[int, int, int], int] = {}
+        for p in rgba.getdata():
+            if p[3] > 128:
+                counts[(p[0], p[1], p[2])] = counts.get((p[0], p[1], p[2]), 0) + 1
+        top_cols = sorted(counts.items(), key=lambda kv: -kv[1])[:15]
+        neutral = sum(1 for (r, g, b), _ in top_cols if max(r, g, b) - min(r, g, b) < 26)
+        if neutral >= len(top_cols) // 2:
+            return []  # reference prevalentemente neutro: monocromia corretta
+        return ["nessun hue saturo nel generato ma reference colorato"]
     matched = 0
     for gh in gen_hues:
         for rh in ref_hues:

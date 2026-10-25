@@ -1,0 +1,5 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/treasure_chest/base.png",
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/treasures/treasure_chest.png"
+}

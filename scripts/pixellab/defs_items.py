@@ -86,6 +86,9 @@ ENTITIES: dict = {
         "kind": "static",
         "target": "collectibles/item_scepter.png",
         "size": (128, 128),
+        # oggetto intrinsecamente sottile (asta): bbox 73% del canvas ma
+        # coverage 7.3% — soglia abbassata (verificato VLM 3/3)
+        "coverage": (5.0, 60.0),
         "description": (
             "royal magic scepter, golden rod with glowing blue orb on top and small wings, "
             "vertical diagonal, centered, fantasy pixel art item pickup, readable "
