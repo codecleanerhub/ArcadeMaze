@@ -186,6 +186,21 @@ func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
                                 # uniformi per tutte le armi a terra.
                                 tex = ImageTexture.create_from_image(
                                                 _normalize_weapon_content(wimg))
+        # TASK 61 — ARMI ELEMENTALI/reliquie a terra: PNG relics/{id}.png
+        # (asse/lancia/lama/vampire esistono gia'; i PNG mancanti del set
+        # nuovo arrivano col Task 61c; fallback = quadrato colorato in
+        # Maze._render_weapon_cell). Normalizzazione 75% come le altre.
+        if tex == null and weapon_type > 100:
+                var rdef: Dictionary = GameConstants.get_relic_def(weapon_type)
+                if not rdef.is_empty():
+                        var rid: String = str(rdef.get("id", ""))
+                        var rpath: String = "res://assets/sprites/relics/%s.png" % rid
+                        var rabs: String = ProjectSettings.globalize_path(rpath)
+                        if FileAccess.file_exists(rabs):
+                                var rimg := Image.new()
+                                if rimg.load(rabs) == OK:
+                                        tex = ImageTexture.create_from_image(
+                                                        _normalize_weapon_content(rimg))
         if tex == null:
                 match weapon_type:
                         0: tex = _finalize(_normalize_weapon_content(_make_weapon_pistol()))

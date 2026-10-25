@@ -605,6 +605,9 @@ func _spawn_torch_lights() -> void:
 # GENERATION  (port of Maze::generate)
 # ============================================================================
 ## Regenerate the maze for `lvl`. Mirrors Maze::generate(level) line-by-line.
+var affinity_char_types: Array = []  ## TASK 61: archetipi dei player; selettore pool armi nel labirinto
+
+
 func generate(lvl: int = 1) -> void:
         level = lvl
         _init_grid()
@@ -716,7 +719,10 @@ func generate(lvl: int = 1) -> void:
                         continue
                 if _is_far_enough(cell, placed_items, _MIN_DIST_WEAPON):
                         _set_cell_type(cell.x, cell.y, C.CellType.WEAPON)
-                        _set_cell_weapon(cell.x, cell.y, C.make_random_weapon())
+                        # TASK 61 — le armi nel labirinto seguono l'affinita'
+                        # degli archetipi dei player (umani -> armi da fuoco,
+                        # non-umani -> elementali del proprio pool).
+                        _set_cell_weapon(cell.x, cell.y, C.make_random_weapon(affinity_char_types))
                         placed_items.append(cell)
                         weapons_placed += 1
 

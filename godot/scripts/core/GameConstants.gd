@@ -753,10 +753,56 @@ static func make_weapon(type: int) -> Dictionary:
                         return {"type": WeaponType.PISTOL, "power": 1, "ammo": 20}
 
 
-## Returns a random weapon Dictionary.
-static func make_random_weapon() -> Dictionary:
-        var t: int = randi() % 4
-        return make_weapon(t)
+## TASK 61 — Arma casuale coerente con gli archetipi dei player attivi.
+## `char_types`: elenco dei CharacterType dei player della partita.
+## - Umani soli   -> armi da fuoco classiche (comportamento storico)
+## - Non-umani    -> pool elementale dell'archetipo (unione se misti)
+## - Squadra mista (umano + non-umano) -> UNIONE armi da fuoco + elementali
+## - Nessun char_type (default) -> comportamento legacy identico a prima
+static func make_random_weapon(char_types: Array = []) -> Dictionary:
+        var has_firearm: bool = false
+        var elemental_ids: Array = []
+        for ct in char_types:
+                var pool: Array = AFFINITY_POOLS.get(int(ct), [])
+                if pool.is_empty() or pool.has("@firearm"):
+                        has_firearm = true
+                else:
+                        for wid in pool:
+                                if not elemental_ids.has(wid):
+                                        elemental_ids.append(wid)
+        # Niente char o solo umani: legacy puro (4 armi da fuoco uniformi).
+        if elemental_ids.is_empty():
+                var t: int = randi() % 4
+                return make_weapon(t)
+        # Solo non-umani: pool elementale puro.
+        if not has_firearm:
+                var wid2: String = elemental_ids[randi() % elemental_ids.size()]
+                var def: Dictionary = get_elemental_by_id(wid2)
+                if def.is_empty():
+                        # id di una reliquia storica (arco/balestra/...)
+                        for rd in RELIC_RANGED:
+                                if str(rd.get("id", "")) == wid2:
+                                        def = rd
+                                        break
+                var wd: Dictionary = make_relic_weapon(def)
+                wd["ground"] = true  # TASK 61: arma TROVATA nel labirinto
+                return wd
+        # Misto: metà e metà (i due tipi convivano nel labirinto, ma le
+        # armi dell'archetipo sbagliato restano la minoranza: chi le
+        # raccoglie subisce la penalita' -50% di weapon_damage_for).
+        if randi() % 2 == 0:
+                var t2: int = randi() % 4
+                return make_weapon(t2)
+        var wid3: String = elemental_ids[randi() % elemental_ids.size()]
+        var def3: Dictionary = get_elemental_by_id(wid3)
+        if def3.is_empty():
+                for rd in RELIC_RANGED:
+                        if str(rd.get("id", "")) == wid3:
+                                def3 = rd
+                                break
+        var wd3: Dictionary = make_relic_weapon(def3)
+        wd3["ground"] = true  # TASK 61: arma TROVATA nel labirinto
+        return wd3
 
 
 ## TASK 26 — munizioni minime garantite dalla boss room (regola d'ingresso
@@ -1342,6 +1388,20 @@ enum RelicType {
         ALCHEMIST_BOMBS = 112, ## Bombe dell'Alchimista
         # --- SPECIALE ---
         REFLECT_BOLT = 113,    ## Proiettile riflesso dalle Scaglie del Drago
+        # --- ELEMENTALI Task 61 (armi trovate nel labirinto dai non-umani) ---
+        THROWING_SWORD = 114,      ## Spade Lanciate (CAVALIERE)
+        THROWING_AXE = 115,        ## Ascia da Lancio (CAVALIERE/ORC)
+        HALBERD_THROW = 116,       ## Alabarda Turbinio (CAVALIERE)
+        FIRE_STAFF = 117,          ## Bastone Lancia-Fuoco (MAGO, brucia)
+        ICE_LANCE = 118,           ## Lancia-Ghiaccio (MAGO, congela)
+        ICE_ARROW = 119,           ## Freccia di Ghiaccio (ELFO, congela)
+        THROWN_BOULDER = 120,      ## Masso da Lancio (GOLEM)
+        GOLEM_HAMMER_THROW = 121,  ## Martello del Golem Lanciato (GOLEM)
+        BLOOD_DART = 122,          ## Dardo Sanguigno (VAMPIRO)
+        FLAME_EMBER = 123,         ## Fiammella Rapida (DRAGO, brucia)
+        FIREBALL_RED = 124,        ## Palla di Fuoco Rossa (DRAGO, brucia)
+        FLAME_BLUE = 125,          ## Fiamma Blu (DRAGO, congela)
+        FIRE_MAELSTROM = 126,      ## Cataclisma di Fiamme (DRAGO, AoE+brucia)
 }
 
 ## Colpi necessari a uccidere un nemico, per tipo di arma equipaggiata.
@@ -1368,6 +1428,22 @@ const WEAPON_HITS_TO_KILL: Dictionary = {
         RelicType.ALCHEMIST_BOMBS: 2,
         # --- Proiettile riflesso dalle Scaglie del Drago (113) ---
         RelicType.REFLECT_BOLT: 2,
+        # --- ELEMENTALI Task 61 (114..126): scala specchiata sulle umane
+        #     (4/4/3/3/2/2) — "danni diversi ma distribuiti come quelle
+        #     dell'uomo/donna" (richiesta utente). ---
+        RelicType.THROWING_SWORD: 4,
+        RelicType.THROWING_AXE: 3,
+        RelicType.HALBERD_THROW: 2,
+        RelicType.FIRE_STAFF: 3,
+        RelicType.ICE_LANCE: 2,
+        RelicType.ICE_ARROW: 3,
+        RelicType.THROWN_BOULDER: 3,
+        RelicType.GOLEM_HAMMER_THROW: 2,
+        RelicType.BLOOD_DART: 3,
+        RelicType.FLAME_EMBER: 4,
+        RelicType.FIREBALL_RED: 3,
+        RelicType.FLAME_BLUE: 3,
+        RelicType.FIRE_MAELSTROM: 2,
 }
 
 
@@ -1379,10 +1455,17 @@ const WEAPON_HITS_TO_KILL: Dictionary = {
 ## l'arma colpisce come se avesse 1 hit-to-kill in MENO (floor 2: la regola
 ## "nessuna arma one-shot" resta sacra anche potenziata).
 static func weapon_damage_for(weapon_type: int, target_max_health: int,
-                fury: bool = false) -> int:
+                fury: bool = false, char_type: int = -1) -> int:
         var hits: int = int(WEAPON_HITS_TO_KILL.get(weapon_type, 4))
         if fury:
                 hits = maxi(2, hits - 1)
+        # TASK 61 — penalita' affinita' (squadre miste): chi usa un'arma
+        # TROVATA nel labirinto fuori dal proprio archetipo colpisce a
+        # meta' danno (= hits-to-kill raddoppiati). Le reliquie dello
+        # schermo bonus restano libere (scelta consapevole del player).
+        if char_type >= 0 \
+                        and not weapon_in_affinity(weapon_type, char_type):
+                hits *= 2
         if hits < 2:
                 hits = 2  # sicurezza: mai one-shot per costruzione
         var dmg: int = int(ceil(float(target_max_health) / float(hits)))
@@ -1630,6 +1713,209 @@ const RELIC_RANGED: Array[Dictionary] = [
         },
 ]
 
+# ============================================================================
+# TASK 61 — ARMI ELEMENTALI per archetipo (design: ARMI_ELEMENTALI_TASK61.md)
+# ============================================================================
+# Armi che i personaggi NON-UMANI trovano nel labirinto AL POSTO delle armi
+# da fuoco. Scala specchiata sulle umane: hits-to-kill 4/3/2 e munizioni
+# 20/26/11/6 ("danni diversi ma distribuiti come quelle dell'uomo/donna").
+#
+# Flag elementali sul colpo di grazia (il colpo che ucciderebbe comunque):
+#   burn_ms > 0  -> il nemico si INFUOCA e muore (start_burning, meccanica
+#                   esistente: aura fuoco Task 21/dinamite)
+#   freeze true  -> il nemico si CONGELA in statua e muore (freeze_kill,
+#                   meccanica Task 50 del raggio congelante)
+#
+# Queste armi NON entrano nello schermo bonus (lista separata dalle 18
+# reliquie storiche): si trovano SOLO nelle celle del labirinto, secondo
+# l'affinita' dell'archetipo del player (AFFINITY_POOLS qui sotto).
+# ============================================================================
+const ELEMENTAL_WEAPONS: Array[Dictionary] = [
+        # ---------------- CAVALIERE (spade e asce da lancio) --------------
+        {
+                "id": "throwing_sword", "type": RelicType.THROWING_SWORD, "family": "distanza",
+                "name": "Spade Lanciate", "short": "SPADE",
+                "name_en": "Throwing Swords", "short_en": "SWORDS",
+                "color": Color(0.85, 0.90, 1.00), "power": 1, "hits": 4,
+                "shots": 20, "fire_cd": 140,
+                "desc": "Spade d'acciaio roteanti: rapide e leggere.",
+                "desc_en": "Spinning steel swords: quick and light.",
+        },
+        {
+                "id": "throwing_axe", "type": RelicType.THROWING_AXE, "family": "distanza",
+                "name": "Ascia da Lancio", "short": "ASCIA",
+                "name_en": "Throwing Axe", "short_en": "AXE",
+                "color": Color(0.75, 0.55, 0.30), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 170,
+                "desc": "Ascia da guerra che rotea lacerando l'aria.",
+                "desc_en": "War axe spinning through the air.",
+        },
+        {
+                "id": "halberd_throw", "type": RelicType.HALBERD_THROW, "family": "distanza",
+                "name": "Alabarda Turbinio", "short": "ALABARDA",
+                "name_en": "Whirlwind Halberd", "short_en": "HALBERD",
+                "color": Color(0.60, 0.70, 0.80), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 260,
+                "desc": "L'alabarda della guardia reale, scagliata in tuffo.",
+                "desc_en": "The royal guard's halberd, hurled headfirst.",
+        },
+        # ---------------- MAGO (bastoni, palle di magia, ghiaccio) --------
+        {
+                "id": "fire_staff", "type": RelicType.FIRE_STAFF, "family": "distanza",
+                "name": "Bastone Lancia-Fuoco", "short": "B. FUOCO",
+                "name_en": "Fire Staff", "short_en": "FIRE STAFF",
+                "color": Color(1.00, 0.50, 0.15), "power": 2, "hits": 3,
+                "shots": 26, "fire_cd": 150, "burn_ms": 30,
+                "desc": "Dardi di fiamma: il colpo finale incendia il nemico.",
+                "desc_en": "Flame darts: the killing blow sets enemies ablaze.",
+        },
+        {
+                "id": "ice_lance", "type": RelicType.ICE_LANCE, "family": "distanza",
+                "name": "Lancia-Ghiaccio", "short": "L. GHIACCIO",
+                "name_en": "Ice Lance", "short_en": "ICE LANCE",
+                "color": Color(0.55, 0.85, 1.00), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 240, "freeze": true,
+                "desc": "Lancia di ghiaccio eterno: il colpo finale congela.",
+                "desc_en": "Everfrost lance: the killing blow freezes solid.",
+        },
+        # ---------------- ELFO (archi e ghiaccio silvano) -----------------
+        {
+                "id": "ice_arrow", "type": RelicType.ICE_ARROW, "family": "distanza",
+                "name": "Freccia di Ghiaccio", "short": "F. GHIACCIO",
+                "name_en": "Ice Arrow", "short_en": "ICE ARROW",
+                "color": Color(0.70, 0.95, 1.00), "power": 2, "hits": 3,
+                "shots": 26, "fire_cd": 150, "freeze": true,
+                "desc": "Frecce di brina: il colpo finale pietrifica nel gelo.",
+                "desc_en": "Rime arrows: the killing blow freezes to ice.",
+        },
+        # ---------------- GOLEM (massi e martelli) -------------------------
+        {
+                "id": "thrown_boulder", "type": RelicType.THROWN_BOULDER, "family": "distanza",
+                "name": "Masso da Lancio", "short": "MASSO",
+                "name_en": "Thrown Boulder", "short_en": "BOULDER",
+                "color": Color(0.55, 0.45, 0.30), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 200,
+                "desc": "Un macigno scagliato: colpisce e respinge.",
+                "desc_en": "A hurled boulder: crushes and knocks back.",
+        },
+        {
+                "id": "golem_hammer_throw", "type": RelicType.GOLEM_HAMMER_THROW, "family": "distanza",
+                "name": "Martello del Golem", "short": "MARTELLO",
+                "name_en": "Golem Hammer", "short_en": "HAMMER",
+                "color": Color(0.60, 0.60, 0.65), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 270,
+                "desc": "Il martello di pietra scagliato: devastante.",
+                "desc_en": "The stone hammer, hurled: devastating.",
+        },
+        # ---------------- VAMPIRO (lame e sangue) --------------------------
+        {
+                "id": "blood_dart", "type": RelicType.BLOOD_DART, "family": "distanza",
+                "name": "Dardo Sanguigno", "short": "DARDO",
+                "name_en": "Blood Dart", "short_en": "BLOOD DART",
+                "color": Color(0.85, 0.10, 0.20), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 160, "homing": true,
+                "desc": "Dardo di sangue che insegue la preda.",
+                "desc_en": "A blood dart that hunts its prey.",
+        },
+        # ---------------- DRAGO (palle di fuoco: spec utente) --------------
+        # Fiammella piccola rapida / palla rossa media / fiamma blu
+        # congelante / cataclisma AoE: "palle di fuoco di diverso tipo e
+        # dimensioni, fuoco rosso, fuoco blu, i nemici si infuocano o si
+        # congelano e muoiono".
+        {
+                "id": "flame_ember", "type": RelicType.FLAME_EMBER, "family": "distanza",
+                "name": "Fiammella Rapida", "short": "FIAMMELLA",
+                "name_en": "Quick Ember", "short_en": "EMBER",
+                "color": Color(1.00, 0.65, 0.20), "power": 1, "hits": 4,
+                "shots": 20, "fire_cd": 90, "burn_ms": 30,
+                "desc": "Getti rapidi di fiamma: il colpo finale incendia.",
+                "desc_en": "Rapid flame jets: the killing blow ignites.",
+        },
+        {
+                "id": "fireball_red", "type": RelicType.FIREBALL_RED, "family": "distanza",
+                "name": "Palla di Fuoco Rossa", "short": "F. ROSSA",
+                "name_en": "Red Fireball", "short_en": "FIREBALL",
+                "color": Color(1.00, 0.40, 0.10), "power": 2, "hits": 3,
+                "shots": 26, "fire_cd": 150, "burn_ms": 30,
+                "desc": "Sfera incandescente: il colpo finale incendia il nemico.",
+                "desc_en": "Burning sphere: the killing blow sets enemies ablaze.",
+        },
+        {
+                "id": "flame_blue", "type": RelicType.FLAME_BLUE, "family": "distanza",
+                "name": "Fiamma Blu", "short": "F. BLU",
+                "name_en": "Blue Flame", "short_en": "BLUE FLAME",
+                "color": Color(0.30, 0.65, 1.00), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 170, "freeze": true,
+                "desc": "Fuoco blu gelido: il colpo finale congela in statua.",
+                "desc_en": "Cold blue fire: the killing blow freezes to statue.",
+        },
+        {
+                "id": "fire_maelstrom", "type": RelicType.FIRE_MAELSTROM, "family": "distanza",
+                "name": "Cataclisma di Fiamme", "short": "CATACLISMA",
+                "name_en": "Fire Maelstrom", "short_en": "MAELSTROM",
+                "color": Color(1.00, 0.30, 0.05), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 280, "lob_px": 160.0,
+                "radius_px": 88.0, "burn_ms": 30,
+                "desc": "Palla di fuoco gigante a parabola: esplode ad area.",
+                "desc_en": "Giant lobbed fireball: explodes in an area.",
+        },
+]
+
+## Pool per archetipo: id delle armi che quel personaggio TROVA nel
+## labirinto. "@firearm" = le 4 armi da fuoco classiche. In squadra mista
+## il labirinto spawna l'UNIONE dei pool dei player; usare un'arma fuori
+## affinita' dimezza il danno (weapon_damage_for, Task 61).
+## Pool con soli id GIÀ definiti (reliquie storiche o ELEMENTAL_WEAPONS):
+## il mirror e' ARCO->PISTOL(4), PUGNALI/BASTONI->LASER(3),
+## BALESTRA/BOMBE->SHOTGUN-ROCKET(2).
+const AFFINITY_POOLS: Dictionary = {
+        CharacterType.HERO_M: ["@firearm"],
+        CharacterType.HERO_F: ["@firearm"],
+        CharacterType.KNIGHT: ["throwing_sword", "throwing_axe",
+                        "crossbow", "halberd_throw"],
+        CharacterType.MAGE: ["arcane_orb", "storm_rod",
+                        "fire_staff", "ice_lance"],
+        CharacterType.ELF: ["ranger_bow", "twin_daggers",
+                        "ice_arrow", "crossbow"],
+        CharacterType.ORC: ["twin_daggers", "throwing_axe",
+                        "alchemist_bombs"],
+        CharacterType.GOLEM: ["thrown_boulder", "alchemist_bombs",
+                        "golem_hammer_throw"],
+        CharacterType.VAMPIRE: ["twin_daggers", "blood_dart",
+                        "crossbow"],
+        CharacterType.DRAGON: ["flame_ember", "fireball_red",
+                        "flame_blue", "fire_maelstrom"],
+}
+
+## Def elementale per id ({} se assente). Cerca in ELEMENTAL_WEAPONS.
+static func get_elemental_by_id(weap_id: String) -> Dictionary:
+        for def in ELEMENTAL_WEAPONS:
+                if str(def.get("id", "")) == weap_id:
+                        return def
+        return {}
+
+## True se il tipo d'arma e' nel pool di affinita' dell'archetipo.
+## REGOLE (le reliquie dello schermo bonus restano SEMPRE libere: sono
+## una scelta consapevole del player e NON vengono mai penalizzate):
+##   - reliquie STORICHE (101..113): mai penalizzate (bonus screen);
+##   - armi da fuoco (0..3): penalizzate solo se il char non e' umano;
+##   - ELEMENTALI (114+, trovate nel labirinto): penalizzate se l'id
+##     non e' nel pool dell'archetipo (squadra mista: drago che usa
+##     la freccia di ghiaccio dell'elfo, ecc.).
+static func weapon_in_affinity(weapon_type: int, char_type: int) -> bool:
+        var pool: Array = AFFINITY_POOLS.get(char_type, [])
+        if pool.is_empty():
+                return true   # archetipo senza pool: nessuna penalita'
+        # 1) Reliquie storiche (e proiettile riflesso): bonus screen, libere.
+        if weapon_type >= RelicType.SWORD and weapon_type <= RelicType.REFLECT_BOLT:
+                return true
+        # 2) Armi da fuoco: in affinita' solo per gli umani ("@firearm").
+        if not is_relic_weapon(weapon_type):
+                return pool.has("@firearm")
+        # 3) Elementali del labirinto (114+): affinita' per id nel pool.
+        var def: Dictionary = get_relic_def(weapon_type)
+        return pool.has(str(def.get("id", "")))
+
 ## ARMATURE — equipaggiabili (slot dedicato, NON occupano l'arma):
 ##   kind: absorb | reflect | thorns | regen | aura | fury
 ##   charges: durabilita' iniziale (si consuma secondo il kind)
@@ -1690,13 +1976,19 @@ const RELIC_ARMORS: Array[Dictionary] = [
 ]
 
 ## Definizione reliquia per type ({} se non e' una reliquia). Ricerca
-## lineare nelle 12 armi + il proiettile riflesso: chiamata raramente e su
-## liste minuscole (niente dict costanti mutabili, vietate in GDScript).
+## lineare nelle 12 armi + il proiettile riflesso + le elementali Task 61
+## (chiamata raramente e su liste minuscole: niente dict costanti
+## mutabili, vietate in GDScript).
 static func get_relic_def(type: int) -> Dictionary:
         for def in RELIC_MELEE:
                 if int(def.get("type", 0)) == type:
                         return def
         for def in RELIC_RANGED:
+                if int(def.get("type", 0)) == type:
+                        return def
+        # TASK 61 — le armi elementali passano da tutti i percorsi delle
+        # reliquie (HUD, presa in mano, cooldown, knockback, nome).
+        for def in ELEMENTAL_WEAPONS:
                 if int(def.get("type", 0)) == type:
                         return def
         if type == RelicType.REFLECT_BOLT:

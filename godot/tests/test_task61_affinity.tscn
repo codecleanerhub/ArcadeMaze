@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testtask61aff"]
+
+[ext_resource type="Script" path="res://tests/test_task61_affinity.gd" id="1"]
+
+[node name="TestTask61Affinity" type="Node"]
+script = ExtResource("1")

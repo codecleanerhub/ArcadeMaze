@@ -1677,6 +1677,18 @@ func _advance_projectiles(container: Node2D, _delta_ms: float) -> void:
                 p.queue_free()
 
 
+## TASK 61 — archetipi dei player attivi (selettore del pool armi del
+## labirinto: umani -> armi da fuoco, non-umani -> elementali).
+func _collect_char_types() -> Array:
+        var out: Array = []
+        if player != null and is_instance_valid(player):
+                out.append(player.character_type)
+        if GameManager and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2):
+                out.append(player2.character_type)
+        return out
+
+
 func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
         # Player.gd stores projectiles as Array[Dictionary] with keys:
         # pos, dir, power, active, type
@@ -1709,7 +1721,35 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 # 2). NESSUNA arma uccide con un colpo solo:
                                 # solo mina, dinamite e item magici
                                 # (calice/scettro) restano kill istantanei.
-                                enemy.take_weapon_hit(int(proj.get("type", 0)), fury)
+                                # TASK 61 — COLPO DI GRAZIA ELEMENTALE + penalita'
+                                # affinita'. Il colpo che ucciderebbe il
+                                # nemico innesca lo stato della def:
+                                # burn_ms -> si infuoca e muore (start_burning,
+                                # macchinario aura/dinamite esistente);
+                                # freeze -> statua di ghiaccio (freeze_kill,
+                                # macchinario raggio congelante Task 50).
+                                # Il danno normale passa comunque da
+                                # take_weapon_hit con il char_type del tiratore
+                                # per la penalita' -50% fuori affinita'.
+                                var w_type61: int = int(proj.get("type", 0))
+                                var edef61: Dictionary = C.get_relic_def(w_type61)
+                                var dmg61: int = C.weapon_damage_for(w_type61,
+                                                enemy.max_health, fury,
+                                                p.character_type)
+                                if enemy.health - dmg61 <= 0 \
+                                                and not edef61.is_empty() \
+                                                and not enemy.is_dead():
+                                        if int(edef61.get("burn_ms", 0)) > 0:
+                                                enemy.start_burning(
+                                                                int(edef61.get("burn_ms", 30)))
+                                        elif bool(edef61.get("freeze", false)):
+                                                enemy.freeze_kill()
+                                        else:
+                                                enemy.take_weapon_hit(w_type61, fury,
+                                                                p.character_type)
+                                else:
+                                        enemy.take_weapon_hit(w_type61, fury,
+                                                        p.character_type)
                                 hit_ids.append(enemy)
                                 # TASK 51 (P3) — KNOCKBACK da armi reliquia a
                                 # DISTANZA: spinta visiva ~24px in direzione
@@ -1999,7 +2039,7 @@ func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
                         continue
                 if first_pos.distance_squared_to(enemy.get_pixel_pos()) \
                                 < radius * radius:
-                        enemy.take_weapon_hit(type, fury)
+                        enemy.take_weapon_hit(type, fury, p.character_type)
                         chained.append(enemy)
                         arc_path.append(enemy.get_pixel_pos())
                         jumps_left -= 1
@@ -2040,7 +2080,7 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                                 continue
                         if blast_pos.distance_squared_to(enemy.get_pixel_pos()) \
                                         < radius * radius:
-                                enemy.take_weapon_hit(type, fury)
+                                enemy.take_weapon_hit(type, fury, p.character_type)
                                 if enemy.is_dead():
                                         _on_relic_enemy_killed(p, enemy.get_pixel_pos())
                 if mini_boss != null and is_instance_valid(mini_boss) \
@@ -3978,6 +4018,10 @@ func start_level(lvl: int) -> void:
         scepter_strikes_left = 0
         # Generate maze (o RIPRISTINO dallo snapshot del continue)
         if restore.is_empty():
+                # TASK 61 — le armi nel labirinto seguono l'affinita' degli
+                # archetipi dei player (umani -> armi da fuoco, non-umani ->
+                # elementali del pool del personaggio).
+                maze.affinity_char_types = _collect_char_types()
                 maze.generate(current_level)
         else:
                 maze.restore_state(restore.get("maze", {}))

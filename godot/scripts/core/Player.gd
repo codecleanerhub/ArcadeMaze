@@ -1595,6 +1595,13 @@ func collect_weapon(w: Dictionary) -> void:
         # (bool(String) non esiste come costruttore in GDScript).
         if current_weapon.has("relic") and not w.has("relic"):
                 return  # arma base a terra ignorata: reliquia in mano
+        # TASK 61 — un'arma ELEMENTALE a terra NON sovrascrive una reliquia
+        # scelta nello schermo bonus (la scelta del player e' sacra): le
+        # elementali del labirinto si scambiano solo tra loro (flag "ground"
+        # impostata dallo spawn di make_random_weapon) o con le armi base.
+        if current_weapon.has("relic") and w.has("relic") \
+                        and not bool(current_weapon.get("ground", false)):
+                return
         current_weapon = w.duplicate()
 
 
@@ -2372,6 +2379,105 @@ func _draw_ghost_aura() -> void:
 # ===========================================================================
 
 ## Proiettile reliquia: una forma per reliquia (colore dalla definizione).
+# TASK 61 — cache statica dei sheet PNG dei proiettili elementali
+# (fiamme del Drago: riuso dei sheet Task 60b + ricolorazione blu).
+static var _elem_sheet_cache: Dictionary = {}
+
+
+func _get_elemental_sheet(res_path: String) -> Texture2D:
+        if _elem_sheet_cache.has(res_path):
+                return _elem_sheet_cache[res_path]
+        var tex: Texture2D = null
+        var abs_p: String = ProjectSettings.globalize_path(res_path)
+        if FileAccess.file_exists(abs_p):
+                var img := Image.new()
+                if img.load(abs_p) == OK:
+                        tex = ImageTexture.create_from_image(img)
+        _elem_sheet_cache[res_path] = tex
+        return tex
+
+
+## TASK 61 — proiettile fiamma del Drago dal sheet PNG (4 frame, flicker
+## 10 fps). False se il PNG manca (il chiamante ricade sul procedurale).
+func _draw_elemental_flame_png(local_pos: Vector2, res_path: String,
+                size_px: float, col: Color) -> bool:
+        var tex: Texture2D = _get_elemental_sheet(res_path)
+        if tex == null:
+                return false
+        var frames: int = 4
+        var fw: float = float(tex.get_width()) / float(frames)
+        var fh: float = float(tex.get_height())
+        var f: int = int(float(anim_time) * 0.01) % frames
+        draw_circle(local_pos, size_px * 0.62,
+                        Color(col.r, col.g, col.b, 0.20))
+        draw_texture_rect_region(tex,
+                        Rect2(local_pos.x - size_px * 0.5,
+                                        local_pos.y - size_px * 0.5,
+                                        size_px, size_px),
+                        Rect2(float(f) * fw, 0.0, fw, fh))
+        return true
+
+
+## TASK 61 — arma da lancio che ROTEA in volo (spade/asce/alabarda/martello
+## del set elementale): silhouette procedurale in stile Task 23, ruotata
+## a tempo attorno al proprio centro (i pickup/in-mano usano i PNG reliquia
+## esistenti; il volo ruotando e' leggibile anche stilizzato).
+func _draw_spin_throw(local_pos: Vector2, dir: Vector2, kind: String) -> void:
+        var spin: float = fmod(float(anim_time) * 0.025, TAU)
+        # scia di volo PRIMA del transform locale (coordinate non ruotate)
+        draw_circle(local_pos - dir * 7.0, 2.0, Color(1.0, 1.0, 1.0, 0.16))
+        draw_circle(local_pos - dir * 11.0, 1.3, Color(1.0, 1.0, 1.0, 0.10))
+        draw_set_transform(local_pos, spin)
+        if kind == "sword":
+                # lama d'acciaio doppio filo + guardia + elsa
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(9.5, 0.0), Vector2(2.0, 1.6),
+                        Vector2(2.0, -1.6)]), Color(0.82, 0.88, 0.98))
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(9.5, 0.0), Vector2(2.0, 1.6),
+                        Vector2(4.5, 0.0)]), Color(0.95, 0.97, 1.0))
+                draw_line(Vector2(-2.0, -2.6), Vector2(-2.0, 2.6),
+                                Color(0.55, 0.45, 0.30), 1.6)
+                draw_line(Vector2(-2.0, 0.0), Vector2(-5.5, 0.0),
+                                Color(0.30, 0.22, 0.14), 2.0)
+                draw_circle(Vector2(-6.4, 0.0), 1.1, Color(0.72, 0.58, 0.34))
+        elif kind == "axe":
+                # manico + testa d'ascia bipenne
+                draw_line(Vector2(-5.5, 0.0), Vector2(3.5, 0.0),
+                                Color(0.45, 0.32, 0.18), 1.8)
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(2.0, -0.4), Vector2(4.5, -3.8),
+                        Vector2(6.2, -2.2), Vector2(3.6, 0.6)]),
+                                Color(0.78, 0.78, 0.82))
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(2.0, 0.4), Vector2(4.5, 3.8),
+                        Vector2(6.2, 2.2), Vector2(3.6, -0.6)]),
+                                Color(0.66, 0.66, 0.72))
+                draw_line(Vector2(4.5, -3.8), Vector2(6.2, -2.2),
+                                Color(0.95, 0.95, 1.0), 0.8)
+        elif kind == "halberd":
+                # asta lunga + lama d'alabarda + puntale
+                draw_line(Vector2(-8.0, 0.0), Vector2(6.0, 0.0),
+                                Color(0.40, 0.30, 0.18), 1.6)
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(5.0, -1.0), Vector2(8.5, -3.6),
+                        Vector2(9.0, -1.4), Vector2(6.0, 0.8)]),
+                                Color(0.80, 0.86, 0.94))
+                draw_colored_polygon(PackedVector2Array([
+                        Vector2(6.0, 0.0), Vector2(9.5, 0.0),
+                        Vector2(7.5, 2.6)]), Color(0.60, 0.68, 0.80))
+                draw_circle(Vector2(-8.6, 0.0), 1.2, Color(0.55, 0.50, 0.40))
+        elif kind == "hammer":
+                # manico + testa quadrata di pietra
+                draw_line(Vector2(-5.0, 0.0), Vector2(3.0, 0.0),
+                                Color(0.42, 0.32, 0.20), 2.0)
+                draw_rect(Rect2(2.0, -3.6, 5.6, 7.2), Color(0.58, 0.58, 0.62))
+                draw_rect(Rect2(2.8, -2.8, 4.0, 5.6), Color(0.72, 0.72, 0.76))
+                draw_line(Vector2(3.0, -2.0), Vector2(6.4, 1.6),
+                                Color(0.42, 0.42, 0.46), 0.8)
+        draw_set_transform(Vector2.ZERO, 0.0)
+
+
 func _draw_relic_projectile(local_pos: Vector2, dir: Vector2, w_type: int) -> void:
         var rdef: Dictionary = GameConstants.get_relic_def(w_type)
         if rdef.is_empty():
@@ -2515,6 +2621,116 @@ func _draw_relic_projectile(local_pos: Vector2, dir: Vector2, w_type: int) -> vo
                         draw_circle(local_pos, 3.0, col)
                         draw_circle(local_pos + dir * 4.0, 2.0,
                                 Color(0.85, 1.0, 0.9))
+                # ================= TASK 61 — ARMi ELEMENTALI =================
+                GameConstants.RelicType.THROWING_SWORD:
+                        _draw_spin_throw(local_pos, dir, "sword")
+                GameConstants.RelicType.THROWING_AXE:
+                        _draw_spin_throw(local_pos, dir, "axe")
+                GameConstants.RelicType.HALBERD_THROW:
+                        _draw_spin_throw(local_pos, dir, "halberd")
+                GameConstants.RelicType.GOLEM_HAMMER_THROW:
+                        _draw_spin_throw(local_pos, dir, "hammer")
+                GameConstants.RelicType.FIRE_STAFF:
+                        # Dardo di fiamma: goccia incandescente + scia ustoria
+                        # (fallback se il sheet PNG del drago non esiste).
+                        draw_circle(local_pos - dir * 8.0, 2.0,
+                                        Color(1.0, 0.45, 0.10, 0.30))
+                        draw_circle(local_pos, 4.0, Color(1.0, 0.45, 0.10))
+                        draw_circle(local_pos + dir * 2.5, 2.6,
+                                        Color(1.0, 0.85, 0.35))
+                        draw_circle(local_pos + dir * 3.5, 1.2,
+                                        Color(1.0, 0.98, 0.75))
+                GameConstants.RelicType.ICE_LANCE:
+                        # Lancia di ghiaccio: cristallo appuntito + brina
+                        draw_line(local_pos - dir * 10.0, local_pos + dir * 8.0,
+                                Color(0.60, 0.85, 1.0, 0.55), 3.2)
+                        draw_colored_polygon(PackedVector2Array([
+                                local_pos + dir * 12.0,
+                                local_pos + dir * 6.0 + perp * 2.4,
+                                local_pos + dir * 6.0 - perp * 2.4]),
+                                Color(0.75, 0.94, 1.0))
+                        draw_colored_polygon(PackedVector2Array([
+                                local_pos + dir * 10.0,
+                                local_pos + dir * 5.0 + perp * 1.5,
+                                local_pos + dir * 5.0 - perp * 1.5]),
+                                Color(0.95, 1.0, 1.0))
+                        draw_circle(local_pos - dir * 11.0, 1.2,
+                                        Color(0.85, 0.97, 1.0, 0.5))
+                GameConstants.RelicType.ICE_ARROW:
+                        # Freccia di ghiaccio: asta di brina + punta
+                        # cristallina + impennaggio azzurro
+                        draw_line(local_pos - dir * 7.0, local_pos + dir * 5.0,
+                                Color(0.72, 0.92, 1.0), 1.8)
+                        draw_colored_polygon(PackedVector2Array([
+                                local_pos + dir * 8.5, local_pos + dir * 4.0 + perp * 1.8,
+                                local_pos + dir * 4.0 - perp * 1.8]),
+                                Color(0.90, 0.98, 1.0))
+                        for fs in [-1.0, 1.0]:
+                                draw_colored_polygon(PackedVector2Array([
+                                        local_pos - dir * 3.0,
+                                        local_pos - dir * 7.0 + perp * 2.4 * fs,
+                                        local_pos - dir * 6.5]),
+                                        Color(0.55, 0.80, 1.0, 0.9))
+                GameConstants.RelicType.THROWN_BOULDER:
+                        # Masso irregolare con crepe (mini-boulder)
+                        draw_circle(local_pos, 6.0, Color(0.35, 0.29, 0.20))
+                        draw_circle(local_pos - Vector2(1.5, 1.5), 4.0,
+                                        Color(0.55, 0.46, 0.30))
+                        draw_circle(local_pos + Vector2(2.5, 1.0), 1.2,
+                                        Color(0.75, 0.70, 0.58))
+                        draw_line(local_pos + Vector2(-3.0, -2.0),
+                                        local_pos + Vector2(2.0, 1.5),
+                                        Color(0.22, 0.18, 0.12), 1.1)
+                        draw_circle(local_pos - dir * 8.0, 1.6,
+                                        Color(0.35, 0.29, 0.20, 0.35))
+                GameConstants.RelicType.BLOOD_DART:
+                        # Dardo sanguigno con gocce in scia (homing)
+                        draw_line(local_pos - dir * 8.0, local_pos + dir * 6.0,
+                                Color(0.55, 0.02, 0.08, 0.8), 2.4)
+                        draw_circle(local_pos + dir * 4.5, 2.2, col)
+                        draw_circle(local_pos + dir * 7.0, 1.2,
+                                        Color(1.0, 0.25, 0.3))
+                        var drip_t: float = fmod(float(anim_time) * 0.03, TAU)
+                        draw_circle(local_pos - dir * 10.0
+                                        + Vector2(cos(drip_t), sin(drip_t)) * 1.5,
+                                        1.1, Color(0.70, 0.05, 0.10, 0.8))
+                GameConstants.RelicType.FLAME_EMBER:
+                        # Fiammella piccola e rapida (sheet drago, fallback
+                        # procedural a fiammetta)
+                        if not _draw_elemental_flame_png(local_pos,
+                                        "res://assets/sprites/projectiles/proj_fireball_sheet.png",
+                                        15.0, col):
+                                draw_circle(local_pos, 3.0, Color(1.0, 0.6, 0.15))
+                                draw_circle(local_pos + dir * 1.5, 1.6,
+                                                Color(1.0, 0.9, 0.4))
+                GameConstants.RelicType.FIREBALL_RED:
+                        # Palla di fuoco rossa (sheet Task 60b del DEMONE)
+                        if not _draw_elemental_flame_png(local_pos,
+                                        "res://assets/sprites/projectiles/proj_fireball_sheet.png",
+                                        24.0, col):
+                                draw_circle(local_pos, 5.5, Color(1.0, 0.4, 0.1))
+                                draw_circle(local_pos, 3.0, Color(1.0, 0.8, 0.3))
+                GameConstants.RelicType.FLAME_BLUE:
+                        # Fiamma blu gelida (ricolorazione PIL del sheet rosso)
+                        if not _draw_elemental_flame_png(local_pos,
+                                        "res://assets/sprites/projectiles/proj_fireball_blue_sheet.png",
+                                        24.0, col):
+                                draw_circle(local_pos, 5.5, Color(0.3, 0.6, 1.0))
+                                draw_circle(local_pos, 3.0, Color(0.8, 0.95, 1.0))
+                GameConstants.RelicType.FIRE_MAELSTROM:
+                        # Cataclisma: palla di fuoco gigante (sheet DRAGON
+                        # BREATH del Task 60b) + vortice di scintille
+                        var mael_t: float = float(anim_time) * 0.008
+                        for ms in 3:
+                                var ma: float = mael_t + float(ms) * (TAU / 3.0)
+                                draw_circle(local_pos + Vector2(cos(ma), sin(ma)) * 10.0,
+                                                1.6, Color(1.0, 0.55, 0.15, 0.7))
+                        if not _draw_elemental_flame_png(local_pos,
+                                        "res://assets/sprites/projectiles/proj_dragon_breath_sheet.png",
+                                        34.0, col):
+                                draw_circle(local_pos, 8.5, Color(1.0, 0.35, 0.05))
+                                draw_circle(local_pos, 5.0, Color(1.0, 0.7, 0.2))
+                                draw_circle(local_pos, 2.5, Color(1.0, 0.95, 0.6))
                 _:
                         draw_circle(local_pos, 2.5, col)
 
