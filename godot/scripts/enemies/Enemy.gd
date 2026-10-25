@@ -247,6 +247,10 @@ var held_by_wall: bool = false
 
 # Sprite sheet loaded from SpriteManager (AI-generated sprite).
 var _sprite_sheet: Object = null  # SpriteManager.Sheet
+## TASK 51: true se lo sheet di questo nemico e' disegnato guardando a
+## SINISTRA (meta "facesLeft"): il flip in _draw_sprite_frame viene
+## invertito cosi' il muso coincide sempre con la direzione di marcia.
+var _faces_left_native: bool = false
 var _sprite_loaded: bool = false
 var _sprite_id: String = ""
 var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
@@ -349,6 +353,12 @@ func _load_sprite() -> void:
                         print("[Enemy] WARNING: sprite not loaded for type=%d id=%s" % [type, _sprite_id])
                 else:
                         print("[Enemy] FALLBACK to SpriteManager (HD) for id=%s" % _sprite_id)
+        # TASK 51 (facing nativo): sia dal percorso SD inline sia dal fallback
+        # SpriteManager, il flag vive sullo Sheet (o nel meta JSON).
+        if _sprite_sheet != null:
+                _faces_left_native = _sprite_sheet.faces_left
+        elif SpriteManager:
+                _faces_left_native = SpriteManager.meta_faces_left(_sprite_id)
 
         # Load effect spritesheet for burning overlay
         _burn_effect_sheet = null
@@ -429,6 +439,9 @@ func _load_sd_sheet(sprite_id: String) -> Object:
         sheet.animations["walk"] = {"row": 0, "frames": 4, "frameDuration": 100}
         sheet.animations["attack"] = {"row": 0, "frames": 4, "frameDuration": 90}
         sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        # TASK 51: facing nativo dal meta JSON (sheet costruito inline).
+        if SpriteManager:
+                sheet.faces_left = SpriteManager.meta_faces_left(sprite_id)
         return sheet
 
 
@@ -1536,7 +1549,10 @@ func _draw_sprite_frame() -> void:
         # TASK 51 (P3): il pivot del mirror e il reset ASSORBONO l'offset
         # knockback (draw_set_transform e' assoluto, non componibile: senza
         # questo il nemico specchiato perderebbe la spinta visiva).
-        if last_dx < 0:
+        # TASK 51 (facing utente): XOR col facing nativo dello sheet — gli
+        # sprite disegnati verso SINISTRA si specchiano quando marciano a
+        # DESTRA, cosi' il muso resta coerente col movimento.
+        if (last_dx < 0) != _faces_left_native:
                 draw_set_transform(
                         Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0) + _knock_vec,
                         0.0, Vector2(-1.0, 1.0))

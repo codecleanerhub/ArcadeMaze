@@ -955,8 +955,10 @@ func _close_wall(h: Dictionary, maze: Node) -> void:
         maze.dynamic_walls[_wall_key(cell)] = true
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.HAZARD_THUD)
+        # TASK 51 (richiesta utente): RIMOSSO lo screen shake alla chiusura —
+        # con piu' muri che si aprono/chiudono lo schermo vibrava di
+        # continuo e risultava fastidioso. Restano thud + polvere locale.
         if EffectsManager:
-                EffectsManager.screen_shake(7.0, 0.35)
                 var dust := EffectsManager.spawn_explosion(
                         _cell_center(cell), Color(0.4, 0.35, 0.3), 18, 0.6)
                 if controller != null:
@@ -1003,6 +1005,13 @@ func _hold_entities_in_wall(h: Dictionary, _maze: Node) -> void:
         var cell: Vector2i = h["cell"]
         for p in _active_players():
                 if _player_cell(p) == cell:
+                        # TASK 51 (richiesta utente): pozione fantasma / salto =
+                        # il player VOLA sopra i muri che si aprono/chiudono:
+                        # mai imprigionato (e libero se era tenuto). Con la
+                        # pozione si attraversa il muro CHIUSO senza bloccarsi.
+                        if p.is_ghost() or p.is_jumping():
+                                p.held_by_wall = false
+                                continue
                         p.held_by_wall = true
         if controller != null:
                 for e in controller.spawner.enemies:

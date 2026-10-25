@@ -28,6 +28,13 @@ class Sheet:
         var columns: int = 4
         var rows: int = 1
         var animations: Dictionary = {}   # anim_name -> { "row": int, "frames": int, "frameDuration": int }
+        ## TASK 51 (richiesta utente "nemici girati al contrario"): alcuni
+        ## sheet PixelLab sono disegnati guardando a SINISTRA. Il flag
+        ## (opzionale, da `<id>_meta.json` -> "facesLeft": true) inverte la
+        ## convenzione del flip: lo sprite viene specchiato quando guarda a
+        ## DESTRA invece che a sinistra, cosi' il lato del muso coincide
+        ## sempre con la direzione di marcia reale.
+        var faces_left: bool = false
 
         func is_loaded() -> bool:
                 return texture != null
@@ -179,6 +186,7 @@ func _load_sheet(base_path: String, id: String) -> void:
                         sheet.frame_h = int(meta.get("frameHeight", 64))
                         sheet.columns = int(meta.get("columns", 4))
                         sheet.rows = int(meta.get("rows", 1))
+                        sheet.faces_left = bool(meta.get("facesLeft", false))
                         var anims: Dictionary = meta.get("animations", {})
                         for anim_name in anims:
                                 var info = anims[anim_name]
@@ -217,8 +225,39 @@ func _load_sheet(base_path: String, id: String) -> void:
                 sheet.animations["walk"] = {"row": 1, "frames": 4, "frameDuration": 120}
                 sheet.animations["attack"] = {"row": 2, "frames": 4, "frameDuration": 90}
                 sheet.animations["death"] = {"row": 3, "frames": 4, "frameDuration": 120}
+                # TASK 51: il flag facesLeft vive nel meta JSON dell'id ed e'
+                # valido anche per la versione HD (stessa arte sorgente).
+                var hd_meta: Variant = _load_json(meta_path)
+                if hd_meta != null and not hd_meta.is_empty():
+                        sheet.faces_left = bool(hd_meta.get("facesLeft", false))
 
         _sheets[id] = sheet
+
+
+## TASK 51: true se lo sheet dell'id e' disegnato guardando a SINISTRA
+## (meta "facesLeft": true). Cache dei soli flag, letti dal meta JSON;
+## usato anche da Enemy/MiniBoss quando costruiscono sheet SD inline.
+var _faces_left_cache: Dictionary = {}
+
+
+func meta_faces_left(id: String) -> bool:
+        if _faces_left_cache.has(id):
+                return _faces_left_cache[id]
+        var s: Sheet = _sheets.get(id)
+        if s != null:
+                _faces_left_cache[id] = s.faces_left
+                return s.faces_left
+        var meta: Variant = _load_json(base_sprites_path() + id + "_meta.json")
+        var flag := false
+        if meta != null and not meta.is_empty():
+                flag = bool(meta.get("facesLeft", false))
+        _faces_left_cache[id] = flag
+        return flag
+
+
+## Percorso base degli sprite SD (sottomani per i test).
+func base_sprites_path() -> String:
+        return "res://assets/sprites/"
 
 
 func _load_json(path: String) -> Variant:
