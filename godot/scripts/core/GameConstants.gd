@@ -1292,6 +1292,11 @@ static var PORTAL_SPRITE_ENABLED: bool = true
 ## 4 frame sopra le particelle detriti). Rollback: false = solo particelle.
 static var EXPLOSION_SPRITE_ENABLED: bool = true
 
+## TASK 57: muri del labirinto con texture roccia PixelLab
+## (env/rock_texture.png, luminanza) tintata con le 8 palette per livello.
+## Rollback: false = noise procedurale FastNoiseLite.
+static var WALL_ROCK_PIXELLAB_ENABLED: bool = true
+
 ## Punti per ogni nemico congelato (come le altre pergamene evento).
 const SCROLL_FREEZE_POINTS: int = 5000
 

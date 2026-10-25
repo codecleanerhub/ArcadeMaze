@@ -834,7 +834,7 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                 # proiettili: senza questo filtro venivano avanzati,
                 # "bloccati" dai pilastri (colpendoli OGNI FRAME) e potevano
                 # colpire il player come proiettili fantasma.
-                if proj is GPUParticles2D:
+                if proj is GPUParticles2D or proj.is_in_group("fx_effect"):
                         continue
                 if not proj.visible:
                         to_remove.append(proj)
@@ -954,6 +954,8 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
 func _check_boss_projectiles_vs_player(p: CharacterBody2D) -> void:
         for proj in boss_projectiles_node.get_children():
                 if not proj is Node2D or not proj.visible:
+                        continue
+                if proj.is_in_group("fx_effect"):
                         continue
                 if proj.position.distance_squared_to(p.get_pixel_pos()) < 600.0:
                         # RELIC (Task 21) — SCAGLIE DEL DRAGO: il proiettile del
@@ -2519,6 +2521,8 @@ func _draw() -> void:
         # in base al BossProjKind (vedi Projectile.gd).
         for proj in boss_projectiles_node.get_children():
                 if not proj is Node2D:
+                        continue
+                if proj.is_in_group("fx_effect"):
                         continue
                 var ppos: Vector2 = proj.position
                 # Colore in base al tipo di proiettile

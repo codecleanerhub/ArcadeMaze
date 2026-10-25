@@ -663,6 +663,8 @@ func _draw_overlay(ci: CanvasItem) -> void:
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
+                if proj.is_in_group("fx_effect"):
+                        continue
                 if not is_instance_valid(proj) or not proj.visible:
                         continue
                 var ppos: Vector2 = proj.position
@@ -1455,6 +1457,8 @@ func _update_playing(delta_ms: float) -> void:
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
+                if proj.is_in_group("fx_effect"):
+                        continue
                 if not is_instance_valid(proj):
                         continue
                 var vel: Vector2 = proj.get_meta("velocity", Vector2.ZERO)
@@ -1786,6 +1790,8 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
 func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D or not proj.visible:
+                        continue
+                if proj.is_in_group("fx_effect"):
                         continue
                 var proj_pos: Vector2 = proj.position
                 if proj_pos.distance_squared_to(p.get_pixel_pos()) < 600.0:

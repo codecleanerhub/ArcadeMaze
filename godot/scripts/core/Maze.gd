@@ -117,6 +117,29 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         if _rock_texture_cache.has(pal_idx):
                 return _rock_texture_cache[pal_idx]
         const TEX_SIZE: int = 128
+        var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+        # --- TASK 57: texture roccia PixelLab (luminanza) + tint palette ---
+        # La texture PNG (grayscale normalizzata full-range) fornisce la
+        # LUMINANZA per pixel; il colore resta quello della palette livello
+        # (stesso mapping 0.25x-1.45x del noise procedurale). Rollback:
+        # GameConstants.WALL_ROCK_PIXELLAB_ENABLED = false.
+        # NB: usa la STESSA var img dichiarata sopra (lezione 12.18: mai
+        # ridichiarare var omonima nello stesso scope — parse error runtime).
+        if C.WALL_ROCK_PIXELLAB_ENABLED:
+                var rock: Image = _load_pixellab_rock()
+                if rock != null:
+                        for y in range(TEX_SIZE):
+                                for x in range(TEX_SIZE):
+                                        var c57: Color = rock.get_pixel(x, y)
+                                        var lum57: float = c57.r * 0.299 + c57.g * 0.587 + c57.b * 0.114
+                                        var t57: float = 0.25 + lum57 * 1.20
+                                        img.set_pixel(x, y, Color(
+                                                clampf(base_color.r * t57, 0.0, 1.0),
+                                                clampf(base_color.g * t57, 0.0, 1.0),
+                                                clampf(base_color.b * t57, 0.0, 1.0), 1.0))
+                        var tex57 := ImageTexture.create_from_image(img)
+                        _rock_texture_cache[pal_idx] = tex57
+                        return tex57
         var noise_fine := FastNoiseLite.new()
         noise_fine.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
         noise_fine.frequency = 0.18
@@ -140,7 +163,7 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         noise_fracture.fractal_type = FastNoiseLite.FRACTAL_RIDGED
         noise_fracture.fractal_octaves = 3
         noise_fracture.seed = 3000 + pal_idx * 31
-        var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+        # (img e' gia' dichiarata in testa alla funzione — TASK 57)
         # FIX (muri ancora più rocciosi/porosi): aumentato ancora il contrasto
         # e aggiunto più variazione. La composizione ora dà più peso al rumore
         # fine (granaglia) e fracture (crepacci) per un effetto più "grezzo"
@@ -412,6 +435,26 @@ static func _get_torch_sheet() -> Texture2D:
                 if img.load(abs_path) == OK:
                         _torch_sheet_cache = ImageTexture.create_from_image(img)
         return _torch_sheet_cache
+
+
+# TASK 57: texture roccia PixelLab per i muri (grayscale normalizzata
+# full-range, 128x128, opaca). Null se manca -> noise procedurale.
+static var _rock_pixellab_cache: Image = null
+static var _rock_pixellab_tried: bool = false
+
+static func _load_pixellab_rock() -> Image:
+        if _rock_pixellab_tried:
+                return _rock_pixellab_cache
+        _rock_pixellab_tried = true
+        var path := "res://assets/sprites/env/rock_texture.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        if img.get_size() != Vector2i(128, 128):
+                                img.resize(128, 128, Image.INTERPOLATE_NEAREST)
+                        _rock_pixellab_cache = img
+        return _rock_pixellab_cache
 
 
 # Disegna un'urna decorativa in (cx, cy). Port 1:1 di drawUrn in Maze.cpp

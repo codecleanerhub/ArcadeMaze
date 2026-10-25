@@ -206,6 +206,10 @@ func spawn_explosion(pos: Vector2, color: Color = Color(1.0, 0.4, 0.1),
         # I chiamanti fanno solo add_child(): il tipo di ritorno e' trasparente.
         var root := Node2D.new()
         root.position = pos
+        # TASK 57: gruppo che identifica i container FX (fireball +
+        # particelle) nei loop dei nodi proiettili (lezione Task 39:
+        # gli effetti aggiunti ai nodi proiettili NON sono proiettili)
+        root.add_to_group("fx_effect")
         if C.EXPLOSION_SPRITE_ENABLED:
                 var spr := ExplosionSprite.new()
                 spr.sheet = _get_explosion_sheet()
@@ -291,11 +295,11 @@ func spawn_blast_smoke(pos: Vector2, ember_tint: Color = Color(1.0, 0.45, 0.15),
         return particles
 
 
-func spawn_sparks(pos: Vector2, count: int = 12) -> GPUParticles2D:
+func spawn_sparks(pos: Vector2, count: int = 12) -> Node2D:
         return spawn_explosion(pos, Color(1.0, 0.9, 0.3), count, 0.4)
 
 
-func spawn_pickup_burst(pos: Vector2, color: Color = Color(1.0, 0.84, 0.0)) -> GPUParticles2D:
+func spawn_pickup_burst(pos: Vector2, color: Color = Color(1.0, 0.84, 0.0)) -> Node2D:
         return spawn_explosion(pos, color, 20, 0.6)
 
 
