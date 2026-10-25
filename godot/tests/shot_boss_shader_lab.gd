@@ -26,6 +26,7 @@ var _labels: Array[String] = ["REF", "A", "B", "C", "D"]
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         # Sfondo grigio medio uniforme: neutro per il confronto colori.
         queue_redraw()
 

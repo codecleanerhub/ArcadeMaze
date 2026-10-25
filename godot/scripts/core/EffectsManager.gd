@@ -197,6 +197,46 @@ func spawn_blood(pos: Vector2, count: int = 15) -> GPUParticles2D:
         return spawn_explosion(pos, Color(0.7, 0.05, 0.05), count, 0.5)
 
 
+## TASK 50 (pallini arancioni in boss room): nube d'esplosione MORBIDA.
+## spawn_explosion fa 30 palline tonde piccole (scale 2-5 su texture 8px):
+## a distanza sembrano "pallini" fluttuanti. Qui invece poche volute GRANDI
+## (scale 7-16) con gravita' leggera e fade graduale: si legge come fumo
+## d'esplosione, non come punti. `ember_tint` al 25% dà solo un accenno
+## caldo in testa alla nube.
+func spawn_blast_smoke(pos: Vector2, ember_tint: Color = Color(1.0, 0.45, 0.15),
+                count: int = 9) -> GPUParticles2D:
+        var particles := GPUParticles2D.new()
+        particles.position = pos
+        particles.amount = count
+        particles.lifetime = 0.75
+        particles.one_shot = true
+        particles.emitting = true
+        particles.explosiveness = 0.65
+        var mat := ParticleProcessMaterial.new()
+        mat.direction = Vector3(0, -1, 0)
+        mat.spread = 80.0
+        mat.initial_velocity_min = 26.0
+        mat.initial_velocity_max = 74.0
+        mat.gravity = Vector3(0, -14, 0)  # il fumo SALE
+        mat.scale_min = 7.0
+        mat.scale_max = 16.0
+        # fumo scuro con un accenno caldo (25% verso la tinta brace)
+        mat.color = Color(0.26, 0.24, 0.22, 0.82).lerp(
+                        Color(ember_tint.r, ember_tint.g, ember_tint.b, 0.82), 0.25)
+        var fade_tex := GradientTexture1D.new()
+        var grad := Gradient.new()
+        grad.set_color(0, Color(1, 1, 1, 1))
+        grad.add_point(0.25, Color(1, 1, 1, 0.85))
+        grad.set_color(1, Color(1, 1, 1, 0))
+        fade_tex.gradient = grad
+        mat.color_ramp = fade_tex
+        particles.process_material = mat
+        particles.texture = _make_radial_gradient_texture(8)
+        particles.finished.connect(particles.queue_free)
+        # scintille calde in testa alla nube (poche e brevi)
+        return particles
+
+
 func spawn_sparks(pos: Vector2, count: int = 12) -> GPUParticles2D:
         return spawn_explosion(pos, Color(1.0, 0.9, 0.3), count, 0.4)
 

@@ -164,16 +164,72 @@ func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
                 if FileAccess.file_exists(wabs):
                         var wimg := Image.new()
                         if wimg.load(wabs) == OK:
-                                tex = ImageTexture.create_from_image(wimg)
+                                # TASK 50: anche le armi PNG vengono
+                                # NORMALIZZATE (75% canvas): dimensioni
+                                # uniformi per tutte le armi a terra.
+                                tex = ImageTexture.create_from_image(
+                                                _normalize_weapon_content(wimg))
         if tex == null:
                 match weapon_type:
-                        0: tex = _make_weapon_pistol()
-                        1: tex = _make_weapon_shotgun()
-                        2: tex = _make_weapon_rocket()
-                        3: tex = _make_weapon_laser()
-                        _: tex = _make_weapon_pistol()
+                        0: tex = _finalize(_normalize_weapon_content(_make_weapon_pistol()))
+                        1: tex = _finalize(_normalize_weapon_content(_make_weapon_shotgun()))
+                        2: tex = _finalize(_normalize_weapon_content(_make_weapon_rocket()))
+                        3: tex = _finalize(_normalize_weapon_content(_make_weapon_laser()))
+                        _: tex = _finalize(_normalize_weapon_content(_make_weapon_pistol()))
         _texture_cache[key] = tex
         return tex
+
+
+## TASK 50 (armi troppo grandi): normalizza il CONTENUTO della texture arma.
+## I generatori procedurali disegnano armi con bbox molto diversi (pistola
+## ~46px di 128, razzo ~95px) e i PNG PixelLab del TASK 51 hanno canvas
+## ancora diversi (216-238px): il renderer non puo' compensare con un
+## multiplier per-tipo senza sbagliare. Qui si ritaglia l'alpha-bbox e si
+## riscala la side piu' lunga al 75% del lato del CANVAS (relativo: vale
+## per 128 come per 238), centrato: OGNI arma occupa esattamente il 75% del
+## proprio rettangolo di draw, quindi a schermo le dimensioni visive sono
+## identiche per tutte (~48px, come martello/shotgun dello screenshot).
+const WEAPON_NORM_FRAC: float = 0.75
+
+
+func _normalize_weapon_content(src: Image) -> Image:
+        var w: int = src.get_width()
+        var h: int = src.get_height()
+        var side_max: int = maxi(w, h)
+        var target: int = int(round(float(side_max) * WEAPON_NORM_FRAC))
+        # alpha-bbox del CONTENUTO OPACO (soglia 0.5: l'ombra ellittica
+        # semitrasparente a terra NON gonfia il bbox — altrimenti la pistola,
+        # che ha un'ombra larga e un corpo piccolo, risultava troppo piccola)
+        var min_x: int = w
+        var min_y: int = h
+        var max_x: int = -1
+        var max_y: int = -1
+        for y in h:
+                for x in w:
+                        if src.get_pixel(x, y).a > 0.5:
+                                if x < min_x: min_x = x
+                                if x > max_x: max_x = x
+                                if y < min_y: min_y = y
+                                if y > max_y: max_y = y
+        if max_x < 0 or max_y < 0:
+                return src
+        var bw: int = max_x - min_x + 1
+        var bh: int = max_y - min_y + 1
+        var side: int = maxi(bw, bh)
+        if side <= 0:
+                return src
+        var scale: float = float(target) / float(side)
+        var nw: int = maxi(1, int(round(bw * scale)))
+        var nh: int = maxi(1, int(round(bh * scale)))
+        var out := Image.create(w, h, false, Image.FORMAT_RGBA8)
+        out.fill(Color(0, 0, 0, 0))
+        # blit scalato centrato (nearest: pixel art, niente smoothing)
+        var ox: int = (w - nw) / 2
+        var oy: int = (h - nh) / 2
+        var tmp := src.get_region(Rect2i(min_x, min_y, bw, bh))
+        tmp.resize(nw, nh, Image.INTERPOLATE_NEAREST)
+        out.blend_rect(tmp, Rect2i(0, 0, nw, nh), Vector2i(ox, oy))
+        return out
 
 
 # ============================================================================
@@ -785,7 +841,7 @@ func _make_wall_torch() -> Texture2D:
 # ============================================================================
 # GENERATORI: Armi pickup (4 tipi) - dettagliate
 # ============================================================================
-func _make_weapon_pistol() -> Texture2D:
+func _make_weapon_pistol() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 95, 24, 4, Color(0, 0, 0, 0.4))
@@ -812,10 +868,10 @@ func _make_weapon_pistol() -> Texture2D:
         ], Color(0.4, 0.4, 0.45))
         # Mira (pallino rosso)
         _fill_circle(img, 70, 53, 2, Color(0.9, 0.1, 0.1))
-        return _finalize(img)
+        return img
 
 
-func _make_weapon_shotgun() -> Texture2D:
+func _make_weapon_shotgun() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 100, 35, 5, Color(0, 0, 0, 0.4))
@@ -841,10 +897,10 @@ func _make_weapon_shotgun() -> Texture2D:
         _fill_rect(img, 35, 65, 20, 1, Color(0.6, 0.4, 0.2))
         # Grilletto
         _fill_rect(img, 68, 65, 3, 12, Color(0.5, 0.5, 0.55))
-        return _finalize(img)
+        return img
 
 
-func _make_weapon_rocket() -> Texture2D:
+func _make_weapon_rocket() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 100, 35, 5, Color(0, 0, 0, 0.4))
@@ -871,10 +927,10 @@ func _make_weapon_rocket() -> Texture2D:
         _fill_rect(img, 65, 75, 3, 10, Color(0.5, 0.5, 0.55))
         # Mirino (ottone)
         _fill_circle(img, 70, 47, 3, Color(0.85, 0.7, 0.2))
-        return _finalize(img)
+        return img
 
 
-func _make_weapon_laser() -> Texture2D:
+func _make_weapon_laser() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 95, 30, 4, Color(0, 0, 0, 0.4))
@@ -902,7 +958,7 @@ func _make_weapon_laser() -> Texture2D:
         _fill_polygon(img, [
                 Vector2(60, 60), Vector2(72, 60), Vector2(74, 85), Vector2(58, 85)
         ], Color(0.2, 0.2, 0.25))
-        return _finalize(img)
+        return img
 
 
 # ============================================================================

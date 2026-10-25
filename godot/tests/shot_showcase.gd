@@ -14,6 +14,7 @@ var projs: Array = []
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         # A/B: SHOWCASE_SD=1 forza sheet SD legacy (confronto prima/dopo)
         if OS.get_environment("SHOWCASE_SD") == "1":
                 GameConstants.SPRITE_XHD_ENABLED = false

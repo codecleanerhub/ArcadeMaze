@@ -1,13 +1,17 @@
-## ArenaDebris.gd — TASK 39 (L'Arena del Boss).
+## ArenaDebris.gd — TASK 39 (L'Arena del Boss) / TASK 50 rielaborato.
 ##
-## FRAMMENTO DI PILASTRO scagliato dal crollo di BossArenaPillar. Vola con
+## FRAMMENTO DI PIETRA scagliato dal crollo di un'architettura dell'arena
+## (pilastri e, dal TASK 50, i MURO-Rovina del labirinto spezzato). Vola con
 ## velocita' propria + attrito, ruota su se stesso e sfuma; se raggiunge il
 ## boss (check del controller via gruppo "arena_debris") gli infligge danno
-## e viene consumato con un piccolo pop di scintille.
+## e viene consumato.
 ##
-## Grafica: poligono irregolare a 5 lati (scheggia di pietra) con faccia
-## illuminata e faccia in ombra + scia incandescente elementale (il pilastro
-## era un condotto elementale: i frammenti restano "carichi").
+## Grafica TASK 50 (richiesta utente: "si vedono ancora i pallini arancioni
+## quando si rompe un elemento"): via OGNI tinta elementale, scia
+## incandescente e brillio luminoso — ora e' una SCHIGGIA DI CALCARE grigia
+## con faccia illuminata, faccia in ombra e punteggiatura minerale, come le
+## macerie delle mura della cripta. Il parametro `tint` resta nell'API per
+## compatibilita' ma viene IGNORATO.
 extends Node2D
 
 const LIFE_MS: float = 2100.0
@@ -19,23 +23,27 @@ var spin_vel: float = 0.0
 var _life_ms: float = LIFE_MS
 var _t: float = 0.0
 var _size: float = 7.0
-var _tint: Color = Color(1.0, 0.62, 0.22)
 var _shape: PackedVector2Array = PackedVector2Array()
 var _consumed: bool = false
+var _speckles: Array = []
 
 
-## `from_pos` coordinate MONDO; `vel` px/frame; `tint` colore elementale.
-func setup(from_pos: Vector2, vel: Vector2, tint: Color, size_scale: float = 1.0) -> void:
+## `from_pos` coordinate MONDO; `vel` px/frame; `tint` IGNORATO (TASK 50:
+## sempre pietra grigia, niente caricature arancioni).
+func setup(from_pos: Vector2, vel: Vector2, _tint: Color, size_scale: float = 1.0) -> void:
         position = from_pos
         velocity = vel
-        _tint = tint
         _size *= size_scale
-        # scheggia irregolare deterministica (5 lati)
+        # scheggia irregolare deterministica (5-6 lati)
+        var sides: int = 5 + (randi() % 2)
         _shape = PackedVector2Array()
-        for i in 5:
-                var ang: float = TAU * float(i) / 5.0 + randf_range(-0.35, 0.35)
+        for i in sides:
+                var ang: float = TAU * float(i) / float(sides) + randf_range(-0.35, 0.35)
                 var rr: float = _size * randf_range(0.72, 1.28)
                 _shape.append(Vector2(cos(ang), sin(ang)) * rr)
+        # punteggiatura minerale (2-3 granuli scuri fissi per scheggia)
+        for i in (2 + randi() % 2):
+                _speckles.append(Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5)) * _size)
         spin_deg = randf_range(0.0, 360.0)
         spin_vel = randf_range(-9.0, 9.0)
 
@@ -75,24 +83,21 @@ func _draw() -> void:
                 return
         var k: float = clampf(_life_ms / LIFE_MS, 0.0, 1.0)
         var fade: float = clampf(k * 2.2, 0.0, 1.0)
-        # scia incandescente breve
-        if velocity.length() > 0.8:
-                var dirv: Vector2 = -velocity.normalized()
-                draw_circle(dirv * _size * 1.4, _size * 0.42,
-                                Color(_tint.r, _tint.g, _tint.b, 0.30 * fade))
-                draw_circle(dirv * _size * 2.3, _size * 0.26,
-                                Color(_tint.r, _tint.g, _tint.b, 0.16 * fade))
-        # corpo: scheggia calcarea + spigolo illuminato + faccia dorata (TASK 42:
-        # i frammenti del pilastro gotico sono polycromi — pietra, oro, conduits)
+        # --- TASK 50: SCHIGGIA DI PIETRA pura ---
+        # corpo: calcare grigio con faccia illuminata in alto e ombra in basso
         draw_colored_polygon(_shape, Color(0.33, 0.34, 0.39, fade))
         draw_polygon(_shape, PackedColorArray([
-                Color(_tint.r, _tint.g, _tint.b, 0.80 * fade),
-                Color(0.87, 0.71, 0.30, 0.85 * fade),
-                Color(0.62, 0.64, 0.70, fade),
-                Color(0.44, 0.45, 0.51, fade),
-                Color(0.40, 0.41, 0.47, fade),
+                Color(0.74, 0.73, 0.70, fade),   # luce fredda dall'alto
+                Color(0.60, 0.59, 0.56, fade),
+                Color(0.47, 0.47, 0.50, fade),
+                Color(0.36, 0.36, 0.40, fade),
+                Color(0.29, 0.29, 0.33, fade),   # fondo in ombra
         ]))
-        # rimasuglio di carica elementale (brillio al centro)
-        draw_circle(Vector2.ZERO, _size * 0.3,
-                        Color(_tint.r, _tint.g, _tint.b,
-                                        (0.35 + 0.3 * sin(_t * 15.0)) * fade))
+        # punteggiatura minerale (granuli scuri)
+        for sp in _speckles:
+                draw_circle(sp, _size * 0.10, Color(0.22, 0.22, 0.24, 0.75 * fade))
+        # spigolo illuminato: sottile linea di luce sul bordo superiore
+        if _shape.size() >= 2:
+                var a0: Vector2 = _shape[0].normalized() * _size
+                var a1: Vector2 = _shape[1].normalized() * _size
+                draw_line(a0, a1, Color(0.88, 0.87, 0.82, 0.55 * fade), 1.0)

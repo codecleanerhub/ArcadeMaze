@@ -19,6 +19,7 @@ var all_defs: Array = []
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         GameManager.num_players = 1
         GameManager.reset_run()
         all_defs = GameConstants.RELIC_MELEE.duplicate()

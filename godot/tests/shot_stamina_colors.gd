@@ -14,6 +14,7 @@ var stage: int = 0
 var t: float = 0.0
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         var layer := CanvasLayer.new()
         layer.layer = 10
         add_child(layer)

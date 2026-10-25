@@ -26,6 +26,7 @@ var busy: bool = false
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         # Lingua deterministica: EN di default (richiesta utente).
         I18n.set_language(I18n.Language.ENGLISH)
         GameManager.num_players = 1

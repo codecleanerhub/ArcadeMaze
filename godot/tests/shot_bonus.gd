@@ -8,6 +8,7 @@ var bonus: CanvasLayer = null
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         GameManager.num_players = 2
         GameManager.reset_run()
         var scene := load("res://scenes/MainGame.tscn") as PackedScene

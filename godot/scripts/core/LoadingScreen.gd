@@ -38,6 +38,19 @@ extends Node
 ## dietro l'overlay per almeno un frame intero.
 const AUTO_HIDE_FRAMES: int = 3
 
+## TASK 50 (scritta animata): al BOOT l'overlay resta visibile per questo
+## tempo (secondi) invece di 3 frame — prima l'utente vedeva quasi solo il
+## boot_splash PNG statico; ora vede il ciclo completo (sweep luminoso sul
+## testo + gocce che crescono/cadono) prima del menu.
+const BOOT_HOLD_S: float = 2.2
+
+## TASK 50: banda di luce che percorre le lettere (periodo e larghezza in
+## frazione dell'ink del testo).
+const SWEEP_PERIOD: float = 2.6
+const SWEEP_SIGMA: float = 0.16   # larghezza gaussiana (frazione ink_w)
+const SWEEP_SLICES: int = 26
+const SWEEP_AMP: float = 0.85      # spinta luminosa massima in testa alla banda
+
 const LOAD_FONT_SIZE: int = 64
 const LOAD_CENTER_Y_FRAC: float = 0.44   # centro verticale del blocco testo
 
@@ -82,6 +95,8 @@ var _tex_pl: Array[Texture2D] = []
 var _pl_meta: Dictionary = {}
 # diagnostica screenshot (congela l'animazione per catture deterministiche)
 var _dbg_freeze: bool = false
+# TASK 50: tempo residuo di visibilita' forzata al boot
+var _boot_hold_left: float = 0.0
 
 
 func _ready() -> void:
@@ -97,9 +112,11 @@ func _ready() -> void:
         _painter.draw.connect(_on_draw)
         _canvas.add_child(_painter)
         _load_assets()
-        # BOOT: mostrati subito; il primo frame utile del menu appare sotto
-        # l'overlay e dopo 3 frame si dissolve (niente nero tra splash e menu).
-        show_loading()
+        # BOOT: mostrati per BOOT_HOLD_S (TASK 50: la scritta animata deve
+        # essere VISTA — 3 frame non bastavano); il primo frame utile del menu
+        # appare sotto l'overlay e dopo il hold si dissolve nel menu vivo.
+        _boot_hold_left = BOOT_HOLD_S
+        show_loading(false)
 
 
 func _process(delta: float) -> void:
@@ -111,6 +128,13 @@ func _process(delta: float) -> void:
         if _auto_hide and _frames_since_show >= AUTO_HIDE_FRAMES:
                 hide_loading()
                 return
+        # TASK 50: hold del boot — l'overlay resta finche' il timer non scade.
+        if _boot_hold_left > 0.0:
+                _boot_hold_left -= delta
+                if _boot_hold_left <= 0.0:
+                        _boot_hold_left = 0.0
+                        hide_loading()
+                        return
         _painter.queue_redraw()
 
 
@@ -169,12 +193,19 @@ func force_redraw() -> void:
                 _painter.queue_redraw()
 
 
-## Diagnostica screenshot: congela l'animazione a `anim_t` e ridisegna.
+## Diagnostica screenshot: sblocca l'animazione (congela a `anim_t`) e ridisegna.
 func set_anim_t_debug(v: float) -> void:
         _anim_t = v
         _dbg_freeze = true
         if _painter:
                 _painter.queue_redraw()
+
+
+## TASK 50: gli SCREENSHOT TEST catturano nei primi secondi — l'hold del
+## boot coprirebbe la scena con l'overlay. Chiamato dai test nel _ready.
+func skip_boot_hold() -> void:
+        _boot_hold_left = 0.0
+        hide_loading()
 
 
 ## Diagnostica screenshot: sblocca l'avanzamento dell'animazione.
@@ -293,6 +324,29 @@ func _on_draw() -> void:
                                 baseline - float(tm.get("baseline", 0.0)))
                 ci.draw_texture_rect(tex, Rect2(tpos, Vector2(tw, th)), false,
                                 Color(1.0, 1.0, 1.0, alpha))
+                # --- TASK 50: SWEEP luminoso che percorre le lettere ---
+                # Ridisegna il testo a FETTE verticali con una spinta di
+                # luminosita' gaussiana centrata sulla banda in movimento:
+                # effetto "luce che sfiora l'osso" percettibile ma sobrio.
+                var sweep_x: float = fposmod(_anim_t / SWEEP_PERIOD, 1.0) \
+                                * (ink_w * 1.3) - ink_w * 0.15
+                var slice_w: float = ink_w / float(SWEEP_SLICES)
+                var tex_scale: float = 4.0  # asset 4x disegnati a scala 1/4
+                for s in SWEEP_SLICES:
+                        var sx_c: float = x0 + (float(s) + 0.5) * slice_w
+                        var d: float = (sx_c - x0 - sweep_x) / (ink_w * SWEEP_SIGMA)
+                        var boost: float = SWEEP_AMP * exp(-d * d)
+                        if boost < 0.04:
+                                continue
+                        var srect := Rect2(
+                                        Vector2((x0 + float(s) * slice_w - tpos.x) * tex_scale, 0.0),
+                                        Vector2(slice_w * tex_scale + 1.0, th * tex_scale))
+                        ci.draw_texture_rect_region(tex,
+                                        Rect2(Vector2(x0 + float(s) * slice_w, tpos.y),
+                                                Vector2(slice_w + 1.0, th)),
+                                        srect,
+                                        Color(1.0 + boost, 1.0 + boost * 0.92,
+                                                        1.0 + boost * 0.80, alpha * 0.95))
                 for i in 3:
                         var dx: float = x0 + ink_w + gap \
                                         + dot_adv * (float(i) + 0.5)

@@ -124,6 +124,68 @@ static func find_path(maze: Object, start: Vector2i, target: Vector2i) -> Vector
 
 
 # ---------------------------------------------------------------------------
+# find_path_cells: TASK 50 (mina che si incastra nei muri) — ritorna il
+# PERCORSO COMPLETO (tutte le celle dal primo passo al target) invece del
+# solo passo successivo. Serve al path-following continuo della mina: la
+# mina insegue il centro di ogni waypoint ed avanza quando entra nella
+# cella, invece di ricevere una direzione axis-aligned ogni 250ms e
+# rimbalzare elasticamente sui muri tra un ricalcolo e l'altro.
+# Nota tunnel: un passo puo' "saltare" da un imbocco di galleria alla
+# cella partner opposta (celle NON adiacenti): il chiamante lo tratta
+# come attraversamento del tunnel (si vola verso l'esterno, il wrap
+# teletrasporta dalla parte opposta e il waypoint successivo e' lì).
+# ---------------------------------------------------------------------------
+static func find_path_cells(maze: Object, start: Vector2i, target: Vector2i) -> Array[Vector2i]:
+        var cells: Array[Vector2i] = []
+        if start == target:
+                return cells
+        var visited: Dictionary = {}
+        var parent: Dictionary = {}
+        var queue: Array[Vector2i] = []
+        queue.append(start)
+        visited[start] = true
+        var found: bool = false
+        var head: int = 0
+        while head < queue.size():
+                var curr: Vector2i = queue[head]
+                head += 1
+                if curr == target:
+                        found = true
+                        break
+                for i in range(4):
+                        var nc: int = curr.x + _DC[i]
+                        var nr: int = curr.y + _DR[i]
+                        var nb := Vector2i(nc, nr)
+                        if nc < 0 or nc >= MAZE_COLS or nr < 0 or nr >= MAZE_ROWS:
+                                if not C.is_tunnel_virtual_cell(nc, nr):
+                                        continue
+                                var partner := C.tunnel_partner(curr.x, curr.y)
+                                if partner.x < 0:
+                                        continue
+                                nb = partner
+                        if visited.has(nb):
+                                continue
+                        if maze.is_wall(nb.x, nb.y):
+                                continue
+                        visited[nb] = true
+                        parent[nb] = curr
+                        queue.append(nb)
+        if not found:
+                return cells
+        # Catena parent dal target al primo passo (cella il cui parent e'
+        # start), poi inversione: [primo passo, ..., target].
+        var curr: Vector2i = target
+        while parent.has(curr) and parent[curr] != start:
+                cells.append(curr)
+                curr = parent[curr]
+        if not parent.has(curr):
+                return []
+        cells.append(curr)
+        cells.reverse()
+        return cells
+
+
+# ---------------------------------------------------------------------------
 # find_path_dir: convenience wrapper that returns the *direction* (dx, dy)
 # the enemy should move on this frame, or Vector2i.ZERO if no path.
 # Useful for enemies that just want to know which way to step.

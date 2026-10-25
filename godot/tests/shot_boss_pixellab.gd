@@ -24,6 +24,7 @@ var t: float = 0.0
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         GameManager.current_level = 4
         boss_room = BossRoomScene.instantiate()
         get_tree().root.add_child.call_deferred(boss_room)

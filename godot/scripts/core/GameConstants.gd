@@ -746,13 +746,25 @@ const BOSS_ROOM_AMMO_MIN: int = 39
 # sessione riapplica i danni al continue).
 enum ElementKind { FIRE, FROST, LIGHTNING, POISON }
 
-const BOSS_ARENA_PILLAR_COUNT: int = 4        # pilastri per set
+const BOSS_ARENA_PILLAR_COUNT: int = 4        # pilastri per set (LEGACY TASK 39)
 const BOSS_ARENA_PILLAR_HP: int = 3           # colpi per abbattere un pilastro
 const BOSS_ARENA_PILLAR_FRAGMENTS: int = 5    # frammenti lanciati al crollo
 const BOSS_ARENA_PILLAR_FRAGMENT_DMG: int = 3 # danno di un frammento al boss
 # raggio fisico (rimbalzo boss / colpi) — TASK 43: architettura PIU'
 # GRANDE (pilastro 68x184, era 30 con pilastro 54x130)
 const BOSS_ARENA_PILLAR_RADIUS: float = 34.0
+# --- TASK 50: MURO-LABIRINTO IN ROVINA (sostituisce i pilastri) ---
+# L'arena del boss e' un labirinto spezzato: segmenti di muraglia PixelLab
+# (roccia porosa da cripta) generati proceduralmente DIVERSI ad ogni
+# partita e ad ogni boss. Il player si muove TRA i frammenti e si ripara
+# dai colpi del boss; i muri si rompono dopo 3 colpi e restano macerie.
+const BOSS_ARENA_RUINS_ENABLED: bool = true   # false = rollback ai 4 pilastri TASK 39
+const BOSS_ARENA_RUIN_HP: int = 3             # colpi per abbattere un segmento
+const BOSS_ARENA_RUIN_FRAGMENTS: int = 5      # schegge di pietra al crollo
+const BOSS_ARENA_RUIN_MIN: int = 10           # segmenti minimi nel labirinto
+const BOSS_ARENA_RUIN_MAX: int = 14           # segmenti massimi nel labirinto
+const BOSS_ARENA_RUIN_MAX_LEN: int = 4        # lunghezza massima in celle (64px)
+const BOSS_ARENA_RUIN_PASS_GAP: float = 96.0  # corridoio minimo tra segmenti (px)
 const BOSS_ARENA_BARREL_COUNT: int = 3        # barili per set (>= 1 dell'elemento debole)
 const BOSS_ARENA_BARREL_BASE_PCT: float = 0.10    # danno base: 10% HP max del boss
 const BOSS_ARENA_BARREL_WEAK_MULT: float = 2.5    # elemento debole: 25% HP max

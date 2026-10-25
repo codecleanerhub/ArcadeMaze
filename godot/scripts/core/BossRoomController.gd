@@ -47,12 +47,15 @@ const BonusScreenClass = preload("res://scripts/ui/BonusScreen.gd")
 #     di fuoco; l'elemento debole del boss infligge il 250% del danno
 #   * BossSiegeCannon: pickup del Cannone d'Assedio (arma SIEGE, 4 colpi)
 const BossArenaPillarClass = preload("res://scripts/entities/BossArenaPillar.gd")
+const BossArenaRuinClass = preload("res://scripts/entities/BossArenaRuin.gd")
 const ElementalBarrelClass = preload("res://scripts/entities/ElementalBarrel.gd")
 const BossSiegeCannonClass = preload("res://scripts/entities/BossSiegeCannon.gd")
 
 # Props dell'arena (figli di boss_room_weapons_node: disegnati sopra il
 # pavimento, sotto player/boss, e liberati con la scena).
-var _arena_pillars: Array = []          # [BossArenaPillar]
+var _arena_pillars: Array = []          # [BossArenaPillar] (LEGACY TASK 39)
+var _arena_ruins: Array = []            # [BossArenaRuin] (TASK 50: muri-labirinto)
+var _arena_ruin_seed: int = 0           # seed layout (per-boss, per-run)
 var _arena_barrels: Array = []          # [ElementalBarrel]
 var _arena_siege: Node2D = null         # BossSiegeCannon (pickup a terra)
 var _arena_renewal_ms: float = 0.0      # timer rigenerazione arena
@@ -725,28 +728,48 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                 else:
                         vel = proj.get_meta("velocity", Vector2.ZERO)
                 proj.position += vel
-                # TASK 39: i PILASTRI in piedi BLOCCANO i proiettili del boss
-                # (copertura fisica) e subiscono 1 danno ciascuno: la
-                # copertura si consuma durante lo scontro.
-                var blocked_by_pillar: bool = false
-                for pillar in _arena_pillars:
-                        if pillar == null or not is_instance_valid(pillar):
-                                continue
-                        if not pillar.is_standing():
-                                continue
-                        if proj.position.distance_squared_to(pillar.position) \
-                                        < C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS:
-                                blocked_by_pillar = true
-                                pillar.take_hit()  # la copertura si consuma
-                                if AudioManager:
-                                        AudioManager.play_sound(
-                                                        AudioManager.SoundType.PILLAR_CRACK)
-                                if EffectsManager:
-                                        var block_fx: Node2D = EffectsManager.spawn_sparks(
-                                                        proj.position, 8)
-                                        boss_projectiles_node.add_child(block_fx)
-                                break
-                if blocked_by_pillar:
+                # TASK 39/50: LE ARCHITETTURE in piedi BLOCCANO i proiettili
+                # del boss (copertura fisica) e subiscono 1 danno ciascuna:
+                # la copertura si consuma durante lo scontro. Dal TASK 50 le
+                # architetture sono i MURO-LABIRINTO in rovina (AABB); il
+                # ramo pilastri resta per il rollback (flag in GameConstants).
+                var blocked_by_arena: bool = false
+                if C.BOSS_ARENA_RUINS_ENABLED:
+                        for ruin in _arena_ruins:
+                                if ruin == null or not is_instance_valid(ruin):
+                                        continue
+                                if not ruin.is_standing():
+                                        continue
+                                if ruin.blocks_point(proj.position, 7.0):
+                                        blocked_by_arena = true
+                                        ruin.take_hit()  # la copertura si consuma
+                                        if AudioManager:
+                                                AudioManager.play_sound(
+                                                                AudioManager.SoundType.PILLAR_CRACK)
+                                        if EffectsManager:
+                                                var block_fx: Node2D = EffectsManager.spawn_sparks(
+                                                                proj.position, 8)
+                                                boss_projectiles_node.add_child(block_fx)
+                                        break
+                else:
+                        for pillar in _arena_pillars:
+                                if pillar == null or not is_instance_valid(pillar):
+                                        continue
+                                if not pillar.is_standing():
+                                        continue
+                                if proj.position.distance_squared_to(pillar.position) \
+                                                < C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS:
+                                        blocked_by_arena = true
+                                        pillar.take_hit()  # la copertura si consuma
+                                        if AudioManager:
+                                                AudioManager.play_sound(
+                                                                AudioManager.SoundType.PILLAR_CRACK)
+                                        if EffectsManager:
+                                                var block_fx2: Node2D = EffectsManager.spawn_sparks(
+                                                                proj.position, 8)
+                                                boss_projectiles_node.add_child(block_fx2)
+                                        break
+                if blocked_by_arena:
                         proj.visible = false
                         to_remove.append(proj)
                         continue
@@ -776,8 +799,8 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                                                 * C.BOSS_ARENA_SIEGE_PCT)))
                                 if EffectsManager:
                                         EffectsManager.screen_shake(6.0, 0.25)
-                                        var siege_fx := EffectsManager.spawn_explosion(
-                                                        proj_pos, Color(1.0, 0.72, 0.25), 26, 0.7)
+                                        var siege_fx := EffectsManager.spawn_blast_smoke(
+                                                        proj_pos)
                                         boss_projectiles_node.add_child(siege_fx)
                                         var smoke_fx := EffectsManager.spawn_explosion(
                                                         proj_pos + Vector2(0.0, -12.0),
@@ -790,8 +813,8 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                         # RELIC (Task 21): la bomba esplode al contatto col boss.
                         if proj.has("lob_px"):
                                 if EffectsManager:
-                                        var boom := EffectsManager.spawn_explosion(
-                                                        proj_pos, Color(1.0, 0.6, 0.15), 24, 0.6)
+                                        var boom := EffectsManager.spawn_blast_smoke(
+                                                        proj_pos, Color(1.0, 0.55, 0.18), 12)
                                         boss_projectiles_node.add_child(boom)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
@@ -1012,11 +1035,20 @@ func _check_boss_death() -> void:
                                                 "state": int(pillar.state),
                                                 "hp": int(pillar.hp),
                                         })
+                                # TASK 50: snapshot dei muri-rovina (il SEED
+                                # ricrea lo stesso labirinto al restore)
+                                var ruins_snap: Array = []
+                                for ruin in _arena_ruins:
+                                        if ruin == null or not is_instance_valid(ruin):
+                                                continue
+                                        ruins_snap.append(ruin.snapshot())
                                 GameManager.session_snapshot = {
                                         "kind": "boss",
                                         "level": current_level,
                                         "boss_health": int(boss.health) if (boss != null and is_instance_valid(boss)) else 0,
                                         "arena_pillars": pillars_snap,
+                                        "arena_ruins": ruins_snap,
+                                        "arena_ruin_seed": int(_arena_ruin_seed),
                                         "p1": {
                                                 "score": player.score,
                                                 "weapon": player.current_weapon.duplicate(),
@@ -1043,9 +1075,9 @@ func _check_boss_death() -> void:
                 if EffectsManager:
                         EffectsManager.screen_shake(15.0, 0.8)
                         for i in 3:
-                                var p := EffectsManager.spawn_explosion(
+                                var p := EffectsManager.spawn_blast_smoke(
                                         boss.pos + Vector2(randf() * 60 - 30, randf() * 60 - 30),
-                                        Color(1.0, 0.5, 0.1), 40, 1.2)
+                                        Color(0.6, 0.45, 0.3), 12)
                                 boss_projectiles_node.add_child(p)
                 player.add_life()
                 # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
@@ -1144,8 +1176,15 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                 if EffectsManager:
                         var hit_fx := EffectsManager.spawn_sparks(boss.pos, 14)
                         boss_projectiles_node.add_child(hit_fx)
-        # TASK 39: il fendente reliquia FRANTUMA anche i pilastri adiacenti
-        # (una spada spacca la pietra meglio di una pallottola).
+        # TASK 39: il fendente reliquia FRANTUMA anche le architetture
+        # adiacenti (una spada spacca la pietra meglio di una pallottola).
+        if C.BOSS_ARENA_RUINS_ENABLED:
+                for ruin in _arena_ruins:
+                        if ruin == null or not is_instance_valid(ruin) or not ruin.is_standing():
+                                continue
+                        if ruin.blocks_point(p.get_pixel_pos()
+                                        + aim * 44.0, 26.0):
+                                _damage_ruin(ruin, p.get_pixel_pos())
         for pillar in _arena_pillars:
                 if pillar == null or not is_instance_valid(pillar) or not pillar.is_standing():
                         continue
@@ -1364,6 +1403,15 @@ func _update_boss_room_mine(delta_ms: float) -> void:
         else:
                 # Bounce physics: rotate + move + bounce off room walls
                 # (mirrors C++ r2754-2760).
+                # TASK 50 (mina a ricerca, coerente col labirinto): nella boss
+                # room la mina ora INSEGUE il boss invece di vagare a caso
+                # rimbalzando finché non esplode: steering continuo verso il
+                # boss, i rimbalzi sui bordi restano solo come rete di sicurezza.
+                if boss != null and not boss.is_dead():
+                        var to_boss: Vector2 = boss.pos - mine_item.pos
+                        if to_boss.length() > 1.0:
+                                var m_speed: float = clampf(mine_item.velocity.length(), 4.5, 6.0)
+                                mine_item.velocity = to_boss.normalized() * m_speed
                 mine_item.rotation_deg += 0.08 * float(delta_ms) * 0.06
                 mine_item.pos += mine_item.velocity
                 mine_item.position = mine_item.pos
@@ -1402,8 +1450,8 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                                 if EffectsManager:
-                                        var p := EffectsManager.spawn_explosion(mine_item.pos,
-                                                Color(1.0, 0.78, 0.2), 20, 0.5)
+                                        # TASK 50: nube di fumo morbida, non pallini
+                                        var p := EffectsManager.spawn_blast_smoke(mine_item.pos)
                                         boss_projectiles_node.add_child(p)
                                 mine_item.active = false
                                 mine_item.bouncing = false
@@ -1429,8 +1477,8 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                                 if AudioManager:
                                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                 if EffectsManager:
-                                        var p := EffectsManager.spawn_explosion(mine_item.pos,
-                                                Color(1.0, 0.78, 0.2), 20, 0.5)
+                                        # TASK 50: nube di fumo morbida, non pallini
+                                        var p := EffectsManager.spawn_blast_smoke(mine_item.pos)
                                         boss_projectiles_node.add_child(p)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
@@ -1449,18 +1497,26 @@ func _update_boss_room_mine(delta_ms: float) -> void:
 func _spawn_boss_arena() -> void:
         var weak_el: int = C.get_boss_weakness(boss.boss_type) if boss != null \
                         else C.ElementKind.FIRE
-        # --- Pilastri: 4 posizioni fisse simmetriche (non bloccano gli spawn) ---
-        var pillar_spots: Array = [
-                Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
-                Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
-        ]
-        for i in range(mini(C.BOSS_ARENA_PILLAR_COUNT, pillar_spots.size())):
-                var pillar: Node2D = BossArenaPillarClass.new()
-                boss_room_weapons_node.add_child(pillar)
-                if pillar.has_method("setup"):
-                        pillar.setup(pillar_spots[i], weak_el, i,
-                                        boss_room_weapons_node)
-                _arena_pillars.append(pillar)
+        # --- TASK 50: MURO-LABIRINTO IN ROVINA (sostituisce i 4 pilastri,
+        # vedi richiesta utente: "elementi troppi e piccoli... pezzi di
+        # muraglia di labirinto spezzato, procedurali, diversi ogni
+        # partita e ogni boss"). Rollback: BOSS_ARENA_RUINS_ENABLED=false
+        # riporta i pilastri simmetrici del TASK 39. ---
+        if C.BOSS_ARENA_RUINS_ENABLED:
+                _generate_arena_ruins()
+        else:
+                # --- LEGACY: 4 pilastri a posizioni fisse simmetriche ---
+                var pillar_spots: Array = [
+                        Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
+                        Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
+                ]
+                for i in range(mini(C.BOSS_ARENA_PILLAR_COUNT, pillar_spots.size())):
+                        var pillar: Node2D = BossArenaPillarClass.new()
+                        boss_room_weapons_node.add_child(pillar)
+                        if pillar.has_method("setup"):
+                                pillar.setup(pillar_spots[i], weak_el, i,
+                                                boss_room_weapons_node)
+                        _arena_pillars.append(pillar)
         # --- Barili: 3 posizioni scelte da un pool (prima = elemento debole) ---
         var barrel_spots: Array = [
                 Vector2(270.0, 320.0), Vector2(1650.0, 320.0),
@@ -1485,6 +1541,160 @@ func _spawn_boss_arena() -> void:
         # --- Cannone d'assedio: uno a terra tra il centro e lo spawn player ---
         _spawn_arena_siege(Vector2(C.WINDOW_WIDTH * 0.5, 850.0))
         _arena_renewal_ms = 0.0
+
+
+# ---------------------------------------------------------------------------
+# TASK 50 — GENERAZIONE PROCEDURALE DEL LABIRINTO IN ROVINA
+# ---------------------------------------------------------------------------
+# Segmenti di muraglia (2-4 celle) piazzati su una griglia di ancore con
+# vincoli: zone di rispetto (spawn boss/player, barili, cannone), corridoi
+# minimi tra i muri (il player ci passa in mezzo), niente sovrapposizioni.
+# Il seed dipende dal TEMPO + tipo di boss + livello: layout DIVERSO ad ogni
+# partita e ad ogni boss, ma DETERMINISTICO per lo snapshot/restore.
+func _generate_arena_ruins(forced_seed: int = -1) -> void:
+        # seed: tempo corrente ^ boss ^ livello (per-partita, per-boss)
+        if forced_seed >= 0:
+                _arena_ruin_seed = forced_seed
+        else:
+                var boss_id: int = boss.boss_type if boss != null else 0
+                var lvl: int = GameManager.current_level if GameManager \
+                                and "current_level" in GameManager else 0
+                _arena_ruin_seed = (Time.get_ticks_msec() & 0x7fffffff) \
+                                ^ (boss_id * 2654435761) ^ (lvl * 40503)
+        var rng := RandomNumberGenerator.new()
+        rng.seed = _arena_ruin_seed
+        # pulisci eventuali rovine precedenti
+        for ruin in _arena_ruins:
+                if ruin != null and is_instance_valid(ruin):
+                        ruin.queue_free()
+        _arena_ruins.clear()
+        # --- zone di rispetto (keep-out) ---
+        # NB: si usa la posizione di SPAWN canonica del boss (centro-alto),
+        # NON boss.pos corrente: il layout deve dipendere SOLO dal seed per
+        # essere identico al restore dallo snapshot (boss.pos nel frattempo
+        # e' cambiato e romperebbe il determinismo).
+        var keep_out: Array = []
+        keep_out.append([Vector2(C.WINDOW_WIDTH * 0.5, 420.0), 230.0])   # spawn boss
+        keep_out.append([Vector2(C.WINDOW_WIDTH * 0.5, 880.0), 170.0])   # spawn player
+        for spot in [Vector2(270.0, 320.0), Vector2(1650.0, 320.0),
+                        Vector2(270.0, 920.0), Vector2(1650.0, 920.0),
+                        Vector2(960.0, 580.0)]:
+                keep_out.append([spot, 90.0])                   # barili
+        keep_out.append([Vector2(C.WINDOW_WIDTH * 0.5, 850.0), 120.0])  # cannone
+        # --- piazzamento ---
+        var placed: Array = []   # Rect2 (ingombro + corridoio) dei segmenti
+        var target: int = rng.randi_range(C.BOSS_ARENA_RUIN_MIN, C.BOSS_ARENA_RUIN_MAX)
+        var attempts: int = 0
+        while _arena_ruins.size() < target and attempts < 220:
+                attempts += 1
+                var axis: String = "h" if rng.randf() < 0.62 else "v"
+                var length_cells: int
+                var roll: float = rng.randf()
+                if roll < 0.30:
+                        length_cells = 2
+                elif roll < 0.72:
+                        length_cells = 3
+                else:
+                        length_cells = 4
+                length_cells = mini(length_cells, C.BOSS_ARENA_RUIN_MAX_LEN)
+                var len_px: float = length_cells * C.TILE_SIZE
+                # centro candidato su griglia di mezze celle
+                var half_w: float = len_px * 0.5 if axis == "h" else C.TILE_SIZE * 0.5
+                var half_h: float = C.TILE_SIZE * 0.5 if axis == "h" else len_px * 0.5
+                var cx: float = 180.0 + rng.randf() * (C.WINDOW_WIDTH - 360.0)
+                var cy: float = C.UI_HEIGHT + 150.0 \
+                                + rng.randf() * (C.WINDOW_HEIGHT - C.UI_HEIGHT - 330.0)
+                cx = roundf(cx / 32.0) * 32.0
+                cy = roundf(cy / 32.0) * 32.0
+                var rect := Rect2(cx - half_w, cy - half_h, half_w * 2.0, half_h * 2.0)
+                # corridoio minimo attorno (il gap tra muri lascia passare il player)
+                var corridor := rect.grow(C.BOSS_ARENA_RUIN_PASS_GAP * 0.5)
+                var ok: bool = true
+                # bounds arena
+                if rect.position.x < 110.0 or rect.end.x > C.WINDOW_WIDTH - 110.0:
+                        ok = false
+                if rect.position.y < C.UI_HEIGHT + 110.0 \
+                                or rect.end.y > C.WINDOW_HEIGHT - 90.0:
+                        ok = false
+                # keep-out (centro del segmento lontano dalle zone protette)
+                if ok:
+                        for ko in keep_out:
+                                var kpos: Vector2 = ko[0]
+                                var krad: float = ko[1]
+                                var nearest := Rect2(rect.position - Vector2(krad, krad),
+                                                rect.size + Vector2(krad * 2.0, krad * 2.0))
+                                if nearest.has_point(kpos):
+                                        ok = false
+                                        break
+                # sovrapposizione con altri segmenti (con corridoio)
+                if ok:
+                        for other in placed:
+                                if other.intersects(corridor):
+                                        ok = false
+                                        break
+                if not ok:
+                        continue
+                placed.append(rect)
+                var ruin: Node2D = BossArenaRuinClass.new()
+                boss_room_weapons_node.add_child(ruin)
+                if ruin.has_method("setup"):
+                        ruin.setup(Vector2(cx, cy), axis, length_cells,
+                                        rng.randf() * 100.0, _arena_ruins.size(),
+                                        boss_room_weapons_node)
+                _arena_ruins.append(ruin)
+        # distribuzione di cortesia: se una meta' arena e' rimasta vuota,
+        # sposta un segmento lì (copertura bilanciata sinistra/destra)
+        _balance_arena_ruins(placed)
+        if _arena_ruins.is_empty():
+                push_warning("[TASK50] nessun muro-rovina piazzato (seed="
+                                + str(_arena_ruin_seed) + ")")
+
+
+## Garantisce almeno 2 segmenti per meta' arena (sinistra/destra): se tutto
+## e' finito da un lato, sposta i piu' esterni nell'altra meta'.
+func _balance_arena_ruins(placed: Array) -> void:
+        if _arena_ruins.size() < 2:
+                return
+        var mid_x: float = C.WINDOW_WIDTH * 0.5
+        var left_count: int = 0
+        for r in placed:
+                if r.get_center().x < mid_x:
+                        left_count += 1
+        var min_side: int = 2
+        if left_count >= min_side and _arena_ruins.size() - left_count >= min_side:
+                return
+        # sposta finche' entrambi i lati non hanno min_side segmenti
+        var side_needed: int
+        if left_count < min_side:
+                side_needed = 0  # serve a sinistra
+        else:
+                side_needed = 1  # serve a destra
+        var moved: int = 0
+        for i in range(_arena_ruins.size()):
+                if moved >= min_side:
+                        break
+                var ruin: Node2D = _arena_ruins[i]
+                if ruin == null or not is_instance_valid(ruin):
+                        continue
+                var on_side: int = 1 if ruin.origin.x >= mid_x else 0
+                if on_side == side_needed:
+                        continue
+                # sposta il segmento nella meta' opposta (specchiato)
+                var new_x: float = C.WINDOW_WIDTH - ruin.origin.x
+                # verifica che lo slot specchiato non collida con altri
+                var r: Rect2 = ruin.get_rect()
+                var mirrored := Rect2(new_x - r.size.x * 0.5, r.position.y,
+                                r.size.x, r.size.y).grow(C.BOSS_ARENA_RUIN_PASS_GAP * 0.5)
+                var blocked: bool = false
+                for other in placed:
+                        if other != r and other.intersects(mirrored):
+                                blocked = true
+                                break
+                if blocked:
+                        continue
+                ruin.origin = Vector2(new_x, ruin.origin.y)
+                ruin.position = ruin.origin
+                moved += 1
 
 
 # Spawna il pickup del cannone (usato anche dal rinnovo dell'arena).
@@ -1528,6 +1738,29 @@ func _clear_arena_consumables() -> void:
 # frammenti: il crollo era gia' avvenuto), quelli in piedi recuperano le
 # crepe deterministiche derivate dagli HP residui.
 func _restore_arena_pillars_from_snapshot(snap: Dictionary) -> void:
+        # TASK 50: prima i muri-rovina (rigenera lo STESSO labirinto dal seed
+        # salvato, poi riapplica gli stati: in piedi con HP residui o macerie
+        # senza animazione — il crollo era gia' avvenuto).
+        var ruins_states: Array = snap.get("arena_ruins", [])
+        if not ruins_states.is_empty():
+                var saved_seed: int = int(snap.get("arena_ruin_seed", -1))
+                if saved_seed >= 0:
+                        _generate_arena_ruins(saved_seed)
+                for entry in ruins_states:
+                        var ridx: int = int(entry.get("idx", -1))
+                        var rst: int = int(entry.get("state", 0))
+                        var rhp: int = int(entry.get("hp", C.BOSS_ARENA_RUIN_HP))
+                        for ruin in _arena_ruins:
+                                if ruin == null or not is_instance_valid(ruin):
+                                        continue
+                                if ruin.ruin_index != ridx:
+                                        continue
+                                if rst != int(BossArenaRuinClass.RuinState.STANDING):
+                                        ruin.restore_from_snapshot(true)
+                                else:
+                                        ruin.restore_from_snapshot(false, rhp)
+                                break
+                return
         var states: Array = snap.get("arena_pillars", [])
         if states.is_empty():
                 return
@@ -1556,6 +1789,10 @@ func _clear_boss_arena() -> void:
                 if pillar != null and is_instance_valid(pillar):
                         pillar.queue_free()
         _arena_pillars.clear()
+        for ruin in _arena_ruins:
+                if ruin != null and is_instance_valid(ruin):
+                        ruin.queue_free()
+        _arena_ruins.clear()
         for barrel in _arena_barrels:
                 if barrel != null and is_instance_valid(barrel):
                         barrel.queue_free()
@@ -1634,8 +1871,12 @@ func _update_boss_arena(delta_ms: float) -> void:
                                         boss_projectiles_node.add_child(frag_fx)
                                 if node.has_method("consume_on_boss"):
                                         node.consume_on_boss()
-        # --- il boss RIMBALZA sui pilastri in piedi (ostacoli fisici) ---
-        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+        # --- il boss RIMBALZA sui pilastri in piedi (ostacoli fisici).
+        # TASK 50: solo nel ramo LEGACY — i muri-rovina sono BASI e spezzati:
+        # il boss (creatura gigante) li CALPESTA passando sopra, cosi' non
+        # puo' mai incastellarsi nel labirinto in rovina. ---
+        if not C.BOSS_ARENA_RUINS_ENABLED \
+                        and boss != null and is_instance_valid(boss) and not boss.is_dead():
                 for pillar in _arena_pillars:
                         if pillar == null or not is_instance_valid(pillar) \
                                         or not pillar.is_standing():
@@ -1712,6 +1953,11 @@ func _prune_arena_refs() -> void:
                 if pillar != null and is_instance_valid(pillar):
                         keep_pillars.append(pillar)
         _arena_pillars = keep_pillars
+        var keep_ruins: Array = []
+        for ruin in _arena_ruins:
+                if ruin != null and is_instance_valid(ruin):
+                        keep_ruins.append(ruin)
+        _arena_ruins = keep_ruins
         var keep_barrels: Array = []
         for barrel in _arena_barrels:
                 if barrel != null and is_instance_valid(barrel):
@@ -1745,6 +1991,25 @@ func _try_throw_carried_barrel(p: CharacterBody2D) -> bool:
 # Proiettili del player vs pilastri in piedi: il colpo si FRANTUMA sul
 # pilastro (consumato) e gli infligge 1 danno.
 func _check_player_projectiles_vs_pillars(p: CharacterBody2D) -> void:
+        # TASK 50: unifica il check sui due tipi di architettura (rovine
+        # AABB / pilastri legacy a raggio): il colpo si FRANTUMA (consumato)
+        # e infligge 1 danno alla copertura.
+        if C.BOSS_ARENA_RUINS_ENABLED:
+                if _arena_ruins.is_empty():
+                        return
+                for proj in p.projectiles:
+                        if not proj.get("active", false):
+                                continue
+                        var proj_pos_r: Vector2 = proj.get("pos", Vector2.ZERO)
+                        for ruin in _arena_ruins:
+                                if ruin == null or not is_instance_valid(ruin) \
+                                                or not ruin.is_standing():
+                                        continue
+                                if ruin.blocks_point(proj_pos_r, 5.0):
+                                        proj["active"] = false
+                                        _damage_ruin(ruin, proj_pos_r)
+                                        break
+                return
         if _arena_pillars.is_empty():
                 return
         var r_sq: float = C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS
@@ -1760,6 +2025,19 @@ func _check_player_projectiles_vs_pillars(p: CharacterBody2D) -> void:
                                 proj["active"] = false
                                 _damage_pillar(pillar, proj_pos)
                                 break
+
+
+## Danno a un muro-rovina + feedback comune (crack, scintille, micro-shake).
+func _damage_ruin(ruin: Node2D, from_pos: Vector2) -> void:
+        if ruin == null or not is_instance_valid(ruin) or not ruin.is_standing():
+                return
+        ruin.take_hit()
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PILLAR_CRACK)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.5, 0.12)
+                var sparks: Node2D = EffectsManager.spawn_sparks(from_pos, 10)
+                boss_projectiles_node.add_child(sparks)
 
 
 # Danno a un pilastro + feedback comune (crack, scintille, micro-shake).
@@ -1797,12 +2075,12 @@ func _on_barrel_exploded(pos: Vector2, element: int) -> void:
                                                 AudioManager.SoundType.BURST_POISON)
         if EffectsManager:
                 EffectsManager.screen_shake(8.0, 0.4)
-                # particelle elementali (colore tema) + fumo
-                var burst: Node2D = EffectsManager.spawn_explosion(pos, col, 30, 0.9)
-                boss_projectiles_node.add_child(burst)
-                var smoke: Node2D = EffectsManager.spawn_explosion(
-                                pos + Vector2(0.0, -14.0), Color(0.24, 0.22, 0.20), 14, 1.1)
-                boss_projectiles_node.add_child(smoke)
+                # TASK 50 (pallini arancioni — bug utente): RIMOSSA la nube di
+                # particelle tonde spawn_explosion(col): il barile ha GIA' la
+                # sua deflagrazione completa (_draw_explosion di ElementalBarrel:
+                # core incandescente, doppia onda d'urto, 12 spine, fumo e
+                # detriti disegnati). Le palline tonde sovrapposte risultavano
+                # "puntini arancioni" fluttuanti sopra l'esplosione vera.
         # --- danno al boss (raggio blast + meta' raggio del boss) ---
         if boss != null and is_instance_valid(boss) and not boss.is_dead():
                 var hit_r: float = C.BOSS_ARENA_BARREL_BLAST_RADIUS + boss.size * 0.5
@@ -2039,8 +2317,10 @@ func _draw() -> void:
                         if w_tex:
                                 # Aura glow dietro
                                 draw_circle(pos, 22.0, Color(1.0, 0.85, 0.2, 0.15))
+                                # TASK 50: texture normalizzate al 75% del canvas
+                                # -> draw 56px = contenuto ~42px, coerente col maze
                                 draw_texture_rect(w_tex,
-                                        Rect2(pos.x - 24, pos.y - 24, 48, 48), false)
+                                        Rect2(pos.x - 28, pos.y - 28, 56, 56), false)
                                 continue
                 # Fallback: Simple weapon icon (colored circle)
                 var col: Color = Color.WHITE

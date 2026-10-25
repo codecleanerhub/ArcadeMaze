@@ -30,6 +30,7 @@ var fixed_pos := {}
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         var bg := ColorRect.new()
         bg.color = Color(0.09, 0.08, 0.12)
         bg.size = Vector2(1920, 1080)

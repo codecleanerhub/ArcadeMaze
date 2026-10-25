@@ -20,6 +20,7 @@ var t := 0.0
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         GameManager.num_players = 1
         GameManager.reset_run()
         var scene := load("res://scenes/MainGame.tscn") as PackedScene

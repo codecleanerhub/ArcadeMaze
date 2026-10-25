@@ -1173,18 +1173,18 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
 
 func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) -> void:
         # Usa le texture procedurali dettagliate da EnvironmentArt
-        # (pistola/fucile/razzo/laser) invece di semplici quadrati
+        # (pistola/fucile/razzo/laser) invece di semplici quadrati.
+        # TASK 50 (armi troppo grandi): le texture sono ora NORMALIZZATE al
+        # 75% del canvas da EnvironmentArt._normalize_weapon_content, quindi
+        # basta un draw uniforme a dimensione cella: ogni arma occupa ~48px
+        # visivi (0.75 tile), come martello/shotgun dello screenshot utente.
+        # Il vecchio multiplier 1.6x della pistola e' stato RIMOSSO: era il
+        # motivo per cui pistola e razzo sembravano pezzi esterni giganti.
         var wpn_type: int = weapon.get("type", C.WeaponType.PISTOL)
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_weapon_pickup_texture(wpn_type)
                 if tex:
-                        # FIX (pistola più piccola): la pistola PNG ha più spazio vuoto
-                        # rispetto a shotgun/rocket/laser. Per uniformare le dimensioni
-                        # visive, usiamo un draw_size maggiore per la pistola.
-                        var size_mult: float = 1.2
-                        if wpn_type == C.WeaponType.PISTOL:
-                                size_mult = 1.6  # pistola più grande per uniformità
-                        var draw_size: float = size * size_mult
+                        var draw_size: float = size * 1.0
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)

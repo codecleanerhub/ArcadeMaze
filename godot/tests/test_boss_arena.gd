@@ -19,6 +19,7 @@ extends Node
 
 const BossRoomScene = preload("res://scenes/BossRoom.tscn")
 const ElementalBarrelClass = preload("res://scripts/entities/ElementalBarrel.gd")
+const BossArenaRuinClass = preload("res://scripts/entities/BossArenaRuin.gd")
 const C = preload("res://scripts/core/GameConstants.gd")
 
 var boss_room: Node2D = null
@@ -30,6 +31,9 @@ var checks: int = 0
 # snapshot per confronti tra fasi
 var boss_hp_before: int = 0
 var pillar_hp_before: int = 0
+var initial_ruins: int = 0
+var boss_walked_over: bool = false
+var player_pushed_out: bool = false
 var test_barrel: Node2D = null
 var blocked_pillar: Node2D = null
 var bounce_pillar: Node2D = null
@@ -173,10 +177,18 @@ func _physics_process(delta: float) -> void:
 # FASE 0 — costanti, elementi, mappa debolezze
 # ---------------------------------------------------------------------------
 func _phase_constants() -> void:
-        _ok(C.BOSS_ARENA_PILLAR_COUNT == 4, "pilastri per set = 4")
-        _ok(C.BOSS_ARENA_PILLAR_HP == 3, "HP pilastro = 3 colpi")
+        _ok(C.BOSS_ARENA_PILLAR_COUNT == 4, "pilastri per set = 4 (legacy)")
+        _ok(C.BOSS_ARENA_PILLAR_HP == 3, "HP pilastro = 3 colpi (legacy)")
         _ok(C.BOSS_ARENA_PILLAR_FRAGMENTS == 5, "frammenti per crollo = 5")
         _ok(C.BOSS_ARENA_PILLAR_FRAGMENT_DMG == 3, "danno frammento = 3")
+        # TASK 50: muri-labirinto in rovina
+        _ok(C.BOSS_ARENA_RUINS_ENABLED, "rovine abilitate (flag TASK 50)")
+        _ok(C.BOSS_ARENA_RUIN_HP == 3, "HP muro-rovina = 3 colpi")
+        _ok(C.BOSS_ARENA_RUIN_MIN >= 8 and C.BOSS_ARENA_RUIN_MAX <= 18,
+                        "segmenti min/max sensati (" + str(C.BOSS_ARENA_RUIN_MIN)
+                        + "-" + str(C.BOSS_ARENA_RUIN_MAX) + ")")
+        _ok(C.BOSS_ARENA_RUIN_PASS_GAP >= 80.0,
+                        "corridoio minimo tra muri >= 80px (player passa)")
         _ok(absf(C.BOSS_ARENA_BARREL_WEAK_MULT - 2.5) < 0.001,
                         "moltiplicatore debolezza = 2.5")
         _ok(C.BOSS_ARENA_SIEGE_AMMO == 4, "colpi cannone = 4")
@@ -203,17 +215,32 @@ func _phase_constants() -> void:
 func _phase_spawn() -> void:
         var boss: Node2D = boss_room.boss
         _ok(boss != null and not boss.is_dead(), "boss vivo (LICH lvl 4)")
-        _ok(boss_room._arena_pillars.size() == 4, "4 pilastri spawnati")
+        # TASK 50: labirinto di muri-rovina (niente piu' pilastri)
+        _ok(boss_room._arena_pillars.size() == 0,
+                        "NESSUN pilastro legacy spawnato (sostituiti dalle rovine)")
+        var ruin_count: int = boss_room._arena_ruins.size()
+        _ok(ruin_count >= C.BOSS_ARENA_RUIN_MIN and ruin_count <= C.BOSS_ARENA_RUIN_MAX,
+                        "segmenti muro-rovina nel range (" + str(ruin_count) + ")")
+        initial_ruins = ruin_count
         var all_standing: bool = true
-        var themed: bool = true
-        for pillar in boss_room._arena_pillars:
-                if pillar == null or not is_instance_valid(pillar) \
-                                or not pillar.is_standing():
+        var in_bounds: bool = true
+        var keep_out_ok: bool = true
+        for ruin in boss_room._arena_ruins:
+                if ruin == null or not is_instance_valid(ruin) or not ruin.is_standing():
                         all_standing = false
-                if pillar.element != C.get_boss_weakness(boss.boss_type):
-                        themed = false
-        _ok(all_standing, "tutti i pilastri in piedi")
-        _ok(themed, "pilastri a tema dell'elemento debole")
+                        continue
+                var r: Rect2 = ruin.get_rect()
+                if r.position.x < 100.0 or r.end.x > C.WINDOW_WIDTH - 100.0 \
+                                or r.position.y < C.UI_HEIGHT + 100.0 \
+                                or r.end.y > C.WINDOW_HEIGHT - 80.0:
+                        in_bounds = false
+                # zona spawn player libera
+                var player_spawn: Vector2 = Vector2(C.WINDOW_WIDTH * 0.5, 880.0)
+                if r.grow(60.0).has_point(player_spawn):
+                        keep_out_ok = false
+        _ok(all_standing, "tutti i muri-rovina in piedi")
+        _ok(in_bounds, "tutti i segmenti dentro l'arena")
+        _ok(keep_out_ok, "zona spawn player libera dai muri")
         _ok(boss_room._arena_barrels.size() == 3, "3 barili spawnati")
         var weak_count: int = 0
         for barrel in boss_room._arena_barrels:
@@ -231,20 +258,22 @@ func _phase_spawn() -> void:
 
 
 # ---------------------------------------------------------------------------
-# FASE 2 — colpi al pilastro e crollo
+# FASE 2 — colpi al muro-rovina e crollo
 # ---------------------------------------------------------------------------
 func _phase_pillar_collapse() -> void:
-        var test_pillar: Node2D = boss_room._arena_pillars[0]
+        var test_ruin: Node2D = boss_room._arena_ruins[0]
         var felled_too_early: bool = false
         var felled_at_third: bool = false
         for i in 3:
-                var felled: bool = test_pillar.take_hit()
-                if i < 2 and (felled or not test_pillar.is_standing()):
+                var felled: bool = test_ruin.take_hit()
+                if i < 2 and (felled or not test_ruin.is_standing()):
                         felled_too_early = true
                 if i == 2:
-                        felled_at_third = felled and not test_pillar.is_standing()
-        _ok(not felled_too_early, "pilastro in piedi dopo 2 colpi (crepe visibili)")
-        _ok(felled_at_third, "pilastro abbattuto al 3° colpo")
+                        felled_at_third = felled and not test_ruin.is_standing()
+        _ok(not felled_too_early, "muro in piedi dopo 2 colpi (crepe visibili)")
+        _ok(felled_at_third, "muro abbattuto al 3° colpo")
+        _ok(not test_ruin.blocks_point(test_ruin.origin),
+                        "muro crollato NON blocca piu' i proiettili")
 
 
 # ---------------------------------------------------------------------------
@@ -426,22 +455,26 @@ func _phase_siege_hit() -> void:
 
 
 # ---------------------------------------------------------------------------
-# FASE 13 — proiettile del boss bloccato dal pilastro
+# FASE 13 — proiettile del boss bloccato dal muro-rovina
 # ---------------------------------------------------------------------------
 func _phase_boss_proj_blocked() -> void:
         blocked_pillar = null
-        for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl) and pl.is_standing():
-                        blocked_pillar = pl
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn) and rn.is_standing():
+                        blocked_pillar = rn
                         break
         if blocked_pillar == null:
-                _fail("nessun pilastro in piedi per il test blocco")
+                _fail("nessun muro in piedi per il test blocco")
                 return
         pillar_hp_before = blocked_pillar.hp
+        # proiettile finto che vola VERSO il centro del muro lungo la
+        # perpendicolare all'asse del segmento
+        var perpendicular: Vector2 = Vector2(0.0, 1.0) if blocked_pillar.axis == "h" \
+                        else Vector2(1.0, 0.0)
         var fake := Node2D.new()
-        fake.position = blocked_pillar.position - Vector2(90.0, 0.0)
+        fake.position = blocked_pillar.origin - perpendicular * 90.0
         boss_room.boss_projectiles_node.add_child(fake)
-        fake.set_meta("velocity", Vector2(6.0, 0.0))
+        fake.set_meta("velocity", perpendicular * 6.0)
 
 
 # ---------------------------------------------------------------------------
@@ -450,14 +483,14 @@ func _phase_boss_proj_blocked() -> void:
 func _phase_renewal_setup() -> void:
         if blocked_pillar != null and is_instance_valid(blocked_pillar):
                 _ok(blocked_pillar.hp < pillar_hp_before,
-                                "proiettile del boss BLOCCATO dal pilastro "
+                                "proiettile del boss BLOCCATO dal muro-rovina "
                                 + "(HP " + str(pillar_hp_before) + " -> "
                                 + str(blocked_pillar.hp) + ")")
         _ok(boss_room.boss != null and not boss_room.boss.is_dead(),
                         "fight ancora vivo")
         # boss lontano dai barili che sta per far esplodere
         boss_room.boss.pos = Vector2(960.0, 620.0)
-        # forza l'arena SACCHESGGIATA: arma scarica, pilastri giu', barili via
+        # forza l'arena SACCHESGGIATA: arma scarica, muri giu', barili via
         var p: CharacterBody2D = boss_room.player
         var carried: Node2D = boss_room._carried_barrel_of(p)
         if carried != null:
@@ -466,11 +499,11 @@ func _phase_renewal_setup() -> void:
         # allontana il player dal punto di respawn del cannone (960,850):
         # altrimenti lo raccoglie all'istante e il check del rinnovo fallisce
         p.position = Vector2(320.0, 950.0)
-        for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl) and pl.is_standing():
-                        pl.take_hit()
-                        pl.take_hit()
-                        pl.take_hit()
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn) and rn.is_standing():
+                        rn.take_hit()
+                        rn.take_hit()
+                        rn.take_hit()
         for b in boss_room._arena_barrels:
                 if b != null and is_instance_valid(b):
                         # allontana i barili prima di farli esplodere
@@ -487,20 +520,20 @@ func _phase_renewal_setup() -> void:
 func _phase_renewal_check() -> void:
         var standing: int = 0
         var rubble_nodes: int = 0
-        for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl):
-                        if pl.is_standing():
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn):
+                        if rn.is_standing():
                                 standing += 1
-                        elif pl.state == 2:  # RUBBLE
+                        elif rn.state == int(BossArenaRuinClass.RuinState.RUBBLE):
                                 rubble_nodes += 1
-        # TASK 43 (richiesta utente): le architetture distrutte NON risorgono
-        # ne' col rinnovo periodico, ne' alla morte del player.
+        # TASK 43/50 (richiesta utente): le architetture distrutte NON
+        # risorgono ne' col rinnovo periodico, ne' alla morte del player.
         _ok(standing == 0,
-                        "rinnovo arena: NESSUN pilastro risorto ("
+                        "rinnovo arena: NESSUN muro risorto ("
                         + str(standing) + " in piedi)")
-        _ok(rubble_nodes == C.BOSS_ARENA_PILLAR_COUNT,
-                        "rinnovo arena: 4 cumuli di macerie persistenti ("
-                        + str(rubble_nodes) + ")")
+        _ok(rubble_nodes == initial_ruins,
+                        "rinnovo arena: tutti i cumuli di macerie persistenti ("
+                        + str(rubble_nodes) + "/" + str(initial_ruins) + ")")
         var usable_barrels: int = 0
         for b in boss_room._arena_barrels:
                 if b != null and is_instance_valid(b) \
@@ -514,40 +547,67 @@ func _phase_renewal_check() -> void:
 
 
 # ---------------------------------------------------------------------------
-# FASE 16 — TASK 43: snapshot architetture + continue senza resurrezione
+# FASE 16 — TASK 43/50: snapshot architetture + continue senza resurrezione
 # ---------------------------------------------------------------------------
 func _phase_snapshot_restore() -> void:
-        # Simula lo snapshot salvato alla morte del player: il pilastro 0 era
-        # gia' crollato (macerie), il pilastro 1 era in piedi con 2 HP.
-        boss_room._restore_arena_pillars_from_snapshot({"arena_pillars": [
-                {"idx": 0, "state": 2, "hp": 0},
-                {"idx": 1, "state": 0, "hp": 2},
-        ]})
-        var p0: Node2D = null
-        var p1: Node2D = null
-        for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl):
-                        if pl.pillar_index == 0:
-                                p0 = pl
-                        elif pl.pillar_index == 1:
-                                p1 = pl
-        _ok(p0 != null and not p0.is_standing() and p0.state == 2,
-                        "snapshot: pilastro 0 resta MACERIE (non risorge)")
-        _ok(p1 != null and p1.is_standing() and p1.hp == 2,
-                        "snapshot: pilastro 1 in piedi con HP residuo 2")
+        # TASK 50: il layout e' rigenerato dal SEED salvato, poi si riapplicano
+        # gli stati: il muro 0 era gia' crollato (macerie), il muro 1 in piedi
+        # con 2 HP. Prima del restore, annota il layout atteso (posizioni).
+        var saved_seed: int = boss_room._arena_ruin_seed
+        var expected_origins: Array = []
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn):
+                        expected_origins.append(rn.origin)
+        var snap_states: Array = []
+        for i in boss_room._arena_ruins.size():
+                if i == 0:
+                        snap_states.append({"idx": 0, "state": 1, "hp": 0})
+                elif i == 1:
+                        snap_states.append({"idx": 1, "state": 0, "hp": 2})
+                else:
+                        snap_states.append(boss_room._arena_ruins[i].snapshot())
+        boss_room._restore_arena_pillars_from_snapshot({
+                "arena_ruins": snap_states,
+                "arena_ruin_seed": saved_seed,
+        })
+        var r0: Node2D = null
+        var r1: Node2D = null
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn):
+                        if rn.ruin_index == 0:
+                                r0 = rn
+                        elif rn.ruin_index == 1:
+                                r1 = rn
+        _ok(r0 != null and not r0.is_standing()
+                        and r0.state == int(BossArenaRuinClass.RuinState.RUBBLE),
+                        "snapshot: muro 0 resta MACERIE (non risorge)")
+        _ok(r1 != null and r1.is_standing() and r1.hp == 2,
+                        "snapshot: muro 1 in piedi con HP residuo 2")
+        # il layout rigenerato dal seed e' IDENTICO (stesse posizioni)
+        var same_layout: bool = boss_room._arena_ruins.size() == expected_origins.size()
+        if same_layout:
+                for i in boss_room._arena_ruins.size():
+                        var rn2: Node2D = boss_room._arena_ruins[i]
+                        if rn2 == null or not is_instance_valid(rn2) \
+                                        or rn2.origin != expected_origins[i]:
+                                same_layout = false
+                                break
+        _ok(same_layout,
+                        "snapshot: layout rigenerato IDENTICO dal seed ("
+                        + str(boss_room._arena_ruins.size()) + " segmenti)")
         # Continue (2P in-scena): rinnova SOLO i consumabili, non tocca
-        # le architetture — nessun pilastro nuovo, le macerie restano.
-        var nodes_before: int = boss_room._arena_pillars.size()
+        # le architetture — nessun muro nuovo, le macerie restano.
+        var nodes_before: int = boss_room._arena_ruins.size()
         boss_room._respawn_boss_arena()
         var standing_after: int = 0
-        for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl) and pl.is_standing():
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn) and rn.is_standing():
                         standing_after += 1
-        _ok(boss_room._arena_pillars.size() == nodes_before,
-                        "continue: NESSUN pilastro nuovo creato ("
-                        + str(boss_room._arena_pillars.size()) + ")")
+        _ok(boss_room._arena_ruins.size() == nodes_before,
+                        "continue: NESSUN muro nuovo creato ("
+                        + str(boss_room._arena_ruins.size()) + ")")
         _ok(standing_after == 1,
-                        "continue: resta solo il pilastro 1, le macerie restano ("
+                        "continue: resta solo il muro 1 in piedi, le macerie restano ("
                         + str(standing_after) + ")")
         var barrels_after: int = 0
         for b in boss_room._arena_barrels:
@@ -561,32 +621,39 @@ func _phase_snapshot_restore() -> void:
 
 
 # ---------------------------------------------------------------------------
-# FASE 17/18 — rimbalzo del boss sul pilastro
+# FASE 17/18 — TASK 50: il boss CALPESTA i muri, il player COLLIDE
 # ---------------------------------------------------------------------------
 func _phase_bounce_setup() -> void:
         var boss: Node2D = boss_room.boss
         bounce_pillar = null
-        for pl in boss_room._arena_pillars:
-                if pl != null and is_instance_valid(pl) and pl.is_standing():
-                        bounce_pillar = pl
+        for rn in boss_room._arena_ruins:
+                if rn != null and is_instance_valid(rn) and rn.is_standing():
+                        bounce_pillar = rn
                         break
         if bounce_pillar == null or boss == null or boss.is_dead():
-                _fail("setup rimbalzo non possibile")
+                _fail("nessun muro in piedi per il test collisioni")
                 return
-        boss.pos = bounce_pillar.position - Vector2(70.0, 0.0)
-        boss.dx = 2
+        # --- il boss passa SOPRA il muro (niente repulsione: e' gigante) ---
+        boss.pos = bounce_pillar.origin
+        boss.dx = 0
         boss.dy = 0
-        bounce_dx_before = boss.dx
+        var pos_before: Vector2 = boss.pos
+        boss_room._update_boss_arena(16.0)
+        boss_walked_over = boss.pos.distance_to(pos_before) < 0.5
+        # --- il player COLLIDE col muro (spinto fuori dal rettangolo) ---
+        var p: CharacterBody2D = boss_room.player
+        p.ghost_mode = false
+        p.position = bounce_pillar.origin
+        p._collide_arena_ruins()
+        player_pushed_out = not bounce_pillar.get_rect(12.0).has_point(p.position)
 
 
 func _phase_bounce_check() -> void:
-        var boss: Node2D = boss_room.boss
-        if bounce_pillar == null or not is_instance_valid(bounce_pillar) \
-                        or boss == null or not is_instance_valid(boss):
+        if bounce_pillar == null or not is_instance_valid(bounce_pillar):
                 return
-        var bounced: bool = boss.dx != bounce_dx_before \
-                        or boss.pos.distance_to(bounce_pillar.position) > 62.0
-        _ok(bounced, "boss rimbalzato/spinto fuori dal pilastro (dx "
-                        + str(bounce_dx_before) + " -> " + str(boss.dx)
-                        + ", dist " + str(int(boss.pos.distance_to(
-                                        bounce_pillar.position))) + ")")
+        _ok(boss_walked_over,
+                        "boss passa SOPRA il muro-rovina (niente repulsione TASK 50)")
+        _ok(player_pushed_out,
+                        "player COLLIDE col muro e viene spinto fuori (scivolamento)")
+        _ok(bounce_pillar.is_standing(),
+                        "il muro e' ancora in piedi dopo il contatto (nessun danno da collisione)")

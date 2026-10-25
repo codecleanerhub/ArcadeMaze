@@ -943,6 +943,51 @@ func set_direction(t_dx: int, t_dy: int) -> void:
 # FIX (pozione magica): in modalità fantasma il muro NON blocca la corsa —
 # il player attraversa i muri liberamente (uso principale della pozione:
 # sfuggire ai nemici o fare scorciatoia verso un oggetto).
+## TASK 50: collisione del player coi MURO-LABIRINTO in rovina della boss
+## room (gruppo "arena_ruins"). Risolve l'overlap AABB-cerchio spingendo
+## fuori sull'asse con penetrazione minore (scivolamento), cosi' il player
+## "gira l'angolo" dei frammenti invece di incollarcisi. In modalita'
+## fantasma (pozione) i muri NON bloccano, come nel labirinto.
+func _collide_arena_ruins() -> void:
+        if ghost_mode:
+                return
+        var radius: float = 13.0
+        for node in get_tree().get_nodes_in_group("arena_ruins"):
+                if node == null or not is_instance_valid(node):
+                        continue
+                if not node.has_method("is_standing") or not node.is_standing():
+                        continue
+                if not node.has_method("get_rect"):
+                        continue
+                var r: Rect2 = node.get_rect()
+                # overlap AABB-cerchio (clamp del centro sul rettangolo)
+                var closest := Vector2(
+                                clampf(position.x, r.position.x, r.end.x),
+                                clampf(position.y, r.position.y, r.end.y))
+                var delta_v: Vector2 = position - closest
+                if delta_v.length_squared() >= radius * radius:
+                        continue
+                if delta_v.length_squared() < 0.0001:
+                        # centro DENTRO il rettangolo: spingi fuori dal lato piu' vicino
+                        var to_l: float = position.x - r.position.x
+                        var to_r: float = r.end.x - position.x
+                        var to_t: float = position.y - r.position.y
+                        var to_b: float = r.end.y - position.y
+                        var m: float = minf(minf(to_l, to_r), minf(to_t, to_b))
+                        if m == to_l:
+                                position.x = r.position.x - radius
+                        elif m == to_r:
+                                position.x = r.end.x + radius
+                        elif m == to_t:
+                                position.y = r.position.y - radius
+                        else:
+                                position.y = r.end.y + radius
+                        continue
+                var dist: float = delta_v.length()
+                var push: float = radius - dist
+                position += delta_v / dist * push
+
+
 func try_move(t_dx: int, t_dy: int, maze: Object) -> bool:
         var col := int(position.x / TILE_SIZE)
         var row := int((position.y - UI_HEIGHT) / TILE_SIZE)
@@ -1104,6 +1149,10 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                 # Clamp to screen bounds (16 px margin so half the sprite stays visible).
                 position.x = clamp(position.x, 16, WINDOW_WIDTH - 16)
                 position.y = clamp(position.y, UI_HEIGHT + 16, WINDOW_HEIGHT - 16)
+                # TASK 50 (muri-labirinto in boss room): il player si muove
+                # TRA i frammenti di muraglia — i muri in piedi BLOCCANO il
+                # movimento, con scivolamento sull'asse libero (mai incastro).
+                _collide_arena_ruins()
         else:
                 # --- Maze mode: snap-to-grid ---
                 # FIX (line 245-247): if no direction pressed, stop IMMEDIATELY.

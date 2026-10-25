@@ -392,8 +392,24 @@ func _spawn_rock_wall(cell: Vector2i, maze: Node) -> void:
         # faceva 0 e la scala collassava a 1e-5 (lastre invisibili). Cast a
         # float PRIMA della divisione.
         var s: float = float(C.TILE_SIZE) / float(h["slab_a"].texture.get_width())
+        # TASK 50 (integrazione nei muri — bug utente "sembrano pezzi esterni
+        # che si muovono sopra il muro"): le lastre PixelLab sono grigie
+        # neutre e ora vengono TINTE col colore dei muri del livello, cosi'
+        # sembrano un PEZZO DEL MURO stesso che scorre, non un blocco estraneo.
+        # La tinta preserva la luminosita' (normalizzata sul canale massimo)
+        # per non scurire la lastra.
+        var wall_tint: Color = Color.WHITE
+        if maze != null and "wall_color" in maze:
+                var wc: Color = maze.wall_color
+                var lum: float = maxf(wc.r, maxf(wc.g, wc.b))
+                if lum > 0.04:
+                        wall_tint = Color(
+                                        clampf(wc.r / lum * 0.92 + 0.08, 0.0, 1.0),
+                                        clampf(wc.g / lum * 0.92 + 0.08, 0.0, 1.0),
+                                        clampf(wc.b / lum * 0.92 + 0.08, 0.0, 1.0))
         for key in ["slab_a", "slab_b"]:
                 h[key].scale = Vector2(s, s)
+                h[key].self_modulate = wall_tint
                 if h["axis"] == "v":
                         h[key].rotation = PI / 2.0
         h["slab_b"].flip_v = true

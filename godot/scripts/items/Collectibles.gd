@@ -98,6 +98,10 @@ var bouncing: bool = false
 var velocity: Vector2 = Vector2.ZERO
 var bounce_timer_ms: int = 0
 var homing_ms: int = 0  # FIX (bomba homing): timer per BFS homing verso nemico più vicino
+# TASK 50 (mina si incastra nei muri): path-following continuo — percorso
+# BFS completo (waypoint in celle) + indice del waypoint inseguito.
+var path_cells: Array = []
+var path_idx: int = 0
 var in_boss_room: bool = false
 
 # --- SCEPTER-specific ---

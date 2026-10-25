@@ -239,6 +239,13 @@ var hammer_item: Node2D = null          # item a terra (Collectibles.Kind.HAMMER
 var hammer_player: int = 0              # 0 = nessuno, 1 = P1, 2 = P2
 var hammer_uses_left: int = 0           # lanci rimasti (max HAMMER_MAX_USES)
 var hammer_thrown: Node2D = null        # Hammer in volo (scripts/items/Hammer.gd)
+# TASK 50 (martello autofire): stato precedente del pulsante FUOCO dei pad,
+# per rilevare il FRONTE di pressione (premuto adesso e NON premuto al frame
+# precedente). Il martello e la dinamite si lanciano SOLO sul fronte: tenendo
+# il pulsante premuto non si rilancia quando il martello torna in mano
+# (sprecava il secondo colpo). Le armi normali mantengono l'autofire held.
+var _p1_joy_fire_prev: bool = false
+var _p2_joy_fire_prev: bool = false
 const HAMMER_MAX_USES: int = 2
 
 # FIX (HUD last hit enemy): traccia l'ultimo nemico colpito dal player.
@@ -1027,29 +1034,47 @@ func _handle_input() -> void:
                         player.activate_jump()
                         if not was_jumping and player.is_jumping() and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn):
+                # TASK 50 (martello autofire — bug utente): il ramo martello/
+                # dinamite NON controllava lo shoot_cooldown e scattava a
+                # OGNI frame di pressione (is_joy_button_pressed = "tenuto
+                # premuto"): quando il martello tornava in mano col pulsante
+                # ancora premuto, il secondo colpo partiva da solo. Ora
+                # martello e dinamite si lanciano SOLO sul FRONTE di pressione
+                # (fire_edge, aggiornato SEMPRE anche a pulsante rilasciato);
+                # il fuoco delle armi normali resta automatico tenendo premuto
+                # (comportamento arcade).
+                var fire_now: bool = Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn)
+                var fire_edge: bool = fire_now and not _p1_joy_fire_prev
+                _p1_joy_fire_prev = fire_now
+                if fire_now:
                         # FIX (dinamite): se il player ha la dinamite equipaggiata,
                         # il fuoco lancia il candelotto invece di sparare.
                         # FIX (dinamite del proprietario — 2P): solo se la dinamite
                         # appartiene a P1 (se l'ha raccolta P2, il fuoco di P1
                         # spara normalmente).
-                        # FIX (dinamite non lanciata): rimosso il check shoot_cooldown==0
+                        # FIX (dinamite non lanciata): niente check shoot_cooldown==0
                         # perché dopo il pickup, shoot_cooldown potrebbe essere > 0
                         # e bloccare il lancio. La dinamite ha il suo cooldown separato.
                         if dynamite_equipped and dynamite_player == 1:
-                                print("[Dynamite] Joy fire pressed, throwing!")
-                                _throw_dynamite()
-                                player.shoot_cooldown = 300
+                                if fire_edge:
+                                        print("[Dynamite] Joy fire pressed, throwing!")
+                                        _throw_dynamite()
+                                        player.shoot_cooldown = 300
                         elif freeze_scroll_player == 1 and freeze_charges_left > 0 \
                                         and not is_boss_state and player.shoot_cooldown == 0:
                                 # TASK 50: il fuoco spara il RAGGIO
                                 # CONGELANTE (2 colpi, solo nel labirinto).
-                                _fire_freeze_ray(player)
+                                # Anche il raggio e' sul FRONTE di pressione
+                                # (come dinamite/martello: niente autofire).
+                                if fire_edge:
+                                        _fire_freeze_ray(player)
                         elif hammer_player == 1 and hammer_thrown == null:
                                 # FIX (martello di Thor): il fuoco lancia IL
                                 # MARTELLO (fino a 2 volte, poi scompare).
-                                _throw_hammer(player)
-                                player.shoot_cooldown = 300
+                                # SOLO fronte di pressione: vedi TASK 50 sopra.
+                                if fire_edge:
+                                        _throw_hammer(player)
+                                        player.shoot_cooldown = 300
                         elif player.shoot_cooldown == 0:
                                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                                 player.shoot()
@@ -1193,23 +1218,35 @@ func _handle_input() -> void:
                                 if not was_jumping_2 and player2.is_jumping() \
                                                 and AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                        if Input.is_joy_button_pressed(p2_joy_id, j2_shoot) and player2.shoot_cooldown == 0:
+                        # TASK 50 (martello autofire): fronte di pressione anche per P2
+                        # (stesso fix di P1 — il martello non si rilancia da solo se il
+                        # pulsante resta premuto quando torna in mano). L'edge si basa
+                        # SOLO sullo stato fisico del pulsante: il cooldown non deve
+                        # creare falsi fronti quando scade col pulsante gia' premuto.
+                        var fire2_now: bool = Input.is_joy_button_pressed(p2_joy_id, j2_shoot)
+                        var fire2_edge: bool = fire2_now and not _p2_joy_fire_prev
+                        _p2_joy_fire_prev = fire2_now
+                        if fire2_now and player2.shoot_cooldown == 0:
                                 # FIX (dinamite del giocatore 2 — bug utente 2P):
                                 # prima il ramo dinamite NON esisteva nel fuoco
                                 # di P2: poteva raccoglierla ma non lanciarla.
                                 # Ora il fuoco di P2 lancia la dinamite se è SUA.
                                 if dynamite_equipped and dynamite_player == 2:
-                                        _throw_dynamite()
-                                        player2.shoot_cooldown = 300
+                                        if fire2_edge:
+                                                _throw_dynamite()
+                                                player2.shoot_cooldown = 300
                                 elif freeze_scroll_player == 2 and freeze_charges_left > 0 \
                                                 and not is_boss_state:
                                         # TASK 50: raggio congelante P2 joystick
                                         # (l'outer check richiede gia' cooldown 0).
-                                        _fire_freeze_ray(player2)
+                                        # Fronte di pressione come P1.
+                                        if fire2_edge:
+                                                _fire_freeze_ray(player2)
                                 elif hammer_player == 2 and hammer_thrown == null:
                                         # FIX (martello di Thor): lancio P2 joystick.
-                                        _throw_hammer(player2)
-                                        player2.shoot_cooldown = 300
+                                        if fire2_edge:
+                                                _throw_hammer(player2)
+                                                player2.shoot_cooldown = 300
                                 else:
                                         player2.shoot()
                                         player2.shoot_cooldown = C.relic_fire_cooldown(
@@ -2053,102 +2090,123 @@ func _check_mine_vs_enemies() -> void:
                 return
         var mine_pos2: Vector2 = mine_item.position
         var mine_vel: Vector2 = mine_item.velocity
-        # FIX (bomba homing): ogni 250ms ricalcola la direzione verso il nemico
-        # più vicino usando BFS. La bomba "segue il labirinto" attivamente
-        # invece di muoversi solo in linea retta.
+        # =========================================================================
+        # TASK 50 (mina si blocca al primo muro e torna indietro in loop):
+        # riscritto l'homing. VECCHIO modello: ogni 250ms il BFS dava una
+        # direzione axis-aligned; tra un ricalcolo e l'altro la mina andava
+        # dritto e RIMBALZAVA elasticamente sui muri, finendo in oscillazione
+        # destra-sinistra finché non esplodeva. NUOVO modello: path-FOLLOWING
+        # continuo — BFS completo (BFS.find_path_cells), la mina insegue il
+        # centro del waypoint corrente, avanza appena entra nella cella e
+        # ricalcola appena il nemico si sposta di cella (o ogni 200ms).
+        # Nessun rimbalzo: se un passo finisse in un muro, scivola sull'asse
+        # libero (mai inversione di direzione).
+        # =========================================================================
+        var mine_cell := Vector2i(int(mine_pos2.x / C.TILE_SIZE),
+                        int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        var best_enemy: Node2D = null
+        var best_dist: float = INF
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                var d: float = mine_pos2.distance_squared_to(e_pos)
+                if d < best_dist:
+                        best_dist = d
+                        best_enemy = enemy
+        if mini_boss != null and not mini_boss.is_dead():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                var d_mb: float = mine_pos2.distance_squared_to(mb_pos)
+                if d_mb < best_dist:
+                        best_dist = d_mb
+                        best_enemy = mini_boss
         var homing_timer: int = mine_item.homing_ms
         homing_timer -= 16
-        if homing_timer <= 0:
-                var mine_cell := Vector2i(int(mine_pos2.x / C.TILE_SIZE),
-                                int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                var best_enemy: Node2D = null
-                var best_dist: float = INF
-                for enemy in spawner.enemies:
-                        if enemy.is_dead():
+        if best_enemy != null and homing_timer <= 0:
+                var bpos: Vector2 = best_enemy.get_pixel_pos()
+                var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
+                                int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                var new_path: Array[Vector2i] = BFS.find_path_cells(maze, mine_cell, target_cell)
+                if new_path.size() > 0:
+                        mine_item.path_cells = new_path
+                        mine_item.path_idx = 0
+                homing_timer = 200
+        # --- Segui il waypoint corrente (steering continuo) ---
+        var speed: float = clampf(mine_vel.length(), 6.0, 7.5)
+        if mine_item.path_cells.size() > 0 and best_enemy != null:
+                # avanza i waypoint gia' raggiunti (cella corrente o sorpassati)
+                while mine_item.path_idx < mine_item.path_cells.size():
+                        var wp: Vector2i = mine_item.path_cells[mine_item.path_idx]
+                        if wp == mine_cell:
+                                mine_item.path_idx += 1
                                 continue
-                        var e_pos: Vector2 = enemy.get_pixel_pos()
-                        var d: float = mine_pos2.distance_squared_to(e_pos)
-                        if d < best_dist:
-                                best_dist = d
-                                best_enemy = enemy
-                if mini_boss != null and not mini_boss.is_dead():
-                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                        var d_mb: float = mine_pos2.distance_squared_to(mb_pos)
-                        if d_mb < best_dist:
-                                best_dist = d_mb
-                                best_enemy = mini_boss
-                if best_enemy != null:
-                        var bpos: Vector2 = best_enemy.get_pixel_pos()
-                        var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
-                                        int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                        var next_dir: Vector2i = BFS.find_path_dir(maze, mine_cell, target_cell)
-                        if next_dir != Vector2i.ZERO:
-                                var speed: float = mine_vel.length()
-                                if speed < 0.001:
-                                        speed = 8.0
-                                mine_vel = Vector2(next_dir) * speed
-                homing_timer = 250
-        # FIX (bomba rimbalza senza inseguire): il save di homing_ms è
-        # SPOSTATO dopo il bounce check. Prima era prima del bounce, quindi
-        # l'azzeramento homing_timer=0 dopo il rimbalzo non veniva salvato
-        # → al prossimo frame homing_timer ripartiva da 250 invece di 0 →
-        # il BFS non ricalcolava subito → oscillazione.
-        # FIX (bomba arcade bouncing): muovi; se la nuova posizione è in un
-        # muro, inverte l'asse di impatto e NON damped (rimbalzo elastico
-        # puro, velocità costante).
-        # FIX (bomba rimbalza senza inseguire): dopo ogni rimbalzo, forza
-        # ricalcolo homing al prossimo frame (homing_timer=0). Prima, il
-        # timer homing di 250ms faceva sì che la bomba continuasse a
-        # rimbalzare nella STESSA direzione per 15 frame prima che il BFS
-        # ricalcolasse → oscillazione destra-sinistra ripetuta senza
-        # inseguire i nemici. Ora, dopo un rimbalzo, il BFS ricalcola
-        # immediatamente la direzione ottimale verso il nemico.
-        var _bounced: bool = false
+                        break
+                if mine_item.path_idx < mine_item.path_cells.size():
+                        var wp2: Vector2i = mine_item.path_cells[mine_item.path_idx]
+                        var step_d: Vector2i = wp2 - mine_cell
+                        var tgt: Vector2
+                        if absi(step_d.x) > 1 or absi(step_d.y) > 1:
+                                # Tunnel Pac-Man: il waypoint e' l'imbocco partner
+                                # opposto. Vola VERSO L'ESTERNO dal proprio imbocco:
+                                # il tunnel_wrap teletrasporta e il waypoint dopo
+                                # l'attraversamento e' adiacente di nuovo.
+                                # direzione d'uscita = verso il bordo piu' vicino
+                                # dell'imbocco (la cella corrente e' di bordo)
+                                var outward: Vector2 = Vector2(
+                                        signf(float(mine_cell.x) - float(C.MAZE_COLS - 1) * 0.5),
+                                        signf(float(mine_cell.y) - float(C.MAZE_ROWS - 1) * 0.5))
+                                if absf(outward.x) > absf(outward.y):
+                                        outward = Vector2(signf(outward.x), 0)
+                                else:
+                                        outward = Vector2(0, signf(outward.y))
+                                tgt = mine_pos2 + outward * 80.0
+                        else:
+                                tgt = Vector2((wp2.x + 0.5) * C.TILE_SIZE,
+                                                C.UI_HEIGHT + (wp2.y + 0.5) * C.TILE_SIZE)
+                        var to_t: Vector2 = tgt - mine_pos2
+                        if to_t.length() > 1.0:
+                                mine_vel = to_t.normalized() * speed
+                else:
+                        # percorso esaurito: puntala direttamente al nemico
+                        var direct: Vector2 = best_enemy.get_pixel_pos() - mine_pos2
+                        if direct.length() > 1.0:
+                                mine_vel = direct.normalized() * speed
+        elif best_enemy != null:
+                # nessun percorso BFS (nemico irraggiungibile / stessa cella):
+                # puntala direttamente al nemico
+                var direct2: Vector2 = best_enemy.get_pixel_pos() - mine_pos2
+                if direct2.length() > 1.0:
+                        mine_vel = direct2.normalized() * speed
+        # --- Movimento con SLIDE sui muri (mai rimbalzo) + wrap tunnel ---
         var new_pos: Vector2 = mine_pos2 + mine_vel
         var cur_col: int = int(mine_pos2.x / C.TILE_SIZE)
         var cur_row: int = int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        var next_col: int = int(new_pos.x / C.TILE_SIZE)
-        var next_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        if next_col >= 0 and next_col < C.MAZE_COLS and next_row >= 0 and next_row < C.MAZE_ROWS:
-                if next_col != cur_col and maze.is_wall(next_col, cur_row):
-                        mine_vel.x = -mine_vel.x  # rimbalzo elastico (no damping)
-                        new_pos.x = mine_pos2.x
-                        _bounced = true
-                if next_row != cur_row and maze.is_wall(cur_col, next_row):
-                        mine_vel.y = -mine_vel.y  # rimbalzo elastico (no damping)
-                        new_pos.y = mine_pos2.y
-                        _bounced = true
-        else:
-                # FIX (mina incastrata nel tunnel — bug utente): la mina che
-                # entra in una galleria Pac-Man deve ATTRAVERSARLA e riemergere
-                # dal lato opposto ESATTAMENTE come player e nemici (tunnel_wrap
-                # su GameConstants). Prima cadeva nel ramo out-of-bounds e
-                # rimbalzava sul bordo schermo: l'homing BFS la respingeva di
-                # nuovo verso il tunnel -> la mina vibrava INCASTRATA
-                # nell'imbocco (il BFS la instrada attraverso la galleria perche'
-                # e' la via piu' corta verso i nemici sull'altro lato).
-                # Nota: la mina puo' uscire dai bordi SOLO attraverso un imbocco
-                # di galleria (tutte le altre celle di bordo sono muri da cui
-                # rimbalza), quindi il wrap e' intrinsecamente sicuro.
+        if new_pos.x < 0.0 or new_pos.x >= C.WINDOW_WIDTH \
+                        or new_pos.y < C.UI_HEIGHT or new_pos.y >= C.WINDOW_HEIGHT:
                 var wrapped_mine: Vector2 = GameConstants.tunnel_wrap(new_pos)
                 if wrapped_mine != new_pos:
                         new_pos = wrapped_mine
-                else:
-                        # Vero out-of-bounds al di fuori delle gallerie (non
-                        # dovrebbe mai succedere): rimbalzo sui bordi schermo.
-                        if new_pos.x < 64.0 or new_pos.x > C.WINDOW_WIDTH - 64.0:
-                                mine_vel.x = -mine_vel.x
-                                new_pos.x = mine_pos2.x
-                                _bounced = true
-                        if new_pos.y < C.UI_HEIGHT + 32.0 or new_pos.y > C.WINDOW_HEIGHT - 64.0:
-                                mine_vel.y = -mine_vel.y
-                                new_pos.y = mine_pos2.y
-                                _bounced = true
-        # FIX (bomba rimbalza senza inseguire): dopo un rimbalzo, forza
-        # ricalcolo homing al prossimo frame.
-        if _bounced:
-                homing_timer = 0
-        # SAVE homing_ms DOPO il bounce check (così l'azzeramento persiste).
+        var next_col: int = int(new_pos.x / C.TILE_SIZE)
+        var next_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if next_col >= 0 and next_col < C.MAZE_COLS and next_row >= 0 and next_row < C.MAZE_ROWS:
+                var blocked_x: bool = next_col != cur_col and maze.is_wall(next_col, cur_row)
+                var blocked_y: bool = next_row != cur_row and maze.is_wall(cur_col, next_row)
+                var blocked_diag: bool = (next_col != cur_col or next_row != cur_row) \
+                                and maze.is_wall(next_col, next_row)
+                if blocked_x and blocked_y:
+                        # angolo: resta dov'e' e forza ricalcolo percorso
+                        new_pos = mine_pos2
+                        homing_timer = 0
+                elif blocked_diag and not blocked_x and not blocked_y:
+                        # taglio dell'angolo: muovi solo sull'asse che resta libero
+                        if not maze.is_wall(cur_col, next_row):
+                                new_pos = Vector2(mine_pos2.x, new_pos.y)
+                        else:
+                                new_pos = Vector2(new_pos.x, mine_pos2.y)
+                elif blocked_x:
+                        new_pos = Vector2(mine_pos2.x, new_pos.y)
+                elif blocked_y:
+                        new_pos = Vector2(new_pos.x, mine_pos2.y)
         mine_item.homing_ms = homing_timer
         mine_pos2 = new_pos
         # Aggiorna posizione e velocità della mine
