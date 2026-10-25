@@ -696,29 +696,44 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 var prot2: float = spawner.magic_portal.rotation
                 var pglow2: float = spawner.magic_portal.glow_pulse
                 var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
+                # Aura viola morbida attorno al portale (sia sprite sia proc)
                 ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
-                for i in 12:
-                        var a2: float = prot2 + (float(i) / 12.0) * TAU
-                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
-                        ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
-                for i in 8:
-                        var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
-                        var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
-                        ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
-                var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
-                # FIX (pallino procedurale accanto al miniboss, 2° tentativo):
-                # il fix precedente aveva ridotto solo l'alpha del cerchietto
-                # bianco più piccolo (riga 328, alpha 1.0 -> 0.5), MA il
-                # PALLINO VERO era il disco LAVANDA qui sotto (alpha 0.9,
-                # raggio 10px, quasi solido). Ridotto alpha da 0.9 a 0.25:
-                # rimane un nucleo viola tenue che pulsa con glow_pulse,
-                # ma non è più un cerchio solido che appare come "pallino
-                # alieno" accanto al miniboss spawnato 1-4 celle più in là.
-                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
-                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
-                # FIX: pallino centrale bianco alpha 0.5 (era 1.0 nel commit
-                # 424b038, confermato invariato).
-                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
+                # --- TASK 54: portale come sprite animato PixelLab ---
+                # (env/portal_sheet.png, 4 frame vortice). Rollback:
+                # GameConstants.PORTAL_SPRITE_ENABLED = false -> cerchi.
+                if C.PORTAL_SPRITE_ENABLED and _get_portal_sheet() != null:
+                        var sheet: Texture2D = _get_portal_sheet()
+                        var frame_idx: int = int(prot2 * 2.2 + pglow2 * 3.0) % 4
+                        if frame_idx < 0:
+                                frame_idx += 4
+                        var pulse: float = 1.0 + sin(pglow2 * 2.0) * 0.06
+                        var w: float = 84.0 * pulse
+                        var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
+                        var dst := Rect2(ppos2.x - w * 0.5, ppos2.y - w * 0.5, w, w)
+                        ci.draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
+                else:
+                        for i in 12:
+                                var a2: float = prot2 + (float(i) / 12.0) * TAU
+                                var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
+                                ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
+                        for i in 8:
+                                var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
+                                var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
+                                ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
+                        var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
+                        # FIX (pallino procedurale accanto al miniboss, 2° tentativo):
+                        # il fix precedente aveva ridotto solo l'alpha del cerchietto
+                        # bianco più piccolo (riga 328, alpha 1.0 -> 0.5), MA il
+                        # PALLINO VERO era il disco LAVANDA qui sotto (alpha 0.9,
+                        # raggio 10px, quasi solido). Ridotto alpha da 0.9 a 0.25:
+                        # rimane un nucleo viola tenue che pulsa con glow_pulse,
+                        # ma non è più un cerchio solido che appare come "pallino
+                        # alieno" accanto al miniboss spawnato 1-4 celle più in là.
+                        ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
+                        ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
+                        # FIX: pallino centrale bianco alpha 0.5 (era 1.0 nel commit
+                        # 424b038, confermato invariato).
+                        ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
 
 
 # ============================================================================
@@ -6187,3 +6202,23 @@ func _draw() -> void:
         # un CanvasLayer (layer=1). Prima erano qui in _draw() che viene
         # chiamato PRIMA dei figli → il maze copriva tutto.
         pass
+
+
+# ============================================================================
+# TASK 54: cache statica dello sheet portale PixelLab (env/portal_sheet.png,
+# 4 frame vortice). Null se il PNG non esiste -> fallback cerchi procedurali.
+# ============================================================================
+static var _portal_sheet_cache: Texture2D = null
+static var _portal_sheet_tried: bool = false
+
+static func _get_portal_sheet() -> Texture2D:
+        if _portal_sheet_tried:
+                return _portal_sheet_cache
+        _portal_sheet_tried = true
+        var path := "res://assets/sprites/env/portal_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        _portal_sheet_cache = ImageTexture.create_from_image(img)
+        return _portal_sheet_cache

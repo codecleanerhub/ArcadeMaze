@@ -187,15 +187,11 @@ def extract_images(resp) -> list[str]:
     raise RuntimeError(f"Risposta pixflux inattesa: {str(resp)[:300]}")
 
 
-def animate_with_text_v3(first_frame_path: str, action: str,
-                         frame_count: int = 4, seed: int = 7,
-                         no_background: bool = True,
-                         poll_interval: float = 8.0, poll_timeout: float = 420.0) -> list[str]:
-    """POST /animate-with-text-v3 (BACKGROUND) + poll fino a completamento.
-
-    Ritorna la lista di base64 delle immagini del job. La PRIMA immagine è
-    il reference (da scartare — regola §8.2 passo 3).
-    """
+def submit_animate_with_text_v3(first_frame_path: str, action: str,
+                               frame_count: int = 4, seed: int = 7,
+                               no_background: bool = True) -> str:
+    """SOLO submit del job animate v3 — ritorna il job_id (il POST è PAGATO
+    da questo momento: salva subito il job_id nello stato!)."""
     payload = {
         "first_frame": b64_of_file(first_frame_path),
         "action": action,
@@ -206,11 +202,14 @@ def animate_with_text_v3(first_frame_path: str, action: str,
     resp = _request("POST", "/animate-with-text-v3", payload, timeout=300)
     job_id = resp.get("background_job_id") or resp.get("job_id")
     if not job_id:
-        # risposta sincrona inattesa: gestisci comunque immagini immediate
-        if isinstance(resp, dict) and "images" in resp:
-            return [img.get("base64", "") for img in resp["images"]]
         raise RuntimeError(f"Risposta animate v3 senza job id: {str(resp)[:300]}")
-    print(f"[api] job {job_id} avviato, polling...", flush=True)
+    return job_id
+
+
+def poll_background_job(job_id: str, poll_interval: float = 8.0,
+                        poll_timeout: float = 420.0) -> list[str]:
+    """Poll di un job background ESISTENTE fino a completamento."""
+    print(f"[api] poll job {job_id}...", flush=True)
     t0 = time.time()
     while time.time() - t0 < poll_timeout:
         time.sleep(poll_interval)
@@ -218,15 +217,26 @@ def animate_with_text_v3(first_frame_path: str, action: str,
         status = str(job.get("status", "")).lower()
         if status in ("done", "completed", "succeeded", "success"):
             lr = job.get("last_response") or {}
-            if isinstance(lr, dict) and "images" in lr:
-                return [img.get("base64", "") for img in lr["images"] if img.get("base64")]
-            if isinstance(lr, dict) and lr.get("base64"):
-                return [lr["base64"]]
-            raise RuntimeError(f"Job {job_id} done senza immagini: {str(job)[:300]}")
+            try:
+                return extract_images(lr)
+            except RuntimeError:
+                raise RuntimeError(f"Job {job_id} done ma immagini non estratte "
+                                   f"da last_response: {str(lr)[:300]}") from None
         if status in ("failed", "error"):
             raise RuntimeError(f"Job {job_id} FALLITO: {str(job.get('last_response'))[:400]}")
-        # processing / pending: continua
     raise TimeoutError(f"Job {job_id} non completato entro {poll_timeout:.0f}s")
+
+
+def animate_with_text_v3(first_frame_path: str, action: str,
+                         frame_count: int = 4, seed: int = 7,
+                         no_background: bool = True,
+                         poll_interval: float = 8.0, poll_timeout: float = 420.0) -> list[str]:
+    """Submit + poll (comodo per run one-shot). Per resume usare
+    submit_animate_with_text_v3 + poll_background_job separatamente."""
+    job_id = submit_animate_with_text_v3(first_frame_path, action, frame_count,
+                                         seed, no_background)
+    print(f"[api] job {job_id} avviato, polling...", flush=True)
+    return poll_background_job(job_id, poll_interval, poll_timeout)
 
 
 if __name__ == "__main__":

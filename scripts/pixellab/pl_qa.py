@@ -86,18 +86,57 @@ def frame_diff_pct(a: Image.Image, b: Image.Image) -> float:
     return 100.0 * changed / ((w // 2) * (h // 2))
 
 
+def regional_diff_pct(a: Image.Image, b: Image.Image) -> float:
+    """% pixel cambiati RELATIVA alla regione soggetto (bbox unione alpha).
+
+    Lezione Task 54: per animazioni parziali (fiamma di torcia su corpo
+    stabile) il diff globale sul canvas sottostima il moto: 2% globale può
+    essere 12% della sola regione animata. Si conta la NATURA del cambio
+    nella sua regione (§12.34).
+    """
+    ra, rb = a.convert("RGBA"), b.convert("RGBA")
+    if ra.size != rb.size:
+        return 100.0
+    # bbox unione dei pixel opachi
+    boxes = [im.getbbox() for im in (ra, rb) if im.getbbox()]
+    if not boxes:
+        return 0.0
+    x0 = min(bx[0] for bx in boxes); y0 = min(bx[1] for bx in boxes)
+    x1 = max(bx[2] for bx in boxes); y1 = max(bx[3] for bx in boxes)
+    pa, pb = ra.load(), rb.load()
+    changed = 0
+    for x in range(x0, x1):
+        for y in range(y0, y1):
+            va, vb = pa[x, y], pb[x, y]
+            if (va[3] > 0) != (vb[3] > 0):
+                changed += 1
+            elif va[3] > 0 and (
+                abs(va[0] - vb[0]) > 24 or abs(va[1] - vb[1]) > 24
+                or abs(va[2] - vb[2]) > 24
+            ):
+                changed += 1
+    area = max(1, (x1 - x0) * (y1 - y0))
+    return 100.0 * changed / area
+
+
 def check_frame_diffs(frames: list[Image.Image]) -> list[str]:
-    """Diffs adiacenti: ogni coppia deve stare in 3-55% (no statico, no near-dup)."""
+    """Diffs adiacenti: GLOBAL 3-55% OPPURE REGIONAL >=6% = moto OK.
+
+    Fallisce solo se il frame è statico su ENTRAMBE le metriche
+    (global <3% e regional <6%) o se c'è drift eccessivo (global >55%,
+    regional >75%)."""
     errors = []
     for i in range(len(frames) - 1):
-        d = frame_diff_pct(frames[i], frames[i + 1])
-        if d < 3.0:
-            errors.append(f"frame {i}->{i+1}: diff {d:.1f}% < 3% (frame STATICO)")
-        elif d < 1.0 + 2.0:  # near-dup band 1-3% segnalata
-            if d >= 1.0:
-                errors.append(f"frame {i}->{i+1}: diff {d:.1f}% in banda near-dup (1-3%) — scartare e ping-pong")
-        elif d > 55.0:
-            errors.append(f"frame {i}->{i+1}: diff {d:.1f}% > 55% (drift eccessivo)")
+        g = frame_diff_pct(frames[i], frames[i + 1])
+        r = regional_diff_pct(frames[i], frames[i + 1])
+        if g < 3.0 and r < 6.0:
+            errors.append(f"frame {i}->{i+1}: diff globale {g:.1f}% e regionale "
+                          f"{r:.1f}% — frame STATICO sulla regione animata")
+        elif 1.0 <= g < 3.0 and r < 6.0:
+            errors.append(f"frame {i}->{i+1}: banda near-dup (g {g:.1f}%/r {r:.1f}%) "
+                          f"— scartare e ping-pong")
+        elif g > 55.0 and r > 75.0:
+            errors.append(f"frame {i}->{i+1}: drift eccessivo (g {g:.1f}%/r {r:.1f}%)")
     return errors
 
 

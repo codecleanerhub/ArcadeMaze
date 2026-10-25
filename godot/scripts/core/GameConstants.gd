@@ -1278,6 +1278,16 @@ static var SCROLL_FREEZE_ENABLED: bool = true
 ## Colpi del raggio congelante per raccolta.
 const SCROLL_FREEZE_CHARGES: int = 2
 
+## TASK 54: torcia del labirinto come sprite animato PixelLab
+## (env/torch_sheet.png, 4 frame @ 8 FPS). Rollback: false = torcia
+## procedurale a primitive (aura + bastone + cestello + fiamma 3 strati).
+static var TORCH_SPRITE_ENABLED: bool = true
+
+## TASK 54: portale magico (respawn nemici) come sprite animato PixelLab
+## (env/portal_sheet.png, 4 frame). Rollback: false = portale procedurale
+## a cerchi orbitanti viola/ciano.
+static var PORTAL_SPRITE_ENABLED: bool = true
+
 ## Punti per ogni nemico congelato (come le altre pergamene evento).
 const SCROLL_FREEZE_POINTS: int = 5000
 

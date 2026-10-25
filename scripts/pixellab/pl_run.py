@@ -199,21 +199,29 @@ def run_anim(defs: dict, entity_id: str) -> bool:
         st["base_file"] = base_png
         save_state(entity_id, st)
 
-    # 2) animate v3 (4 gen) — discard prima immagine (reference)
+    # 2) animate v3 (4 gen) — submit con job_id salvato PRIMA del poll
+    #    (mai ripagare un POST: resume dal job_id se il processo muore)
     frames_dir = stage_out(entity_id, "frames")
-    if st.get("stage") == "anim_submitted" and os.path.isdir(frames_dir) and \
-            len([f for f in os.listdir(frames_dir) if f.endswith(".png")]) >= 4:
-        print(f"[{entity_id}] frame già scaricati — skip POST")
-        st["stage"] = "frames_done"
-        save_state(entity_id, st)
-    if st.get("stage") == "base_done":
-        raw = pl_api.animate_with_text_v3(
-            first_frame_path=base_png,
-            action=d["action"],
-            frame_count=d.get("frame_count", 4),
-            seed=d.get("anim_seed", 7),
-        )
+    if st.get("stage") == "frames_done" and os.path.isdir(frames_dir):
+        print(f"[{entity_id}] frame già pronti — skip POST")
+    elif st.get("stage") in ("base_done", "anim_submitted"):
+        job_id = st.get("anim_job_id")
+        if not job_id:
+            job_id = pl_api.submit_animate_with_text_v3(
+                first_frame_path=base_png,
+                action=d["action"],
+                frame_count=d.get("frame_count", 4),
+                seed=d.get("anim_seed", 7),
+            )
+            st["stage"] = "anim_submitted"
+            st["anim_job_id"] = job_id
+            save_state(entity_id, st)  # POST pagato: persisti SUBITO
+        raw = pl_api.poll_background_job(job_id)
         # la PRIMA immagine è il reference: scartala (§8.2 passo 3)
+        raw_dir = stage_out(entity_id, "frames_raw")
+        os.makedirs(raw_dir, exist_ok=True)
+        for i, b64 in enumerate(raw):
+            pl_api.save_b64_image(b64, os.path.join(raw_dir, f"r{i}.png"))
         payload_imgs = raw[1:] if len(raw) > d.get("frame_count", 4) else raw
         os.makedirs(frames_dir, exist_ok=True)
         for i, b64 in enumerate(payload_imgs[: d.get("frame_count", 4)]):
@@ -221,6 +229,16 @@ def run_anim(defs: dict, entity_id: str) -> bool:
         st["stage"] = "frames_done"
         st["frame_count"] = len(payload_imgs)
         save_state(entity_id, st)
+
+    # 2b) post-processing frame: rimozione sfondo + palette (gratuito)
+    if d.get("bg_remove", True):
+        for i in range(d.get("frame_count", 4)):
+            fp = os.path.join(frames_dir, f"f{i}.png")
+            if not os.path.isfile(fp):
+                continue
+            img = Image.open(fp).convert("RGBA")
+            img = pl_integrate.remove_solid_background(img, tol=d.get("bg_tol", 26))
+            img.save(fp, "PNG")
 
     # 3) QA frame
     frames = [Image.open(os.path.join(frames_dir, f"f{i}.png"))

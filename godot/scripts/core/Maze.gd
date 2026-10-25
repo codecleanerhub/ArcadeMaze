@@ -350,6 +350,20 @@ func _draw_torch(x: float, y_base: float, t: float) -> void:
         # --- Aura luminosa calda (2 cerchi semitrasparenti) ---
         draw_circle(Vector2(x, y_base - 34.0), 22.0, Color(1.0, 0.71, 0.24, 0.14))
         draw_circle(Vector2(x, y_base - 26.0), 14.0, Color(1.0, 0.78, 0.31, 0.22))
+        # --- TASK 54: sprite animato PixelLab (env/torch_sheet.png 4 frame) ---
+        # Rollback: GameConstants.TORCH_SPRITE_ENABLED = false -> procedurale.
+        if C.TORCH_SPRITE_ENABLED:
+                var sheet: Texture2D = _get_torch_sheet()
+                if sheet != null:
+                        var frame_idx: int = int(t * 8.0 + x * 0.37) % 4
+                        # frame 64x64, disegnato ~54px col fondo base a y_base+6
+                        var s: float = 0.85
+                        var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
+                        var w: float = 64.0 * s
+                        var dst := Rect2(x - w * 0.5, y_base + 6.0 - w, w, w)
+                        draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
+                        return
+        # --- Fallback procedurale (bastone + cestello + fiamma 3 strati) ---
         # --- Bastone della torcia (legno scuro 4x12) ---
         draw_rect(Rect2(x - 2.0, y_base - 4.0, 4.0, 12.0), Color(0.235, 0.118, 0.039), true)
         draw_rect(Rect2(x - 2.0, y_base - 4.0, 4.0, 12.0), Color(0.078, 0.039, 0.0), false, 0.8)
@@ -380,6 +394,24 @@ func _draw_torch(x: float, y_base: float, t: float) -> void:
                 Color(1.0, 0.549, 0.118, 0.941))
         # Strato interno (giallo-bianco, r=2)
         draw_circle(Vector2(x - 2.0, y_base - 19.0), 2.0, Color(1.0, 0.941, 0.706, 0.980))
+
+
+# Cache statica dello sheet torcia PixelLab (TASK 54). Null se il PNG
+# non esiste o il caricamento fallisce -> fallback procedurale.
+static var _torch_sheet_cache: Texture2D = null
+static var _torch_sheet_tried: bool = false
+
+static func _get_torch_sheet() -> Texture2D:
+        if _torch_sheet_tried:
+                return _torch_sheet_cache
+        _torch_sheet_tried = true
+        var path := "res://assets/sprites/env/torch_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        _torch_sheet_cache = ImageTexture.create_from_image(img)
+        return _torch_sheet_cache
 
 
 # Disegna un'urna decorativa in (cx, cy). Port 1:1 di drawUrn in Maze.cpp

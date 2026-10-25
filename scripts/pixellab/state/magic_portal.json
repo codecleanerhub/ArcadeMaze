@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/magic_portal/base.png",
+  "anim_job_id": "857dec96-545f-45aa-81d0-50eef14e8cd5",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/portal_sheet.png"
+}

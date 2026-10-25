@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/maze_torch/base.png",
+  "anim_job_id": "7974151d-cf69-44c0-9410-0b64075dc72d",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/torch_sheet.png"
+}
