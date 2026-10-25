@@ -885,6 +885,10 @@ func _unhandled_input(event: InputEvent) -> void:
         # è aperta (l'unico input ammesso è quello dell'overlay).
         if _continue_pending_player != 0:
                 return
+        # TASK 51 — CARD BONUS: niente pausa/uscita mentre la card informativa
+        # e' aperta (l'unico input ammesso e' l'hold del fuoco).
+        if _bonus_card != null:
+                return
         # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
         # fase di uscita dalla scena. Usiamo una variabile locale con null check.
         if event.is_action_pressed("pause") and not event.is_echo():
@@ -906,6 +910,13 @@ func _unhandled_input(event: InputEvent) -> void:
 # the MainGame transform). Without this cleanup, they would persist into the
 # next scene (e.g. MainMenu) and cause rendering issues.
 func _exit_tree() -> void:
+        # TASK 51 — CARD BONUS: libera l'overlay e sblocca il tree se si
+        # esce dalla scena mentre la card e' aperta (cambio livello/ESC).
+        if _bonus_card != null:
+                _bonus_card.queue_free()
+                _bonus_card = null
+                if get_tree():
+                        get_tree().paused = false
         # FIX (pausa attiva al cambio scena): se si esce dal MainGame mentre
         # è in pausa (ESC dal menu gestito sotto, transizioni), il tree va
         # ripristinato sennò la scena successiva parte congelata.
@@ -932,11 +943,22 @@ func _exit_tree() -> void:
                 _fg_drawer = null
 
 
+# FIX (pausa P senza feedback visivo): overlay PAUSE (mirror MainGame).
+# TASK 51 — CARD BONUS: pure-code CanvasLayer che mostra la card informativa
+# alla PRIMA raccolta di un bonus particolare (gioco in pausa, si chiude
+# tenendo premuto il fuoco per 1 secondo).
+var _bonus_card: CanvasLayer = null
+const BonusCardOverlayClass = preload("res://scripts/ui/BonusCardOverlay.gd")
+
 func _physics_process(_delta: float) -> void:
         # TASK 23: continue per-player aperto — gioco CONGELATO (mirror della
         # pausa: nessun update, nessun input di gameplay; l'overlay gira in
         # PROCESS_MODE_ALWAYS e smette da solo alla scelta).
         if _continue_pending_player != 0:
+                return
+        # TASK 51 — CARD BONUS aperta: gioco in pausa (l'overlay gira in
+        # PROCESS_MODE_ALWAYS e si chiude da solo con l'hold del fuoco).
+        if _bonus_card != null:
                 return
         if is_paused:
                 return
@@ -3482,6 +3504,42 @@ func _on_soul_delivered(winner: CharacterBody2D, victim: CharacterBody2D) -> voi
 # ============================================================================
 # Collectibles update + collision with player
 # ============================================================================
+
+# TASK 51 — CARD BONUS (richiesta utente): mostra la card informativa alla
+# PRIMA raccolta di un bonus particolare. Il gioco si mette in PAUSA; la
+# card presenta nome/effetto/usi/danno, icona stilizzata e una demo animata
+# in loop; si chiude TENENDO PREMUTO il fuoco per 1 secondo. Se lo stesso
+# bonus viene ripreso piu' avanti nella partita la card NON riappare
+# (memoria per-run: GameManager.bonus_cards_seen, azzerata a nuova run).
+func _maybe_show_bonus_card(kind: int, player_num: int) -> void:
+        if not C.BONUS_CARD_ENABLED:
+                return
+        var key := "kind_%d" % kind
+        if GameManager == null or GameManager.has_seen_bonus_card(key):
+                return
+        # una card alla volta (pickup simultanei in 2P): il secondo bonus
+        # NON viene segnato come visto — la sua card comparira' alla
+        # prossima raccolta, non viene saltata in silenzio.
+        if _bonus_card != null:
+                return
+        GameManager.mark_bonus_card_seen(key)
+        var card: CanvasLayer = BonusCardOverlayClass.new()
+        card.setup(kind, player_num)
+        card.card_closed.connect(_on_bonus_card_closed)
+        _bonus_card = card
+        add_child(card)
+        get_tree().paused = true
+
+
+# TASK 51 — chiusura della card: riavvia il gioco e libera l'overlay.
+func _on_bonus_card_closed() -> void:
+        if _bonus_card != null:
+                _bonus_card.queue_free()
+                _bonus_card = null
+        if get_tree():
+                get_tree().paused = false
+
+
 func _update_collectibles(delta_ms: float) -> void:
         var p1_pos: Vector2 = player.get_pixel_pos()
         var p2_pos: Vector2 = Vector2.ZERO
@@ -3537,6 +3595,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
         var kind_int: int = item.kind
         match kind_int:
                 CollectiblesClass.Kind.MINE: 
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.MINE, player_id)
                         # FIX (bomba scompare subito): velocità iniziale troppo alta
                         # (randf()*4-2)*50 = fino a 100px/frame → la bomba usciva
                         # dallo schermo in 1-2 frame. Ridotta a *5 (max 10px/frame).
@@ -3549,6 +3608,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.CHALICE, player_id)
                         # FIX (durata calice -3s + bug doppio decremento): il timer
                         # veniva decrementato DUE volte per frame (in
                         # Player.update_player E in _update_invincible_burn),
@@ -3579,6 +3639,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(1.0, 0.84, 0.0))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.SCEPTER:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.SCEPTER, player_id)
                         item.trigger_scepter()
                         item.active = false
                         item.queue_free()
@@ -3597,6 +3658,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.5, 0.8, 1.0))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.SPEED_BOOTS:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.SPEED_BOOTS, player_id)
                         if item.owner_id == 0 or item.owner_id == player_id:
                                 p.activate_speed_boost()
                                 item.active = false
@@ -3644,6 +3706,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.3, 1.0, 0.3))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.KNIGHT_STATUE:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.KNIGHT_STATUE, player_id)
                         # FIX (nuova meccanica): evoca cavaliere alleato.
                         # Il cavaliere appare accanto al player e combatte.
                         item.active = false
@@ -3658,6 +3721,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.4, 0.7, 1.0))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.DYNAMITE:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.DYNAMITE, player_id)
                         # FIX (nuova meccanica): candelotto di dinamite.
                         # Animazione accensione miccia (0.8s), poi player equipaggia.
                         # La miccia brucia per 7s, poi alert + 2s esplosione.
@@ -3669,6 +3733,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         # esplosione e rendering sul player giusto).
                         _start_dynamite_pickup(p, player_id)
                 CollectiblesClass.Kind.POTION:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.POTION, player_id)
                         # FIX (pozione magica): il player BEVE la pozione.
                         # Suono di deglutizione + effetto fantasma per 5s:
                         # evanescente, attraversa i muri, uscita automatica dal
@@ -3695,6 +3760,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.45, 1.0, 0.55))
                                 collectibles_node.add_child(burst_p)
                 CollectiblesClass.Kind.HAMMER:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.HAMMER, player_id)
                         # FIX (martello di Thor — nuova meccanica): il player
                         # raccoglie Mjolnir. Da questo momento il tasto di
                         # fuoco LANCIA il martello (max 2 volte); poi
@@ -3715,6 +3781,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 collectibles_node.add_child(burst_h)
                         print("[Hammer] Player ", player_id, " ha raccolto Mjolnir (2 lanci)")
                 CollectiblesClass.Kind.QUAKE_SCROLL:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.QUAKE_SCROLL, player_id)
                         # TASK 35 (pergamene evento): si attiva IMMEDIATAMENTE
                         # alla raccolta — terremoto: -50% HP a tutti i nemici,
                         # eliminati quelli che restano sotto il 50%. Il player
@@ -3732,6 +3799,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         print("[Parchment] Player ", player_id,
                                         " ha letto la pergamena del terremoto")
                 CollectiblesClass.Kind.CHASM_SCROLL:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.CHASM_SCROLL, player_id)
                         # TASK 35: pergamena delle voragini — 3 ondate da 4
                         # voragini magiche: uccidono i nemici, il player e'
                         # immune e non puo' caderci.
@@ -3747,6 +3815,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         print("[Parchment] Player ", player_id,
                                         " ha letto la pergamena delle voragini")
                 CollectiblesClass.Kind.FREEZE_SCROLL:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.FREEZE_SCROLL, player_id)
                         # TASK 50 (pergamena del GHIACCIO): il player la
                         # EQUIPAGGIA — il tasto di fuoco spara il raggio
                         # congelante (2 colpi, poi la pergamena scompare).

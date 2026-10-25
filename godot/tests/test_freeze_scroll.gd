@@ -39,6 +39,8 @@ var corridor_dir: Vector2i = Vector2i(1, 0)
 
 
 func _ready() -> void:
+        # TASK 51: le card bonus non devono mettere in pausa i test automatici
+        GameManager.mark_all_bonus_cards_seen()
         print("[TEST] boot MainGame per la pergamena del ghiaccio...")
         main = MainGameScene.instantiate()
         get_tree().root.add_child.call_deferred(main)

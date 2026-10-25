@@ -20,6 +20,8 @@ var t := 0.0
 
 
 func _ready() -> void:
+        # TASK 51: le card bonus non devono mettere in pausa i test automatici
+        GameManager.mark_all_bonus_cards_seen()
         LoadingScreen.skip_boot_hold()
         GameManager.num_players = 1
         GameManager.reset_run()

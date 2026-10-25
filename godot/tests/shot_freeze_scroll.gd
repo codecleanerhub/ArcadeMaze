@@ -17,6 +17,8 @@ var targets: Array = []
 
 
 func _ready() -> void:
+        # TASK 51: le card bonus non devono mettere in pausa i test automatici
+        GameManager.mark_all_bonus_cards_seen()
         GameManager.num_players = 1
         GameManager.reset_run()
         main = MainGameScene.instantiate()

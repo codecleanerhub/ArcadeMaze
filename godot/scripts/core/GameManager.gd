@@ -213,6 +213,30 @@ var standby_show_count: int = 0
 var carry_p1: Dictionary = {}
 var carry_p2: Dictionary = {}
 
+# TASK 51 — CARD BONUS (richiesta utente): memoria per-RUN dei bonus di cui
+# e' stata gia' mostrata la card informativa. La card appare SOLO la prima
+# volta che il bonus viene raccolto nella partita; se al livello dopo il
+# player riprende lo stesso bonus, la card NON riappare.
+var bonus_cards_seen: Dictionary = {}
+
+
+## true se la card di questo tipo di bonus e' gia' stata mostrata in run.
+func has_seen_bonus_card(kind_key: String) -> bool:
+        return bonus_cards_seen.has(kind_key)
+
+
+## Segna la card del bonus come vista (prima mostra effettuata).
+func mark_bonus_card_seen(kind_key: String) -> void:
+        bonus_cards_seen[kind_key] = true
+
+
+## TASK 51: segna TUTTE le card bonus come gia' viste. Usato dai TEST
+## automatici (che simulano pickup) per non interrompersi sulla pausa
+## della card — equivalente a un player che ha gia' visto tutte le card.
+func mark_all_bonus_cards_seen() -> void:
+        for k in range(21):  # Kind enum: 0..20 (MINE..FREEZE_SCROLL)
+                bonus_cards_seen["kind_%d" % k] = true
+
 ## Snapshot dello stato di UN player da portare nella prossima scena.
 ## RELIC (Task 21): include ANCHE l'arma reliquia e l'armatura — nel C++
 ## originale l'oggetto Player era UNICO e sopravviveva a tutte le scene;
@@ -414,6 +438,9 @@ func reset_run() -> void:
         continues_timer = 10
         continues_choice = true
         died_in_boss = false
+        # TASK 51 — CARD BONUS: nuova partita = le card informative dei bonus
+        # tornano a comparire alla prima raccolta (memoria per-run).
+        bonus_cards_seen.clear()
         # FIX (continue = sessione ESATTA): nuova partita = nessun restore.
         session_snapshot.clear()
         session_restore_pending = false

@@ -86,13 +86,15 @@ func _draw() -> void:
         # --- TASK 50: SCHIGGIA DI PIETRA pura ---
         # corpo: calcare grigio con faccia illuminata in alto e ombra in basso
         draw_colored_polygon(_shape, Color(0.33, 0.34, 0.39, fade))
-        draw_polygon(_shape, PackedColorArray([
-                Color(0.74, 0.73, 0.70, fade),   # luce fredda dall'alto
-                Color(0.60, 0.59, 0.56, fade),
-                Color(0.47, 0.47, 0.50, fade),
-                Color(0.36, 0.36, 0.40, fade),
-                Color(0.29, 0.29, 0.33, fade),   # fondo in ombra
-        ]))
+        # FIX (color_size != pointcount): la shading face richiede UN colore
+        # per vertice — si genera per interpolazione qualunque sia il numero
+        # di lati della scheggia (5 o 6), non fisso a 5.
+        var n_pts: int = _shape.size()
+        var shade: PackedColorArray = PackedColorArray()
+        for i in n_pts:
+                var g: float = lerpf(0.74, 0.29, float(i) / float(maxi(1, n_pts - 1)))
+                shade.append(Color(g, g - 0.01, g + 0.03, fade))
+        draw_polygon(_shape, shade)
         # punteggiatura minerale (granuli scuri)
         for sp in _speckles:
                 draw_circle(sp, _size * 0.10, Color(0.22, 0.22, 0.24, 0.75 * fade))

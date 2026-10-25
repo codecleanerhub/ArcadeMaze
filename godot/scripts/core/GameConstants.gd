@@ -176,6 +176,14 @@ const BOSS_PHASE2_SLAM_RECOVER_MS: int = 450
 ## di atterraggio).
 const BOSS_PHASE2_SLAM_RADIUS: float = 110.0
 
+## TASK 51 — CARD BONUS (richiesta utente): alla PRIMA raccolta di un
+## bonus particolare (martello, dinamite, bastone del fulmine, pergamene,
+## stivali, pozione, mina, calice, statua...) il gioco si mette in pausa e
+## mostra una card con nome/effetto/usi/danno + demo animata in loop; si
+## chiude tenendo premuto il fuoco per 1 secondo. Memoria per-run.
+## BONUS_CARD_ENABLED = false = rollback (nessuna card).
+static var BONUS_CARD_ENABLED: bool = true
+
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
 
