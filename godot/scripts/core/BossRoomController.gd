@@ -92,6 +92,15 @@ var _pause_overlay: Control = null
 #     the boss, deals 30% of boss.max_health. ---
 var mine_item: Collectibles = null
 
+# TASK 51 — FASE 2 DEL BOSS: stato lato controller.
+#   * _phase2_flash_ms: flash bianco/rosa a pieno schermo all'ingresso in
+#     fase 2 (si scarica in _draw);
+#   * boss_pits: buche aperte dal boss (PIT_SPAWNER): telegrafo crepa ->
+#     voragine aperta BOSS_PHASE2_PIT_OPEN_MS -> richiude. Danno ai player
+#     GROUNDED dentro il raggio (una volta per buca per player).
+var _phase2_flash_ms: float = 0.0
+var boss_pits: Array[Dictionary] = []
+
 const FRAME_MS: float = 1000.0 / 60.0
 
 
@@ -414,6 +423,110 @@ func _handle_input(delta_ms: float = 16.0) -> void:
 # ============================================================================
 # Boss fight update loop (STATE_BOSS)
 # ============================================================================
+
+# ============================================================================
+# TASK 51 — FASE 2 DEL BOSS: handler dei segnali del Boss.
+# ============================================================================
+
+# _on_boss_phase2_entered(boss): annuncio drammatico del potenziamento —
+# flash a pieno schermo, rombo profondo + risata tenebrosa, UNA scossa
+# singola (one-shot: non e' la vibrazione ricorrente dei muri rimossa su
+# richiesta utente) e polvere attorno al boss.
+func _on_boss_phase2_entered(b: Node2D) -> void:
+        _phase2_flash_ms = 700.0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+                AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+        if EffectsManager:
+                EffectsManager.screen_shake(5.0, 0.5)
+                if EffectsManager.has_method("spawn_blast_smoke"):
+                        var dust := EffectsManager.spawn_blast_smoke(
+                                        b.pos, Color(0.5, 0.1, 0.15), 12)
+                        if dust != null:
+                                boss_projectiles_node.add_child(dust)
+        queue_redraw()
+
+
+# _on_boss_spawn_pit(world_pos, tint): il boss apre una buca — fase crepa
+# telegrafica gestita in _update_boss_pits.
+func _on_boss_spawn_pit(world_pos: Vector2, tint: Color) -> void:
+        boss_pits.append({
+                "pos": world_pos,
+                "tint": tint,
+                "state": 0,  # 0 = crepa (telegrafo), 1 = aperta
+                "timer": float(C.BOSS_PHASE2_PIT_TELEGRAPH_MS),
+                "hit_p1": false,
+                "hit_p2": false,
+        })
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+
+
+# _update_boss_pits(delta_ms): ciclo di vita delle buche + danni.
+func _update_boss_pits(delta_ms: float) -> void:
+        if boss_pits.is_empty():
+                return
+        for i in range(boss_pits.size() - 1, -1, -1):
+                var pit: Dictionary = boss_pits[i]
+                pit["timer"] = float(pit["timer"]) - delta_ms
+                match int(pit["state"]):
+                        0:
+                                if float(pit["timer"]) <= 0.0:
+                                        pit["state"] = 1
+                                        pit["timer"] = float(C.BOSS_PHASE2_PIT_OPEN_MS)
+                                        if AudioManager:
+                                                AudioManager.play_sound(
+                                                                AudioManager.SoundType.HAZARD_COLLAPSE)
+                        1:
+                                # danno: player GROUNDED dentro il raggio, una
+                                # volta per buca per player (niente drain).
+                                if not pit["hit_p1"] and player.visible \
+                                                and not player.is_invulnerable() \
+                                                and not player.is_jumping():
+                                        if player.get_pixel_pos().distance_to(
+                                                        pit["pos"]) <= C.BOSS_PHASE2_PIT_RADIUS:
+                                                player.take_damage()
+                                                pit["hit_p1"] = true
+                                if not pit["hit_p2"] and GameManager \
+                                                and GameManager.num_players == 2 \
+                                                and player2.visible \
+                                                and not player2.is_invulnerable() \
+                                                and not player2.is_jumping():
+                                        if player2.get_pixel_pos().distance_to(
+                                                        pit["pos"]) <= C.BOSS_PHASE2_PIT_RADIUS:
+                                                player2.take_damage()
+                                                pit["hit_p2"] = true
+                                if float(pit["timer"]) <= 0.0:
+                                        boss_pits.remove_at(i)
+                                        continue
+                # disegno animato (crepa pulsante / voragine)
+                queue_redraw()
+
+
+# _on_boss_slam_landed(world_pos, radius): onda d'urto del salto — i player
+# GROUNDED nel raggio subiscono un colpo (chi si e' spostato durante
+# l'ombra si salva), polvere + scossa singola + tonfo.
+func _on_boss_slam_landed(world_pos: Vector2, radius: float) -> void:
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_THUD)
+        if EffectsManager:
+                EffectsManager.screen_shake(6.0, 0.4)
+                var dust := EffectsManager.spawn_explosion(
+                                world_pos, Color(0.45, 0.40, 0.33), 22, 0.7)
+                boss_projectiles_node.add_child(dust)
+        for p in [player, player2]:
+                if p == null or not p.visible:
+                        continue
+                if p.is_invulnerable() or p.is_jumping() or p.is_ghost():
+                        continue
+                if p.get_pixel_pos().distance_to(world_pos) <= radius:
+                        p.take_damage()
+
+
+# ============================================================================
+# TASK 39/50 — L'ARENA DEL BOSS (pilastri, muri in rovina, barili, cannone)
+# ============================================================================
+
 func _update_boss(delta_ms: float) -> void:
         # RELIC (Task 21): durante la SCHERMATA BONUS il fight è congelato —
         # il boss è morto, i player stanno scegliendo. Si aggiorna solo la
@@ -463,7 +576,21 @@ func _update_boss(delta_ms: float) -> void:
                         if proj is Projectile:
                                 proj.position = proj.pos
                                 proj.visible = true
+                                # TASK 51 (fix latente): bounds REALI della
+                                # stanza 1920x1080 — il default 1024 cullava i
+                                # colpi nella meta' destra dello schermo.
+                                proj.bounds = Rect2(0.0, C.UI_HEIGHT,
+                                                float(C.WINDOW_WIDTH),
+                                                float(C.WINDOW_HEIGHT) - C.UI_HEIGHT)
                                 boss_projectiles_node.add_child(proj)
+
+        # TASK 51 — FASE 2: update delle buche del boss (telegrafo/apertura/
+        # scadenza + danno ai player grounded dentro il raggio).
+        _update_boss_pits(delta_ms)
+        # TASK 51: scarica il timer del flash d'ingresso fase 2.
+        if _phase2_flash_ms > 0.0:
+                _phase2_flash_ms = maxf(0.0, _phase2_flash_ms - delta_ms)
+                queue_redraw()
 
         # (3) Advance boss projectiles
         _advance_boss_projectiles(delta_ms)
@@ -1283,6 +1410,19 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         if boss_node:
                 boss_node.setup(current_level, C.WINDOW_WIDTH, C.WINDOW_HEIGHT)
                 boss = boss_node
+        # TASK 51 — FASE 2: hook dei segnali del boss (annuncio, buche, salto).
+        # Guard is_connected: start_boss_fight puo' essere richiamato sullo
+        # stesso nodo (continue senza snapshot).
+        if boss != null:
+                if not boss.phase2_entered.is_connected(_on_boss_phase2_entered):
+                        boss.phase2_entered.connect(_on_boss_phase2_entered)
+                if not boss.spawn_pit.is_connected(_on_boss_spawn_pit):
+                        boss.spawn_pit.connect(_on_boss_spawn_pit)
+                if not boss.slam_landed.is_connected(_on_boss_slam_landed):
+                        boss.slam_landed.connect(_on_boss_slam_landed)
+        # TASK 51: reset dello stato fase-2 del controller (buche/flash).
+        boss_pits.clear()
+        _phase2_flash_ms = 0.0
         # Reset player positions
         player.reset_position()
         player.position = Vector2(C.WINDOW_WIDTH / 2.0, C.WINDOW_HEIGHT - 100.0)
@@ -2272,6 +2412,43 @@ func _draw() -> void:
         # dimensioni per-tipo fino a 170px incorniciano l'arena e risaltano
         # sull'ambiente; posizioni viewport-relative, zona di gioco libera).
         _render_boss_room_decorations()
+        # TASK 51 — FASE 2: BUCHE DEL BOSS (sotto player/boss/proiettili).
+        #   * crepa (stato 0): cerchio frastagliato pulsante nel colore d'aura
+        #     del boss — telegrafo "sta per aprirsi una voragine qui";
+        #   * aperta (stato 1): voragine scura con bordo luminoso e fondo
+        #     screziato, leggero battito di scala.
+        for pit in boss_pits:
+                var pp: Vector2 = pit["pos"]
+                var ptint: Color = pit["tint"]
+                if int(pit["state"]) == 0:
+                        var pulse: float = 0.55 + 0.45 * sin(_boss_bg_time * 16.0)
+                        draw_circle(pp, C.BOSS_PHASE2_PIT_RADIUS * 0.55,
+                                        Color(ptint.r, ptint.g, ptint.b, 0.30 * pulse))
+                        for k in range(6):
+                                var a := float(k) * (TAU / 6.0) + 0.35
+                                var rr := C.BOSS_PHASE2_PIT_RADIUS * (0.55 + 0.35 * pulse)
+                                draw_line(pp + Vector2(cos(a), sin(a)) * 6.0,
+                                                pp + Vector2(cos(a), sin(a)) * rr,
+                                                Color(ptint.r, ptint.g, ptint.b, 0.55 * pulse), 2.0)
+                else:
+                        var breathe: float = 1.0 + 0.04 * sin(_boss_bg_time * 6.0)
+                        var pr := C.BOSS_PHASE2_PIT_RADIUS * breathe
+                        draw_circle(pp, pr, Color(0.02, 0.01, 0.04, 0.92))
+                        draw_circle(pp, pr * 0.72, Color(0.0, 0.0, 0.0, 0.95))
+                        draw_arc(pp, pr, 0.0, TAU, 26,
+                                        Color(ptint.r, ptint.g, ptint.b, 0.55), 3.0, true)
+                        for k in range(8):
+                                var a2 := float(k) * (TAU / 8.0)
+                                draw_circle(pp + Vector2(cos(a2), sin(a2)) * pr * 0.8,
+                                                2.5, Color(ptint.r, ptint.g, ptint.b, 0.30))
+        # TASK 51 — FASE 2: flash d'ingresso (bianco -> rosa in dissolvenza,
+        # 700ms): lettura immediata del potenziamento.
+        if _phase2_flash_ms > 0.0:
+                var k: float = _phase2_flash_ms / 700.0
+                var flash_col := Color(1.0, 1.0, 1.0, 0.55 * k) \
+                                if k > 0.5 else Color(1.0, 0.45, 0.55, 0.55 * k)
+                draw_rect(Rect2(0, C.UI_HEIGHT, vp_size.x, vp_size.y - C.UI_HEIGHT),
+                                flash_col, true)
         # FIX (nome boss in alto): disegna il nome del boss stilizzato
         # in alto al centro (mirror C++ Game.cpp drawBossBanner).
         if boss != null:
@@ -2301,8 +2478,15 @@ func _draw() -> void:
                                 Color(0, 0, 0, 0.8), true)
                         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h),
                                 Color(0.3, 0.1, 0.1), true)
+                        # TASK 51 — FASE 2: la barra HP del boss pulsa di rosso
+                        # acceso quando e' entrato in fase 2 (segnale immediato
+                        # del cambio di regime, insieme ad aura e dimensione).
+                        var hp_col := Color(0.8, 0.15, 0.1)
+                        if int(boss.get("phase")) == 2:
+                                var pk: float = 0.5 + 0.5 * sin(_boss_bg_time * 10.0)
+                                hp_col = Color(0.95, 0.10 + 0.25 * pk, 0.15 + 0.35 * pk)
                         draw_rect(Rect2(bar_x, bar_y, bar_w * hp_ratio, bar_h),
-                                Color(0.8, 0.15, 0.1), true)
+                                hp_col, true)
                         # TASK 41 — hint DEBOLEZZA ELEMENTALE RIMOSSO su richiesta
                         # utente: la debolezza non deve essere riportata in HUD.
                         # Il player la scopre per tentativi lanciando i barili

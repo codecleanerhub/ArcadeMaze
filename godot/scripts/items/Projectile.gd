@@ -191,6 +191,30 @@ func _draw() -> void:
                         2: col = Color(0.2, 0.4, 1.0)
                         3: col = Color(1.0, 1.0, 0.2)
                         4: col = Color(1.0, 0.2, 1.0)
+        # TASK 51 — FASE 2 DEL BOSS: variante 5 = munizione POTENZIATA
+        # (5 perche' le varianti 0-4 sono usate dai raggi oculari del Beholder).
+        # Aura pulsante + corona rotante + scia eterea: si riconosce a
+        # colpo d'occhio anche quando riusa il tipo di proiettile del boss.
+        if variant == 5:
+                var t := float(age_ms) * 0.001
+                var glow_r := radius * (2.6 + 0.5 * sin(t * 14.0))
+                draw_circle(Vector2.ZERO, glow_r,
+                                Color(col.r, col.g, col.b, 0.22 + 0.10 * sin(t * 9.0)))
+                var ring_r := radius * 2.1
+                for i in range(4):
+                        var a := t * 7.0 + i * (PI / 2.0)
+                        draw_circle(Vector2(cos(a), sin(a)) * ring_r,
+                                        radius * 0.28,
+                                        Color(col.r, col.g, col.b, 0.85))
+                radius *= 1.25
+        # TASK 51 — scia dei proiettili a INSEGUIMENTO (omaggio visivo al
+        # movimento curvo: tre fantasmi in dissolvenza dietro la traiettoria).
+        if homing_timer_ms > 0 and dir.length() > 0.001:
+                var back := -dir.normalized()
+                for i in range(3):
+                        draw_circle(back * (10.0 + 10.0 * float(i)),
+                                        radius * (0.55 - 0.15 * float(i)),
+                                        Color(col.r, col.g, col.b, 0.30 - 0.09 * float(i)))
 
         # TASK 22 — FORME tematiche per boss (flag di rollback:
         # GameConstants.BOSS_PROJ_THEMED_ENABLED = false -> disegno legacy

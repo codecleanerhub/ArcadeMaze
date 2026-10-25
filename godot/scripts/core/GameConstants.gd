@@ -134,6 +134,48 @@ static var BOSS_ATTACK_SYNC_ENABLED: bool = true
 ## Delay (ms) tra l'inizio della posa d'attacco e lo sparo effettivo.
 const BOSS_ATTACK_WINDUP_MS: int = 280
 
+## TASK 51 — FASE 2 DEL BOSS (richiesta utente): quando l'energia del boss
+#   scende al 50% il combattimento entra in FASE 2: il boss POTENZIA il suo
+#   arsenale con un ATTACCO SPECIALE per tipo (proiettili dall'alto come
+#   magia/fulmine, buche a caso sul pavimento, salto schiacciante verso il
+#   player, raffica a inseguimento) oltre al fuoco che gia' possiede, e il
+#   suo aspetto cambia per segnalare l'aumento di potenza (dimensione +12%,
+#   aura pulsante colorata per famiglia, tinta dello sprite).
+#   BOSS_PHASE2_ENABLED = false = rollback al combattimento monofase.
+static var BOSS_PHASE2_ENABLED: bool = true
+
+## Soglia di attivazione (frazione di energia massima).
+const BOSS_PHASE2_TRIGGER_RATIO: float = 0.5
+
+## Crescita dimensionale del boss in fase 2 (+12%).
+const BOSS_PHASE2_SIZE_BONUS: float = 1.12
+
+## Cadenza (ms) dell'attacco speciale di fase 2.
+const BOSS_PHASE2_SPECIAL_CD_MS: int = 4600
+
+## Durata (ms) del telegrafo delle buche di fase 2 (crepa pulsante a terra
+## prima che la voragine si apra: tempo per scansarsi).
+const BOSS_PHASE2_PIT_TELEGRAPH_MS: int = 900
+
+## Durata (ms) di una buca di fase 2 rimasta aperta.
+const BOSS_PHASE2_PIT_OPEN_MS: int = 5000
+
+## Raggio (px) di danno di una buca di fase 2.
+const BOSS_PHASE2_PIT_RADIUS: float = 34.0
+
+## Telegrafo (ms) del salto schiacciante: ombra crescente sul bersaglio.
+const BOSS_PHASE2_SLAM_TELEGRAPH_MS: int = 650
+
+## Durata (ms) dell'arco di volo del salto schiacciante.
+const BOSS_PHASE2_SLAM_LEAP_MS: int = 520
+
+## Recupero (ms) del boss dopo l'atterraggio (finestra di contrattacco).
+const BOSS_PHASE2_SLAM_RECOVER_MS: int = 450
+
+## Raggio (px) dell'onda d'urto del salto schiacciante (attorno al punto
+## di atterraggio).
+const BOSS_PHASE2_SLAM_RADIUS: float = 110.0
+
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
 

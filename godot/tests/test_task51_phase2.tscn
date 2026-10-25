@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://t51phase2test"]
+
+[ext_resource type="Script" path="res://tests/test_task51_phase2.gd" id="1"]
+
+[node name="TestTask51Phase2" type="Node"]
+script = ExtResource("1")
