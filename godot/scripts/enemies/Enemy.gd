@@ -272,6 +272,12 @@ var _accent_color: Color = Color(1.0, 0.5, 0.2, 1.0)
 # Dust puff spawn counter (every Nth frame while walking, spawn a puff).
 var _dust_frame_counter: int = 0
 const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms @ 60fps)
+## TASK 51 (anti-sovrapposizione): fattore di velocita' individuale
+## (0.88..1.12, fisso per nemico) — desincronizza il passo dei nemici.
+var _move_jitter: float = 1.0
+## TASK 51: true quando questo nemico e' fermo al centro in "coda" dietro
+## un altro nemico nella cella che vorrebbe occupare (waypoint non lockato).
+var _overlap_wait: bool = false
 
 
 # ===========================================================================
@@ -309,7 +315,15 @@ func init(t: int, start_col: int, start_row: int) -> void:
 
         # Reset all timers (constructor initializer list in C++).
         path_update_timer = 0
-        anim_time = 0
+        # TASK 51 (desync visivo — "nemici cosi' sincroni da sovrapporsi"):
+        # fase di camminata e velocita' sfasate per nemico: due nemici che
+        # convergono sullo stesso corridoio non marciano piu' in lockstep
+        # perfetto (gli sprite non si impilano uno sull'altro).
+        anim_time = randi() % 480
+        path_update_timer = randi() % PATH_RECALC_INTERVAL_MS
+        _move_jitter = 0.88 + 0.24 * randf()
+        # TASK 51: gruppo per il mutual-exclusion delle celle tra nemici.
+        add_to_group("maze_enemies")
         shoot_cooldown = 0
         attacking_timer = 0
         dying_timer = 0
@@ -518,7 +532,8 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         anim_time += int(delta_ms)
 
         # FIX (compenetrazione muri + scatti): step frame-rate independent.
-        var step_size: float = float(speed) * (delta_ms / 16.6667)
+        # TASK 51: jitter individuale di velocita' (desync visivo).
+        var step_size: float = float(speed) * (delta_ms / 16.6667) * _move_jitter
 
         # --- Anti-stuck tracking (mirror C++ riga 402-415) ---
         # Se il nemico si è mosso meno di 1px dall'ultimo frame, accumula il
@@ -644,9 +659,30 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 if maze.is_wall(col + dx, row + dy):
                         dx = 0
                         dy = 0
+                # TASK 51 (richiesta utente — "nemici sincroni sovrapposti"):
+                # la cella bersaglio e' occupata da un altro nemico vivo?
+                # 1) prova una direzione alternativa LIBERA che non allontani
+                #    dal player (sorpasso intelligente);
+                # 2) altrimenti attendi in coda al centro (waypoint non
+                #    lockato: dx/dy preservati, niente BFS spam, niente
+                #    overlap). Il transito riparte appena la cella si libera.
+                _overlap_wait = false
+                if dx != 0 or dy != 0:
+                        if _cell_occupied_by_enemy(col + dx, row + dy):
+                                var alt: Vector2i = _pick_free_dir(
+                                                maze, col, row, player_grid_pos)
+                                if alt != Vector2i(0, 0):
+                                        dx = alt.x
+                                        if dx != 0:
+                                                last_dx = dx
+                                        dy = alt.y
+                                else:
+                                        _overlap_wait = true
                 # Waypoint LOCKED alla decisione (vedi _move_waypoint): il
                 # centro della cella successiva, valido fino all'arrivo.
-                if dx != 0 or dy != 0:
+                if _overlap_wait:
+                        _move_waypoint = Vector2.INF
+                elif dx != 0 or dy != 0:
                         _move_waypoint = Vector2(center_x + dx * TILE_SIZE,
                                         center_y + dy * TILE_SIZE)
                 else:
@@ -1091,6 +1127,54 @@ func _flee_greedy(maze: Object, target: Vector2i) -> void:
         dx = best_dx
         if dx != 0: last_dx = dx
         dy = best_dy
+
+
+# ===========================================================================
+# TASK 51 — anti-sovrapposizione nemici (richiesta utente: "nemici cosi'
+# sincroni che gli sprite si sovrappongono")
+# ===========================================================================
+
+# _cell_occupied_by_enemy(c, r): true se un ALTRO nemico vivo e' fermo o
+# quasi-arrivato nella cella (c, r). Soglia 22px dal centro: un nemico che
+# sta uscendo dalla cella (gia' oltre i 22px) non blocca — il codice
+# "fila indiana" dietro di lui e' permesso, l'impilamento no.
+func _cell_occupied_by_enemy(c: int, r: int) -> bool:
+        var center := Vector2(
+                        c * TILE_SIZE + TILE_SIZE / 2.0,
+                        r * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
+        for other in get_tree().get_nodes_in_group("maze_enemies"):
+                if other == null or other == self:
+                        continue
+                if not other.has_method("is_dead") or other.is_dead():
+                        continue
+                if other.dying_timer > 0:
+                        continue
+                if other.position.distance_squared_to(center) < 22.0 * 22.0:
+                        return true
+        return false
+
+
+# _pick_free_dir(maze, col, row, player_grid): direzione alternativa LIBERA
+# (non muro, non occupata da nemici) che non allontana dal player.
+# Ritorna (0, 0) se non esiste (il chiamante allora attende in coda).
+func _pick_free_dir(maze: Object, col: int, row: int,
+                player_grid: Vector2i) -> Vector2i:
+        var cur_dist: int = absi(player_grid.x - col) + absi(player_grid.y - row)
+        var best: Vector2i = Vector2i(0, 0)
+        var best_gain: int = 0  # solo mosse che avvicinano o mantengono
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
+                if maze.is_wall(nc, nr):
+                        continue
+                if _cell_occupied_by_enemy(nc, nr):
+                        continue
+                var gain: int = cur_dist - (absi(player_grid.x - nc)
+                                + absi(player_grid.y - nr))
+                if gain > best_gain:
+                        best_gain = gain
+                        best = Vector2i(_DC[i], _DR[i])
+        return best
 
 
 # _pick_random_open_dir(maze, col, row): pick one of the 4 cardinal

@@ -57,6 +57,7 @@ func _ready() -> void:
         _test_f1_miniboss_facing()
         _test_f2_ghost_wall_immunity()
         _test_f3_no_close_shake()
+        _test_f4_anti_overlap()
         _report()
         get_tree().quit(1 if _fails > 0 else 0)
 
@@ -244,3 +245,85 @@ func _report() -> void:
                         % ["TEST TASK 51 FACING SUPERATO" if _fails == 0
                                         else "TEST TASK 51 FALLITO",
                                 _checks, _fails])
+
+
+# ===========================================================================
+# F4 — anti-sovrapposizione: il nemico non entra nella cella occupata
+# ===========================================================================
+func _test_f4_anti_overlap() -> void:
+        # maze duck-typed: griglia tutta aperta (BFS naviga ovunque)
+        var duck := GDScript.new()
+        duck.source_code = "extends Node\nfunc is_wall(_c: int, _r: int) -> bool:\n        return false\n"
+        duck.reload()
+        var mz := Node.new()
+        mz.set_script(duck)
+        add_child(mz)
+
+        # B (bloccante) fermo al centro di (5,6); A dietro in (5,5)
+        var b := EnemyScript.new()
+        add_child(b)
+        b.init(C.EnemyType.GHOUL, 5, 6)
+        var a := EnemyScript.new()
+        add_child(a)
+        a.init(C.EnemyType.GHOUL, 5, 5)
+        # azzera il jitter per un confronto deterministico delle posizioni
+        a._move_jitter = 1.0
+        b._move_jitter = 1.0
+
+        var player_grid := Vector2i(5, 10)   # player sotto: BFS manda A in (5,6)
+        var player_px := Vector2(5 * 64 + 32, C.UI_HEIGHT + 10 * 64 + 32)
+        var projs: Array = []
+        var start := a.position
+
+        # 1) _cell_occupied_by_enemy: B occupa (5,6), non (7,7)
+        if a._cell_occupied_by_enemy(5, 6) and not a._cell_occupied_by_enemy(7, 7):
+                _ok("F4: _cell_occupied_by_enemy vede B in (5,6) e altrove no")
+        else:
+                _fail("F4: _cell_occupied_by_enemy incoerente")
+
+        # 2) 20 frame di update: A resta al centro di (5,5) — attende in
+        #    coda invece di impilarsi su B
+        var stayed: bool = true
+        for _i in range(20):
+                a.update_enemy(mz, player_grid, player_px, projs, 16.7)
+                if a.position.distance_to(start) > 1.0:
+                        stayed = false
+                        break
+        if stayed and a._overlap_wait:
+                _ok("F4: A attende in coda dietro B (nessuna sovrapposizione)")
+        else:
+                _fail("F4: A si e' mosso/sovrapposto (pos=%s wait=%s)"
+                                % [str(a.position), str(a._overlap_wait)])
+
+        # 3) B si sposta oltre i 22px: al prossimo giro A riparte
+        b.position = Vector2(5 * 64 + 32, C.UI_HEIGHT + 8 * 64 + 32)
+        a.path_update_timer = 99999  # forza ricalcolo BFS al prossimo centro
+        var moved := false
+        for _i in range(30):
+                a.update_enemy(mz, player_grid, player_px, projs, 16.7)
+                if a.position.distance_to(start) > 2.0:
+                        moved = true
+                        break
+        if moved:
+                _ok("F4: cella liberata = A riparte verso il player")
+        else:
+                _fail("F4: A resta bloccato dopo che B si e' spostato")
+
+        # 4) _pick_free_dir unit: sorpasso intelligente quando conviene
+        b.position = Vector2(6 * 64 + 32, C.UI_HEIGHT + 5 * 64 + 32)  # (6,5)
+        var detour: Vector2i = a._pick_free_dir(mz, 5, 5, Vector2i(6, 8))
+        if detour == Vector2i(0, 1):
+                _ok("F4: _pick_free_dir sorpassa da sotto (guadagno +1)")
+        else:
+                _fail("F4: _pick_free_dir ritorna %s (atteso (0,1))"
+                                % str(detour))
+        var none: Vector2i = a._pick_free_dir(mz, 5, 5, Vector2i(8, 5))
+        if none == Vector2i(0, 0):
+                _ok("F4: _pick_free_dir niente deviazioni controproducenti")
+        else:
+                _fail("F4: _pick_free_dir ritorna %s (atteso (0,0))"
+                                % str(none))
+
+        a.queue_free()
+        b.queue_free()
+        mz.queue_free()
