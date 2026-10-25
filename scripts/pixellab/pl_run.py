@@ -125,24 +125,37 @@ def run_static(defs: dict, entity_id: str, skip_qa_exit: bool = True) -> bool:
             view=d.get("view", "side"),
             direction=d.get("direction"),
             negative_description=d.get("negative_description"),
+            raw_dump_path=stage_out(entity_id, "raw_pixflux.json"),
         )
         pl_api.save_b64_image(imgs[0], base_png)
         st["stage"] = "base_done"
         st["base_file"] = base_png
         save_state(entity_id, st)
 
-    # 2) QA (reference = originale se esiste)
-    img = Image.open(base_png)
+    # 2) post-processing locale (GRATUITO): rimozione sfondo solido +
+    #    riduzione palette se serve (l'API col color_image ignora a volte
+    #    no_background e disegna su fondo crema — verificato 2026-10)
+    clean_png = stage_out(entity_id, "clean.png")
+    img = Image.open(base_png).convert("RGBA")
+    if d.get("bg_remove", True):
+        img = pl_integrate.remove_solid_background(img, tol=d.get("bg_tol", 26))
+    if d.get("palette_reduce", True):
+        n_cols = len({(p[0], p[1], p[2]) for p in img.getdata() if p[3] > 0})
+        if n_cols > d.get("max_colors", 96):
+            img = pl_integrate.reduce_palette(img, d.get("max_colors", 96))
+    img.save(clean_png, "PNG")
+
+    # 3) QA (reference = originale se esiste)
     ref = Image.open(target_abs) if os.path.isfile(target_abs) else None
     errors = pl_qa.qa_static(img, ref=ref,
                              max_colors=d.get("max_colors", 96),
                              cov=d.get("coverage", (8.0, 60.0)))
     ok = pl_qa.report(entity_id + " [static]", errors)
     if not ok:
-        print(f"[{entity_id}] QA FALLITA — base in {base_png}, NON integrata")
+        print(f"[{entity_id}] QA FALLITA — base in {base_png}, clean in {clean_png}, NON integrata")
         return False
 
-    # 3) integrazione
+    # 4) integrazione
     final = pl_integrate.write_static(d["target"], img, tuple(d.get("size", (128, 128))))
     st["stage"] = "done"
     st["output"] = final
@@ -179,6 +192,7 @@ def run_anim(defs: dict, entity_id: str) -> bool:
             view=d.get("view", "side"),
             direction=d.get("direction"),
             negative_description=d.get("negative_description"),
+            raw_dump_path=stage_out(entity_id, "raw_pixflux.json"),
         )
         pl_api.save_b64_image(imgs[0], base_png)
         st["stage"] = "base_done"

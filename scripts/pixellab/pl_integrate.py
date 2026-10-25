@@ -35,13 +35,16 @@ def backup_original(target_path: str) -> str | None:
 
 
 def write_static(target_rel: str, img: Image.Image, target_size: tuple[int, int] | None = None) -> str:
-    """Scrive uno statico: backup + resize LANCZOS al target + PNG RGBA."""
+    """Scrive uno statico: backup + resize NEAREST al target + PNG RGBA.
+
+    NEAREST e NON LANCZOS: il resize smooth reintrodurrebbe anti-alias
+    distruggendo la pixel-art (lezione Task 53: 96 colori -> 5166)."""
     path = _abs(target_rel)
     backup_original(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     out = img.convert("RGBA")
     if target_size and out.size != target_size:
-        out = out.resize(target_size, Image.LANCZOS)
+        out = out.resize(target_size, Image.NEAREST)
     out.save(path, "PNG")
     _sync_mirror(target_rel, path)
     return path
@@ -66,7 +69,8 @@ def write_anim_sheet(target_rel: str, frames: list[Image.Image],
             break
         fr = f.convert("RGBA")
         if fr.size != (frame_px, frame_px):
-            fr = fr.resize((frame_px, frame_px), Image.LANCZOS)
+            # pixel art: NEAREST decimation (mai LANCZOS, vedi write_static)
+            fr = fr.resize((frame_px, frame_px), Image.NEAREST)
         # allinea piedi: ultima riga opaca -> feet_y
         px = fr.load()
         last_opaque = 0
@@ -99,6 +103,86 @@ def _sync_mirror(rel: str, abs_path: str) -> None:
     if os.path.isdir(os.path.dirname(mirror)):
         os.makedirs(os.path.dirname(mirror), exist_ok=True)
         shutil.copy2(abs_path, mirror)
+
+
+def remove_solid_background(img: Image.Image, tol: int = 26,
+                            fringe: int = 2) -> Image.Image:
+    """Rimuove lo sfondo solido (flood BFS dai bordi) + cleanup frangia.
+
+    L'API pixflux a volte ignora no_background quando passa color_image e
+    disegna su fondo crema uniforme (255,255,226, verificato 2026-10).
+    Flood dai 4 bordi con tolleranza sul colore di fondo; poi frangia
+    anti-alias pulita e alpha binarizzato.
+    """
+    from collections import deque
+    rgba = img.convert("RGBA")
+    px = rgba.load()
+    w, h = rgba.size
+    # colore di fondo = media dei 4 angoli
+    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
+    br = sum(c[0] for c in corners) // 4
+    bg_ = sum(c[1] for c in corners) // 4
+    bb = sum(c[2] for c in corners) // 4
+
+    def near_bg(p) -> bool:
+        return (abs(p[0] - br) <= tol and abs(p[1] - bg_) <= tol
+                and abs(p[2] - bb) <= tol)
+
+    # flood BFS dai bordi
+    visited = bytearray(w * h)
+    q: deque[tuple[int, int]] = deque()
+    for x in range(w):
+        for y in (0, h - 1):
+            if near_bg(px[x, y]) and not visited[y * w + x]:
+                visited[y * w + x] = 1
+                q.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            if near_bg(px[x, y]) and not visited[y * w + x]:
+                visited[y * w + x] = 1
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        px[x, y] = (0, 0, 0, 0)
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h and not visited[ny * w + nx] \
+                    and near_bg(px[nx, ny]):
+                visited[ny * w + nx] = 1
+                q.append((nx, ny))
+    # frangia: erodiamo l'alpha di 'fringe' px sul perimetro del soggetto
+    for _ in range(fringe):
+        to_clear = []
+        for y in range(h):
+            for x in range(w):
+                if px[x, y][3] == 0:
+                    continue
+                if (px[x, y][3] < 250) or any(
+                    0 <= x + dx < w and 0 <= y + dy < h and px[x + dx, y + dy][3] == 0
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                ):
+                    # pixel di confine: segna per rimozione se semitrasparente
+                    if px[x, y][3] < 250:
+                        to_clear.append((x, y))
+        if not to_clear:
+            break
+        for x, y in to_clear:
+            px[x, y] = (0, 0, 0, 0)
+    # alpha binario (256 livelli -> 0/255) come da ricetta §8.2
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            px[x, y] = (r, g, b, 255 if a >= 128 else 0)
+    return rgba
+
+
+def reduce_palette(img: Image.Image, max_colors: int = 64) -> Image.Image:
+    """Riduce la palette con MEDIANCUT mantenendo l'alpha binario."""
+    rgba = img.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    pal = rgba.convert("RGB").quantize(colors=max_colors, method=Image.MEDIANCUT)
+    out = Image.merge("RGBA", (*pal.convert("RGB").split(), alpha))
+    return out
 
 
 def quantize_to_palette(img: Image.Image, ref: Image.Image,

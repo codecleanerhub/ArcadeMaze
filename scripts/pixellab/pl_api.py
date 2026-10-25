@@ -130,8 +130,13 @@ def create_image_pixflux(description: str, width: int, height: int,
                          outline: str | None = None, shading: str | None = None,
                          detail: str | None = None, view: str | None = None,
                          direction: str | None = None,
-                         negative_description: str | None = None) -> list[str]:
-    """POST /create-image-pixflux (SINCRONO). Ritorna lista di base64 (>=1)."""
+                         negative_description: str | None = None,
+                         raw_dump_path: str | None = None) -> list[str]:
+    """POST /create-image-pixflux (SINCRONO). Ritorna lista di base64 (>=1).
+
+    La risposta grezza viene SEMPRE salvata su raw_dump_path (se dato) per
+    poter recuperare un POST già pagato senza rigenerarlo.
+    """
     payload: dict = {
         "description": description,
         "image_size": {"width": width, "height": height},
@@ -153,13 +158,32 @@ def create_image_pixflux(description: str, width: int, height: int,
     if negative_description:
         payload["negative_description"] = negative_description
     resp = _request("POST", "/create-image-pixflux", payload, timeout=300)
-    # risposta: {"images": [{"base64": ...}]} oppure lista di base64
+    if raw_dump_path:
+        os.makedirs(os.path.dirname(raw_dump_path), exist_ok=True)
+        with open(raw_dump_path, "w", encoding="utf-8") as f:
+            json.dump(resp, f)
+    return extract_images(resp)
+
+
+def extract_images(resp) -> list[str]:
+    """Estrae i base64 dalle forme di risposta note dell'API PixelLab.
+
+    Forme gestite (verificate: forma 1 su pixflux 2026-10):
+      1. {"usage": ..., "image": {"type": "base64", "base64": "..."}}
+      2. {"images": [{"base64": ...}, ...]}
+      3. {"base64": "..."}
+      4. ["...", ...] o [{"base64": ...}, ...]
+    """
+    if isinstance(resp, dict) and isinstance(resp.get("image"), dict) \
+            and "base64" in resp["image"]:
+        return [resp["image"]["base64"]]
     if isinstance(resp, dict) and "images" in resp:
-        return [img["base64"] for img in resp["images"] if isinstance(img, dict) and "base64" in img]
-    if isinstance(resp, list):
-        return [x["base64"] if isinstance(x, dict) else x for x in resp]
+        return [img["base64"] for img in resp["images"]
+                if isinstance(img, dict) and "base64" in img]
     if isinstance(resp, dict) and "base64" in resp:
         return [resp["base64"]]
+    if isinstance(resp, list):
+        return [x["base64"] if isinstance(x, dict) else x for x in resp]
     raise RuntimeError(f"Risposta pixflux inattesa: {str(resp)[:300]}")
 
 
