@@ -466,6 +466,29 @@ static func _load_pixellab_rock() -> Image:
 # bocca + bordo (cornicetta), highlight verticale, decoro centrale + simbolo
 # rombo. Le urne sono puramente decorative (non bloccano ne' sono raccoglibili).
 func _draw_urn(cx: float, cy: float, variant: float) -> void:
+        # TASK 60a — urne PixelLab PNG-first (env/urn_{stone,bronze,marble}.png,
+        # 128x128, stesse 3 palette procedurali del C++). Se il PNG manca
+        # (rollback) si ricade sul disegno procedurale 1:1 col C++ qui sotto.
+        if EnvironmentArt:
+                var idx: int = 0
+                if variant >= 0.33 and variant < 0.66:
+                        idx = 1
+                elif variant >= 0.66:
+                        idx = 2
+                var tex: Texture2D = EnvironmentArt.get_urn_texture(idx)
+                if tex:
+                        var h: float = 34.0
+                        var w: float = h * float(tex.get_width()) / float(tex.get_height())
+                        # Ombra a terra (stesso stile del fallback e del C++).
+                        draw_circle(Vector2(cx, cy + 13.0), 11.0,
+                                        Color(0.0, 0.0, 0.0, 0.45))
+                        # Base dell'urna ancorata a cy+14 (coerente col vecchio
+                        # appoggio del C++ che poggiava a cy+9 con l'ombra).
+                        draw_texture_rect(tex,
+                                        Rect2(cx - w * 0.5, cy + 14.0 - h, w, h),
+                                        false)
+                        return
+        # ---- fallback procedurale (1:1 con drawUrn C++) ----
         # Palette in base alla variante (1:1 con drawUrn C++).
         var urn_col: Color
         var urn_dark: Color

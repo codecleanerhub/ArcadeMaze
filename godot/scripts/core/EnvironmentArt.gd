@@ -90,6 +90,23 @@ func get_torch_texture() -> Texture2D:
 
 
 # ============================================================================
+# TASK 60a — URNE decorative del labirinto (PixelLab PNG-first).
+# 3 varianti con le STESSE palette procedurali ereditate dal C++
+# (pietra grigia / bronzo / marmo scuro): idx 0 = pietra, 1 = bronzo,
+# 2 = marmo. Il fallback procedurale resta in Maze.gd _draw_urn
+# (rollback = cancellare i PNG env/urn_*.png).
+# ============================================================================
+
+func get_urn_texture(idx: int) -> Texture2D:
+        var key: String
+        match idx:
+                0: key = "urn_stone"
+                1: key = "urn_bronze"
+                _: key = "urn_marble"
+        return _cached_or_png(key, _make_no_texture)
+
+
+# ============================================================================
 # TASK 50 — ARCHITETTURE ARENA BLOODBORNE (props PixelLab 256x256).
 # 10 props gotici ispirati a Yharnam, piu' ricchi e grandi dei 6 del
 # Task 48 (128x128). Fallback procedurale assente: se il PNG manca il prop
