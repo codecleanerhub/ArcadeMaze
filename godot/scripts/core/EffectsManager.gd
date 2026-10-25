@@ -158,10 +158,61 @@ func _make_radial_gradient_texture(size: int) -> ImageTexture:
 # ============================================================================
 # GPUParticles2D - sistema particellare hardware (vantaggio Godot)
 # ============================================================================
+## TASK 56: sprite fireball pixel-art one-shot da sheet 4 frame 64x64.
+class ExplosionSprite extends Node2D:
+        var sheet: Texture2D = null
+        var frame_ms: float = 100.0
+        var display_px: float = 96.0
+        var _elapsed: float = 0.0
+
+        func _ready() -> void:
+                set_process(true)
+
+        func _process(delta: float) -> void:
+                _elapsed += delta * 1000.0
+                queue_redraw()
+                if _elapsed > 4.0 * frame_ms + 40.0:
+                        queue_free()
+
+        func _draw() -> void:
+                if sheet == null:
+                        return
+                var fi := int(_elapsed / frame_ms)
+                fi = clampi(fi, 0, 3)
+                var src := Rect2(float(fi) * 64.0, 0.0, 64.0, 64.0)
+                var dst := Rect2(-display_px * 0.5, -display_px * 0.5,
+                        display_px, display_px)
+                draw_texture_rect_region(sheet, dst, src)
+
+# Cache sheet esplosione PixelLab (TASK 56).
+var _explosion_sheet_cache: Texture2D = null
+var _explosion_sheet_tried: bool = false
+
+func _get_explosion_sheet() -> Texture2D:
+        if _explosion_sheet_tried:
+                return _explosion_sheet_cache
+        _explosion_sheet_tried = true
+        var path := "res://assets/sprites/effect_explosion_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        _explosion_sheet_cache = ImageTexture.create_from_image(img)
+        return _explosion_sheet_cache
+
 func spawn_explosion(pos: Vector2, color: Color = Color(1.0, 0.4, 0.1),
-                count: int = 30, lifetime: float = 0.8) -> GPUParticles2D:
+                count: int = 30, lifetime: float = 0.8) -> Node2D:
+        # TASK 56: contenitore con fireball pixel-art + particelle detriti.
+        # I chiamanti fanno solo add_child(): il tipo di ritorno e' trasparente.
+        var root := Node2D.new()
+        root.position = pos
+        if C.EXPLOSION_SPRITE_ENABLED:
+                var spr := ExplosionSprite.new()
+                spr.sheet = _get_explosion_sheet()
+                # scala visiva con la potenza dell'esplosione (lifetime)
+                spr.display_px = 72.0 + 48.0 * clampf(lifetime, 0.4, 1.0)
+                root.add_child(spr)
         var particles := GPUParticles2D.new()
-        particles.position = pos
         particles.amount = count
         particles.lifetime = lifetime
         particles.one_shot = true
@@ -188,12 +239,15 @@ func spawn_explosion(pos: Vector2, color: Color = Color(1.0, 0.4, 0.1),
         # Texture della particella (cerchio piccolo)
         var tex := _make_radial_gradient_texture(8)
         particles.texture = tex
-        # Auto-remove dopo la lifetime
-        particles.finished.connect(particles.queue_free)
-        return particles
+        # TASK 56: particelle dentro il contenitore; auto-remove del
+        # contenitore quando le particelle terminano (la fireball si e'
+        # gia' auto-liberata dopo i 4 frame)
+        root.add_child(particles)
+        particles.finished.connect(root.queue_free)
+        return root
 
 
-func spawn_blood(pos: Vector2, count: int = 15) -> GPUParticles2D:
+func spawn_blood(pos: Vector2, count: int = 15) -> Node2D:
         return spawn_explosion(pos, Color(0.7, 0.05, 0.05), count, 0.5)
 
 

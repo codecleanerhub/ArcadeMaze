@@ -1288,6 +1288,10 @@ static var TORCH_SPRITE_ENABLED: bool = true
 ## a cerchi orbitanti viola/ciano.
 static var PORTAL_SPRITE_ENABLED: bool = true
 
+## TASK 56: fireball pixel-art nelle esplosioni (effect_explosion_sheet.png,
+## 4 frame sopra le particelle detriti). Rollback: false = solo particelle.
+static var EXPLOSION_SPRITE_ENABLED: bool = true
+
 ## Punti per ogni nemico congelato (come le altre pergamene evento).
 const SCROLL_FREEZE_POINTS: int = 5000
 

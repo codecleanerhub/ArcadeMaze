@@ -43,6 +43,26 @@ ENTITIES: dict = {
             "background"
         ),
     },
+    # ---------------- effetti animati (Task 56) ----------------
+    "explosion_fireball": {
+        "kind": "anim",
+        "target": "effect_explosion_sheet.png",
+        "description": (
+            "fantasy explosion fireball, bright orange and yellow flames bursting "
+            "outward with dark smoke edges, round blast, centered, fantasy pixel "
+            "art effect, transparent background"
+        ),
+        "action": (
+            "explosion fireball growing bigger and bursting outward, flames "
+            "expanding then fading into smoke, centered, no camera movement"
+        ),
+        "frame_count": 4,
+        "frame_px": 64,
+        "feet_y": 32,           # burst centrato, non a terra
+        "anchor": (32, 32),
+        "outline": "selective outline",
+        "shading": "basic shading",
+    },
     # ---------------- animati Task 54 ----------------
     "maze_torch": {
         "kind": "anim",
