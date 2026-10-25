@@ -60,13 +60,41 @@ const COL_GOLD_DARK := Color(0.55, 0.41, 0.10)
 const COL_TEXT := Color(0.94, 0.88, 0.72)
 const COL_TEXT_DIM := Color(0.72, 0.66, 0.52)
 
+# TASK 58b — demo con sprite REALI di gioco: il player della demo e' la
+# sprite PixelLab del personaggio che ha raccolto il bonus, i nemici sono
+# sheet mostri veri, l'alleato della KNIGHT_STATUE e' knight_ally.
+# Rollback: false = figure stilizzate del Task 51d.
+const DEMO_REAL_SPRITES_ENABLED := true
+# CharacterType (Player.gd enum) → base sprite; duplicato minimale per non
+# dipendere da Player.gd qui dentro (keep this UI script standalone).
+const DEMO_CHAR_SPRITE := {
+        0: "res://assets/sprites/player1",           # HERO_M
+        1: "res://assets/sprites/player2",           # HERO_F
+        2: "res://assets/sprites/char_mage",         # MAGE
+        3: "res://assets/sprites/char_orc",          # ORC
+        4: "res://assets/sprites/char_elf",          # ELF
+        5: "res://assets/sprites/char_knight",       # KNIGHT
+        6: "res://assets/sprites/char_golem",        # GOLEM
+        7: "res://assets/sprites/char_dragon",       # DRAGON
+        8: "res://assets/sprites/char_vampire",      # VAMPIRE
+}
+const DEMO_ENEMY_SHEET := "res://assets/sprites/monster_001_sheet.png"
+const DEMO_ALLY_SHEET := "res://assets/sprites/knight_ally_sheet.png"
+const DEMO_FRAME_PX := 64  # sheet 256x64 = 4 frame da 64px
+
+var demo_char_type: int = 0
+var _demo_player_tex: Texture2D = null
+var _demo_enemy_tex: Texture2D = null
+var _demo_ally_tex: Texture2D = null
+
 
 # ============================================================================
 # Setup + lifecycle
 # ============================================================================
-func setup(kind: int, pnum: int) -> void:
+func setup(kind: int, pnum: int, char_type := 0) -> void:
         bonus_kind = kind
         player_num = 1 if pnum != 2 else 2
+        demo_char_type = int(char_type)
         _title = I18n.t(_name_key())
         _fx_text = I18n.t(_fx_key())
         _uses_text = I18n.t(_uses_key())
@@ -85,6 +113,18 @@ func _ready() -> void:
         _panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
         _panel.draw.connect(_draw_card)
         add_child(_panel)
+        # TASK 58b: carica le sprite reali della demo (fallback silenzioso =
+        # figure stilizzate se un file manca o il flag e' spento).
+        if DEMO_REAL_SPRITES_ENABLED:
+                var cbase: String = DEMO_CHAR_SPRITE.get(demo_char_type,
+                                DEMO_CHAR_SPRITE[0])
+                var ppath := cbase + "_sheet.png"
+                if ResourceLoader.exists(ppath):
+                        _demo_player_tex = load(ppath)
+                if ResourceLoader.exists(DEMO_ENEMY_SHEET):
+                        _demo_enemy_tex = load(DEMO_ENEMY_SHEET)
+                if ResourceLoader.exists(DEMO_ALLY_SHEET):
+                        _demo_ally_tex = load(DEMO_ALLY_SHEET)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
 
@@ -299,8 +339,13 @@ func _draw_card() -> void:
         var demo_lab_y := card_pos.y + 336.0
         _panel.draw_string(font, Vector2(card_pos.x, demo_lab_y), _demo_text,
                         HORIZONTAL_ALIGNMENT_CENTER, card_size.x, 17, COL_TEXT_DIM)
+        # FIX 58b: height in coordinate RELATIVE (il vecchio calcolo
+        # card_size.y - demo_lab_y - 106 mischiava relativo con assoluto e
+        # schiacciava la demo a ~44px su viewport alti - le figure non ci
+        # stavano; ora il pannello demo usa tutto lo spazio della card).
         var demo_rect := Rect2(card_pos.x + 30.0, demo_lab_y + 12.0,
-                        card_size.x - 60.0, card_size.y - demo_lab_y - 106.0)
+                        card_size.x - 60.0,
+                        card_size.y - 336.0 - 12.0 - 106.0)
         # cornice schermo demo
         _panel.draw_rect(demo_rect, Color(0.04, 0.03, 0.05, 0.98), true)
         _panel.draw_rect(demo_rect, COL_GOLD_DARK, false, 2.0)
@@ -568,8 +613,34 @@ func _draw_demo(ci: Control, r: Rect2, t: float) -> void:
 
 # --- figure comuni ----------------------------------------------------------
 
-# player stilizzato (cavaliere 34px) che cammina; walk fase da t
+# TASK 58b: player = sprite REALE del raccoglitore se disponibile,
+# altrimenti cavaliere stilizzato del Task 51d (rollback).
 func _dp(ci: Control, c: Vector2, t: float, alpha: float = 1.0,
+                scale: float = 1.0) -> void:
+        if _demo_player_tex != null:
+                _dp_real(ci, c, t, alpha, scale)
+        else:
+                _dp_stick(ci, c, t, alpha, scale)
+
+
+# player reale (sheet PixelLab 4 frame 64px, ciclo walk). Ancoraggio =
+# cavaliere stilizzato: "piedi" su c.y + 20*scale, bob respirato invariato.
+func _dp_real(ci: Control, c: Vector2, t: float, alpha: float,
+                scale: float) -> void:
+        var bob := sin(t * 9.0) * 2.0 * scale
+        var s := 0.95 * scale
+        var size := Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX) * s
+        var frame := int(t * 8.0) % 4
+        var src := Rect2(Vector2(frame * DEMO_FRAME_PX, 0),
+                        Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX))
+        var pos := Vector2(c.x - size.x * 0.5,
+                        c.y + 20.0 * scale - size.y + bob)
+        ci.draw_texture_rect_region(_demo_player_tex, Rect2(pos, size), src,
+                        Color(1.0, 1.0, 1.0, alpha), false)
+
+
+# player stilizzato (cavaliere 34px) che cammina; walk fase da t
+func _dp_stick(ci: Control, c: Vector2, t: float, alpha: float = 1.0,
                 scale: float = 1.0) -> void:
         var col_body := Color(0.35, 0.45, 0.75, alpha)
         var col_skin := Color(0.95, 0.78, 0.6, alpha)
@@ -591,9 +662,70 @@ func _dp(ci: Control, c: Vector2, t: float, alpha: float = 1.0,
                         Vector2(7 * scale, 14 * scale)), Color(0.55, 0.3, 0.15, alpha))
 
 
+# TASK 58b: nemico = sheet mostro REALE se disponibile, altrimenti blob
+# stilizzato del Task 51d. Stati e overlay (ghiaccio/fiamme) invariati.
+func _de(ci: Control, c: Vector2, t: float, state: int = 0,
+                k: float = 0.0, tint: Color = Color(0.6, 0.3, 0.35)) -> void:
+        if _demo_enemy_tex != null:
+                _de_real(ci, c, t, state, k, tint)
+        else:
+                _de_stick(ci, c, t, state, k, tint)
+
+
+# nemico reale (sheet PixelLab 4 frame). Stessi stati del blob:
+# 1=morto (dissolvenza+grow), 2=congelato, 3=folgorato, 4=brucia,
+# 5=nel pozzo (shrink). Il tint del caller diventa una tinta leggera per
+# conservare la varietà dei nemici tra le demo; ghiaccio e fiamme restano
+# overlay procedurali disegnati SOPRA lo sprite.
+func _de_real(ci: Control, c: Vector2, t: float, state: int,
+                k: float, tint: Color) -> void:
+        var alpha := 1.0
+        var sc := 1.0
+        match state:
+                1:
+                        alpha = 1.0 - k
+                        sc = 1.0 + k * 0.6
+                5:
+                        sc = maxf(0.05, 1.0 - k)
+        if alpha <= 0.02:
+                return
+        var col := Color(1.0, 1.0, 1.0, alpha).lerp(tint, 0.35)
+        if state == 2:
+                col = Color(0.55, 0.8, 1.0, alpha)
+        elif state == 3:
+                col = Color(0.95, 0.95, 0.6, alpha)
+        elif state == 4:
+                col = Color(1.0, 0.5 + 0.3 * sin(t * 20.0), 0.15, alpha)
+        var wob := sin(t * 7.0) * 1.5
+        var p := c + Vector2(0, wob)
+        var s := 0.8 * sc
+        var size := Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX) * s
+        var frame := int(t * 5.0) % 4
+        var src := Rect2(Vector2(frame * DEMO_FRAME_PX, 0),
+                        Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX))
+        var pos := Vector2(p.x - size.x * 0.5, p.y + 8.0 - size.y)
+        ci.draw_texture_rect_region(_demo_enemy_tex, Rect2(pos, size), src,
+                        col, false)
+        # blocco di ghiaccio (overlay invariato del Task 51d)
+        if state == 2:
+                ci.draw_rect(Rect2(p + Vector2(-16, -26), Vector2(32, 36)),
+                                Color(0.5, 0.8, 1.0, 0.45))
+                ci.draw_rect(Rect2(p + Vector2(-16, -26), Vector2(32, 36)),
+                                Color(0.75, 0.95, 1.0, 0.8), false, 2.0)
+                for ic in range(3):
+                        ci.draw_line(p + Vector2(-10 + ic * 10, -26),
+                                        p + Vector2(-10 + ic * 10, -33), Color(0.75, 0.95, 1.0, 0.85), 2.0)
+        # fiamme che bruciano (overlay invariato)
+        if state == 4:
+                for f in range(3):
+                        var fh := 8.0 + 6.0 * sin(t * 15.0 + f * 2.0)
+                        ci.draw_circle(p + Vector2(-6 + f * 6, -22 - fh * 0.4), 3.5,
+                                        Color(1.0, 0.55 + 0.3 * f * 0.2, 0.15, alpha))
+
+
 # nemico blob stilizzato; state: 0=vivo, 1=morto(poof via k), 2=congelato,
 # 3=folgorato, 4=brucia, 5=nel pozzo (k = progressione effetto)
-func _de(ci: Control, c: Vector2, t: float, state: int = 0,
+func _de_stick(ci: Control, c: Vector2, t: float, state: int = 0,
                 k: float = 0.0, tint: Color = Color(0.6, 0.3, 0.35)) -> void:
         var wob := sin(t * 7.0) * 1.5
         var p := c + Vector2(0, wob)
@@ -995,18 +1127,27 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                 else:
                         kx = st_c.x + 18.0 + (e_c.x - st_c.x - 60.0) * charge_k
                 var ally := Vector2(kx, floor_y - 20.0)
-                # corpo del cavaliere alleato (armatura chiara)
+                # TASK 58b: alleato = sprite reale knight_ally (PixelLab);
+                # arco luminoso di spada conservato al momento del colpo.
                 var bob := sin(lt * 12.0) * 2.0
                 var p := ally + Vector2(0, bob)
-                ci.draw_rect(Rect2(p - Vector2(8, 4), Vector2(16, 16)),
-                                Color(0.72, 0.75, 0.8))
-                ci.draw_circle(p + Vector2(0, -12), 7.0, Color(0.9, 0.92, 0.95))
-                ci.draw_rect(Rect2(p + Vector2(-8, -18), Vector2(16, 7)),
-                                Color(0.55, 0.6, 0.7))
-                # spada: abbassata in corsa, alzata allo scatto
                 var swing := clampf((lt - 2.4) / 0.3, 0.0, 1.0)
-                var sword_tip := p + Vector2(20.0, -18.0 + swing * 26.0)
-                ci.draw_line(p + Vector2(6, -8), sword_tip, Color(0.85, 0.88, 0.95), 4.0)
+                if _demo_ally_tex != null:
+                        var ksz := Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX) * 0.95
+                        var kframe := int(lt * 7.0) % 4
+                        var ksrc := Rect2(Vector2(kframe * DEMO_FRAME_PX, 0),
+                                        Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX))
+                        var kpos := Vector2(p.x - ksz.x * 0.5, p.y + 20.0 - ksz.y)
+                        ci.draw_texture_rect_region(_demo_ally_tex,
+                                        Rect2(kpos, ksz), ksrc, Color.WHITE, false)
+                else:
+                        ci.draw_rect(Rect2(p - Vector2(8, 4), Vector2(16, 16)),
+                                        Color(0.72, 0.75, 0.8))
+                        ci.draw_circle(p + Vector2(0, -12), 7.0, Color(0.9, 0.92, 0.95))
+                        ci.draw_rect(Rect2(p + Vector2(-8, -18), Vector2(16, 7)),
+                                        Color(0.55, 0.6, 0.7))
+                        var sword_tip := p + Vector2(20.0, -18.0 + swing * 26.0)
+                        ci.draw_line(p + Vector2(6, -8), sword_tip, Color(0.85, 0.88, 0.95), 4.0)
                 if swing > 0.0 and swing < 1.0:
                         ci.draw_arc(p + Vector2(10, -10), 26.0, -1.2, 0.4, 10,
                                         Color(1.0, 1.0, 1.0, 0.5), 3.0, true)

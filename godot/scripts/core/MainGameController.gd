@@ -3545,7 +3545,14 @@ func _maybe_show_bonus_card(kind: int, player_num: int) -> void:
                 return
         GameManager.mark_bonus_card_seen(key)
         var card: CanvasLayer = BonusCardOverlayClass.new()
-        card.setup(kind, player_num)
+        # TASK 58b: la demo mostra la sprite PixelLab del personaggio che
+        # ha raccolto il bonus (player2 e' un nodo della scena anche in 1P,
+        # con character_type di default HERO_M se mai selezionato).
+        var char_owner: CharacterBody2D = player2 if player_num == 2 else player
+        var ct := 0
+        if char_owner != null and "character_type" in char_owner:
+                ct = int(char_owner.character_type)
+        card.setup(kind, player_num, ct)
         card.card_closed.connect(_on_bonus_card_closed)
         _bonus_card = card
         add_child(card)
