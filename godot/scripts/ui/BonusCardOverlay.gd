@@ -62,7 +62,8 @@ const COL_TEXT_DIM := Color(0.72, 0.66, 0.52)
 
 # TASK 58b — demo con sprite REALI di gioco: il player della demo e' la
 # sprite PixelLab del personaggio che ha raccolto il bonus, i nemici sono
-# sheet mostri veri, l'alleato della KNIGHT_STATUE e' knight_ally.
+# sheet mostri veri, l'alleato della KNIGHT_STATUE segue la VARIANTE del
+# livello (TASK 64: unicorno livelli dispari / cavaliere livelli pari).
 # Rollback: false = figure stilizzate del Task 51d.
 const DEMO_REAL_SPRITES_ENABLED := true
 # CharacterType (Player.gd enum) → base sprite; duplicato minimale per non
@@ -79,22 +80,35 @@ const DEMO_CHAR_SPRITE := {
         8: "res://assets/sprites/char_vampire",      # VAMPIRE
 }
 const DEMO_ENEMY_SHEET := "res://assets/sprites/monster_001_sheet.png"
-const DEMO_ALLY_SHEET := "res://assets/sprites/knight_ally_sheet.png"
+# TASK 64: sheet dell'alleato per variante (entrambi PixelLab v2, 256x64
+# = 4 frame da 64px). Default "unicorn" = comportamento pre-Task 64.
+const DEMO_ALLY_SHEET_BY_VARIANT := {
+        "unicorn": "res://assets/sprites/unicorn_ally_sheet.png",
+        "knight": "res://assets/sprites/knight_ally_sheet.png",
+}
 const DEMO_FRAME_PX := 64  # sheet 256x64 = 4 frame da 64px
 
 var demo_char_type: int = 0
+# TASK 64: variante estetica dell'alleato della KNIGHT_STATUE, passata da
+# MainGameController._maybe_show_bonus_card secondo la parita' del livello.
+var ally_variant: String = "unicorn"
 var _demo_player_tex: Texture2D = null
 var _demo_enemy_tex: Texture2D = null
 var _demo_ally_tex: Texture2D = null
+# TASK 64: path dello sheet alleato effettivamente caricato (tracciato per
+# test/debug: la CompressedTexture2D di load() ricampiona i byte, quindi il
+# controllo avviene sul path e non sul confronto pixel).
+var _demo_ally_path: String = ""
 
 
 # ============================================================================
 # Setup + lifecycle
 # ============================================================================
-func setup(kind: int, pnum: int, char_type := 0) -> void:
+func setup(kind: int, pnum: int, char_type := 0, ally_variant := "unicorn") -> void:
         bonus_kind = kind
         player_num = 1 if pnum != 2 else 2
         demo_char_type = int(char_type)
+        self.ally_variant = "knight" if ally_variant == "knight" else "unicorn"
         _title = I18n.t(_name_key())
         _fx_text = I18n.t(_fx_key())
         _uses_text = I18n.t(_uses_key())
@@ -123,8 +137,11 @@ func _ready() -> void:
                         _demo_player_tex = load(ppath)
                 if ResourceLoader.exists(DEMO_ENEMY_SHEET):
                         _demo_enemy_tex = load(DEMO_ENEMY_SHEET)
-                if ResourceLoader.exists(DEMO_ALLY_SHEET):
-                        _demo_ally_tex = load(DEMO_ALLY_SHEET)
+                var apath: String = DEMO_ALLY_SHEET_BY_VARIANT.get(ally_variant,
+                                DEMO_ALLY_SHEET_BY_VARIANT["unicorn"])
+                if ResourceLoader.exists(apath):
+                        _demo_ally_tex = load(apath)
+                        _demo_ally_path = apath
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
 
@@ -211,7 +228,11 @@ func _name_key() -> String:
                 Collectibles.Kind.CHASM_SCROLL: return "bonuscard.name.chasm"
                 Collectibles.Kind.MINE: return "bonuscard.name.mine"
                 Collectibles.Kind.CHALICE: return "bonuscard.name.chalice"
-                Collectibles.Kind.KNIGHT_STATUE: return "bonuscard.name.knight"
+                Collectibles.Kind.KNIGHT_STATUE:
+                        # TASK 64: il nome della card segue la variante del
+                        # livello (unicorno dispari / cavaliere pari).
+                        return "bonuscard.name.knight" if ally_variant == "knight" \
+                                        else "bonuscard.name.unicorn"
         return "bonuscard.name.hammer"
 
 
@@ -420,25 +441,34 @@ const ICON_PNG_BY_KIND: Dictionary = {
 
 static var _icon_tex_cache: Dictionary = {}
 
-static func _icon_texture(kind: int) -> Texture2D:
-        if _icon_tex_cache.has(kind):
-                return _icon_tex_cache[kind]
+## TASK 64: la variante influisce SOLO sull'icona della KNIGHT_STATUE
+## (statuetta unicorno/cavaliere); per gli altri kind e' ignorata. La
+## cache e' keyed per kind+variante per non restituire l'icona sbagliata
+## quando la card della statuetta appare a livelli di parita' diversa.
+static func _icon_texture(kind: int, ally_variant := "unicorn") -> Texture2D:
+        var vkey: String = ("knight" if ally_variant == "knight" else "unicorn") \
+                        if kind == Collectibles.Kind.KNIGHT_STATUE else ""
+        var cache_key := "%d|%s" % [kind, vkey]
+        if _icon_tex_cache.has(cache_key):
+                return _icon_tex_cache[cache_key]
         var tex: Texture2D = null
         var path: String = ICON_PNG_BY_KIND.get(kind, "")
+        if kind == Collectibles.Kind.KNIGHT_STATUE and ally_variant != "knight":
+                path = "res://assets/sprites/collectibles/item_unicorn_statue.png"
         if not path.is_empty():
                 var abs_path: String = ProjectSettings.globalize_path(path)
                 if FileAccess.file_exists(abs_path):
                         var img := Image.new()
                         if img.load(abs_path) == OK:
                                 tex = ImageTexture.create_from_image(img)
-        _icon_tex_cache[kind] = tex
+        _icon_tex_cache[cache_key] = tex
         return tex
 
 
 func _draw_icon(ci: Control, c: Vector2) -> void:
         var t := _t
         # --- TASK 55: PNG PixelLab con pulse respirato (fallback proc sotto) ---
-        var png_tex: Texture2D = _icon_texture(bonus_kind)
+        var png_tex: Texture2D = _icon_texture(bonus_kind, ally_variant)
         if png_tex != null:
                 var breathe: float = 1.0 + sin(t * 2.2) * 0.05
                 var w: float = 104.0 * breathe
@@ -1103,15 +1133,24 @@ func _demo_chalice(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
 
 
 func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
-        # statua a sinistra che si illumina (0-0.9), evoca il cavaliere
-        # alleato (0.9-1.4), che carica e colpisce il nemico (2.6)
+        # statua a sinistra che si illumina (0-0.9), evoca l'alleato
+        # (unicorno/cavaliere secondo la parita' del livello, TASK 64)
+        # che carica e colpisce il nemico (2.6)
         var st_c := Vector2(r.position.x + r.size.x * 0.18, floor_y - 22.0)
         var glow := clampf(lt / 0.9, 0.0, 1.0)
-        # statua
-        ci.draw_rect(Rect2(st_c - Vector2(11, 16), Vector2(22, 16)),
-                        Color(0.42, 0.42, 0.46))
-        ci.draw_rect(Rect2(st_c - Vector2(8, -30 + 16), Vector2(16, 16)),
-                        Color(0.52, 0.52, 0.56))
+        # TASK 64: statua = PNG della statuetta della variante (coerenza
+        # con l'icona a terra nel labirinto); fallback rettangoli grigi.
+        var st_tex: Texture2D = _icon_texture(Collectibles.Kind.KNIGHT_STATUE,
+                        ally_variant)
+        if st_tex != null:
+                var st_sz := 34.0
+                ci.draw_texture_rect(st_tex, Rect2(st_c + Vector2(-st_sz * 0.5,
+                                -st_sz * 0.72), Vector2(st_sz, st_sz)), false)
+        else:
+                ci.draw_rect(Rect2(st_c - Vector2(11, 16), Vector2(22, 16)),
+                                Color(0.42, 0.42, 0.46))
+                ci.draw_rect(Rect2(st_c - Vector2(8, -30 + 16), Vector2(16, 16)),
+                                Color(0.52, 0.52, 0.56))
         if glow > 0.0:
                 ci.draw_circle(st_c + Vector2(0, -8), 26.0 * glow,
                                 Color(0.45, 0.75, 1.0, 0.22 * glow))
@@ -1127,7 +1166,8 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                 else:
                         kx = st_c.x + 18.0 + (e_c.x - st_c.x - 60.0) * charge_k
                 var ally := Vector2(kx, floor_y - 20.0)
-                # TASK 58b: alleato = sprite reale knight_ally (PixelLab);
+                # TASK 58b/64: alleato = sprite reale della variante di
+                # livello (unicorn_ally/knight_ally, PixelLab v2);
                 # arco luminoso di spada conservato al momento del colpo.
                 var bob := sin(lt * 12.0) * 2.0
                 var p := ally + Vector2(0, bob)

@@ -292,6 +292,10 @@ const TEXTS: Dictionary = {
         "bonuscard.fx.chalice": {"en": "About 9 seconds of pure invincibility: enemies that touch you catch fire.", "it": "Circa 9 secondi di invincibilita' totale: i nemici che ti toccano prendono fuoco."},
         "bonuscard.name.knight": {"en": "Knight Statue", "it": "Statua del Cavaliere"},
         "bonuscard.fx.knight": {"en": "Summons an allied knight who charges into battle and fights by your side.", "it": "Evoca un cavaliere alleato che si lancia in battaglia e combatte al tuo fianco."},
+        # TASK 64 (alleato alternato per livello): la statuetta evoca
+        # l'UNICORNO nei livelli dispari e il CAVALLIERE nei livelli pari.
+        "bonuscard.name.unicorn": {"en": "Unicorn Statue", "it": "Statua dell'Unicorno"},
+        "bonuscard.fx.unicorn": {"en": "Summons an allied unicorn who charges into battle and fights by your side.", "it": "Evoca un unicorno alleato che si lancia in battaglia e combatte al tuo fianco."},
         # ---------------- Nemici (44) ----------------
         "enemy.zombie": {"en": "Zombie", "it": "Zombie"},
         "enemy.skeleton": {"en": "Skeleton", "it": "Scheletro"},

@@ -3572,7 +3572,7 @@ func _on_soul_delivered(winner: CharacterBody2D, victim: CharacterBody2D) -> voi
 # in loop; si chiude TENENDO PREMUTO il fuoco per 1 secondo. Se lo stesso
 # bonus viene ripreso piu' avanti nella partita la card NON riappare
 # (memoria per-run: GameManager.bonus_cards_seen, azzerata a nuova run).
-func _maybe_show_bonus_card(kind: int, player_num: int) -> void:
+func _maybe_show_bonus_card(kind: int, player_num: int, ally_variant := "unicorn") -> void:
         if not C.BONUS_CARD_ENABLED:
                 return
         var key := "kind_%d" % kind
@@ -3592,7 +3592,7 @@ func _maybe_show_bonus_card(kind: int, player_num: int) -> void:
         var ct := 0
         if char_owner != null and "character_type" in char_owner:
                 ct = int(char_owner.character_type)
-        card.setup(kind, player_num, ct)
+        card.setup(kind, player_num, ct, ally_variant)
         card.card_closed.connect(_on_bonus_card_closed)
         _bonus_card = card
         add_child(card)
@@ -3774,7 +3774,8 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.3, 1.0, 0.3))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.KNIGHT_STATUE:
-                        _maybe_show_bonus_card(CollectiblesClass.Kind.KNIGHT_STATUE, player_id)
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.KNIGHT_STATUE,
+                                        player_id, _ally_variant_for_level())
                         # FIX (nuova meccanica): evoca cavaliere alleato.
                         # Il cavaliere appare accanto al player e combatte.
                         item.active = false
@@ -4319,6 +4320,8 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                         node.owner_id = 2
                 if key == "statue":
                         node.active = true
+                        # TASK 64: variante statuetta coerente col livello corrente
+                        node.statue_variant = _ally_variant_for_level()
                 collectibles_node.add_child(node)
                 match key:
                         "mine": mine_item = node
@@ -4836,6 +4839,11 @@ func _spawn_collectibles() -> void:
                 var statue_pos := _cell_to_pixel(cell)
                 knight_statue_item = _create_collectible(CollectiblesClass.Kind.KNIGHT_STATUE, statue_pos)
                 knight_statue_item.active = true
+                # TASK 64 (alleato alternato per livello): l'icona della
+                # statuetta a terra segue la parita' del livello (dispari =
+                # unicorno, pari = cavaliere), cosi' il player vede fin da
+                # subito QUALE alleato verra' evocato.
+                knight_statue_item.statue_variant = _ally_variant_for_level()
                 collectibles_node.add_child(knight_statue_item)
 
         # FIX (nuova meccanica): Dinamite (1 per livello, posizione casuale)
@@ -5200,10 +5208,24 @@ func _find_free_cell_near(from_col: int, from_row: int, prefer_dir: int,
         return Vector2i(-1, -1)
 
 
+# TASK 64 (alleato alternato per livello): l'alleato evocato dalla
+# statuetta alterna per livello — livelli DISPARI (1,3,5..) = UNICORNO
+# (comportamento storico, retrocompatibile col livello 1), livelli PARI
+# (2,4,6..) = CAVALLIERE. Entrambi gli sheet sono PixelLab v2: unicorn_ally
+# (2206 colori) e knight_ally (rigenerato Task 63b). Statuetta a terra,
+# statua di pietra, bonus card (icona/nome/demo) e alleato vivo seguono
+# tutti questa unica regola.
+func _ally_variant_for_level() -> String:
+        return "knight" if current_level % 2 == 0 else "unicorn"
+
+
 func _spawn_knight_ally(player_pos: Vector2) -> void:
         if knight_ally != null and is_instance_valid(knight_ally):
                 return  # già evocato
         var ka := KnightAllyClass.new()
+        # TASK 64: variante estetica per parita' livello (PRIMA dell'add_child:
+        # il _ready di KnightAlly carica sheet alleato + statua di pietra).
+        ka.ally_variant = _ally_variant_for_level()
         # Stessa energia del player (lives = 3 default)
         # FIX (cavaliere energia 1.5x): energia = lives del player * 1.5
         # Player ha 3 lives → cavaliere ha 4.5 → arrotondato a 5

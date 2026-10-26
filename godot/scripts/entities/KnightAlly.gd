@@ -80,6 +80,24 @@ var _sprite_loaded: bool = false
 var _statue_texture: Texture2D = null
 var _statue_loaded: bool = false
 
+# --- TASK 64 (alleato alternato per livello) ---
+# L'alleato evocato dalla statuetta alterna per livello: livelli DISPARI
+# (1,3,5..) = UNICORNO (comportamento storico, retrocompatibile), livelli
+# PARI (2,4,6..) = CAVALLIERE. Entrambi gli sheet sono PixelLab v2
+# (unicorn_ally: 2206 colori; knight_ally: rigenerato Task 63b).
+# MainGameController imposta questa variabile PRIMA dell'add_child (il
+# _ready carica le texture in base alla variante); default "unicorn" =
+# comportamento precedente alla Task 64 (test e call-site legacy intatti).
+var ally_variant: String = "unicorn"
+const ALLY_SHEET_BY_VARIANT := {
+        "unicorn": "res://assets/sprites/unicorn_ally_sheet.png",
+        "knight": "res://assets/sprites/knight_ally_sheet.png",
+}
+const ALLY_STATUE_BY_VARIANT := {
+        "unicorn": "res://assets/sprites/collectibles/item_unicorn_statue.png",
+        "knight": "res://assets/sprites/collectibles/item_knight_statue.png",
+}
+
 # --- Projectiles ---
 var projectiles: Array = []
 
@@ -95,7 +113,11 @@ func _ready() -> void:
 
 
 func _load_sprite() -> void:
-        var path := "res://assets/sprites/unicorn_ally_sheet.png"
+        # TASK 64: sheet per variante (unicorno livelli dispari / cavaliere
+        # livelli pari); fallback silenzioso al disegno procedurale se il
+        # PNG manca, identico al comportamento pre-Task 64.
+        var path: String = ALLY_SHEET_BY_VARIANT.get(ally_variant,
+                        ALLY_SHEET_BY_VARIANT["unicorn"])
         var abs_path := ProjectSettings.globalize_path(path)
         if not FileAccess.file_exists(abs_path):
                 _sprite_loaded = false
@@ -106,9 +128,11 @@ func _load_sprite() -> void:
                 _sprite_loaded = _sprite_sheet != null
 
 
-# FIX (statua di pietra): carica la texture della statua (unicorno di pietra)
+# FIX (statua di pietra): carica la texture della statua di pietra coerente
+# con la variante dell'alleato (TASK 64: unicorno/cavaliere per parita' livello)
 func _load_statue_texture() -> void:
-        var path := "res://assets/sprites/collectibles/item_unicorn_statue.png"
+        var path: String = ALLY_STATUE_BY_VARIANT.get(ally_variant,
+                        ALLY_STATUE_BY_VARIANT["unicorn"])
         var abs_path := ProjectSettings.globalize_path(path)
         if not FileAccess.file_exists(abs_path):
                 _statue_loaded = false

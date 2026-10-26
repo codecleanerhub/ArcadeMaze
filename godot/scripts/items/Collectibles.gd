@@ -93,6 +93,20 @@ var pulse: float = 0.0
 var bob_offset: float = 0.0
 var rotation_deg: float = 0.0
 
+# --- TASK 64 (alleato alternato per livello) ---
+# Variante estetica della statuetta KNIGHT_STATUE: "unicorn" (livelli
+# dispari, comportamento storico) o "knight" (livelli pari). Decisa da
+# MainGameController alla creazione/restore in base alla parita' del
+# livello, cosi' l'icona a terra e' sempre coerente con l'alleato che
+# verra' evocato (item_unicorn_statue.png / item_knight_statue.png,
+# entrambi PixelLab v2).
+var statue_variant: String = "unicorn"
+
+func _knight_statue_png() -> String:
+        return "res://assets/sprites/collectibles/item_knight_statue.png" \
+                        if statue_variant == "knight" \
+                        else "res://assets/sprites/collectibles/item_unicorn_statue.png"
+
 # --- MINE-specific ---
 var bouncing: bool = false
 var velocity: Vector2 = Vector2.ZERO
@@ -1066,7 +1080,8 @@ func _draw_medikit() -> void:
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
 func _draw_knight_statue() -> void:
         var y_off := -bob_offset
-        var tex := _load_png_cached("res://assets/sprites/collectibles/item_unicorn_statue.png")
+        # TASK 64: icona coerente con la variante dell'alleato del livello
+        var tex := _load_png_cached(_knight_statue_png())
         if tex != null:
                 # Aura mistica blu/ciano pulsante
                 var glow_alpha: float = 0.20 + pulse * 0.15
@@ -1104,7 +1119,8 @@ func _draw_knight_statue() -> void:
 # Il player può così vedere dove apparirà la statua.
 func _draw_knight_statue_ghost() -> void:
         var y_off := -bob_offset
-        var tex := _load_png_cached("res://assets/sprites/collectibles/item_unicorn_statue.png")
+        # TASK 64: il ghost della statua segue la stessa variante del livello
+        var tex := _load_png_cached(_knight_statue_png())
         if tex != null:
                 # Aura mistica pulsante
                 var glow_alpha: float = 0.15 + pulse * 0.15
