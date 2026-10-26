@@ -533,6 +533,11 @@ func _ready() -> void:
         _setup_camera()
         # FIX (fulmini invisibili): crea overlay layer per disegnare SOPRA il maze
         _create_foreground_layer()
+        # TASK 68 (portale sotto i muri): registra la callback con cui il
+        # Maze disegna il portale magico TRA la passata pavimento e quella
+        # muri (prima era nell'overlay sopra tutto e il vortice 84px
+        # copriva le rocce delle celle muro adiacenti).
+        maze.portal_draw_callback = Callable(self, "_draw_portal_into")
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
         if SpriteManager:
@@ -693,49 +698,13 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 # (magic portal, etc.)
                 ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
         # Magic portal
-        if spawner != null and spawner.magic_portal.active:
-                var ppos2: Vector2 = spawner.magic_portal.pos
-                var prot2: float = spawner.magic_portal.rotation
-                var pglow2: float = spawner.magic_portal.glow_pulse
-                var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
-                # Aura viola morbida attorno al portale (sia sprite sia proc)
-                ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
-                # --- TASK 54: portale come sprite animato PixelLab ---
-                # (env/portal_sheet.png, 4 frame vortice). Rollback:
-                # GameConstants.PORTAL_SPRITE_ENABLED = false -> cerchi.
-                if C.PORTAL_SPRITE_ENABLED and _get_portal_sheet() != null:
-                        var sheet: Texture2D = _get_portal_sheet()
-                        var frame_idx: int = int(prot2 * 2.2 + pglow2 * 3.0) % 4
-                        if frame_idx < 0:
-                                frame_idx += 4
-                        var pulse: float = 1.0 + sin(pglow2 * 2.0) * 0.06
-                        var w: float = 84.0 * pulse
-                        var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
-                        var dst := Rect2(ppos2.x - w * 0.5, ppos2.y - w * 0.5, w, w)
-                        ci.draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
-                else:
-                        for i in 12:
-                                var a2: float = prot2 + (float(i) / 12.0) * TAU
-                                var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
-                                ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
-                        for i in 8:
-                                var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
-                                var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
-                                ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
-                        var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
-                        # FIX (pallino procedurale accanto al miniboss, 2° tentativo):
-                        # il fix precedente aveva ridotto solo l'alpha del cerchietto
-                        # bianco più piccolo (riga 328, alpha 1.0 -> 0.5), MA il
-                        # PALLINO VERO era il disco LAVANDA qui sotto (alpha 0.9,
-                        # raggio 10px, quasi solido). Ridotto alpha da 0.9 a 0.25:
-                        # rimane un nucleo viola tenue che pulsa con glow_pulse,
-                        # ma non è più un cerchio solido che appare come "pallino
-                        # alieno" accanto al miniboss spawnato 1-4 celle più in là.
-                        ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
-                        ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
-                        # FIX: pallino centrale bianco alpha 0.5 (era 1.0 nel commit
-                        # 424b038, confermato invariato).
-                        ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
+        # TASK 68: il portale NON si disegna più qui (overlay SOPRA il maze):
+        # lo sprite 84px su cella 64 sbordava ~10px sulle celle muro
+        # adiacenti coprendo le rocce. Ora il render è in _draw_portal_into,
+        # registrata come Maze.portal_draw_callback e invocata dentro
+        # Maze._draw() TRA la passata pavimento e quella muri: i muri
+        # coprono lo sbordo del vortice (segnalazione utente Task 68
+        # "il portale viene disegnato sotto il muro").
 
 
 # ============================================================================
@@ -6301,3 +6270,50 @@ static func _get_portal_sheet() -> Texture2D:
                 if img.load(abs_path) == OK:
                         _portal_sheet_cache = ImageTexture.create_from_image(img)
         return _portal_sheet_cache
+
+
+# ============================================================================
+# TASK 68 (portale sotto i muri): render del portale magico, invocato da
+# Maze._draw() tramite portal_draw_callback TRA la passata pavimento e la
+# passata muri. Codice identico al vecchio blocco in _draw_overlay (aura +
+# vortice PixelLab 4 frame + fallback cerchi procedurali); cambia SOLO il
+# contesto di draw: il CanvasItem del Maze invece dell'overlay CanvasLayer.
+# Risultato: lo sprite 84px che sconfina ~10px dai bordi della cella 64px
+# viene coperto dalle celle muro adiacenti -> il portale appare DENTRO il
+# corridoio (fix segnalazione utente: il vortice invade il muro).
+# ============================================================================
+func _draw_portal_into(ci: CanvasItem) -> void:
+        if spawner == null or not spawner.magic_portal.active:
+                return
+        var ppos2: Vector2 = spawner.magic_portal.pos
+        var prot2: float = spawner.magic_portal.rotation
+        var pglow2: float = spawner.magic_portal.glow_pulse
+        var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
+        # Aura viola morbida attorno al portale (sia sprite sia proc)
+        ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
+        # --- TASK 54: portale come sprite animato PixelLab ---
+        # (env/portal_sheet.png, 4 frame vortice). Rollback:
+        # GameConstants.PORTAL_SPRITE_ENABLED = false -> cerchi.
+        if C.PORTAL_SPRITE_ENABLED and _get_portal_sheet() != null:
+                var sheet: Texture2D = _get_portal_sheet()
+                var frame_idx: int = int(prot2 * 2.2 + pglow2 * 3.0) % 4
+                if frame_idx < 0:
+                        frame_idx += 4
+                var pulse: float = 1.0 + sin(pglow2 * 2.0) * 0.06
+                var w: float = 84.0 * pulse
+                var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
+                var dst := Rect2(ppos2.x - w * 0.5, ppos2.y - w * 0.5, w, w)
+                ci.draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
+        else:
+                for i in 12:
+                        var a2: float = prot2 + (float(i) / 12.0) * TAU
+                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
+                        ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
+                for i in 8:
+                        var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
+                        var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
+                        ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
+                var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
+                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
+                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
+                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))

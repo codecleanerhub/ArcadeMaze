@@ -236,13 +236,45 @@ func _process(delta: float) -> void:
         queue_redraw()
 
 
+## TASK 68 (portale sotto i muri): callback opzionale che il controller
+## registra per disegnare il portale magico TRA la passata del pavimento e
+## quella dei muri. Prima il portale era nell'overlay CanvasLayer layer=1
+## (SOPRA tutto): lo sprite 84px su cella 64 sbordava ~10px e copriva le
+## rocce delle celle muro adiacenti (segnalazione utente: "il portale viene
+## disegnato sotto il muro" — il vortice deve finire DIETRO i muri).
+## La callback riceve il CanvasItem del Maze (self) come contesto di draw.
+var portal_draw_callback: Callable = Callable()
+
+
 func _draw() -> void:
         # Always redraw - the C++ Maze::render also draws every frame because
         # torches animate. For static mazes you can gate this on needs_redraw.
         _render_floor_gradient()
+        # TASK 68: disegno in DUE passate. Prima TUTTE le celle non-muro
+        # (pavimento, tesori, armi — nessuna sborda dalla propria cella),
+        # poi il portale, poi i muri: così il vortice che sconfina dai
+        # bordi della cella viene coperto dalla roccia e il portale appare
+        # DENTRO il corridoio invece che sopra i muri.
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
-                        _render_cell(c, r)
+                        if _get_cell_type(c, r) != C.CellType.WALL:
+                                _render_cell(c, r)
+        # Le celle WALL dei muri di roccia MOBILI (Task 30) si disegnano come
+        # pavimento: appartengono alla passata 1 (il portale sta sopra di esse
+        # come sopra ogni pavimento; le lastre visibili sono nel MazeHazards).
+        for c in range(C.MAZE_COLS):
+                for r in range(C.MAZE_ROWS):
+                        if _get_cell_type(c, r) == C.CellType.WALL \
+                                        and dynamic_walls.has("%d,%d" % [c, r]):
+                                _render_cell(c, r)
+        # Portale magico: tra pavimento e muri (vedi portal_draw_callback).
+        if portal_draw_callback.is_valid():
+                portal_draw_callback.call(self)
+        for c in range(C.MAZE_COLS):
+                for r in range(C.MAZE_ROWS):
+                        if _get_cell_type(c, r) == C.CellType.WALL \
+                                        and not dynamic_walls.has("%d,%d" % [c, r]):
+                                _render_cell(c, r)
         # Decora alcune celle WALL con teschi, ragnatele, crepe
         # (vantaggio Godot: texture procedurali ad alta risoluzione)
         _render_wall_decorations()
