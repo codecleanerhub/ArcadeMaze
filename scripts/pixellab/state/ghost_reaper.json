@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/ghost_reaper/base.png",
+  "anim_job_id": "ec8c9bce-a90e-43a9-b6e5-7aebb1b47866",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/ghost_reaper_sheet.png"
+}
