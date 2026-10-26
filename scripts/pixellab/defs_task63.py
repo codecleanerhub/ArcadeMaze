@@ -87,4 +87,42 @@ ENTITIES: dict = {
             "single flat tone"
         ),
     },
+    # ---------------- 63b — knight ally (demo card bonus) -------------------
+    # Unico altro superstite pre-V2 USATO in-gioco (26 colori): la demo
+    # della bonus card KNIGHT_STATUE (BonusCardOverlay DEMO_ALLY_SHEET,
+    # sheet 256x64 4 frame da 64). In gioco l'alleato vero e' l'unicorno
+    # (2206 colori) — il cavaliere si vede SOLO nella card. Il meta di
+    # gioco knight_ally_meta.json ha formato CUSTOM (name/frame_w/frame_h,
+    # niente anchor) e NON viene toccato: write_anim_sheet scrive solo lo
+    # spurio {id}_sheet_meta.json che va rimosso nel post.
+    # Ricetta ricca da subito (lezione ghost_reaper gen-1 flat).
+    "knight_ally": {
+        "kind": "anim",
+        "target": "knight_ally_sheet.png",
+        "description": (
+            "heroic knight ally in polished silver plate armor with sky "
+            "blue tabard and small plumed helmet, raising a gleaming "
+            "sword, round shield strapped on the left arm, confident "
+            "walking stride, engraved armor details with rivets, side "
+            "view facing right, centered, fantasy pixel art game ally "
+            "character, readable silhouette, transparent background"
+        ),
+        "action": (
+            "knight walking in armor, arms and legs moving, tabard and "
+            "plume swaying, sword steady, silhouette stable and centered, "
+            "no color drift, no camera movement"
+        ),
+        "frame_count": 4,
+        "frame_px": 64,
+        "feet_y": 56,
+        "anchor": (32, 56),
+        "anim_seed": 7,
+        "seed": 11,
+        "shading": "highly detailed shading",
+        "detail": "highly detailed",
+        "negative_description": (
+            "flat colors, minimal shading, single flat tone, wooden toy "
+            "figure"
+        ),
+    },
 }
