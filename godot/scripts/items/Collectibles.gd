@@ -31,7 +31,6 @@ enum Kind {
         SPEED_BOOTS,     # Permanent speed boost (P1 or P2 owner).
         TREASURE,        # One of the 5 treasures (crown/gold/chest/gem/cup).
         EXIT_DOOR,       # Appears once all treasures are collected.
-        MAGIC_PORTAL,    # Spawns at 50% enemies killed; respawns enemies.
         MEDIKIT,         # FIX (nuova meccanica): rigenera 1 punto vita del player (1 per livello).
         KNIGHT_STATUE,   # FIX (nuova meccanica): evoca cavaliere alleato che combatte per il player.
         DYNAMITE,        # FIX (nuova meccanica): candelotto di dinamite con miccia (1 per livello).
@@ -130,11 +129,11 @@ var owner_id: int = 0  # 0 = free (1P), 1 = P1, 2 = P2
 var door_anim_timer_ms: int = 0
 var door_glow_pulse: float = 0.0
 
-# --- MAGIC_PORTAL-specific ---
-var portal_phase: int = 0       # 0=open, 1=spawn, 2=close, 3=idle
-var portal_phase_timer_ms: int = 0
-var portal_enemies_to_spawn: int = 0
-var portal_spawn_timer_ms: int = 0
+# NOTE (TASK 69, pulizia codice morto): rimosso il port C++ del portale
+# magico (Kind.MAGIC_PORTAL + make_magic_portal + _update_portal +
+# _draw_magic_portal + vars portal_*): mai istanziato in gioco — il portale
+# REALE è gestito interamente da MainGameController (magic_portal: Dictionary
+# + _draw_portal_into via Maze.portal_draw_callback, Task 68).
 
 # ----- Signals -----
 # Emitted when an item is collected by the player. `player_id` is 1 or 2.
@@ -168,9 +167,6 @@ func _apply_kind_defaults() -> void:
                 Kind.EXIT_DOOR:
                         door_anim_timer_ms = 0
                         door_glow_pulse = 0.0
-                Kind.MAGIC_PORTAL:
-                        portal_phase = 0
-                        portal_phase_timer_ms = 0
                 Kind.MEDIKIT:
                         pulse = 0.0
                         bob_offset = 0.0
@@ -230,8 +226,6 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                         pass
                 Kind.EXIT_DOOR:
                         _update_door(delta_ms)
-                Kind.MAGIC_PORTAL:
-                        _update_portal(delta_ms)
                 Kind.MEDIKIT:
                         pass  # only anim
                 Kind.KNIGHT_STATUE:
@@ -304,36 +298,6 @@ func _update_door(delta_ms: int) -> void:
         door_glow_pulse = (sin(anim_time * 3.0) + 1.0) * 0.5
 
 
-func _update_portal(delta_ms: int) -> void:
-        if portal_phase_timer_ms > delta_ms:
-                portal_phase_timer_ms -= delta_ms
-        else:
-                match portal_phase:
-                        0:  # opening
-                                portal_phase = 1
-                                portal_phase_timer_ms = 4000
-                        1:  # spawning
-                                if portal_enemies_to_spawn > 0:
-                                        portal_enemies_to_spawn -= 1
-                                        portal_spawn_timer_ms = 4000
-                                        portal_phase_timer_ms = 4000
-                                else:
-                                        portal_phase = 2
-                                        portal_phase_timer_ms = 1000
-                        2:  # closing
-                                portal_phase = 3
-                                portal_phase_timer_ms = 0
-                                active = false
-                        3:
-                                active = false
-        if portal_phase == 1 and portal_enemies_to_spawn > 0:
-                if portal_spawn_timer_ms > delta_ms:
-                        portal_spawn_timer_ms -= delta_ms
-                else:
-                        portal_enemies_to_spawn -= 1
-                        portal_spawn_timer_ms = 4000
-
-
 # =========================================================
 # Public API for the Game to configure items
 # =========================================================
@@ -400,7 +364,6 @@ func _draw() -> void:
                 Kind.SPEED_BOOTS:  _draw_speed_boots()
                 Kind.TREASURE:     _draw_treasure()
                 Kind.EXIT_DOOR:    _draw_exit_door()
-                Kind.MAGIC_PORTAL: _draw_magic_portal()
                 Kind.MEDIKIT:      _draw_medikit()
                 Kind.KNIGHT_STATUE: _draw_knight_statue()
                 Kind.DYNAMITE:     _draw_dynamite()
@@ -868,71 +831,6 @@ func _draw_exit_door() -> void:
                                 Color(0.392, 0.275, 0.078), false, 0.4)
 
 
-func _draw_magic_portal() -> void:
-        # Port 1:1 di Game::drawMagicPortal (C++ righe 5353-5432).
-        # Portale magico che respawna i nemici. Strati:
-        #   1. 3 aure pulsanti (viola-blu, grande -> piccola, da 55 a 22 px)
-        #   2. 4 anelli concentrici rotanti (16, 24, 32, 40 px di raggio;
-        #      colori 240, 200, 160, 120 alpha da interno a esterno)
-        #   3. 12 particelle spirale rotanti (raggio variabile con sin)
-        #   4. Centro nero profondo (viola scuro, r=12)
-        #   5. Bagliore centrale phase-dependent (3 fasi: open/spawn/close)
-        # (px, py) e' il centro del portale. Usa rotation_deg per la rotazione.
-        var px := 0.0
-        var py := 0.0
-        var rot: float = deg_to_rad(rotation_deg)
-        var portal_pulse: float = 1.0 + sin(anim_time * 4.0) * 0.2
-        # --- 3 aure pulsanti (viola-blu, grande -> piccola) ---
-        var aura_r: float = 55.0 * portal_pulse
-        draw_circle(Vector2(px, py), aura_r, Color(120.0 / 255.0, 60.0 / 255.0, 220.0 / 255.0, 40.0 / 255.0))
-        draw_circle(Vector2(px, py), aura_r * 0.65,
-                Color(160.0 / 255.0, 80.0 / 255.0, 240.0 / 255.0, 60.0 / 255.0))
-        draw_circle(Vector2(px, py), aura_r * 0.4,
-                Color(200.0 / 255.0, 100.0 / 255.0, 255.0 / 255.0, 80.0 / 255.0))
-        # --- 4 anelli concentrici rotanti (16, 24, 32, 40 px di raggio) ---
-        # Colori 240->120 alpha da interno a esterno; spessore 3->1.5.
-        var ring_colors: Array[Color] = [
-                Color(220.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0, 240.0 / 255.0),
-                Color(180.0 / 255.0, 90.0 / 255.0, 240.0 / 255.0, 200.0 / 255.0),
-                Color(140.0 / 255.0, 70.0 / 255.0, 210.0 / 255.0, 160.0 / 255.0),
-                Color(100.0 / 255.0, 50.0 / 255.0, 180.0 / 255.0, 120.0 / 255.0),
-        ]
-        var ring_widths: Array[float] = [3.0, 2.5, 2.0, 1.5]
-        for ring in range(4):
-                var ring_r: float = (16.0 + float(ring) * 8.0) * portal_pulse
-                # Godot draw_circle non ha outline; uso draw_arc per gli anelli.
-                draw_arc(Vector2(px, py), ring_r, 0.0, TAU, 48,
-                        ring_colors[ring], ring_widths[ring])
-        # --- 12 particelle spirale rotanti ---
-        for i in range(12):
-                var a: float = rot * 2.0 + float(i) * PI / 6.0
-                var r: float = 14.0 + sin(rot + float(i)) * 8.0
-                var sx_p: float = px + cos(a) * r
-                var sy_p: float = py + sin(a) * r
-                var spark_size: float = 2.5 + sin(rot * 3.0 + float(i)) * 1.0
-                draw_circle(Vector2(sx_p, sy_p), spark_size,
-                        Color(230.0 / 255.0, 160.0 / 255.0, 255.0 / 255.0, 220.0 / 255.0))
-        # --- Centro del portale (nero/viola profondo, r=12) ---
-        draw_circle(Vector2(px, py), 12.0, Color(15.0 / 255.0, 5.0 / 255.0, 25.0 / 255.0, 220.0 / 255.0))
-        # --- Bagliore centrale phase-dependent (3 fasi) ---
-        if portal_phase == 0:
-                # Apertura: bagliore crescente.
-                var open_t: float = 1.0 - float(portal_phase_timer_ms) / 1000.0
-                var glow_r: float = 6.0 + open_t * 12.0
-                draw_circle(Vector2(px, py), glow_r,
-                        Color(200.0 / 255.0, 100.0 / 255.0, 255.0 / 255.0, 180.0 * open_t / 255.0))
-        elif portal_phase == 1:
-                # Spawn: bagliore intenso costante.
-                draw_circle(Vector2(px, py), 10.0,
-                        Color(255.0 / 255.0, 150.0 / 255.0, 255.0 / 255.0, 180.0 / 255.0))
-        elif portal_phase == 2:
-                # Chiusura: bagliore decrescente.
-                var close_t: float = float(portal_phase_timer_ms) / 800.0
-                var glow_r: float = 4.0 + close_t * 6.0
-                draw_circle(Vector2(px, py), glow_r,
-                        Color(150.0 / 255.0, 80.0 / 255.0, 200.0 / 255.0, 120.0 * close_t / 255.0))
-
-
 # =========================================================
 # Static helpers
 # =========================================================
@@ -987,18 +885,6 @@ static func make_exit_door(at: Vector2) -> Collectibles:
         c.kind = Kind.EXIT_DOOR
         c.pos = at
         c.active = false  # activates when all treasures are collected
-        return c
-
-
-## Factory: create a magic portal at pos.
-static func make_magic_portal(at: Vector2, enemies_count: int) -> Collectibles:
-        var c := Collectibles.new()
-        c.kind = Kind.MAGIC_PORTAL
-        c.pos = at
-        c.portal_enemies_to_spawn = enemies_count
-        c.portal_phase = 0
-        c.portal_phase_timer_ms = 1000  # 1s open animation
-        c.portal_spawn_timer_ms = 0
         return c
 
 

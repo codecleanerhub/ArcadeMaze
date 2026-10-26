@@ -52,8 +52,9 @@ enum WeaponType { PISTOL, SHOTGUN, ROCKET, LASER, SIEGE }
 # the comment is a stale bug; we keep all 9.
 enum CharacterType { HERO_M, HERO_F, MAGE, ORC, ELF, KNIGHT, GOLEM, DRAGON, VAMPIRE }
 
-# Sprite base path per character (assets/sprites/<base>_sheet.png plus
-# <base>_walk0..3_sheet.png and <base>_jump_sheet.png).
+# Sprite base path per character (assets/sprites/<base>_sheet.png —
+# l'unico sheet caricato: main 4-frame per idle/walk/jump/attack,
+# come il C++ originale).
 const CHARACTER_SPRITE_BASE := {
         CharacterType.HERO_M:   "res://assets/sprites/player1",
         CharacterType.HERO_F:   "res://assets/sprites/player2",
@@ -738,16 +739,13 @@ func set_character(ct: int, p_num: int) -> void:
 
 
 # Load the sprite for the current character_type from
-# assets/sprites/<base>_sheet.png. The main sheet is 256x64 (4 frames of 64x64).
-# FIX (graphics gap #1 — per-frame walk/jump sheets were unused dead assets):
-# The C++ engine (Player.cpp:132-139) loaded SIX sheets per character:
-#   <base>_sheet.png, <base>_walk0..3_sheet.png, <base>_jump_sheet.png.
-# Each sheet is a single 64x64 frame; the engine picked the right sheet per
-# animation state (idle/walk0..3/jump). The previous Godot port only loaded
-# the main sheet and used the 4 frames inside it as a walk cycle (frame 3
-# doubling as the jump pose). The 48 dedicated walk/jump PNGs were dead weight.
-# We now load all 6 sheets and pick the right one per state, recovering the
-# per-frame art the asset pipeline already ships.
+# assets/sprites/<base>_sheet.png. The main sheet is 256x64 (4 frames of 64x64),
+# oppure 1024x256 XHD (4 frame da 256px, Task 22).
+# TASK 69 (pulizia codice/asset morti): i PNG walk/jump dedicati
+# (<base>_walk0..3_sheet.png, <base>_jump_sheet.png) e il loro preload
+# (_walk_sheet_textures / _jump_sheet_texture, write-only) sono stati
+# rimossi: il C++ (Player.cpp:432-443) NON swappava sheet per walk/jump
+# e lo swap AI rigenerato cambiava stile a metà ciclo (vedi _update_sprite).
 func load_character_sprite() -> void:
         var base: String = CHARACTER_SPRITE_BASE.get(character_type, CHARACTER_SPRITE_BASE[CharacterType.HERO_M])
         var path := base + "_sheet.png"
@@ -787,16 +785,6 @@ func load_character_sprite() -> void:
                                 sprite.modulate = tint.lerp(acol, 0.28)
                         sprite.flip_h = false
                         _armored_sheet_on = armored_mode
-                        # Walk/jump dedicati in variante XHD (fallback: null,
-                        # il ciclo walk usa comunque il main sheet). In moda'
-                        # corazzato si usano SOLO i frame del main sheet.
-                        _walk_sheet_textures.resize(4)
-                        if not armored_mode:
-                                for i in 4:
-                                        _walk_sheet_textures[i] = _try_load_xhd_texture(
-                                                        "%s_walk%d" % [base.get_file(), i])
-                        _jump_sheet_texture = null if armored_mode \
-                                        else _try_load_xhd_texture(base.get_file() + "_jump")
                         _apply_character_frame(0)
                         sprite_loaded = true
                         var px_scale: float = 1.3 * (64.0 / float(_frame_px))
@@ -823,27 +811,6 @@ func load_character_sprite() -> void:
                         _character_sheet_path = base
                         sprite.modulate = tint
                         sprite.flip_h = false
-                        # Pre-load the dedicated per-frame sheets. Each is a
-                        # 64x64 single-frame PNG. Missing files are silently
-                        # skipped — we fall back to the main sheet frames.
-                        _walk_sheet_textures.resize(4)
-                        for i in 4:
-                                var walk_path := base + "_walk%d_sheet.png" % i
-                                if ResourceLoader.exists(walk_path):
-                                        var walk_tex := load(walk_path)
-                                        if walk_tex is Texture2D:
-                                                _walk_sheet_textures[i] = walk_tex
-                                else:
-                                        _walk_sheet_textures[i] = null
-                        var jump_path := base + "_jump_sheet.png"
-                        if ResourceLoader.exists(jump_path):
-                                var jump_tex := load(jump_path)
-                                if jump_tex is Texture2D:
-                                        _jump_sheet_texture = jump_tex
-                                else:
-                                        _jump_sheet_texture = null
-                        else:
-                                _jump_sheet_texture = null
                         # Initial frame (idle = main sheet frame 0)
                         _apply_character_frame(0)
                         sprite_loaded = true
@@ -904,26 +871,11 @@ func _apply_character_frame(frame_idx: int) -> void:
         sprite.modulate = tint  # FIX: re-apply tint (P2 bluish)
 
 
-# Apply a dedicated single-frame texture (walk0..3 or jump) directly to the
-# Sprite2D. Used by _update_sprite() when the dedicated sheet exists.
-func _apply_character_dedicated_texture(tex: Texture2D) -> void:
-        if tex == null or sprite == null:
-                return
-        sprite.texture = tex
-        sprite.modulate = tint  # FIX: re-apply tint (P2 bluish)
-
-
 var _character_sheet_texture: Texture2D = null
 var _character_sheet_path: String = ""
 var sprite_loaded: bool = false
 # TASK 22 — dimensione frame della sheet corrente (64 SD / 256 XHD).
 var _frame_px: int = 64
-# Dedicated per-frame sheets (loaded once at character-switch time).
-# walk0..3 = walk cycle; jump = jump pose. Each is a single 64x64 frame.
-# Any entry that's null means the dedicated sheet wasn't found on disk; we
-# fall back to the main 4-frame sheet (_apply_character_frame).
-var _walk_sheet_textures: Array = [null, null, null, null]
-var _jump_sheet_texture: Texture2D = null
 
 # Fire-aura spritesheet (effect_fireaura, 6x4 frames of 64x64, anchor 32,32).
 # Loaded via SpriteManager in _ready() and used in _draw() while the chalice
@@ -1939,16 +1891,14 @@ func _update_sprite() -> void:
         sprite.flip_h = _last_flipped
 
         # --- Animation frame selection ---
-        # FIX (player cambia aspetto quando cammina/salta):
-        # Le walk_sheet dedicate (player1_walk0..3_sheet.png) e il jump_sheet
-        # dedicato hanno STILE DIVERSO dal main sheet (sono AI calls separate
-        # con prompt diversi) → swap di texture cambiava aspetto/colore.
-        # Il C++ (Player.cpp:432-443) NON swappava sheet per walk/jump:
-        # usava il main 4-frame sheet per tutto, e applicava un arc Y
-        # sinusoidale per il salto (lo stesso sprite che si alzava in aria).
-        # Ora torniamo a quel modello: main sheet 4-frame per idle/walk/attack,
-        # jump = stessa sprite con offset Y sin(progress*PI)*25 (effetto "salto
-        # visivo" tipo arc, NON swap di texture).
+        # FIX (player cambia aspetto quando cammina/salta): lo swap con le
+        # walk/jump_sheet dedicate (AI calls separate, stile diverso dal main
+        # sheet) cambiava aspetto/colore a metà ciclo. Il C++ (Player.cpp:
+        # 432-443) NON swappava sheet per walk/jump: usava il main 4-frame
+        # sheet per tutto, e applicava un arc Y sinusoidale per il salto
+        # (lo stesso sprite che si alzava in aria). Modello attuale: main
+        # sheet 4-frame per idle/walk/attack, jump = stessa sprite con
+        # offset Y sin(progress*PI)*25 (TASK 69: asset dedicati rimossi).
         if is_jumping():
                 # Jump: NON swappare texture. Usa frame 0 (idle) dello stesso
                 # main sheet. L'offset Y (jump_offset) viene applicato sotto

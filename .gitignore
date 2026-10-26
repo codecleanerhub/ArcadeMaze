@@ -29,3 +29,8 @@ Thumbs.db
 # --- Log / tmp ---
 *.log
 *.tmp
+
+# --- Backup puntuali (TASK 69): il rollback è coperto dalla storia git
+# (commit per-task + rami). I file .bak* non devono più accumularsi nel repo. ---
+*.bak
+*.bak-*

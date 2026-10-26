@@ -94,9 +94,10 @@ func _check_level(lvl: int, s: int) -> void:
                         int((p.y - C.UI_HEIGHT) / C.TILE_SIZE))
                 checked += 1
                 var kind_name: String = str(item.get("kind"))
-                if int(item.get("kind")) == CollectiblesClass.Kind.EXIT_DOOR \
-                                or int(item.get("kind")) == CollectiblesClass.Kind.MAGIC_PORTAL:
-                        continue  # porta/portale: NON devono stare su EMPTY
+                if int(item.get("kind")) == CollectiblesClass.Kind.EXIT_DOOR:
+                        continue  # porta: NON deve stare su EMPTY
+                        # (TASK 69: il portale non e' piu' un Collectibles —
+                        # e' gestito da MainGameController.magic_portal)
                 # A. cella EMPTY (non muro!)
                 var ctype: int = maze.get_cell_type(cell.x, cell.y)
                 if ctype != C.CellType.EMPTY:
