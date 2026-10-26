@@ -1020,14 +1020,33 @@ static func make_potion(at: Vector2) -> Collectibles:
 
 # FIX (nuova meccanica): disegna il medikit (scatola bianca con croce rossa).
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
+# FIX (medikit "sopra un muro" — segnalazione utente, Task 62): il
+# PIAZZAMENTO e' corretto (test test_medikit_reach: 48 seed x livello, il
+# medikit nasce sempre su cella CellType.EMPTY e BFS-reraggiungibile dallo
+# spawn), ma lo sprite PNG grigio-scuro disegnato a 64px (cella PIENA) si
+# fondeva con la roccia dei muri nelle palette scure: a colpo d'occhio
+# sembrava incastonato IN un muro. Tre misure di leggibilita':
+#   1) size 64 -> 48px (come tesori/pergamene): margine di pavimento visibile
+#      attorno alla scatola -> l'oggetto si legge "appoggiato", non "incassato";
+#   2) ombra ellittica a terra sotto la scatola: ancora l'item alla cella;
+#   3) doppio alone: bianco caldo ampio (schiarisce il pavimento attorno e
+#      stacca dal buio dei muri) + rosso pulsante interno (identita' medikit).
 func _draw_medikit() -> void:
         var y_off := -bob_offset
         var tex := _load_png_cached("res://assets/sprites/collectibles/item_medikit.png")
         if tex != null:
-                # Glow bianco/rosso pulsante
-                var glow_alpha: float = 0.15 + pulse * 0.10
-                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.3, 0.3, glow_alpha))
-                var size: float = 64.0
+                var size: float = 48.0
+                # (2) ombra ellittica a terra (pattern del martello)
+                draw_set_transform(Vector2(1.5, 14.0), 0.0, Vector2(1.0, 0.42))
+                draw_circle(Vector2.ZERO, 15.0, Color(0.0, 0.0, 0.0, 0.32))
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                # (3a) alone bianco caldo che rischiara il pavimento attorno
+                var glow_w: float = 0.26 + pulse * 0.10
+                draw_circle(Vector2.ZERO, 25.0, Color(1.0, 0.95, 0.88, glow_w))
+                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.92, 0.86, glow_w * 0.85))
+                # (3b) alone rosso pulsante interno
+                var glow_alpha: float = 0.18 + pulse * 0.12
+                draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.25, 0.25, glow_alpha))
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
         # Fallback procedurale: scatola bianca + croce rossa
