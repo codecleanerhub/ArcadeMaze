@@ -643,6 +643,30 @@ func _draw_demo(ci: Control, r: Rect2, t: float) -> void:
 
 # --- figure comuni ----------------------------------------------------------
 
+# TASK 65e (feedback utente: "elementi procedurali nel video delle card"):
+# disegna l'item REALE PixelLab (stesso PNG del pickup a terra e dell'icona)
+# al posto delle vecchie figure procedurali. center = centro dell'item,
+# size = lato in px, rot_deg = rotazione attorno al centro (martello in
+# volo ecc.), alpha per i fade. Fallback silenzioso: se il PNG manca non
+# disegna nulla (le demo mostrano gia' l'item nell'icona della card).
+func _ditem(ci: Control, kind: int, center: Vector2, size: float,
+                rot_deg: float = 0.0, alpha: float = 1.0) -> void:
+        var tex: Texture2D = _icon_texture(kind, ally_variant)
+        if tex == null:
+                return
+        if absf(rot_deg) < 0.5:
+                var dst := Rect2(center.x - size * 0.5, center.y - size * 0.5,
+                                size, size)
+                ci.draw_texture_rect(tex, dst, false, Color(1, 1, 1, alpha))
+                return
+        # rotazione attorno al centro dell'item (draw_set_transform con
+        # pivot sul centro, pattern collaudato in KnightAlly._draw_sprite)
+        ci.draw_set_transform(center, deg_to_rad(rot_deg), Vector2.ONE)
+        ci.draw_texture_rect(tex, Rect2(-size * 0.5, -size * 0.5, size, size),
+                        false, Color(1, 1, 1, alpha))
+        ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 # TASK 58b: player = sprite REALE del raccoglitore se disponibile,
 # altrimenti cavaliere stilizzato del Task 51d (rollback).
 func _dp(ci: Control, c: Vector2, t: float, alpha: float = 1.0,
@@ -880,16 +904,19 @@ func _demo_hammer(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                 _de(ci, e_c, lt, 0)
         else:
                 _de(ci, e_c, lt, 1, clampf((lt - 2.45) / 0.7, 0.0, 1.0))
-        if thrown and not enemy_dead:
+        # TASK 65e: martello REALE PixelLab (item_hammer.png). In mano durante
+        # la carica, poi in volo rotante verso il nemico (prima: linea +
+        # rettangolo procedurale).
+        if not thrown:
+                _ditem(ci, Collectibles.Kind.HAMMER,
+                                p_c + Vector2(16.0, -18.0), 24.0)
+        elif not enemy_dead:
                 var fly_k := clampf((lt - 0.9) / 1.55, 0.0, 1.0)
-                var hm_pos := p_c.lerp(e_c, fly_k)
+                var hm_pos := p_c.lerp(e_c, fly_k) + Vector2(0.0, -12.0)
                 # il martello ruota in volo
                 var ang := (lt - 0.9) * 14.0
-                ci.draw_line(hm_pos, hm_pos + Vector2(cos(ang), sin(ang)) * 12.0,
-                                Color(0.4, 0.28, 0.12), 4.0)
-                var head := hm_pos + Vector2(cos(ang), sin(ang)) * 15.0
-                ci.draw_rect(Rect2(head - Vector2(8, 8), Vector2(16, 16)),
-                                Color(0.62, 0.65, 0.72))
+                _ditem(ci, Collectibles.Kind.HAMMER, hm_pos, 26.0,
+                                rad_to_deg(ang))
         if wall_k > 0.0 and wall_k < 1.0:
                 _boom(ci, wall_r.position + wall_r.size * 0.5, wall_k, 34.0)
         if enemy_dead and lt < 3.3:
@@ -905,17 +932,19 @@ func _demo_dynamite(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                 _de(ci, e_c, lt, 0)
         else:
                 _de(ci, e_c, lt, 1, clampf((lt - boom_at) / 0.7, 0.0, 1.0))
-        # candelotto: in mano (0-1s, miccia scintilla) poi in volo parabolico
+        # TASK 65e: candelotto REALE PixelLab (item_dynamite.png): in mano
+        # (0-1s, miccia scintilla) poi in volo parabolico (prima: rettangolo
+        # rosso procedurale)
         if lt < 1.0:
                 var dy_pos := p_c + Vector2(14, -26)
-                ci.draw_rect(Rect2(dy_pos - Vector2(4, 9), Vector2(8, 18)), Color(0.72, 0.16, 0.1))
+                _ditem(ci, Collectibles.Kind.DYNAMITE, dy_pos, 22.0)
                 ci.draw_circle(dy_pos + Vector2(0, -13), 3.0 + sin(lt * 25.0) * 1.5,
                                 Color(1.0, 0.85, 0.3))
         elif lt < boom_at:
                 var k := (lt - 1.0) / (boom_at - 1.0)
                 var fly := p_c.lerp(e_c, k)
                 fly.y -= sin(k * PI) * 60.0
-                ci.draw_rect(Rect2(fly - Vector2(4, 9), Vector2(8, 18)), Color(0.72, 0.16, 0.1))
+                _ditem(ci, Collectibles.Kind.DYNAMITE, fly, 22.0)
                 ci.draw_circle(fly + Vector2(0, -13), 3.0 + sin(lt * 30.0) * 1.5,
                                 Color(1.0, 0.85, 0.3))
         if lt >= boom_at:
@@ -961,12 +990,11 @@ func _demo_boots(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
         var p_c := Vector2(px, floor_y - 20.0)
         _dp(ci, p_c, lt * (1.0 if lt < 1.4 else 3.0), 1.0)
         # stivali a terra prima della raccolta
+        # TASK 65e: stivali REALI PixelLab (item_speedboots.png; prima:
+        # rettangolo marrone + linee procedurali)
         if lt < 1.4:
-                var b_c := Vector2(r.position.x + r.size.x * 0.32, floor_y - 10.0)
-                ci.draw_rect(Rect2(b_c - Vector2(6, 6), Vector2(12, 10)), Color(0.4, 0.25, 0.12))
-                for k in range(2):
-                        ci.draw_line(b_c + Vector2(6, -4 + k * 6), b_c + Vector2(16, -10 + k * 6),
-                                        Color(0.95, 0.92, 0.8), 2.0)
+                var b_c := Vector2(r.position.x + r.size.x * 0.32, floor_y - 12.0)
+                _ditem(ci, Collectibles.Kind.SPEED_BOOTS, b_c, 26.0)
         elif lt < 1.8:
                 _speedlines(ci, p_c, lt)
         else:
@@ -994,15 +1022,20 @@ func _demo_potion(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                 ci.draw_circle(p_c + Vector2(0, -12), 22.0 + sin(lt * 6.0) * 3.0,
                                 Color(0.5, 1.0, 0.6, 0.18))
         # ampolla prima della bevuta
+        # TASK 65e: pozione REALE PixelLab (item_potion.png; prima: cerchio
+        # verde + rettangolo procedurali)
         if lt < 1.0:
-                var fl_c := Vector2(r.position.x + r.size.x * 0.18, floor_y - 44.0)
-                ci.draw_circle(fl_c, 9.0, Color(0.3, 0.95, 0.45, 0.85))
-                ci.draw_rect(Rect2(fl_c - Vector2(3, -8), Vector2(6, 8)), Color(0.5, 0.6, 0.55, 0.6))
+                var fl_c := Vector2(r.position.x + r.size.x * 0.18, floor_y - 40.0)
+                _ditem(ci, Collectibles.Kind.POTION, fl_c, 24.0)
 
 
 func _demo_freeze(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
         var p_c := Vector2(r.position.x + r.size.x * 0.14, floor_y - 20.0)
         _dp(ci, p_c, lt)
+        # TASK 65e: pergamena del ghiaccio REALE PixelLab in mano al player
+        # (parchment/freeze_scroll.png) mentre scaglia il raggio
+        _ditem(ci, Collectibles.Kind.FREEZE_SCROLL,
+                        p_c + Vector2(16.0, -22.0), 22.0)
         # raggio congelante 0.8-1.8
         if lt > 0.8 and lt < 1.8:
                 var k := (lt - 0.8) / 1.0
@@ -1095,14 +1128,11 @@ func _demo_mine(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
         var travel := r.position.x + r.size.x * (0.1 + 0.6 * clampf(lt / 2.7, 0.0, 1.0))
         var bounce := absf(sin(lt * 6.0)) * 44.0
         var m_c := Vector2(travel, floor_y - 12.0 - (bounce if lt < boom_at else 0.0))
+        # TASK 65e: mina REALE PixelLab (item_mine.png; prima: cerchio +
+        # punte procedurali) + lucina rossa lampeggiante (VFX animata)
         if lt < boom_at:
-                ci.draw_circle(m_c, 9.0, Color(0.12, 0.12, 0.14))
-                for k in range(6):
-                        var a := k * TAU / 6.0
-                        ci.draw_line(m_c + Vector2(cos(a), sin(a)) * 8.0,
-                                        m_c + Vector2(cos(a), sin(a)) * 13.0,
-                                        Color(0.2, 0.2, 0.24), 2.5)
-                ci.draw_circle(m_c + Vector2(0, -3), 2.5,
+                _ditem(ci, Collectibles.Kind.MINE, m_c, 26.0)
+                ci.draw_circle(m_c + Vector2(0, -5), 2.5,
                                 Color(1.0, 0.25, 0.2, 0.5 + 0.5 * sin(lt * 14.0)))
         else:
                 _boom(ci, e_c + Vector2(0, -10), clampf((lt - boom_at) / 0.8, 0.0, 1.0), 52.0)
@@ -1114,6 +1144,9 @@ func _demo_mine(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
 func _demo_chalice(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
         var p_c := Vector2(r.position.x + r.size.x * 0.4, floor_y - 20.0)
         _dp(ci, p_c, lt)
+        # TASK 65e: calice REALE PixelLab in mano al player (item_chalice.png,
+        # fonte dell'aura; prima il soggetto della card non compariva)
+        _ditem(ci, Collectibles.Kind.CHALICE, p_c + Vector2(18.0, -20.0), 24.0)
         # aura dorata + anello timer che si scarica (9.5s ~ loop 4.6 dimezzato)
         var remain := clampf(1.0 - lt / DEMO_LOOP_S, 0.0, 1.0)
         ci.draw_circle(p_c + Vector2(0, -12), 34.0, Color(1.0, 0.85, 0.3, 0.14 + 0.05 * sin(lt * 6.0)))

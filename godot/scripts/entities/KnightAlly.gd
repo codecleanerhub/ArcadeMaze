@@ -635,10 +635,12 @@ func get_pixel_pos() -> Vector2:
 
 
 func _draw() -> void:
-        # FIX (unicorno unificato): usa SEMPRE _statue_texture per tutte le
-        # fasi, applicando effetti procedurali (tint dorata, bob, nube) per
-        # differenziare visivamente. Questo evita il "cambio palese di PNG"
-        # tra statua e forma attiva.
+        # TASK 65d (feedback utente "pedina del Monopoly"): la statua con
+        # piedistallo resta SOLO nelle fasi di statua (STONE, TRANSFORMING);
+        # la forma ATTIVA usa lo sheet walk animato PixelLab (4 frame, flip
+        # direzione, bob) cosi' l'alleato in movimento non sembra una
+        # statuina su base ma una creatura viva. La transizione resta
+        # mascherata dalla nube del TRANSFORMING.
         var is_moving: bool = (dx != 0 or dy != 0)
         var move_bob: float = 0.0
         if is_moving and state == State.ACTIVE:
@@ -667,11 +669,11 @@ func _draw() -> void:
                 return
 
         # Fase 4: disappearing (smoke) — effetto NUDE
-        # FIX (nube su disappear): nube densa + statua che sfuma
+        # FIX (nube su disappear): nube densa + alleato che sfuma
         if state == State.DISAPPEARING:
                 var t2: float = 1.0 - (float(smoke_timer_ms) / 1200.0)
-                # Statua che sfuma
-                _draw_statue_unified(1.0 - t2 * 0.3, 1.0 - t2, 1.0, 0.0, false)
+                # TASK 65d: anche qui sheet walk (creatura viva che svanisce)
+                _draw_sprite(1.0 - t2 * 0.2, 1.0 - t2)
                 # NUDE densa che si espande
                 _draw_cloud_effect(t2, 0.8)
                 # Aura finale
@@ -682,9 +684,11 @@ func _draw() -> void:
         if state == State.DEAD:
                 return
 
-        # Fase 3: ACTIVE - statua con aura celeste chiara + bob movimento
-        # FIX (effetto movimento): bob verticale quando si muove
-        _draw_statue_unified(1.0, 1.0, 1.0, move_bob, true)
+        # Fase 3: ACTIVE - sheet walk animato + aura celeste chiara.
+        # TASK 65d: _draw_sprite = walk cycle 4 frame (10 fps) quando si
+        # muove, frame idle + respiro leggero quando fermo, flip orizzontale
+        # secondo last_dx. Niente piu' statua con base in movimento.
+        _draw_sprite(1.0, 1.0)
         # FIX (NO aura dorata): sostituita con aura celeste chiara appena visibile
         var aura_pulse: float = (sin(float(anim_time) * 0.008) + 1.0) * 0.5
         draw_circle(Vector2.ZERO, 32.0,
@@ -865,6 +869,10 @@ func _draw_statue(alpha_mul: float, alpha: float, color_t: float) -> void:
                 draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s), gold_tint, true)
 
 
+# TASK 65d: sheet walk PixelLab della variante (unicorno livelli dispari /
+# cavaliere livelli pari) usato nelle fasi ACTIVE e DISAPPEARING — animato
+# (4 frame walk quando in movimento, respiro leggero quando fermo), flip
+# orizzontale secondo la direzione. Fallback: procedurale storico.
 func _draw_sprite(scale_val: float, alpha: float) -> void:
         if _sprite_loaded and _sprite_sheet != null:
                 var is_moving: bool = (dx != 0 or dy != 0)
@@ -881,6 +889,10 @@ func _draw_sprite(scale_val: float, alpha: float) -> void:
                 var bob_y: float = 0.0
                 if is_moving:
                         bob_y = sin(float(anim_time) * 0.01) * 2.0
+                else:
+                        # TASK 65d: respiro lento quando fermo (1px) — la
+                        # creatura resta "viva" anche senza camminare
+                        bob_y = sin(float(anim_time) * 0.003) * 1.0
                 var draw_pos: Vector2 = Vector2(-target_size / 2.0, -target_size / 2.0 + bob_y)
                 var flip: bool = last_dx < 0
                 # FIX (ally disegnato +72px a destra quando guarda a sinistra):
