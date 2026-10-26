@@ -1,8 +1,6 @@
 {
   "stage": "done",
+  "note": "tentativo 2: outline no-outline anti-sticker",
   "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/effect_iceblock/base.png",
-  "frame_count": 4,
-  "anim_job_id": "2c1f8be3-bdfd-46fb-bd36-50dadcd8e4b5",
-  "pivot": "static-integrated-via-integrate_iceblock_static.py (anim QA fallita 2x, base riusata, 0 gen extra)",
   "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/effect_iceblock.png"
 }

@@ -283,12 +283,15 @@ enum CellType {
 }
 
 ## Treasure sub-types (from Maze.h) - purely cosmetic, all worth 10000 points.
+## TASK 65c: CUP (trofeo) sostituito con RUBY su richiesta utente — il
+## valore enum resta 4: gli snapshot serializzano l'indice e restano
+## compatibili (i tesori sono puramente cosmetici).
 enum TreasureType {
         CROWN,
         GOLD,
         CHEST,
         GEM,
-        CUP,
+        RUBY,
 }
 
 ## Playable characters (from Player.h). Order must match the C++ enum.

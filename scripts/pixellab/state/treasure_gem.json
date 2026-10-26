@@ -1,5 +1,6 @@
 {
   "stage": "done",
+  "note": "rigenerazione Task 65c2: la gemma tonda veniva letta come pallina",
   "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/treasure_gem/base.png",
   "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/treasures/treasure_gem.png"
 }

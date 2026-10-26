@@ -1,7 +1,8 @@
 {
   "stage": "done",
+  "note": "rigenerazione Task 65a: vortice puro illeggibile, nuovo design con anello di pietra runica",
   "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/magic_portal/base.png",
-  "anim_job_id": "857dec96-545f-45aa-81d0-50eef14e8cd5",
+  "anim_job_id": "d75aa525-21bb-4fdf-b19f-7fb7f35315e4",
   "frame_count": 4,
   "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/portal_sheet.png"
 }

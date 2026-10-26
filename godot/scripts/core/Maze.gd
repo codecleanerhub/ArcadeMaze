@@ -701,7 +701,7 @@ func generate(lvl: int = 1) -> void:
                         var cc: int = cell.x
                         var rr: int = cell.y
                         _set_cell_type(cc, rr, C.CellType.TREASURE)
-                        _set_cell_treasure(cc, rr, randi() % 5)  # TRES_CROWN..TRES_CUP
+                        _set_cell_treasure(cc, rr, randi() % 5)  # TRES_CROWN..TRES_RUBY
                         placed_items.append(cell)
                         placed_treasures.append(cell)
                         treasures_placed += 1
@@ -1221,7 +1221,7 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 C.TreasureType.GOLD: tex_path = "res://assets/sprites/treasures/treasure_gold.png"
                 C.TreasureType.CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
                 C.TreasureType.GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
-                C.TreasureType.CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
+                C.TreasureType.RUBY: tex_path = "res://assets/sprites/treasures/treasure_ruby.png"
         if not tex_path.is_empty():
                 var tex: Texture2D = null
                 if _maze_treasure_cache.has(tex_path):
@@ -1263,7 +1263,7 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 C.TreasureType.GOLD: gem_color = Color(1.0, 0.84, 0.0)
                 C.TreasureType.CHEST: gem_color = Color(0.55, 0.30, 0.15)
                 C.TreasureType.GEM: gem_color = C.PALETTE[C.PAL_CYAN]
-                C.TreasureType.CUP: gem_color = C.PALETTE[C.PAL_GOLD]
+                C.TreasureType.RUBY: gem_color = C.PALETTE[C.PAL_RED]
         var cx: float = px + size * 0.5
         var cy: float = py + size * 0.45
         var gs: float = size * 0.18

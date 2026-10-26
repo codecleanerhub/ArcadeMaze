@@ -59,7 +59,7 @@ func get_treasure_texture(treasure_type: int) -> Texture2D:
                 1: tex = _make_gold_pile()   # TRES_GOLD
                 2: tex = _make_chest()       # TRES_CHEST
                 3: tex = _make_gem()         # TRES_GEM
-                4: tex = _make_cup()         # TRES_CUP
+                4: tex = _make_ruby()        # TRES_RUBY (ex coppa, Task 65c)
                 _: tex = _make_crown()
         _texture_cache[key] = tex
         return tex
@@ -632,32 +632,59 @@ func _make_gem() -> Texture2D:
 
 
 # Coppa/calice d'oro - calice con coppa superiore
-func _make_cup() -> Texture2D:
+# TASK 65c: il tesoro-coppa e' stato sostituito dal RUBINO (richiesta
+# utente: "sembra una coppa ma non deve vincere nulla, rendi un altro tipo
+# di tesoro, un rubino magari"). Fallback procedurale coerente: gemma a
+# silhouette classica (corona esagonale + padiglione a punta).
+func _make_ruby() -> Texture2D:
         var img := _new_image(128)
         # Ombra base
-        _fill_ellipse(img, 64, 100, 18, 4, Color(0, 0, 0, 0.4))
-        # Base (piattello)
-        _fill_ellipse(img, 64, 95, 18, 6, Color(0.85, 0.65, 0.0))
-        _fill_ellipse(img, 64, 93, 18, 4, Color(1.0, 0.78, 0.0))
-        # Stelo (sottile)
-        _fill_rect(img, 60, 70, 8, 25, Color(1.0, 0.78, 0.0))
-        _fill_rect(img, 61, 70, 2, 25, Color(1.0, 0.9, 0.3))  # highlight
-        # Nodo centrale (sfera decorativa)
-        _fill_circle(img, 64, 70, 6, Color(1.0, 0.78, 0.0))
-        _fill_circle(img, 64, 70, 4, Color(1.0, 0.84, 0.1))
-        _fill_circle(img, 62, 68, 2, Color(1.0, 0.95, 0.5))  # highlight
-        # Coppa superiore (calice)
-        _fill_ellipse(img, 64, 50, 22, 12, Color(0.85, 0.65, 0.0))  # esterno
-        _fill_ellipse(img, 64, 48, 20, 10, Color(1.0, 0.78, 0.0))  # interno oro
-        _fill_ellipse(img, 64, 46, 18, 6, Color(0.7, 0.5, 0.0))    # interno scuro (vino)
-        # Bordo superiore
-        _fill_ellipse(img, 64, 44, 22, 3, Color(1.0, 0.84, 0.1))   # bordo
-        # Decorazioni (gemme sul calice)
-        _fill_circle(img, 54, 50, 2, Color(0.9, 0.1, 0.1))  # rubino
-        _fill_circle(img, 64, 52, 2, Color(0.1, 0.3, 0.9))  # zaffiro
-        _fill_circle(img, 74, 50, 2, Color(0.1, 0.8, 0.3))  # smeraldo
-        # Highlight coppa
-        _fill_ellipse(img, 56, 46, 4, 2, Color(1.0, 0.95, 0.5))
+        _fill_ellipse(img, 64, 102, 16, 4, Color(0, 0, 0, 0.4))
+        var ruby := Color(0.82, 0.08, 0.18)
+        var ruby_dark := Color(0.5, 0.02, 0.1)
+        var ruby_mid := Color(0.93, 0.25, 0.32)
+        var ruby_light := Color(1.0, 0.62, 0.62)
+        # Padiglione (parte bassa a punta)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(38, 60), Vector2(90, 60), Vector2(64, 104)
+        ]), ruby)
+        # Facce laterali padiglione
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(38, 60), Vector2(64, 60), Vector2(64, 104)
+        ]), ruby_dark)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(64, 60), Vector2(78, 60), Vector2(64, 86)
+        ]), ruby_mid)
+        # Corona (parte alta)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(44, 42), Vector2(84, 42), Vector2(90, 60),
+                Vector2(38, 60)
+        ]), ruby_mid)
+        # Tavola superiore
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(52, 30), Vector2(76, 30), Vector2(84, 42),
+                Vector2(44, 42)
+        ]), ruby_dark)
+        # Spigoli corona
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(44, 42), Vector2(52, 30), Vector2(52, 42)
+        ]), ruby)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(84, 42), Vector2(76, 30), Vector2(76, 42)
+        ]), ruby)
+        # Facette corona (triangoli chiaro/scuro alternati)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(44, 42), Vector2(64, 42), Vector2(54, 60)
+        ]), ruby)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(64, 42), Vector2(84, 42), Vector2(74, 60)
+        ]), ruby_dark)
+        # Highlight a stella sulla tavola
+        _fill_circle(img, 58, 35, 3, ruby_light)
+        _fill_circle(img, 60, 33, 2, Color(1.0, 0.9, 0.9))
+        # Scintille
+        _fill_circle(img, 46, 52, 2, ruby_light)
+        _fill_circle(img, 80, 66, 2, ruby_light)
         return _finalize(img)
 
 

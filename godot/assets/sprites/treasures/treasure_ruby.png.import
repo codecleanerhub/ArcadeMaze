@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://nnpfrlv6dutu"
-path="res://.godot/imported/treasure_cup.png-c3fda9835a10a0ea7e040516a80adc19.ctex"
+uid="uid://bte368i7vrs7i"
+path="res://.godot/imported/treasure_ruby.png-c890d62c994a2369c0de4bafc8a57400.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/treasures/treasure_cup.png"
-dest_files=["res://.godot/imported/treasure_cup.png-c3fda9835a10a0ea7e040516a80adc19.ctex"]
+source_file="res://assets/sprites/treasures/treasure_ruby.png"
+dest_files=["res://.godot/imported/treasure_ruby.png-c890d62c994a2369c0de4bafc8a57400.ctex"]
 
 [params]
 

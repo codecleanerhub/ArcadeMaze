@@ -17,7 +17,7 @@ extends Node2D
 class_name Collectibles
 
 # Treasure kinds (mirror C++ enum TreasureType).
-enum TreasureType { TRES_CROWN, TRES_GOLD, TRES_CHEST, TRES_GEM, TRES_CUP }
+enum TreasureType { TRES_CROWN, TRES_GOLD, TRES_CHEST, TRES_GEM, TRES_RUBY }
 
 # All treasure kinds (5) give the same score on collection.
 const TREASURE_COUNT := 5
@@ -663,7 +663,7 @@ func _draw_treasure() -> void:
                 TreasureType.TRES_GOLD: tex_path = "res://assets/sprites/treasures/treasure_gold.png"
                 TreasureType.TRES_CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
                 TreasureType.TRES_GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
-                TreasureType.TRES_CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
+                TreasureType.TRES_RUBY: tex_path = "res://assets/sprites/treasures/treasure_ruby.png"
         if not tex_path.is_empty():
                 var tex: Texture2D = _load_png_cached(tex_path)
                 if tex != null:
@@ -735,23 +735,30 @@ func _draw_treasure() -> void:
                         draw_line(Vector2(-8.0, 0.0 + y_off2), Vector2(8.0, 0.0 + y_off2), gem_dark, 1.0)
                         # Highlight
                         draw_circle(Vector2(-3.0, -3.0 + y_off2), 2.0, gem_light)
-                TreasureType.TRES_CUP:
-                        # Calice d'oro con base
-                        var gold := Color(1.0, 0.85, 0.2)
-                        var gold_dark := Color(0.8, 0.65, 0.1)
-                        # Coppa
+                TreasureType.TRES_RUBY:
+                        # TASK 65c: rubino (prima calice d'oro) — silhouette
+                        # a punta con facet, coerente col PNG PixelLab
+                        var ruby := Color(0.85, 0.1, 0.2)
+                        var ruby_dark := Color(0.5, 0.03, 0.1)
+                        var ruby_light := Color(1.0, 0.5, 0.55)
+                        # Corpo gemma: corona larga + padiglione a punta
                         draw_colored_polygon(PackedVector2Array([
-                                Vector2(-8.0, -8.0 + y_off2),
-                                Vector2(8.0, -8.0 + y_off2),
-                                Vector2(6.0, 0.0 + y_off2),
-                                Vector2(-6.0, 0.0 + y_off2)
-                        ]), gold)
-                        # Stelo
-                        draw_rect(Rect2(-2.0, 0.0 + y_off2, 4.0, 6.0), gold_dark)
-                        # Base
-                        draw_rect(Rect2(-6.0, 6.0 + y_off2, 12.0, 4.0), gold)
-                        # Bordo coppa
-                        draw_rect(Rect2(-8.0, -10.0 + y_off2, 16.0, 3.0), gold_dark)
+                                Vector2(-9.0, -6.0 + y_off2),
+                                Vector2(9.0, -6.0 + y_off2),
+                                Vector2(0.0, 10.0 + y_off2)
+                        ]), ruby)
+                        # Tavola superiore (corona)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-5.0, -9.0 + y_off2),
+                                Vector2(5.0, -9.0 + y_off2),
+                                Vector2(9.0, -6.0 + y_off2),
+                                Vector2(-9.0, -6.0 + y_off2)
+                        ]), ruby_dark)
+                        # Facette interne
+                        draw_line(Vector2(-9.0, -6.0 + y_off2), Vector2(0.0, 10.0 + y_off2), ruby_dark, 1.0)
+                        draw_line(Vector2(9.0, -6.0 + y_off2), Vector2(0.0, 10.0 + y_off2), ruby_dark, 1.0)
+                        # Highlight
+                        draw_circle(Vector2(-3.0, -5.0 + y_off2), 2.0, ruby_light)
 
 
 func _draw_exit_door() -> void:
