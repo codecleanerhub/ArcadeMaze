@@ -1166,61 +1166,94 @@ func _demo_chalice(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
 
 
 func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
-        # statua a sinistra che si illumina (0-0.9), evoca l'alleato
-        # (unicorno/cavaliere secondo la parita' del livello, TASK 64)
-        # che carica e colpisce il nemico (2.6)
+        # TASK 71 (feedback utente: "nella card si vedono due sprite, uno
+        # piccolo e poi uno grande che si muove — si deve vedere soltanto
+        # quello che si muove"): la statuetta NON resta visibile accanto
+        # all'alleato — si DISSOLVE nel burst di evocazione e dalla
+        # trasformazione in poi la demo mostra SOLO l'alleato animato.
+        # Timeline: 0-0.9 statua che brilla (fade-in 0.15 anti-pop),
+        # 0.9-1.15 BURST (statua svanisce, alleato si materializza AL POSTO
+        # della statua), 1.15-2.6 carica con walk cycle reale 12.5 fps,
+        # 2.6 colpo, 4.2-4.6 fade-out per chiudere il loop senza pop.
         var st_c := Vector2(r.position.x + r.size.x * 0.18, floor_y - 22.0)
         var glow := clampf(lt / 0.9, 0.0, 1.0)
-        # TASK 64: statua = PNG della statuetta della variante (coerenza
-        # con l'icona a terra nel labirinto); fallback rettangoli grigi.
-        var st_tex: Texture2D = _icon_texture(Collectibles.Kind.KNIGHT_STATUE,
-                        ally_variant)
-        if st_tex != null:
-                var st_sz := 34.0
-                ci.draw_texture_rect(st_tex, Rect2(st_c + Vector2(-st_sz * 0.5,
-                                -st_sz * 0.72), Vector2(st_sz, st_sz)), false)
-        else:
-                ci.draw_rect(Rect2(st_c - Vector2(11, 16), Vector2(22, 16)),
-                                Color(0.42, 0.42, 0.46))
-                ci.draw_rect(Rect2(st_c - Vector2(8, -30 + 16), Vector2(16, 16)),
-                                Color(0.52, 0.52, 0.56))
+        # TASK 71: alpha della statua — 1 finche' non parte l'evocazione,
+        # poi dissolve rapida (0.9 -> 1.15) e NON torna finche' il loop non
+        # riparte. Prima restava visibile per TUTTO il loop sotto l'alleato.
+        var st_alpha: float = 1.0
+        if lt < 0.15:
+                st_alpha = lt / 0.15
+        elif lt > 0.9:
+                st_alpha = 1.0 - clampf((lt - 0.9) / 0.25, 0.0, 1.0)
+        if st_alpha > 0.0:
+                # TASK 64: statua = PNG della statuetta della variante
+                # (coerenza con l'icona a terra nel labirinto); fallback grigio.
+                var st_tex: Texture2D = _icon_texture(Collectibles.Kind.KNIGHT_STATUE,
+                                ally_variant)
+                if st_tex != null:
+                        var st_sz := 34.0
+                        ci.draw_texture_rect(st_tex, Rect2(st_c + Vector2(-st_sz * 0.5,
+                                        -st_sz * 0.72), Vector2(st_sz, st_sz)), false,
+                                        Color(1, 1, 1, st_alpha))
+                else:
+                        ci.draw_rect(Rect2(st_c - Vector2(11, 16), Vector2(22, 16)),
+                                        Color(0.42, 0.42, 0.46, st_alpha))
+                        ci.draw_rect(Rect2(st_c - Vector2(8, -30 + 16), Vector2(16, 16)),
+                                        Color(0.52, 0.52, 0.56, st_alpha))
         if glow > 0.0:
                 ci.draw_circle(st_c + Vector2(0, -8), 26.0 * glow,
                                 Color(0.45, 0.75, 1.0, 0.22 * glow))
+        # TASK 71: burst di evocazione (0.9-1.4) — anello espansivo + scintille
+        # dorate + flash: maschera il cambio statua -> alleato (pattern del
+        # TRANSFORMING in-game di KnightAlly, nuvola -> qui su card 2D).
+        if lt >= 0.9 and lt <= 1.4:
+                var bt := clampf((lt - 0.9) / 0.5, 0.0, 1.0)
+                var b_alpha: float = (1.0 - bt) * 0.85
+                var b_c := st_c + Vector2(0, -14)
+                ci.draw_circle(b_c, 8.0 + bt * 44.0,
+                                Color(0.55, 0.8, 1.0, 0.10 * b_alpha))
+                ci.draw_arc(b_c, 8.0 + bt * 44.0, 0.0, TAU, 24,
+                                Color(0.65, 0.85, 1.0, b_alpha), 3.0, true)
+                for k in 10:
+                        var ang: float = (float(k) / 10.0) * TAU + bt * 2.0
+                        var rr: float = 12.0 + bt * 38.0
+                        ci.draw_circle(b_c + Vector2(cos(ang) * rr, sin(ang) * rr),
+                                        2.5 * (1.0 - bt), Color(1.0, 0.9, 0.6, b_alpha))
         var e_c := Vector2(r.position.x + r.size.x * 0.78, floor_y - 18.0)
         _de(ci, e_c, lt, 0 if lt < 2.6 else 1,
                         0.0 if lt < 2.6 else clampf((lt - 2.6) / 0.7, 0.0, 1.0))
-        # cavaliere alleato: emerge dalla statua e carica
+        # TASK 71: alleato — si materializza DALLA statua (burst) e poi carica;
+        # walk cycle REALE a 12.5 fps come in-game (prima: 7 fps + bob manuale
+        # -> "immagine statica che si sposta traslando"). Niente bob extra:
+        # sono i frame PixelLab a pose reali a portare l'andatura.
         if lt > 0.9:
+                var a_in: float = clampf((lt - 0.9) / 0.25, 0.0, 1.0)
+                var a_out: float = 1.0 - clampf((lt - 4.2) / 0.4, 0.0, 1.0)
+                var alpha := a_in * a_out
                 var charge_k := clampf((lt - 1.4) / 1.2, 0.0, 1.0)
                 var kx: float
                 if lt < 1.4:
-                        kx = st_c.x + 18.0
+                        kx = st_c.x
                 else:
-                        kx = st_c.x + 18.0 + (e_c.x - st_c.x - 60.0) * charge_k
+                        kx = st_c.x + (e_c.x - st_c.x - 60.0) * charge_k
                 var ally := Vector2(kx, floor_y - 20.0)
-                # TASK 58b/64: alleato = sprite reale della variante di
-                # livello (unicorn_ally/knight_ally, PixelLab v2);
-                # arco luminoso di spada conservato al momento del colpo.
-                var bob := sin(lt * 12.0) * 2.0
-                var p := ally + Vector2(0, bob)
                 var swing := clampf((lt - 2.4) / 0.3, 0.0, 1.0)
                 if _demo_ally_tex != null:
                         var ksz := Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX) * 0.95
-                        var kframe := int(lt * 7.0) % 4
+                        var kframe := int(lt * 12.5) % 4
                         var ksrc := Rect2(Vector2(kframe * DEMO_FRAME_PX, 0),
                                         Vector2(DEMO_FRAME_PX, DEMO_FRAME_PX))
-                        var kpos := Vector2(p.x - ksz.x * 0.5, p.y + 20.0 - ksz.y)
+                        var kpos := Vector2(ally.x - ksz.x * 0.5, ally.y + 20.0 - ksz.y)
                         ci.draw_texture_rect_region(_demo_ally_tex,
-                                        Rect2(kpos, ksz), ksrc, Color.WHITE, false)
+                                        Rect2(kpos, ksz), ksrc, Color(1, 1, 1, alpha), false)
                 else:
-                        ci.draw_rect(Rect2(p - Vector2(8, 4), Vector2(16, 16)),
-                                        Color(0.72, 0.75, 0.8))
-                        ci.draw_circle(p + Vector2(0, -12), 7.0, Color(0.9, 0.92, 0.95))
-                        ci.draw_rect(Rect2(p + Vector2(-8, -18), Vector2(16, 7)),
-                                        Color(0.55, 0.6, 0.7))
-                        var sword_tip := p + Vector2(20.0, -18.0 + swing * 26.0)
-                        ci.draw_line(p + Vector2(6, -8), sword_tip, Color(0.85, 0.88, 0.95), 4.0)
+                        ci.draw_rect(Rect2(ally - Vector2(8, 4), Vector2(16, 16)),
+                                        Color(0.72, 0.75, 0.8, alpha))
+                        ci.draw_circle(ally + Vector2(0, -12), 7.0, Color(0.9, 0.92, 0.95, alpha))
+                        ci.draw_rect(Rect2(ally + Vector2(-8, -18), Vector2(16, 7)),
+                                        Color(0.55, 0.6, 0.7, alpha))
+                        var sword_tip := ally + Vector2(20.0, -18.0 + swing * 26.0)
+                        ci.draw_line(ally + Vector2(6, -8), sword_tip, Color(0.85, 0.88, 0.95, alpha), 4.0)
                 if swing > 0.0 and swing < 1.0:
-                        ci.draw_arc(p + Vector2(10, -10), 26.0, -1.2, 0.4, 10,
+                        ci.draw_arc(ally + Vector2(10, -10), 26.0, -1.2, 0.4, 10,
                                         Color(1.0, 1.0, 1.0, 0.5), 3.0, true)

@@ -83,8 +83,9 @@ var _statue_loaded: bool = false
 # --- TASK 64 (alleato alternato per livello) ---
 # L'alleato evocato dalla statuetta alterna per livello: livelli DISPARI
 # (1,3,5..) = UNICORNO (comportamento storico, retrocompatibile), livelli
-# PARI (2,4,6..) = CAVALLIERE. Entrambi gli sheet sono PixelLab v2
-# (unicorn_ally: 2206 colori; knight_ally: rigenerato Task 63b).
+# PARI (2,4,6..) = CAVALLIERE. Entrambi gli sheet sono PixelLab v2 Task 71
+# (rigenerati con anim 4f a POSE REALI: il vecchio unicorn_ally era un puro
+# slide frame-0-traslato, il cavaliere e' stato rifatto per coerenza).
 # MainGameController imposta questa variabile PRIMA dell'add_child (il
 # _ready carica le texture in base alla variante); default "unicorn" =
 # comportamento precedente alla Task 64 (test e call-site legacy intatti).
@@ -685,9 +686,10 @@ func _draw() -> void:
                 return
 
         # Fase 3: ACTIVE - sheet walk animato + aura celeste chiara.
-        # TASK 65d: _draw_sprite = walk cycle 4 frame (10 fps) quando si
-        # muove, frame idle + respiro leggero quando fermo, flip orizzontale
-        # secondo last_dx. Niente piu' statua con base in movimento.
+        # TASK 71: _draw_sprite = walk cycle 4 frame a 12.5 fps (80ms/frame,
+        # come il Player) quando si muove, frame idle + respiro leggero
+        # quando fermo, flip orizzontale secondo last_dx. Niente piu' statua
+        # con base in movimento.
         _draw_sprite(1.0, 1.0)
         # FIX (NO aura dorata): sostituita con aura celeste chiara appena visibile
         var aura_pulse: float = (sin(float(anim_time) * 0.008) + 1.0) * 0.5
@@ -869,16 +871,20 @@ func _draw_statue(alpha_mul: float, alpha: float, color_t: float) -> void:
                 draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s), gold_tint, true)
 
 
-# TASK 65d: sheet walk PixelLab della variante (unicorno livelli dispari /
-# cavaliere livelli pari) usato nelle fasi ACTIVE e DISAPPEARING — animato
-# (4 frame walk quando in movimento, respiro leggero quando fermo), flip
-# orizzontale secondo la direzione. Fallback: procedurale storico.
+# TASK 65d/71: sheet walk PixelLab della variante (unicorno livelli
+# dispari / cavaliere livelli pari) usato nelle fasi ACTIVE e DISAPPEARING.
+# TASK 71 (feedback utente "immagine statica che si sposta traslando"): lo
+# sheet e' stato rigenerato con PixelLab (anim 4f a pose REALI — il vecchio
+# unicorn_ally aveva frame 0==2 e 1==3==0 traslato 1px: puro slide) e il
+# ciclo va a 12.5 fps (80ms/frame) come il Player, che e' il riferimento di
+# "fluido" del gioco. Nessun bob extra in movimento: sono i frame a portare
+# l'andatura; respiro leggero 1px quando fermo. Fallback: procedurale storico.
 func _draw_sprite(scale_val: float, alpha: float) -> void:
         if _sprite_loaded and _sprite_sheet != null:
                 var is_moving: bool = (dx != 0 or dy != 0)
                 var frame: int = 0
                 if is_moving:
-                        frame = (int(anim_time) / 100) % 4
+                        frame = (int(anim_time) / 80) % 4
                 var frame_w: int = 64
                 var frame_h: int = 64
                 var src_rect: Rect2 = Rect2(frame * frame_w, 0, frame_w, frame_h)
@@ -888,7 +894,10 @@ func _draw_sprite(scale_val: float, alpha: float) -> void:
                 var target_size: float = 78.0 * scale_val
                 var bob_y: float = 0.0
                 if is_moving:
-                        bob_y = sin(float(anim_time) * 0.01) * 2.0
+                        # TASK 71: i frame del gallop/trot hanno il bounce
+                        # DENTRO l'animazione — un bob sinusoidale aggiunto
+                        # sopra dava il "doppio rimbalzo" fasullo
+                        bob_y = 0.0
                 else:
                         # TASK 65d: respiro lento quando fermo (1px) — la
                         # creatura resta "viva" anche senza camminare

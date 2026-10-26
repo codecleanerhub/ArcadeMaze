@@ -119,6 +119,82 @@ def regional_diff_pct(a: Image.Image, b: Image.Image) -> float:
     return 100.0 * changed / area
 
 
+def aligned_residual_diff(a: Image.Image, b: Image.Image,
+                          max_shift: int = 4) -> float:
+    """Residuo % dopo il MIGLIOR allineamento di b su a (shift ±max_shift).
+
+    TASK 71 (feedback utente "immagine statica che si sposta traslando"):
+    la diff globale/regional passa anche quando un frame e' SOLO una
+    traslazione dell'altro (tutti i pixel "cambiano" perche' si spostano).
+    Qui riallineiamo b su a con tutti gli shift interi ±max_shift e
+    teniamo il residuo MINIMO: se anche il migliore allineamento lascia
+    poco residuo, il frame non anima nulla — e' puro slide.
+    """
+    ra, rb = a.convert("RGBA"), b.convert("RGBA")
+    if ra.size != rb.size:
+        return 100.0
+    w, h = ra.size
+    # bbox unione dei pixel opachi (regione soggetto, come regional_diff)
+    boxes = [im.getbbox() for im in (ra, rb) if im.getbbox()]
+    if not boxes:
+        return 0.0
+    x0 = min(bx[0] for bx in boxes); y0 = min(bx[1] for bx in boxes)
+    x1 = max(bx[2] for bx in boxes); y1 = max(bx[3] for bx in boxes)
+    pa, pb = ra.load(), rb.load()
+    best: float | None = None
+    for dy in range(-max_shift, max_shift + 1):
+        for dx in range(-max_shift, max_shift + 1):
+            changed = 0
+            for x in range(x0, x1):
+                for y in range(y0, y1):
+                    va = pa[x, y]
+                    sx, sy = x + dx, y + dy
+                    if 0 <= sx < w and 0 <= sy < h:
+                        vb = pb[sx, sy]
+                    else:
+                        vb = (0, 0, 0, 0)
+                    if (va[3] > 0) != (vb[3] > 0):
+                        changed += 1
+                    elif va[3] > 0 and (
+                        abs(va[0] - vb[0]) > 24 or abs(va[1] - vb[1]) > 24
+                        or abs(va[2] - vb[2]) > 24
+                    ):
+                        changed += 1
+            area = max(1, (x1 - x0) * (y1 - y0))
+            res = 100.0 * changed / area
+            if best is None or res < best:
+                best = res
+    return best if best is not None else 100.0
+
+
+def check_slide_and_duplicates(frames: list[Image.Image],
+                               dup_pct: float = 0.7,
+                               slide_pct: float = 5.0) -> list[str]:
+    """TASK 71: blocca i cicli degenere tipo "pedina che si trascina".
+
+    - DUPLICATI (tutte le coppie): il vecchio unicorn_ally aveva frame 0==2
+      e 1==3 al bit -> ciclo leggibile come 2-frame stutter.
+    - PURO SLIDE (coppie adiacenti): frame 1 era frame 0 traslato 1px ->
+      "immagine statica che si sposta traslando". Il residuo dopo il
+      miglior allineamento deve restare > slide_pct.
+    """
+    errors: list[str] = []
+    n = len(frames)
+    for i in range(n):
+        for j in range(i + 1, n):
+            g = frame_diff_pct(frames[i], frames[j])
+            if g < dup_pct:
+                errors.append(f"frame {i} e {j} DUPLICATI (diff {g:.1f}% < "
+                              f"{dup_pct}%) — ciclo degenere")
+    for i in range(n - 1):
+        r = aligned_residual_diff(frames[i], frames[i + 1])
+        if r < slide_pct:
+            errors.append(f"frame {i}->{i+1}: PURO SLIDE (residuo {r:.1f}% "
+                          f"post-allineamento < {slide_pct}%) — il frame non "
+                          f"anima pose, si limita a traslare")
+    return errors
+
+
 def check_frame_diffs(frames: list[Image.Image]) -> list[str]:
     """Diffs adiacenti: GLOBAL 3-55% OPPURE REGIONAL >=6% = moto OK.
 
@@ -238,6 +314,7 @@ def qa_anim_frames(frames: list[Image.Image], ref: Image.Image | None = None,
         e = check_transparent_edges(f)
         errors += [f"[f{i}] {x}" for x in e]
     errors += check_frame_diffs(frames)
+    errors += check_slide_and_duplicates(frames)
     if ref is not None and frames:
         errors += check_chromatic_fidelity(frames[0], ref)
     if feet_check and frames:

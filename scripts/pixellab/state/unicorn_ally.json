@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/unicorn_ally/base.png",
+  "anim_job_id": "296e85ac-8c4a-4135-8a16-a33f98fddbcb",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/unicorn_ally_sheet.png"
+}
