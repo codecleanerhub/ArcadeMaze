@@ -6281,6 +6281,13 @@ static func _get_portal_sheet() -> Texture2D:
 # Risultato: lo sprite 84px che sconfina ~10px dai bordi della cella 64px
 # viene coperto dalle celle muro adiacenti -> il portale appare DENTRO il
 # corridoio (fix segnalazione utente: il vortice invade il muro).
+# TASK 70 ("ancora il portale sta sotto il muro"): con il solo z-order il
+# vortice restava TAGLIATO di netto dai muri (il contenuto era anche
+# top-aligned nel frame 64px, quindi sbordava SOPRA). Fix definitivo: il
+# vortice ora è ricentrato nel sheet (asset) e disegnato a 62px — ENTRA
+# INTERAMENTE nella cella 64px (contenuto reale 60x33 -> ~58x32 a riposo,
+# ~61x34 a pulse massimo) e NON viene mai coperto dai muri. Anche l'aura
+# e i cerchi del fallback sono ridotti entro la cella.
 # ============================================================================
 func _draw_portal_into(ci: CanvasItem) -> void:
         if spawner == null or not spawner.magic_portal.active:
@@ -6288,7 +6295,8 @@ func _draw_portal_into(ci: CanvasItem) -> void:
         var ppos2: Vector2 = spawner.magic_portal.pos
         var prot2: float = spawner.magic_portal.rotation
         var pglow2: float = spawner.magic_portal.glow_pulse
-        var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
+        # TASK 70: aura entro la cella (raggio max 30 -> diametro 60 <= 64)
+        var aura_r: float = 26.0 + sin(pglow2 * 2.0) * 4.0
         # Aura viola morbida attorno al portale (sia sprite sia proc)
         ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
         # --- TASK 54: portale come sprite animato PixelLab ---
@@ -6300,14 +6308,17 @@ func _draw_portal_into(ci: CanvasItem) -> void:
                 if frame_idx < 0:
                         frame_idx += 4
                 var pulse: float = 1.0 + sin(pglow2 * 2.0) * 0.06
-                var w: float = 84.0 * pulse
+                # TASK 70: 62px = max che tiene il contenuto (60px/frame)
+                # DENTRO la cella 64 anche a pulse massimo (62*1.06*60/64=61.6)
+                var w: float = 62.0 * pulse
                 var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
                 var dst := Rect2(ppos2.x - w * 0.5, ppos2.y - w * 0.5, w, w)
                 ci.draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
         else:
+                # TASK 70: anello esterno r 32 -> 26 per restare nella cella
                 for i in 12:
                         var a2: float = prot2 + (float(i) / 12.0) * TAU
-                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
+                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 26.0
                         ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
                 for i in 8:
                         var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
