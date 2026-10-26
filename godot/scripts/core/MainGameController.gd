@@ -6281,13 +6281,15 @@ static func _get_portal_sheet() -> Texture2D:
 # Risultato: lo sprite 84px che sconfina ~10px dai bordi della cella 64px
 # viene coperto dalle celle muro adiacenti -> il portale appare DENTRO il
 # corridoio (fix segnalazione utente: il vortice invade il muro).
-# TASK 70 ("ancora il portale sta sotto il muro"): con il solo z-order il
-# vortice restava TAGLIATO di netto dai muri (il contenuto era anche
-# top-aligned nel frame 64px, quindi sbordava SOPRA). Fix definitivo: il
-# vortice ora è ricentrato nel sheet (asset) e disegnato a 62px — ENTRA
-# INTERAMENTE nella cella 64px (contenuto reale 60x33 -> ~58x32 a riposo,
-# ~61x34 a pulse massimo) e NON viene mai coperto dai muri. Anche l'aura
-# e i cerchi del fallback sono ridotti entro la cella.
+# TASK 72 (feedback utente: "il portale sta ancora sotto il muro, e' tagliato
+# perche' il muro e' disegnato sopra... non puoi usare uno z-index?"): il
+# portale si disegna ORA ALLA FINE della passata del Maze, DOPO i muri e le
+# decorazioni (Maze._draw chiama portal_draw_callback per ultimo). Con la
+# geometria Task 70 (vortice 62px centrato nella cella 64px) il portale non
+# invade nessun muro, e col z-order sopra non puo' MAI essere coperto: la
+# gestione e' definitiva. Storia: Task 68 lo mise sotto i muri perche' lo
+# sprite 84px sbordava sulle rocce; Task 70 lo rientro' nella cella ma il
+# z-order sotto restava; Task 72 chiude col z-index sopra.
 # ============================================================================
 func _draw_portal_into(ci: CanvasItem) -> void:
         if spawner == null or not spawner.magic_portal.active:

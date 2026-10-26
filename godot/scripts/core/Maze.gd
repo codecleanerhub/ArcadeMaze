@@ -236,12 +236,16 @@ func _process(delta: float) -> void:
         queue_redraw()
 
 
-## TASK 68 (portale sotto i muri): callback opzionale che il controller
-## registra per disegnare il portale magico TRA la passata del pavimento e
-## quella dei muri. Prima il portale era nell'overlay CanvasLayer layer=1
-## (SOPRA tutto): lo sprite 84px su cella 64 sbordava ~10px e copriva le
-## rocce delle celle muro adiacenti (segnalazione utente: "il portale viene
-## disegnato sotto il muro" — il vortice deve finire DIETRO i muri).
+## TASK 72 (portale SOPRA i muri, richiesta utente "non puoi usare uno
+## z-index?"): callback opzionale che il controller registra per
+## disegnare il portale magico ALLA FINE della passata del Maze (DOPO i
+## muri e le decorazioni) — il vortice sta sopra ogni muro e non puo'
+## MAI essere tagliato/coperto dalla roccia. E' sicuro perche' dal TASK 70
+## il vortice (62px al massimo) entra interamente nella sua cella 64px:
+## disegnarlo sopra i muri non fa sovrapporre nulla, toglie solo ogni
+## possibilita' che un muro lo copra. Storia: Task 68 lo mise SOTTO i muri
+## (allora lo sprite 84px sbordava sulle rocce), Task 70 lo rientro' nella
+## cella — ora il z-order e' definitivamente sopra.
 ## La callback riceve il CanvasItem del Maze (self) come contesto di draw.
 var portal_draw_callback: Callable = Callable()
 
@@ -250,26 +254,21 @@ func _draw() -> void:
         # Always redraw - the C++ Maze::render also draws every frame because
         # torches animate. For static mazes you can gate this on needs_redraw.
         _render_floor_gradient()
-        # TASK 68: disegno in DUE passate. Prima TUTTE le celle non-muro
-        # (pavimento, tesori, armi — nessuna sborda dalla propria cella),
-        # poi il portale, poi i muri: così il vortice che sconfina dai
-        # bordi della cella viene coperto dalla roccia e il portale appare
-        # DENTRO il corridoio invece che sopra i muri.
+        # Disegno a passate: prima TUTTE le celle non-muro (pavimento,
+        # tesori, armi — nessuna sborda dalla propria cella), poi i muri
+        # veri e propri, poi le decorazioni. Il portale va PER ULTIMO
+        # (TASK 72: z-index sopra i muri, vedi portal_draw_callback).
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
                         if _get_cell_type(c, r) != C.CellType.WALL:
                                 _render_cell(c, r)
         # Le celle WALL dei muri di roccia MOBILI (Task 30) si disegnano come
-        # pavimento: appartengono alla passata 1 (il portale sta sopra di esse
-        # come sopra ogni pavimento; le lastre visibili sono nel MazeHazards).
+        # pavimento (le lastre visibili sono nel MazeHazards) — passata 1.
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
                         if _get_cell_type(c, r) == C.CellType.WALL \
                                         and dynamic_walls.has("%d,%d" % [c, r]):
                                 _render_cell(c, r)
-        # Portale magico: tra pavimento e muri (vedi portal_draw_callback).
-        if portal_draw_callback.is_valid():
-                portal_draw_callback.call(self)
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
                         if _get_cell_type(c, r) == C.CellType.WALL \
@@ -282,6 +281,12 @@ func _draw() -> void:
         # muro di bordo sulle 4 aperture (richiesta utente: niente grafica
         # di grotta, solo la deformazione del muro stesso).
         _draw_tunnel_halfmoons()
+        # TASK 72: portale magico PER ULTIMO, sopra muri e decorazioni —
+        # mai piu' tagliato da un muro disegnato sopra (feedback utente
+        # "il portale sta ancora sotto il muro perche' il muro e' disegnato
+        # sopra... non puoi usare uno z-index?").
+        if portal_draw_callback.is_valid():
+                portal_draw_callback.call(self)
 
 
 # Variabili per le luci delle torce (create una volta in generate)
@@ -1150,18 +1155,32 @@ func _render_cell(c: int, r: int) -> void:
 
 
 ## Draws a WALL cell as a rocky procedural texture, mirroring the C++
-## "rocky dungeon" effect: 3 strati di rumore FastNoiseLite (Simplex Smooth
-## fine + Cellular macro-blocchi + Perlin Ridged per venature) tinteggiati
-## con wall_color del livello. Aggiunge highlight in alto-sinistra e ombra
-## in basso-destra per effetto 3D, outline scuro per continuita' tra muri
-## adiacenti, crepe sottili (~10%) e muschio raro (~3%) come da C++ righe
-## 422-445. La texture e' cached static per palette (8 max, mai rigenerata
+## "rocky dungeon" effect: texture rocciosa tinteggiata con wall_color del
+## livello (TASK 72: texture PixelLab UNIFORME — la vecchia conteneva un
+## masso unico con ombra curva e i ritagli 64px casuali producevano "sfumature
+## angolari" in posizioni random, segnalate dall'utente). TASK 72: highlight
+## e ombra 3D SOLO sui bordi esposti verso celle aperte (opzione utente
+## "usare bene quelli blu"): dentro le masse di muro non ci sono piu'
+## giunzioni/griglia, l'effetto smussato appare solo dove il muro affaccia
+## sul corridoio. Crepe sottili (~10%) e muschio raro (~3%) invariati.
+## La texture e' cached static per palette (8 max, mai rigenerata
 ## per lo stesso livello).
+func _is_solid_wall(c: int, r: int) -> bool:
+        # Muro "pieno" ai fini dei bevel 3D (TASK 72). Fuori mappa = pieno
+        # (il bordo esterno non deve mostrare bevel). I muri di roccia
+        # MOBILI (Task 30) si disegnano come pavimento: sono spazio aperto.
+        if c < 0 or r < 0 or c >= C.MAZE_COLS or r >= C.MAZE_ROWS:
+                return true
+        if _get_cell_type(c, r) != C.CellType.WALL:
+                return false
+        return not dynamic_walls.has("%d,%d" % [c, r])
+
+
 func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> void:
         # FIX (muri rocciosi procedurali): sostituisce le 5 draw_rect sovrapposte
         # (sintomo "rettangoli sfumati") con una draw_texture_rect_region che
         # blitta una porzione 64x64 della texture cached 128x128. La porzione
-        # è selezionata deterministicamente per cella -> niente tiling visibile.
+        # e' selezionata deterministicamente per cella -> niente tiling visibile.
         if _rock_tex != null:
                 var h: int = abs((c * 73856093) ^ (r * 19349663) ^ (level * 83492791))
                 var ox: float = float((h % 3) * 32)
@@ -1171,14 +1190,35 @@ func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> voi
                 draw_texture_rect_region(_rock_tex, dst_rect, src_rect, Color.WHITE, false, false)
         else:
                 draw_rect(Rect2(px, py, size, size), wall_color, true)
-        # --- Highlight in alto-sinistra (luce proveniente da nord-ovest) ---
-        draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
-        draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
-        # --- Ombra in basso-destra (profondita') ---
-        draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
-        draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
-        # --- Outline scuro perimetrale (mantiene continuita' tra muri adiacenti) ---
-        draw_rect(Rect2(px, py, size, size), Color(0.04, 0.04, 0.04), false, 1.0)
+        # TASK 72 (feedback utente "sfumature angolari inserite a caso"):
+        # bevel 3D SOLO sui lati esposti verso celle aperte. Prima ogni cella
+        # aveva highlight in alto-sinistra + ombra in basso-destra + outline
+        # su TUTTI i lati -> griglia di giunzioni dentro le masse di muro e
+        # angoli smussati apparentemente casuali. Ora: luce coerente, il
+        # bordo smussato appare solo dove c'e' davvero un cambio muro/pavimento.
+        var top_open: bool = not _is_solid_wall(c, r - 1)
+        var bottom_open: bool = not _is_solid_wall(c, r + 1)
+        var left_open: bool = not _is_solid_wall(c - 1, r)
+        var right_open: bool = not _is_solid_wall(c + 1, r)
+        # --- Highlight sui bordi esposti verso l'alto/sinistra (luce da NW) ---
+        if top_open:
+                draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
+        if left_open:
+                draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
+        # --- Ombra sui bordi esposti verso il basso/destra (profondita') ---
+        if bottom_open:
+                draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
+        if right_open:
+                draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
+        # --- Outline scuro SOLO sui lati esposti (continuita' del bordo muro) ---
+        if top_open:
+                draw_rect(Rect2(px, py, size, 1.0), Color(0.04, 0.04, 0.04, 1.0), true)
+        if bottom_open:
+                draw_rect(Rect2(px, py + size - 1.0, size, 1.0), Color(0.04, 0.04, 0.04, 1.0), true)
+        if left_open:
+                draw_rect(Rect2(px, py, 1.0, size), Color(0.04, 0.04, 0.04, 1.0), true)
+        if right_open:
+                draw_rect(Rect2(px + size - 1.0, py, 1.0, size), Color(0.04, 0.04, 0.04, 1.0), true)
         # --- Crepa rara (~10% delle celle muro, cellHash > 0.90) ---
         # Sottile rettangolo 1.2x6 ruotato nero semi-trasparente, 1:1 con C++.
         if _cell_hash(c + 99, r + 17) > 0.90:
