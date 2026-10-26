@@ -1177,6 +1177,13 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
         # 2.6 colpo, 4.2-4.6 fade-out per chiudere il loop senza pop.
         var st_c := Vector2(r.position.x + r.size.x * 0.18, floor_y - 22.0)
         var glow := clampf(lt / 0.9, 0.0, 1.0)
+        # TASK 74: la statua del CAVALLIERE e' il frame reale dell'alleato
+        # pietrificato (51x57 di contenuto) -> la si mostra a 58px, quasi
+        # la stessa taglia dell'alleato in carica (61px, contenuto 50x55):
+        # la trasformazione statua -> alleato e' a parita' di dimensione.
+        # L'UNICORNO resta alla taglia storica 34px (arte vecchia, non
+        # ancora rigenerata: a 58px la sua grana si vedrebbe di piu').
+        var st_sz := 58.0 if ally_variant == "knight" else 34.0
         # TASK 71: alpha della statua — 1 finche' non parte l'evocazione,
         # poi dissolve rapida (0.9 -> 1.15) e NON torna finche' il loop non
         # riparte. Prima restava visibile per TUTTO il loop sotto l'alleato.
@@ -1191,9 +1198,10 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                 var st_tex: Texture2D = _icon_texture(Collectibles.Kind.KNIGHT_STATUE,
                                 ally_variant)
                 if st_tex != null:
-                        var st_sz := 34.0
+                        # TASK 74: offset verticale -0.62 -> i piedi della
+                        # statua toccano la linea del pavimento (come l'alleato)
                         ci.draw_texture_rect(st_tex, Rect2(st_c + Vector2(-st_sz * 0.5,
-                                        -st_sz * 0.72), Vector2(st_sz, st_sz)), false,
+                                        -st_sz * 0.62), Vector2(st_sz, st_sz)), false,
                                         Color(1, 1, 1, st_alpha))
                 else:
                         ci.draw_rect(Rect2(st_c - Vector2(11, 16), Vector2(22, 16)),
@@ -1201,7 +1209,8 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                         ci.draw_rect(Rect2(st_c - Vector2(8, -30 + 16), Vector2(16, 16)),
                                         Color(0.52, 0.52, 0.56, st_alpha))
         if glow > 0.0:
-                ci.draw_circle(st_c + Vector2(0, -8), 26.0 * glow,
+                var glow_r := 40.0 if ally_variant == "knight" else 26.0
+                ci.draw_circle(st_c + Vector2(0, -8), glow_r * glow,
                                 Color(0.45, 0.75, 1.0, 0.22 * glow))
         # TASK 71: burst di evocazione (0.9-1.4) — anello espansivo + scintille
         # dorate + flash: maschera il cambio statua -> alleato (pattern del
