@@ -82,16 +82,24 @@ const CHARACTER_NAME := {
 # Whether the sprite PNG default-facing is RIGHT (true) or LEFT (false).
 # Drives flip logic: default-RIGHT -> flipped when lastDx < 0.
 # Verified per-character via VLM/user-feedback in the original game.
+# TASK 67 (feedback utente "heroine/knight/elf/golem si girano dal lato
+# opposto al movimento"): gli sheet PixelLab v2 di QUESTI 4 personaggi
+# guardano nativamente a SINISTRA (come orc/dragon/vampire: la generazione
+# v2 non normalizza il facing, 7/9 sheet escono rivolti a sinistra).
+# Con flag=true il verso era invertito in ENTRAMBE le direzioni; flag=false
+# = arte nativa a sinistra. Verificato: walk0-3/jump sono estrazioni IDENTICHE
+# dei frame del main sheet e XHD = upscale 4x esatto del SD -> un solo flag
+# per personaggio copre tutte le pose.
 const SPRITE_DEFAULT_FACES_RIGHT := {
         CharacterType.HERO_M:   true,   # FIX: user reports HERO_M still flipped wrong; toggled
-        CharacterType.HERO_F:   true,   # FIX: sprite faces right
+        CharacterType.HERO_F:   false,  # FIX task67: sheet v2 guarda a sinistra -> era true
         CharacterType.MAGE:     true,
         CharacterType.ORC:      false,
-        CharacterType.ELF:      true,
-        CharacterType.KNIGHT:   true,   # FIX: user reports knight faces wrong way
-        CharacterType.GOLEM:    true,   # FIX: sprite faces right
+        CharacterType.ELF:      false,  # FIX task67: sheet v2 guarda a sinistra -> era true
+        CharacterType.KNIGHT:   false,  # FIX task67: sheet v2 guarda a sinistra -> era true
+        CharacterType.GOLEM:    false,  # FIX task67: sheet v2 guarda a sinistra -> era true
         CharacterType.DRAGON:   false,  # FIX: dragon si girava al contrario
-        CharacterType.VAMPIRE:  false,  # FIX: sprite faces left
+        CharacterType.VAMPIRE: false,  # FIX: sprite faces left
 }
 
 # --- Tunable stats ----------------------------------------------------------
