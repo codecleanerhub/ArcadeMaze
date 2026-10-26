@@ -1156,18 +1156,17 @@ func _render_cell(c: int, r: int) -> void:
 
 ## Draws a WALL cell as a rocky procedural texture, mirroring the C++
 ## "rocky dungeon" effect: texture rocciosa tinteggiata con wall_color del
-## livello. TASK 73 (feedback utente "il muro e' troppo uniforme, preferivo
-## lo stile precedente quello con il rettangolo rosso"): RIPRISTINATO lo
-## stile a BLOCCHI — ogni cella muro e' un blocco distinto con highlight
-## NW + ombra SE + outline perimetrale su TUTTI i lati (il look classico a
-## mattoni arcade, quello del rettangolo rosso dello screen del Task 72).
-## La "sfumature angolari casuali" che l'utente segnalava nel Task 72 NON
-## erano i bevel per-cellula (questi restano: sono lo stile che piace) ma
-## gli archi scuri del MASSO nella vecchia rock_texture.png — fix che
-## RESTA: la texture Task 72 a grana fine uniforme resta invariata, ogni
-## ritaglio 64px e' pulito. Crepe sottili (~10%) e muschio raro (~3%)
-## invariati. La texture e' cached static per palette (8 max, mai
-## rigenerata per lo stesso livello).
+## livello. TASK 75 (feedback utente: "il muro aveva in precedenza, quando
+## aveva 'gli angoli', il pattern dello screen — ripristinare quello stile
+## SENZA usare gli angoli"): RIPRISTINATA la texture roccia PixelLab del
+## Task 57 (massi organici irregolari con contorni scuri — quella dello
+## screen) e RIMOSSI i bevel per-cellula del Task 73 (highlight NW + ombra
+## SE + outline perimetrale su ogni cella): la superficie del muro e'
+## puramente il pattern organico della texture, senza griglia di giunzioni
+## e senza angoli. Crepe sottili (~10%) e muschio raro (~3%) invariati
+## (port 1:1 del C++). La texture e' cached static per palette (8 max, mai
+## rigenerata per lo stesso livello). Rollback texture uniforme Task 72:
+## git show 6af8724:godot/assets/sprites/env/rock_texture.png.
 func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> void:
         # FIX (muri rocciosi procedurali): sostituisce le 5 draw_rect sovrapposte
         # (sintomo "rettangoli sfumati") con una draw_texture_rect_region che
@@ -1182,18 +1181,10 @@ func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> voi
                 draw_texture_rect_region(_rock_tex, dst_rect, src_rect, Color.WHITE, false, false)
         else:
                 draw_rect(Rect2(px, py, size, size), wall_color, true)
-        # TASK 73: stile a BLOCCHI per-cellula (quello del "rettangolo rosso") —
-        # bevel completo su TUTTI i lati di OGNI blocco, indipendentemente dai
-        # vicini: highlight in alto/sinistra, ombra in basso/destra, outline
-        # perimetrale. La texture sottostante e' quella uniforme Task 72.
-        # --- Highlight in alto-sinistra (luce proveniente da nord-ovest) ---
-        draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
-        draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
-        # --- Ombra in basso-destra (profondita') ---
-        draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
-        draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
-        # --- Outline scuro perimetrale (bordo del blocco) ---
-        draw_rect(Rect2(px, py, size, size), Color(0.04, 0.04, 0.04, 1.0), false, 1.0)
+        # TASK 75: NESSUN bevel/outline per-cellula (highlight NW, ombra SE e
+        # bordo del blocco rimossi): il muro mostra SOLO il pattern organico
+        # della texture Task 57 — le celle adiacenti si fondono in una massa
+        # di roccia continua come nello screen di riferimento dell'utente.
         # --- Crepa rara (~10% delle celle muro, cellHash > 0.90) ---
         # Sottile rettangolo 1.2x6 ruotato nero semi-trasparente, 1:1 con C++.
         if _cell_hash(c + 99, r + 17) > 0.90:

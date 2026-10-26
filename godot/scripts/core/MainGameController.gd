@@ -246,6 +246,15 @@ var hammer_thrown: Node2D = null        # Hammer in volo (scripts/items/Hammer.g
 # (sprecava il secondo colpo). Le armi normali mantengono l'autofire held.
 var _p1_joy_fire_prev: bool = false
 var _p2_joy_fire_prev: bool = false
+# TASK 75 (card + fuoco tenuto premuto — feedback utente): la card bonus si
+# chiude TENENDO PREMUTO il fuoco per 1s; alla riapertura del gioco il
+# pulsante e' ancora giu' e il primo frame di polling generava un FRONTE
+# fantasma (_p1_joy_fire_prev era rimasto false per tutta la pausa) -> la
+# dinamite appena raccolta veniva LANCIATA da sola. Gate per player:
+# finche' il rispettivo pulsante di fuoco non risulta RILASCIATO almeno
+# una volta, il fuoco di quel player e' inibito (edge E autofire).
+var _fire_rearm_p1: bool = false
+var _fire_rearm_p2: bool = false
 const HAMMER_MAX_USES: int = 2
 
 # FIX (HUD last hit enemy): traccia l'ultimo nemico colpito dal player.
@@ -961,6 +970,10 @@ func _physics_process(_delta: float) -> void:
 # Input handling
 # ============================================================================
 func _handle_input() -> void:
+        # TASK 75: aggiorna i gate di riarmo del fuoco (post-card): se il
+        # pulsante era tenuto premuto alla chiusura della card, il gate si
+        # sblocca SOLO quando il pulsante risulta fisicamente rilasciato.
+        _update_fire_rearm()
         # P1 input — keyboard OR joystick (joystick is read first if a pad is
         # connected, then keyboard is layered on top so the user can mix).
         # The C++ engine (Game.cpp:1417-1431) read both at once and picked the
@@ -1054,6 +1067,13 @@ func _handle_input() -> void:
                 var fire_now: bool = Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn)
                 var fire_edge: bool = fire_now and not _p1_joy_fire_prev
                 _p1_joy_fire_prev = fire_now
+                # TASK 75: fuoco inibito finche' il pulsante non e' stato
+                # RILASCIATO dopo la chiusura della card (il _prev sopra resta
+                # allineato allo stato FISICO per non creare falsi fronti al
+                # rilascio del gate).
+                if _fire_rearm_p1:
+                        fire_now = false
+                        fire_edge = false
                 if fire_now:
                         # FIX (dinamite): se il player ha la dinamite equipaggiata,
                         # il fuoco lancia il candelotto invece di sparare.
@@ -1111,7 +1131,8 @@ func _handle_input() -> void:
         player.set_direction(p1_dx, p1_dy)
 
         # P1 keyboard shoot (also works without joystick — matches C++ fallback)
-        if Input.is_action_just_pressed("shoot"):
+        # TASK 75: gate anti-sparo post-card anche da tastiera.
+        if Input.is_action_just_pressed("shoot") and not _fire_rearm_p1:
                 # FIX (dinamite del proprietario — 2P): anche da tastiera il
                 # lancio avviene solo se la dinamite appartiene a P1.
                 if dynamite_equipped and dynamite_player == 1:
@@ -1234,6 +1255,10 @@ func _handle_input() -> void:
                         var fire2_now: bool = Input.is_joy_button_pressed(p2_joy_id, j2_shoot)
                         var fire2_edge: bool = fire2_now and not _p2_joy_fire_prev
                         _p2_joy_fire_prev = fire2_now
+                        # TASK 75: gate anti-sparo post-card (speculare a P1).
+                        if _fire_rearm_p2:
+                                fire2_now = false
+                                fire2_edge = false
                         if fire2_now and player2.shoot_cooldown == 0:
                                 # FIX (dinamite del giocatore 2 — bug utente 2P):
                                 # prima il ramo dinamite NON esisteva nel fuoco
@@ -1260,7 +1285,9 @@ func _handle_input() -> void:
                                         player2.shoot_cooldown = C.relic_fire_cooldown(
                                                         player2.current_weapon)
                 player2.set_direction(p2_dx, p2_dy)
-                if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
+                # TASK 75: gate anti-sparo post-card anche da tastiera (P2).
+                if Input.is_action_just_pressed("p2_shoot") and not _fire_rearm_p2 \
+                                and player2.shoot_cooldown == 0:
                         # FIX (dinamite del giocatore 2 — bug utente 2P): ramo
                         # dinamite anche da tastiera (tasto E), come per P1.
                         if dynamite_equipped and dynamite_player == 2:
@@ -3569,12 +3596,89 @@ func _maybe_show_bonus_card(kind: int, player_num: int, ally_variant := "unicorn
 
 
 # TASK 51 — chiusura della card: riavvia il gioco e libera l'overlay.
+# TASK 75: la card si chiude TENENDO PREMUTO il fuoco -> alla riapertura il
+# pulsante e' ancora giu'. Senza gate, il primo frame di polling generava un
+# fronte fantasma e la dinamite appena raccolta partiva DA SOLA. Da qui in
+# poi il fuoco di ENTRAMBI i player richiede un RILASCIO preliminare: il
+# gate si sblocca solo quando il pulsante risulta fisicamente rilasciato
+# (vedi _update_fire_rearm); chi non tiene premuto non se ne accorge.
 func _on_bonus_card_closed() -> void:
         if _bonus_card != null:
                 _bonus_card.queue_free()
                 _bonus_card = null
+        _fire_rearm_p1 = true
+        _fire_rearm_p2 = true
         if get_tree():
                 get_tree().paused = false
+
+
+# TASK 75 — stato FISICO attuale del fuoco P1 (tastiera + joystick), mirror
+# di BonusCardOverlay._owner_fire_held: usato solo per sbloccare il gate.
+func _p1_fire_raw() -> bool:
+        var held := Input.is_action_pressed("shoot") \
+                        or Input.is_action_pressed("confirm")
+        var joy := _resolve_p1_joy()
+        if joy >= 0:
+                var btn: int = ConfigManager.joy_shoot() if ConfigManager else -1
+                if btn < 0:
+                        btn = JOY_BUTTON_B
+                held = held or Input.is_joy_button_pressed(joy, btn)
+        return held
+
+
+# TASK 75 — stato FISICO attuale del fuoco P2 (tastiera + joystick).
+func _p2_fire_raw() -> bool:
+        var held := Input.is_action_pressed("p2_shoot")
+        var joy2 := _resolve_p2_joy()
+        if joy2 >= 0:
+                var btn2: int = ConfigManager.joy2_shoot() if ConfigManager else -1
+                if btn2 < 0:
+                        btn2 = JOY_BUTTON_B
+                held = held or Input.is_joy_button_pressed(joy2, btn2)
+        return held
+
+
+# TASK 75 — device joystick corrente di P1 (mirror della risoluzione in
+# _handle_input / BonusCardOverlay._resolve_p1_joy).
+func _resolve_p1_joy() -> int:
+        var pads: Array = Input.get_connected_joypads()
+        if ConfigManager and ConfigManager.joy_id() >= 0 \
+                        and pads.has(ConfigManager.joy_id()):
+                return ConfigManager.joy_id()
+        if pads.size() > 0:
+                return pads[0]
+        return -1
+
+
+# TASK 75 — device joystick corrente di P2 (mirror di _handle_input:
+# JOY2_ID configurato, else secondo pad, anti-conflitto col pad di P1).
+func _resolve_p2_joy() -> int:
+        var pads: Array = Input.get_connected_joypads()
+        var p1 := _resolve_p1_joy()
+        var joy2: int = -1
+        if ConfigManager and ConfigManager.joy2_id() >= 0 \
+                        and pads.has(ConfigManager.joy2_id()):
+                joy2 = ConfigManager.joy2_id()
+        elif pads.size() > 1:
+                joy2 = pads[1]
+        if joy2 == p1 and p1 >= 0:
+                joy2 = -1
+                for pad_id in pads:
+                        if pad_id != p1:
+                                joy2 = pad_id
+                                break
+        return joy2
+
+
+# TASK 75 — sblocca i gate di riarmo quando il pulsante e' rilasciato.
+# Chiamato a inizio _handle_input (mai durante la pausa: _physics_process
+# early-returna con la card aperta, quindi il gate sopravvive finche' il
+# gioco non riprende e il pulsante non viene lasciato).
+func _update_fire_rearm() -> void:
+        if _fire_rearm_p1 and not _p1_fire_raw():
+                _fire_rearm_p1 = false
+        if _fire_rearm_p2 and not _p2_fire_raw():
+                _fire_rearm_p2 = false
 
 
 func _update_collectibles(delta_ms: float) -> void:

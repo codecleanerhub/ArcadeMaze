@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cq75firerearm"]
+
+[ext_resource type="Script" path="res://tests/test_task75_fire_rearm.gd" id="1"]
+
+[node name="TestTask75FireRearm" type="Node"]
+script = ExtResource("1")

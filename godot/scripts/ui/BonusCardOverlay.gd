@@ -1181,9 +1181,9 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
         # pietrificato (51x57 di contenuto) -> la si mostra a 58px, quasi
         # la stessa taglia dell'alleato in carica (61px, contenuto 50x55):
         # la trasformazione statua -> alleato e' a parita' di dimensione.
-        # L'UNICORNO resta alla taglia storica 34px (arte vecchia, non
-        # ancora rigenerata: a 58px la sua grana si vedrebbe di piu').
-        var st_sz := 58.0 if ally_variant == "knight" else 34.0
+        # TASK 75: anche la statua dell'UNICORNO e' il frame reale
+        # dell'alleato pietrificato (pipeline Task 74) -> stessa taglia 58px.
+        var st_sz := 58.0
         # TASK 71: alpha della statua — 1 finche' non parte l'evocazione,
         # poi dissolve rapida (0.9 -> 1.15) e NON torna finche' il loop non
         # riparte. Prima restava visibile per TUTTO il loop sotto l'alleato.
@@ -1209,7 +1209,9 @@ func _demo_knight(ci: Control, r: Rect2, floor_y: float, lt: float) -> void:
                         ci.draw_rect(Rect2(st_c - Vector2(8, -30 + 16), Vector2(16, 16)),
                                         Color(0.52, 0.52, 0.56, st_alpha))
         if glow > 0.0:
-                var glow_r := 40.0 if ally_variant == "knight" else 26.0
+                # TASK 75: glow uniforme 40 per entrambe le varianti
+                # (statue a parita' di taglia 58px).
+                var glow_r := 40.0
                 ci.draw_circle(st_c + Vector2(0, -8), glow_r * glow,
                                 Color(0.45, 0.75, 1.0, 0.22 * glow))
         # TASK 71: burst di evocazione (0.9-1.4) — anello espansivo + scintille
