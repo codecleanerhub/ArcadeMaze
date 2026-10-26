@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://t65allywalk1"]
+
+[ext_resource type="Script" path="res://tests/shot_task65_ally_walk.gd" id="1"]
+
+[node name="ShotTask65AllyWalk" type="Node2D"]
+script = ExtResource("1")
