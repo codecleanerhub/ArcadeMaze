@@ -479,6 +479,11 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                   player_pixel_pos: Vector2,
                                   enemy_projectiles: Array,
                                   delta_ms: float = 16.0) -> void:
+        # TASK 76 (crash utente): nemico fuori dal scene tree (es. scena in
+        # smontaggio, respawn a meta' transizione) — niente AI, niente
+        # get_tree(). Il controller lo saltera' e il spawner lo ripulira'.
+        if not is_inside_tree():
+                return
         # TASK 50: nemico congelato — niente AI, niente movimento, niente
         # spari, niente animazione. Resta una statua di ghiaccio (viva solo
         # nel rendering) fino alla fine del livello.
@@ -1154,12 +1159,24 @@ func _flee_greedy(maze: Object, target: Vector2i) -> void:
 # quasi-arrivato nella cella (c, r). Soglia 22px dal centro: un nemico che
 # sta uscendo dalla cella (gia' oltre i 22px) non blocca — il codice
 # "fila indiana" dietro di lui e' permesso, l'impilamento no.
+# TASK 76 (bug utente — crash "Cannot call method 'get_nodes_in_group'
+# on a null value" da _cell_occupied_by_enemy): un nemico fuori dal tree
+# (rimosso dalla scena ma ancora nel pool dello spawner per un frame)
+# faceva ritornare null a get_tree(). Ora il check e' null-safe: senza
+# tree la cella si considera LIBERA (il nemico che chiama sta comunque
+# per essere rimosso, vedi guardia is_inside_tree in update_enemy).
 func _cell_occupied_by_enemy(c: int, r: int) -> bool:
+        # Guardia anti-crash: se QUESTO nemico non e' nel tree non possiamo
+        # iterare il gruppo (get_tree() == null).
+        if not is_inside_tree():
+                return false
         var center := Vector2(
                         c * TILE_SIZE + TILE_SIZE / 2.0,
                         r * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
         for other in get_tree().get_nodes_in_group("maze_enemies"):
                 if other == null or other == self:
+                        continue
+                if not other.is_inside_tree():
                         continue
                 if not other.has_method("is_dead") or other.is_dead():
                         continue

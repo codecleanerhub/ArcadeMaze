@@ -1,14 +1,5 @@
 {
- "w": 445,
- "h": 135,
- "anchor_xs": [
-  0.12,
-  0.3,
-  0.48,
-  0.66,
-  0.84,
-  0.97
- ],
- "anchor_y": 0.92,
- "source": "pixflux word_ARCADE + word_MAZE seed 11, alpha strip nero"
+ "w": 807,
+ "h": 146,
+ "source": "pixflux word_ARCADE + word_MAZE (v1) + word_FANTASY (task76, color_image=ARCADE, seed 11) \u2014 alpha strip nero, cap-height allineato al corpo MAZE"
 }

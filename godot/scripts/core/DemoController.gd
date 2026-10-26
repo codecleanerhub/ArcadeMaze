@@ -4,10 +4,10 @@
 ## Mirror di Game.cpp startDemoMode/updateDemoMode/drawDemoOverlay.
 ##
 ## - Parte dopo 30s di inattivita' nel menu principale
-## - AI cerca nemico/boss/tesoro piu' vicino e gli spara
-## - Cambia direzione ogni 400ms per evitare di bloccarsi ai muri
-## - Salta occasionalmente (2% per frame)
-## - Spara quando allineato al target o 20% casuale
+## - TASK 76: AI con navigazione BFS (pathfinding vero del labirinto),
+##   target con isteresi (insegue SEMPRE la stessa preda) e fuga decisa
+##   quando un nemico e' a contatto; spara quando allineata al target
+## - Salta occasionalmente (2% per frame, flavor)
 ## - 30s durata, poi torna al menu
 ## - Interrupt su qualsiasi input utente
 ## ============================================================
@@ -28,11 +28,31 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 # Demo state
 var demo_duration_timer_ms: int = 30000
 var demo_is_boss: bool = false
-var demo_ai_timer_p1: int = 0
-var demo_ai_dir_p1: int = 0
 var demo_ai_shoot_timer_p1: int = 0
 var demo_overlay_time: float = 0.0
 var current_level: int = 1
+
+# TASK 76 — stato AI demo: BFS + isteresi del target + fuga.
+const DEMO_TARGET_HOLD_MS: float = 1200.0  # minimo tra due ripescate target
+const DEMO_FLEE_MS: float = 900.0          # durata della fuga da minaccia
+const DEMO_FLEE_RADIUS_CELLS: float = 2.1  # nemico entro N celle -> fuga (anticipata)
+const DEMO_HUNT_MAX_CELLS: float = 9.0     # oltre: conviene il tesoro piu' vicino
+# anti-pendolo: la direzione di fuga resta COMMITTATA 600ms e l'U-turn e'
+# vietato per 1.2s (salvo vicolo cieco) — senza questo il player "dondola"
+# tra due celle quando il nemico insegue a contatto (segnalazione utente).
+const DEMO_FLEE_DIR_HOLD_MS: float = 600.0
+const DEMO_FLEE_NO_REVERSE_MS: float = 1200.0
+const _DIRS4: Array[Vector2i] = [
+        Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0),
+]
+var demo_target_enemy: Node = null         # nemico inseguito (isteresi)
+var demo_target_treasure: Vector2i = Vector2i(-1, -1)  # tesoro inseguito
+var demo_target_hold_ms: float = 0.0
+var demo_flee_ms: float = 0.0
+var _flee_dir: Vector2i = Vector2i(0, 0)   # direzione di fuga committata
+var _flee_dir_age_ms: float = 0.0
+var _flee_reverse_block_ms: float = 0.0
+var _last_lives: int = 3                   # rileva morte/respawn del demo
 
 # Boss reference (se demo boss)
 var boss: Node2D = null
@@ -50,9 +70,15 @@ func _ready() -> void:
         current_level = (randi() % C.STORY_LEVELS_COUNT) + 1
         demo_is_boss = false  # FIX: sempre maze mode (con wall collision) nel demo
         demo_duration_timer_ms = 30000
-        demo_ai_timer_p1 = 0
-        demo_ai_dir_p1 = 0
         demo_ai_shoot_timer_p1 = 0
+        demo_target_enemy = null
+        demo_target_treasure = Vector2i(-1, -1)
+        demo_target_hold_ms = 0.0
+        demo_flee_ms = 0.0
+        _flee_dir = Vector2i(0, 0)
+        _flee_dir_age_ms = 0.0
+        _flee_reverse_block_ms = 0.0
+        _last_lives = player.lives
         # Generate maze
         maze.generate(current_level)
         # Spawn enemies
@@ -117,8 +143,12 @@ func _physics_process(_delta: float) -> void:
         var p_pos: Vector2 = player.get_pixel_pos()
         var p_grid: Vector2i = player.get_grid_pos()
         for enemy in spawner.enemies:
+                # TASK 76 (crash get_tree() null): salta nemici non validi o
+                # fuori dal tree (finestra di teardown/respawn).
+                if not is_instance_valid(enemy) or not enemy.is_inside_tree():
+                        continue
                 if not enemy.is_death_anim_done():
-                        enemy.update_enemy(maze, p_grid, p_pos, [])
+                        enemy.update_enemy(maze, p_grid, p_pos, [], delta_ms)
         spawner.remove_dead()
 
         # TASK 26 (fix segnalazione utente "il player non perdeva energia e
@@ -176,88 +206,222 @@ func _physics_process(_delta: float) -> void:
 
 
 func _update_ai(delta_ms: float) -> void:
-        # Find target: nearest enemy or boss
-        var target_pos: Vector2 = player.get_pixel_pos()
-        var has_target: bool = false
+        # TASK 76 — AI demo RISCRITTA (segnalazione utente: "il movimento del
+        # player e' molto stupido, tende ad andare avanti e indietro
+        # impacciandosi tra i nemici che gli stanno addosso"). L'AI vecchia
+        # sceglieva una direzione greedy ogni 400ms con 20% di random: con 2+
+        # nemici vicini il target cambiava di continuo e il player oscillava.
+        # Nuova AI:
+        #   * navigazione BFS cella-per-cella (stesso pathfinding dei nemici)
+        #   * TARGET con ISTERESI: insegue SEMPRE lo stesso nemico finche'
+        #     non muore o non ne compare uno molto piu' vicino (<60% distanza)
+        #   * FUGA decisa quando un nemico e' a contatto (<=1.6 celle):
+        #     direzione aperta che massimizza la distanza, sparando
+        #   * niente nemici a tiro? tesoro piu' vicino (il demo percorre
+        #     DAVVERO il labirinto invece di vagare)
+        var pos: Vector2 = player.get_pixel_pos()
+        var cell := Vector2i(int(pos.x / C.TILE_SIZE),
+                        int((pos.y - C.UI_HEIGHT) / C.TILE_SIZE))
 
-        # Look for nearest enemy
-        var min_dist: float = 1e9
+        # --- (0) Morte/respawn del player demo: via di fuga COMMITTATA per
+        # allontanarsi dal punto di respawn (i nemici convergono lì) e
+        # ripartenza pulita della caccia. ---
+        if player.lives < _last_lives:
+                _last_lives = player.lives
+                demo_flee_ms = 1400.0
+                demo_target_enemy = null
+                demo_target_treasure = Vector2i(-1, -1)
+                demo_target_hold_ms = 0.0
+                _flee_dir = Vector2i(0, 0)
+                _flee_dir_age_ms = 0.0
+        elif player.lives > _last_lives:
+                _last_lives = player.lives  # reset (nuova demo)
+
+        # --- (1) Scansione nemici: minaccia piu' vicina + preda piu' vicina ---
+        var threat: Node = null
+        var threat_d2: float = 1e9
+        var hunt: Node = null
+        var hunt_d2: float = 1e9
         for enemy in spawner.enemies:
+                if not is_instance_valid(enemy) or not enemy.is_inside_tree():
+                        continue
                 if enemy.is_dead() or enemy.is_death_anim_done():
                         continue
-                var e_pos: Vector2 = enemy.get_pixel_pos()
-                var d: float = player.get_pixel_pos().distance_squared_to(e_pos)
-                if d < min_dist:
-                        min_dist = d
-                        target_pos = e_pos
-                        has_target = true
+                var d2: float = pos.distance_squared_to(enemy.get_pixel_pos())
+                if d2 < threat_d2:
+                        threat_d2 = d2
+                        threat = enemy
+                        hunt = enemy
+                        hunt_d2 = d2
+                elif d2 < hunt_d2:
+                        hunt_d2 = d2
+                        hunt = enemy
 
-        # If no enemies, look for nearest treasure
-        if not has_target:
-                var p_col: int = int(player.get_pixel_pos().x / C.TILE_SIZE)
-                var p_row: int = int((player.get_pixel_pos().y - C.UI_HEIGHT) / C.TILE_SIZE)
-                var min_t_dist: float = 1e9
-                for r in range(C.MAZE_ROWS):
-                        for c in range(C.MAZE_COLS):
-                                if maze.get_cell_type(c, r) == C.CellType.TREASURE:
-                                        var d: float = float((c - p_col) * (c - p_col) + (r - p_row) * (r - p_row))
-                                        if d < min_t_dist:
-                                                min_t_dist = d
-                                                target_pos = Vector2(
-                                                        c * C.TILE_SIZE + C.TILE_SIZE / 2.0,
-                                                        r * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT
-                                                )
-                                                has_target = true
+        # --- (2) FUGA: nemico a contatto -> allontanarsi con decisione ---
+        if threat != null and sqrt(threat_d2) <= DEMO_FLEE_RADIUS_CELLS * C.TILE_SIZE:
+                demo_flee_ms = DEMO_FLEE_MS
+        if demo_flee_ms > 0.0:
+                demo_flee_ms -= delta_ms
+                _flee_from(threat, cell, delta_ms)
+                # durante la fuga continua a sparare al nemico che la incalza
+                demo_ai_shoot_timer_p1 -= int(delta_ms)
+                if demo_ai_shoot_timer_p1 <= 0:
+                        demo_ai_shoot_timer_p1 = 500
+                        _shoot_at_target(pos, threat)
+                return
 
-        # Change direction every 400ms
-        demo_ai_timer_p1 -= int(delta_ms)
-        if demo_ai_timer_p1 <= 0 or not has_target:
-                demo_ai_timer_p1 = 400
-                if has_target:
-                        var dx: float = target_pos.x - player.get_pixel_pos().x
-                        var dy: float = target_pos.y - player.get_pixel_pos().y
-                        if absf(dx) > absf(dy):
-                                demo_ai_dir_p1 = 4 if dx > 0 else 3  # right/left
-                        else:
-                                demo_ai_dir_p1 = 2 if dy > 0 else 1  # down/up
-                        # 20% random direction
-                        if randi() % 100 < 20:
-                                demo_ai_dir_p1 = 1 + randi() % 4
+        # --- (3) TARGET con isteresi (niente flip-flop del bersaglio) ---
+        if demo_target_enemy != null \
+                        and (not is_instance_valid(demo_target_enemy) or demo_target_enemy.is_dead()):
+                demo_target_enemy = null
+                demo_target_hold_ms = 0.0
+        demo_target_hold_ms -= delta_ms
+        if demo_target_enemy == null and demo_target_treasure.x >= 0 \
+                        and maze.get_cell_type(demo_target_treasure.x, demo_target_treasure.y) != C.CellType.TREASURE:
+                # tesoro raccolto (o sparito): ripesca subito
+                demo_target_treasure = Vector2i(-1, -1)
+                demo_target_hold_ms = 0.0
+        var want_repick: bool = demo_target_hold_ms <= 0.0 \
+                        and demo_target_enemy == null and demo_target_treasure.x < 0
+        if not want_repick and demo_target_enemy != null and hunt != null \
+                        and hunt != demo_target_enemy \
+                        and hunt_d2 < pos.distance_squared_to(demo_target_enemy.get_pixel_pos()) * 0.36:
+                # e' comparso un nemico MOLTO piu' vicino: cambia preda
+                want_repick = true
+        if want_repick:
+                demo_target_hold_ms = DEMO_TARGET_HOLD_MS
+                demo_target_treasure = Vector2i(-1, -1)
+                if hunt != null and sqrt(hunt_d2) <= DEMO_HUNT_MAX_CELLS * C.TILE_SIZE:
+                        demo_target_enemy = hunt
                 else:
-                        demo_ai_dir_p1 = 1 + randi() % 4
+                        # nemici tutti lontani (o nessuno): tesoro piu' vicino
+                        demo_target_enemy = null
+                        demo_target_treasure = _nearest_treasure_cell(cell)
 
-        # Apply direction
-        # TASK 26 (fix freeze): non spingere mai contro un muro — se la
-        # direzione scelta (bersaglio sopra il player, muro davanti) è
-        # bloccata, ruota in senso orario finché trova un'apertura. Il player
-        # demo resta SEMPRE in movimento anche in un vicolo cieco.
-        demo_ai_dir_p1 = _open_dir_around(demo_ai_dir_p1)
-        match demo_ai_dir_p1:
-                1: player.set_direction(0, -1)  # up
-                2: player.set_direction(0, 1)   # down
-                3: player.set_direction(-1, 0)  # left
-                4: player.set_direction(1, 0)   # right
+        # --- (4) Direzione: BFS verso il target (ricalcolo continuo) ---
+        var target_cell: Vector2i = cell
+        if demo_target_enemy != null:
+                var ep: Vector2 = demo_target_enemy.get_pixel_pos()
+                target_cell = Vector2i(int(ep.x / C.TILE_SIZE),
+                                int((ep.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        elif demo_target_treasure.x >= 0:
+                target_cell = demo_target_treasure
+        var next_step: Vector2i = Vector2i(0, 0)
+        if target_cell != cell:
+                next_step = BFS.find_path(maze, cell, target_cell)
+        if next_step != Vector2i(-1, -1) and next_step != Vector2i(0, 0):
+                var ndx: int = next_step.x - cell.x
+                var ndy: int = next_step.y - cell.y
+                if (ndx != 0 or ndy != 0) and not maze.is_wall(cell.x + ndx, cell.y + ndy):
+                        player.set_direction(ndx, ndy)
+                        # --- (5) Fuoco: allineato al bersaglio o colpo casuale ---
+                        _demo_shoot(pos, threat if threat != null else demo_target_enemy, delta_ms)
+                        return
+        # Fallback (BFS senza percorso / target raggiunto): rotazione oraria
+        # su direzione aperta (mai spingere contro un muro) + fuoco.
+        var preferred: int = 1 + (randi() % 4)
+        var open_dir: int = _open_dir_around(preferred)
+        match open_dir:
+                1: player.set_direction(0, -1)
+                2: player.set_direction(0, 1)
+                3: player.set_direction(-1, 0)
+                4: player.set_direction(1, 0)
                 _: player.set_direction(0, 0)
+        _demo_shoot(pos, threat if threat != null else demo_target_enemy, delta_ms)
 
-        # Shoot logic
-        demo_ai_shoot_timer_p1 -= int(delta_ms)
-        if demo_ai_shoot_timer_p1 <= 0:
-                demo_ai_shoot_timer_p1 = 500
-                var should_shoot: bool = false
-                if has_target:
-                        var dx: float = absf(target_pos.x - player.get_pixel_pos().x)
-                        var dy: float = absf(target_pos.y - player.get_pixel_pos().y)
-                        if dx < C.TILE_SIZE / 2.0 or dy < C.TILE_SIZE / 2.0:
-                                should_shoot = true
-                if not should_shoot and randi() % 100 < 20:
-                        should_shoot = true
-                if should_shoot and player.shoot_cooldown == 0:
-                        player.shoot()
-                        player.shoot_cooldown = 150
 
-        # Random jump (2% per frame)
+        # Salto casuale (flavor del demo originale)
         if randi() % 100 < 2:
                 player.activate_jump()
+
+
+## Fuga dal nemico piu' vicino (mirror di _flee_greedy dei nemici) con
+## ISTERESI DI DIREZIONE: la direzione scelta resta committata per
+## DEMO_FLEE_DIR_HOLD_MS e l'U-turn e' bloccato per DEMO_FLEE_NO_REVERSE_MS
+## (salvo vicolo cieco). Senza questo, quando il nemico insegue a contatto
+## la direzione "migliore" flippa a ogni frame e il player PENDOLA tra due
+## celle — esattamente il comportamento segnalato dall'utente.
+func _flee_from(threat: Node, cell: Vector2i, delta_ms: float) -> void:
+        _flee_dir_age_ms = maxf(0.0, _flee_dir_age_ms - delta_ms)
+        _flee_reverse_block_ms = maxf(0.0, _flee_reverse_block_ms - delta_ms)
+        # direzione committata ancora valida (non muro, non scaduta)?
+        if _flee_dir != Vector2i(0, 0) and _flee_dir_age_ms > 0.0:
+                if not maze.is_wall(cell.x + _flee_dir.x, cell.y + _flee_dir.y):
+                        player.set_direction(_flee_dir.x, _flee_dir.y)
+                        return
+        var best: Vector2i = _pick_flee_dir(threat, cell, true)
+        if best == Vector2i(0, 0) and _flee_reverse_block_ms > 0.0:
+                # vicolo cieco con U-turn bloccato: riprova consentendolo
+                best = _pick_flee_dir(threat, cell, false)
+        if best != Vector2i(0, 0):
+                var reversed: bool = best == -_flee_dir
+                _flee_dir = best
+                _flee_dir_age_ms = DEMO_FLEE_DIR_HOLD_MS
+                if not reversed:
+                        _flee_reverse_block_ms = DEMO_FLEE_NO_REVERSE_MS
+                player.set_direction(best.x, best.y)
+        else:
+                player.set_direction(0, 0)
+
+
+## Direzione aperta che MASSIMIZZA la distanza dalla minaccia; se
+## block_reverse, scarta l'U-turn rispetto all'ultima direzione di fuga.
+func _pick_flee_dir(threat: Node, cell: Vector2i, block_reverse: bool) -> Vector2i:
+        var best: Vector2i = Vector2i(0, 0)
+        var best_d: float = -1.0
+        for dir in _DIRS4:
+                if maze.is_wall(cell.x + dir.x, cell.y + dir.y):
+                        continue
+                if block_reverse and _flee_reverse_block_ms > 0.0                                 and dir == -_flee_dir:
+                        continue
+                var cand: Vector2 = Vector2(
+                                (cell.x + dir.x) * C.TILE_SIZE + C.TILE_SIZE * 0.5,
+                                (cell.y + dir.y) * C.TILE_SIZE + C.TILE_SIZE * 0.5 + C.UI_HEIGHT)
+                var d: float = randf()  # senza minaccia: direzione random
+                if threat != null and is_instance_valid(threat):
+                        d = cand.distance_squared_to(threat.get_pixel_pos())
+                if d > best_d:
+                        best_d = d
+                        best = dir
+        return best
+
+
+## Fuoco del demo: spara se allineato al bersaglio (stesso asse entro mezza
+## cella) o il 20% delle volte; salta occasionalmente (flavor, 2% frame).
+func _demo_shoot(pos: Vector2, target: Node, delta_ms: float) -> void:
+        demo_ai_shoot_timer_p1 -= int(delta_ms)
+        if demo_ai_shoot_timer_p1 > 0:
+                return
+        demo_ai_shoot_timer_p1 = 500
+        _shoot_at_target(pos, target)
+
+
+func _shoot_at_target(pos: Vector2, target: Node) -> void:
+        var should_shoot: bool = false
+        if target != null and is_instance_valid(target):
+                var dx: float = absf(target.get_pixel_pos().x - pos.x)
+                var dy: float = absf(target.get_pixel_pos().y - pos.y)
+                if dx < C.TILE_SIZE * 0.5 or dy < C.TILE_SIZE * 0.5:
+                        should_shoot = true
+        if not should_shoot and randi() % 100 < 20:
+                should_shoot = true
+        if should_shoot and player.shoot_cooldown == 0:
+                player.shoot()
+                player.shoot_cooldown = 150
+
+
+## Tesoro piu' vicino (distanza Manhattan sulla griglia).
+func _nearest_treasure_cell(from_cell: Vector2i) -> Vector2i:
+        var best: Vector2i = Vector2i(-1, -1)
+        var best_d: int = -1
+        for r in range(C.MAZE_ROWS):
+                for c in range(C.MAZE_COLS):
+                        if maze.get_cell_type(c, r) == C.CellType.TREASURE:
+                                var d: int = absi(c - from_cell.x) + absi(r - from_cell.y)
+                                if best_d < 0 or d < best_d:
+                                        best_d = d
+                                        best = Vector2i(c, r)
+        return best
 
 
 # TASK 26 — direzione preferita se bloccata da un muro -> prima direzione

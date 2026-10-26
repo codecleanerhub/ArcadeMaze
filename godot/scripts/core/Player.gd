@@ -1311,12 +1311,15 @@ func shoot() -> void:
                 shoot_pos = Vector2(position.x + 4.0,
                                             position.y - 12.0 + float(shoot_dy) * 16.0)
 
+        # FIX (crash 'power' missing — visto nel test fire_rearm): alcune
+        # armi (elementali Task 61 / reliquie) non hanno la chiave "power"
+        # nel dict; accesso difensivo con default invece di .power diretto.
         projectiles.append({
                 "pos": shoot_pos,
                 "dir": Vector2(float(shoot_dx), float(shoot_dy)),
-                "power": current_weapon.power,
+                "power": int(current_weapon.get("power", 1)),
                 "active": true,
-                "type": current_weapon.type,
+                "type": int(current_weapon.get("type", 0)),
         })
         current_weapon.ammo -= 1
         _after_player_shot_fired()

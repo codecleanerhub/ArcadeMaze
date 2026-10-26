@@ -38,10 +38,12 @@ extends Control
 signal back_to_menu_requested()
 
 # --- Colors (mirror the SFML palette in drawCredits) ----------------------
-@export var color_section:  Color = Color(1.000, 0.843, 0.392)   # 255,215,100
+# TASK 76 — palette sangue: le sezioni dei credits in rosso sangue
+# (coerente col titolo del gioco e la scritta Loading).
+@export var color_section:  Color = Color(0.755, 0.118, 0.090)   # sangue acceso
 @export var color_role:     Color = Color(0.706, 0.706, 0.706)   # 180,180,180
 @export var color_name:     Color = Color(0.961, 0.922, 0.784)    # 245,235,200
-@export var color_thank:    Color = Color(1.000, 0.843, 0.392)
+@export var color_thank:    Color = Color(0.755, 0.118, 0.090)
 @export var color_publisher: Color = Color(0.784, 0.784, 0.784)
 @export var color_hint:     Color = Color(0.588, 0.588, 0.588)
 @export var color_bg:       Color = Color(0.020, 0.020, 0.039)    # 5,5,10

@@ -192,6 +192,18 @@ var _epic_playing: bool = false
 # Track index currently on the epic channel (or -1 if stopped).
 var _epic_track_idx: int = -1
 
+# TASK 76 — sintesi progressiva in background thread.
+var _synth_thread: Thread = null
+var _synth_mutex: Mutex = Mutex.new()
+var _synth_cancel: bool = false
+var _synth_queue: Array = []  # [[kind:String, idx:int], ...] in ordine di priorita'
+var _synth_started_ms: int = 0
+var _synth_done_count: int = 0
+# Traccia musicale richiesta mentre era ancora in sintesi (parte da sola
+# appena il worker la rende disponibile).
+var _pending_music_track: int = -1
+var _pending_music_loop: bool = true
+
 # Master switch (mirrors Game::musicEnabled).
 # FIX (musica parte al boot anche se in off): default music_enabled = false
 # per allinearsi con GameManager.music_enabled (default false). Prima era
@@ -242,28 +254,25 @@ func _ready() -> void:
                 add_child(p)
                 _sfx_pool.append(p)
 
-        # Pre-synthesize every SFX and every music track (avoid runtime hitches).
+        # TASK 76 (avvio lento — segnalazione utente: "il gioco ci mette
+        # parecchio a partire, carica tutto in un colpo?"): la pre-sintesi
+        # COMPLETA di 56 SFX + 18 spari boss + 10 tracce musicali bloccava
+        # il boot per ~16s (misurato: SFX 1.4s + musica 14.5s). Ora la
+        # sintesi corre in un THREAD IN BACKGROUND con ordine di priorita'
+        # (menu -> SFX -> tracce livello -> boss/portale -> jingle -> spari
+        # boss): il menu appare in ~0.3s e tutto il resto arriva mentre
+        # l'utente naviga. Ogni play_* ha un fallback on-demand (sintesi
+        # sincrona) se il suono non e' ancora pronto.
+        _synth_started_ms = Time.get_ticks_msec()
+        var _boot_t0: int = Time.get_ticks_msec()
         _sfx_streams.resize(SOUND_TYPE_COUNT)
-        for i in SOUND_TYPE_COUNT:
-                _sfx_streams[i] = _generate_sfx(i as SoundType)
-
-        # TASK 26: pre-sintesi degli SFX di sparo dei boss (uno per tipo di
-        # munizione). Rollback: GameConstants.BOSS_SHOOT_SFX_ENABLED = false
-        # (nessuno stream generato e play_boss_shoot diventa no-op).
-        if GameConstants.BOSS_SHOOT_SFX_ENABLED:
-                _boss_shoot_streams.resize(BOSS_SHOOT_KIND_COUNT)
-                for i in BOSS_SHOOT_KIND_COUNT:
-                        _boss_shoot_streams[i] = _generate_boss_shoot(i)
-                        print("[AudioManager] boss shoot SFX %d/%d pronto" % [i + 1, BOSS_SHOOT_KIND_COUNT])
-
+        _boss_shoot_streams.resize(BOSS_SHOOT_KIND_COUNT)
         _music_streams.resize(MUSIC_TRACK_COUNT)
-        for i in MUSIC_TRACK_COUNT:
-                _music_streams[i] = _generate_track(i)
+        _build_synth_queue()
+        _synth_thread = Thread.new()
+        _synth_thread.start(_synth_worker)
+        print("[AudioManager] synth worker avviato (boot audio: %d ms)" % [Time.get_ticks_msec() - _boot_t0])
 
-
-# ============================================================================
-# PUBLIC API  (mirrors the public methods of AudioManager)
-# ============================================================================
 
 # Play a one-shot sound effect on the first free voice in the SFX pool.
 # Anti-overlap: if the same sound type is already playing, skip (debounce).
@@ -276,6 +285,11 @@ func play_sound(type: SoundType) -> void:
         if idx < 0 or idx >= _sfx_streams.size():
                 return
         var stream: AudioStreamWAV = _sfx_streams[idx]
+        if stream == null:
+                # TASK 76: SFX non ancora sintetizzato dal worker (partita
+                # iniziata nei primi secondi) -> sintesi on-demand (~25ms).
+                stream = _generate_sfx(idx as SoundType)
+                _sfx_streams[idx] = stream
         if stream == null:
                 return
         # Debounce: skip if same sound was played < 200ms ago
@@ -298,6 +312,10 @@ func play_boss_shoot(kind: int) -> void:
         if kind < 0 or kind >= _boss_shoot_streams.size():
                 kind = 0
         var stream: AudioStreamWAV = _boss_shoot_streams[kind]
+        if stream == null:
+                # TASK 76: fallback on-demand (sintesi progressiva).
+                stream = _generate_boss_shoot(kind)
+                _boss_shoot_streams[kind] = stream
         if stream == null:
                 return
         var now_ms: int = Time.get_ticks_msec()
@@ -365,6 +383,10 @@ func play_epic_music(track_idx: int, loop: bool = false) -> void:
                 return  # stesso jingle già in riproduzione: no restart
         var stream: AudioStreamWAV = _music_streams[track_idx]
         if stream == null:
+                # TASK 76: fallback on-demand (sintesi progressiva).
+                stream = _generate_track(track_idx)
+                _music_streams[track_idx] = stream
+        if stream == null:
                 return
         stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
         _epic_player.stream = stream
@@ -390,6 +412,10 @@ func play_ghost_music() -> void:
         if _ghost_music_playing and _ghost_player.playing:
                 return  # già in riproduzione: no restart
         var stream: AudioStreamWAV = _music_streams[TRACK_GHOST]
+        if stream == null:
+                # TASK 76: fallback on-demand (sintesi progressiva).
+                stream = _generate_track(TRACK_GHOST)
+                _music_streams[TRACK_GHOST] = stream
         if stream == null:
                 return
         stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -417,6 +443,86 @@ func set_music_enabled(enabled: bool) -> void:
                 stop_epic_music()
 
 # ============================================================================
+# TASK 76 — Sintesi progressiva (background thread)
+# ============================================================================
+
+## Coda di sintesi in ordine di PRIORITA': menu subito (serve quando il
+## menu principale appare), poi tutti gli SFX (economici, servono ovunque),
+## poi le tracce dei livelli (il livello 1 e' il primo che si gioca), poi
+## boss/portale/jingle/fantasma, infine gli spari dei boss (solo boss room).
+func _build_synth_queue() -> void:
+        _synth_queue.clear()
+        _synth_queue.append(["music", TRACK_MENU])
+        for i in SOUND_TYPE_COUNT:
+                _synth_queue.append(["sfx", i])
+        for i in 4:
+                _synth_queue.append(["music", i])  # tracce livello 0..3
+        _synth_queue.append(["music", TRACK_BOSS])
+        _synth_queue.append(["music", TRACK_PORTAL])
+        _synth_queue.append(["music", TRACK_EPIC_CHALICE])
+        _synth_queue.append(["music", TRACK_EPIC_SCEPTER])
+        _synth_queue.append(["music", TRACK_GHOST])
+        for i in BOSS_SHOOT_KIND_COUNT:
+                _synth_queue.append(["boss", i])
+
+
+## Corpo del thread: estrae un task alla volta, sintetizza e riconsegna il
+## risultato al main thread con call_deferred (mai tocco il tree da qui).
+func _synth_worker() -> void:
+        while true:
+                if _synth_cancel:
+                        break
+                var task: Array = []
+                _synth_mutex.lock()
+                if not _synth_queue.is_empty():
+                        task = _synth_queue.pop_front()
+                _synth_mutex.unlock()
+                if task.is_empty():
+                        break
+                var stream: AudioStreamWAV = null
+                if task[0] == "sfx":
+                        stream = _generate_sfx(task[1] as SoundType)
+                elif task[0] == "boss":
+                        stream = _generate_boss_shoot(task[1])
+                elif task[0] == "music":
+                        stream = _generate_track(task[1])
+                _apply_synth_result.call_deferred(task[0], int(task[1]), stream)
+        _synth_finished.call_deferred()
+
+
+## Main thread: archivia lo stream sintetizzato e, se c'e' una traccia
+## musicale in attesa appena diventata pronta, la fa partire da sola.
+func _apply_synth_result(kind: String, idx: int, stream: AudioStreamWAV) -> void:
+        if stream == null:
+                return
+        if kind == "sfx" and idx < _sfx_streams.size():
+                _sfx_streams[idx] = stream
+        elif kind == "boss" and idx < _boss_shoot_streams.size():
+                _boss_shoot_streams[idx] = stream
+        elif kind == "music" and idx < _music_streams.size():
+                _music_streams[idx] = stream
+                if idx == _pending_music_track:
+                        _pending_music_track = -1
+                        _play_music_track(idx, _pending_music_loop)
+        _synth_done_count += 1
+
+
+## Main thread: worker esaurito — libera il thread e logga il totale.
+func _synth_finished() -> void:
+        if _synth_thread != null and _synth_thread.is_started():
+                _synth_thread.wait_to_finish()
+        print("[AudioManager] sintesi completa: %d suoni in %d ms (background)"
+                        % [_synth_done_count, Time.get_ticks_msec() - _synth_started_ms])
+
+
+## Arresto pulito del worker alla chiusura (l'autoload muore con l'app).
+func _exit_tree() -> void:
+        _synth_cancel = true
+        if _synth_thread != null and _synth_thread.is_started():
+                _synth_thread.wait_to_finish()
+
+
+# ============================================================================
 # Internal helpers
 # ============================================================================
 
@@ -440,6 +546,18 @@ func _play_music_track(track_idx: int, loop: bool) -> void:
                 return
         _music_player.stop()
         var stream: AudioStreamWAV = _music_streams[track_idx]
+        if stream == null:
+                # TASK 76 (sintesi progressiva): traccia non ancora pronta —
+                # se il worker sta ancora girando, la richiesta resta in
+                # attesa e la musica parte DA SOLA appena sintetizzata.
+                if _synth_thread != null and _synth_thread.is_started() \
+                                and not _synth_queue.is_empty():
+                        _pending_music_track = track_idx
+                        _pending_music_loop = loop
+                        print("[AudioManager] track %d in sintesi: partira' appena pronta" % track_idx)
+                        return
+                stream = _generate_track(track_idx)
+                _music_streams[track_idx] = stream
         if stream == null:
                 print("[AudioManager] _play_music_track SKIP - stream %d is null" % track_idx)
                 return

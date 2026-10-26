@@ -1402,6 +1402,10 @@ func _update_playing(delta_ms: float) -> void:
         # Collect enemy projectiles in a real array (enemies that shoot add to it)
         var enemy_projectiles: Array = []
         for enemy in spawner.enemies:
+                # TASK 76 (crash get_tree() null): salta nemici non validi o
+                # fuori dal tree (finestra di teardown/respawn).
+                if not is_instance_valid(enemy) or not enemy.is_inside_tree():
+                        continue
                 if not enemy.is_death_anim_done():
                         var target_p: CharacterBody2D = _nearest_alive_player(enemy.get_pixel_pos())
                         if target_p != null:

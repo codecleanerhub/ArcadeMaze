@@ -68,9 +68,18 @@ class Sheet:
 
 ## ---- Public API ----
 
-## Autoload lifecycle: load all sprites on startup.
+## Autoload lifecycle — TASK 76 (avvio lento): NESSUN preload di massa.
+## I 236 PNG (SD+HD, ~35MB) venivano tutti decodificati al boot prima del
+## primo frame. Ora gli sheet si caricano ON-DEMAND al primo get_sheet()
+## (i nemici caricano gia' i propri SD inline; boss/effetti/collectibles
+## pagano ~2-3ms al primo accesso, coperti dall'overlay Loading...).
 func _ready() -> void:
-        load_all()
+        _lazy = true
+        loaded.emit()
+
+
+var _lazy: bool = false
+var _tried_ids: Dictionary = {}  # id -> true (evita retry infiniti su id mancanti)
 
 
 ## Load all `<id>_sheet.png` sprites found under the sprites folder.
@@ -88,6 +97,7 @@ func load_all(base_path: String = "res://assets/sprites/") -> void:
         while file_name != "":
                 if not dir.current_is_dir() and file_name.ends_with("_sheet.png"):
                         var id := file_name.substr(0, file_name.length() - "_sheet.png".length())
+                        _tried_ids[id] = true
                         _load_sheet(base_path, id)
                 file_name = dir.get_next()
         dir.list_dir_end()
@@ -95,9 +105,17 @@ func load_all(base_path: String = "res://assets/sprites/") -> void:
 
 
 ## Retrieve a cached Sheet by id (e.g. "boss_021" or "miniboss_05").
+## TASK 76: caricamento LAZY — al primo accesso lo sheet viene caricato da
+## disco (HD se esiste, altrimenti SD) e messo in cache. Un id senza file
+## viene ricordato come "provato" per non ritentare a ogni chiamata.
 func get_sheet(id: String) -> Sheet:
         if _sheets.has(id):
                 return _sheets[id]
+        if _lazy and not _tried_ids.has(id):
+                _tried_ids[id] = true
+                _load_sheet("res://assets/sprites/", id)
+                if _sheets.has(id):
+                        return _sheets[id]
         return null
 
 

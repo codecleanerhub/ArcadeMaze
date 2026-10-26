@@ -225,10 +225,16 @@ func _spawn_enemy_instance(t: int, col: int, row: int) -> Enemy:
         else:
                 e = Enemy.new()
         e.init(t, col, row)
-        # If the spawner is in the tree, also add the enemy as a sibling so it
-        # gets rendered (caller may instead opt to add to a YSort node).
-        if get_parent():
-                get_parent().add_child(e)
+        # TASK 76 (crash "get_nodes_in_group on null"): un nemico appeso al
+        # pool MAI aggiunto al tree resta invisibile e fa esplodere get_tree()
+        # nel primo update. Se lo spawner non e' nel tree NON si spawn:
+        # l'istanza viene liberata e il pool resta pulito. (Il controller
+        # esegue _physics_process solo nel tree, quindi questo avviene solo
+        # in finestre di teardown/restore.)
+        if not is_inside_tree() or get_parent() == null:
+                e.queue_free()
+                return null
+        get_parent().add_child(e)
         enemies.append(e)
         return e
 
@@ -530,6 +536,52 @@ func _cell_has_live_enemy(col: int, row: int) -> bool:
         return false
 
 
+# TASK 76 — helper: crea un NUOVO nemico di tipo random vicino al portale
+# (usato sia quando non ci sono dead_indices, sia quando un indice stantio
+# puntava a un nemico vivo). Cerca una cella libera in un anello espandente
+# attorno al portale; se non la trova consuma comunque lo spawn.
+func _spawn_new_portal_enemy(maze: Object) -> void:
+        var pool_size: int = Enemy.ENEMY_ORIGINAL_TYPE_COUNT + unlocked_new_types
+        var new_type: int = randi() % pool_size
+        var pc_new := int(magic_portal.pos.x / TILE_SIZE)
+        var pr_new := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
+        # Cerca cella vuota vicino al portale
+        for radius in range(1, PORTAL_PLACE_MAX_RADIUS + 1):
+                for dc in range(-radius, radius + 1):
+                        for dr in range(-radius, radius + 1):
+                                var nc: int = pc_new + dc
+                                var nr: int = pr_new + dr
+                                if nc <= 0 or nc >= MAZE_COLS - 1:
+                                        continue
+                                if nr <= 0 or nr >= MAZE_ROWS - 1:
+                                        continue
+                                if maze.is_wall(nc, nr):
+                                        continue
+                                if maze.get_cell_type(nc, nr) != CELL_EMPTY:
+                                        continue
+                                # FIX (sprite uno sopra l'altro): il
+                                # respawn non spunta sopra un collectible.
+                                if _portal_cell_check.is_valid() \
+                                                and not _portal_cell_check.call(nc, nr):
+                                        continue
+                                # FIX: non impilare il respawn sopra un
+                                # nemico vivo (sprite uno sopra l'altro).
+                                if _cell_has_live_enemy(nc, nr):
+                                        continue
+                                var new_enemy: Enemy = Enemy.new()
+                                new_enemy.init(new_type, nc, nr)
+                                # TASK 76: mai nemici orfani nel pool (fuori
+                                # dal tree) — hardening anti-crash.
+                                if not is_inside_tree() or get_parent() == null:
+                                        new_enemy.queue_free()
+                                else:
+                                        get_parent().add_child(new_enemy)
+                                        enemies.append(new_enemy)
+                                magic_portal.enemies_to_spawn -= 1
+                                return
+        magic_portal.enemies_to_spawn -= 1
+
+
 func _spawn_enemy_from_portal(maze: Object) -> void:
         if magic_portal.enemies_to_spawn <= 0:
                 magic_portal.enemies_to_spawn = 0
@@ -539,41 +591,7 @@ func _spawn_enemy_from_portal(maze: Object) -> void:
                 # FIX (pool nuovi nemici): il tipo random pesca anche dai nuovi
                 # tipi sbloccati dopo i boss (28 + unlocked_new_types).
         if magic_portal.dead_indices.is_empty():
-                var pool_size: int = Enemy.ENEMY_ORIGINAL_TYPE_COUNT + unlocked_new_types
-                var new_type: int = randi() % pool_size
-                var pc_new := int(magic_portal.pos.x / TILE_SIZE)
-                var pr_new := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
-                # Cerca cella vuota vicino al portale
-                for radius in range(1, PORTAL_PLACE_MAX_RADIUS + 1):
-                        for dc in range(-radius, radius + 1):
-                                for dr in range(-radius, radius + 1):
-                                        var nc: int = pc_new + dc
-                                        var nr: int = pr_new + dr
-                                        if nc <= 0 or nc >= MAZE_COLS - 1:
-                                                continue
-                                        if nr <= 0 or nr >= MAZE_ROWS - 1:
-                                                continue
-                                        if maze.is_wall(nc, nr):
-                                                continue
-                                        if maze.get_cell_type(nc, nr) != CELL_EMPTY:
-                                                continue
-                                        # FIX (sprite uno sopra l'altro): il
-                                        # respawn non spunta sopra un collectible.
-                                        if _portal_cell_check.is_valid() \
-                                                        and not _portal_cell_check.call(nc, nr):
-                                                continue
-                                        # FIX: non impilare il respawn sopra un
-                                        # nemico vivo (sprite uno sopra l'altro).
-                                        if _cell_has_live_enemy(nc, nr):
-                                                continue
-                                        var new_enemy: Enemy = Enemy.new()
-                                        new_enemy.init(new_type, nc, nr)
-                                        enemies.append(new_enemy)
-                                        if get_parent():
-                                                get_parent().add_child(new_enemy)
-                                        magic_portal.enemies_to_spawn -= 1
-                                        return
-                magic_portal.enemies_to_spawn -= 1
+                _spawn_new_portal_enemy(maze)
                 return
 
         var idx: int = magic_portal.dead_indices.pop_back()
@@ -582,8 +600,15 @@ func _spawn_enemy_from_portal(maze: Object) -> void:
                 return
 
         var e: Enemy = enemies[idx]
-        if e == null or not (e is Enemy):
-                magic_portal.enemies_to_spawn -= 1
+        # TASK 76 (indice STANTIO): remove_dead() compatta l'array a ogni
+        # frame, quindi gli indici raccolti al trigger del portale possono
+        # ora puntare a un nemico DIVERSO (vivo!). Prima il re-init
+        # "teletrasportava" un nemico vivo a meta' caccia. Ora: se il nemico
+        # non e' morto (o non e' piu' valido) l'indice viene scartato e si
+        # passa alla creazione di un nuovo nemico.
+        if e == null or not (e is Enemy) or not is_instance_valid(e) \
+                        or not e.is_inside_tree() or not e.is_dead():
+                _spawn_new_portal_enemy(maze)
                 return
 
         var et: int = e.get_type()

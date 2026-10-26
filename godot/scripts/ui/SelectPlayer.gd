@@ -9,6 +9,9 @@ extends Control
 #
 # La ruota e' un'ellisse (cerchio compresso verticalmente) con:
 #   * 8 personaggi disposti attorno al perimetro
+#   * TASK 76: base = anello di pietra PixelLab (wheel_stone.png, nicchie
+#     e rune dorate) schiacciato in prospettiva; fallback ellissi
+#     procedurali se la texture manca
 #   * Raggi dal centro al bordo
 #   * Perno centrale metallico
 #   * Ombre e prospettiva (depth-based scale + alpha)
@@ -53,6 +56,8 @@ var anim_time: float = 0.0
 
 # Cached character textures (loaded once)
 var _char_textures: Array = []
+# TASK 76: texture anello di pietra PixelLab (null = fallback procedurale)
+var _wheel_texture: Texture2D = null
 # AI-generated background texture (loaded once)
 var _bg_texture: Texture2D = null
 
@@ -90,6 +95,14 @@ func _ready() -> void:
                                 if img.load(abs_path) == OK:
                                         tex = ImageTexture.create_from_image(img)
                 _char_textures.append(tex)
+        # TASK 76: anello di pietra PixelLab per la ruota (vista dall'alto,
+        # nicchie e rune dorate); fallback alle ellissi procedurali.
+        var wheel_abs: String = ProjectSettings.globalize_path(
+                        "res://assets/ui/wheel_stone.png")
+        if FileAccess.file_exists(wheel_abs):
+                var wheel_img := Image.new()
+                if wheel_img.load(wheel_abs) == OK:
+                        _wheel_texture = ImageTexture.create_from_image(wheel_img)
         # Preload the AI-generated crypt/ruderi background.
         # FIX (regressione): usa Image.load() per bypassare import.
         var bg_path := "res://assets/backgrounds/bg_select_player.png"
@@ -227,10 +240,10 @@ func _draw() -> void:
         # Dark overlay so the wheel and text stand out against the busy art
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.35), true)
 
-        # --- Titolo ---
+        # --- Titolo (TASK 76: palette sangue come titolo/logo e Loading) ---
         var title: String = I18n.t("select.title") % player_num
-        _draw_text_centered(title, cx - 4, 96, 48, Color(0.706, 0.471, 0.157))  # shadow
-        _draw_text_centered(title, cx, 100, 48, Color(1.0, 0.843, 0.0))  # gold
+        _draw_text_centered(title, cx - 4, 96, 48, Color(0.29, 0.02, 0.016))   # shadow sangue cupo
+        _draw_text_centered(title, cx, 100, 48, Color(0.755, 0.118, 0.09))     # sangue acceso
 
         # --- Hint ---
         var player_color: Color = Color(1.0, 0.843, 0.0) if player_num == 1 else Color(0.471, 0.706, 1.0)
@@ -250,13 +263,30 @@ func _draw() -> void:
         draw_circle(Vector2(cx, cy + wheel_radius_y * 0.85),
                 wheel_radius_x * 1.15, Color(0, 0, 0, 0.43))
 
-        # --- 2. Base ellisse ---
-        _draw_ellipse(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_DARK)
-        _draw_ellipse_outline(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_MID, 6.0)
-
-        # --- 3. Anello interno ---
+        # --- 2/3. BASE RUOTA (TASK 76: anello di pietra PixelLab con
+        # nicchie e rune dorate, schiacciato in prospettiva; fallback alle
+        # vecchie ellissi procedurali se la texture manca) ---
         var inner_radius: float = wheel_radius_x - 28.0
-        _draw_ellipse(cx, cy, inner_radius, inner_radius * perspective_ratio, COL_ROCK_MID)
+        if _wheel_texture != null:
+                # disegna l'anello nello spazio locale con squash verticale
+                # (prospettiva): texture quadrata ~482px scalata al diametro
+                # della ruota (leggero sforo del 6% per coprire il bordo).
+                var ring_r: float = wheel_radius_x * 1.06
+                draw_set_transform(Vector2(cx, cy), 0.0,
+                                Vector2(1.0, perspective_ratio))
+                draw_texture_rect(_wheel_texture,
+                                Rect2(-ring_r, -ring_r, ring_r * 2.0, ring_r * 2.0),
+                                false, Color(1, 1, 1, 0.97))
+                draw_set_transform(Vector2.ZERO)
+                # leggero velo scuro sull'anello per far leggere i personaggi
+                draw_set_transform(Vector2(cx, cy), 0.0,
+                                Vector2(1.0, perspective_ratio))
+                draw_circle(Vector2.ZERO, ring_r, Color(0, 0, 0, 0.10))
+                draw_set_transform(Vector2.ZERO)
+        else:
+                _draw_ellipse(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_DARK)
+                _draw_ellipse_outline(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_MID, 6.0)
+                _draw_ellipse(cx, cy, inner_radius, inner_radius * perspective_ratio, COL_ROCK_MID)
 
         # --- 4. Angolo ruota ---
         var angle_per_char: float = TAU / CHARACTER_COUNT
@@ -335,9 +365,9 @@ func _draw() -> void:
                         draw_circle(Vector2(p.x, p.y - 20),
                                 5.0 * p.scale, Color(1.0, 0.84, 0.0, 0.35 * glow))
 
-        # --- 8. Nome personaggio selezionato (in basso) ---
+        # --- 8. Nome personaggio selezionato (in basso, palette sangue) ---
         _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, vp_size.y - 60, 32,
-                Color(1.0, 0.843, 0.0))
+                Color(0.96, 0.16, 0.11))
 
 
 # Draw text centered at (x, y) with given size and color.
