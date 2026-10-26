@@ -1156,26 +1156,18 @@ func _render_cell(c: int, r: int) -> void:
 
 ## Draws a WALL cell as a rocky procedural texture, mirroring the C++
 ## "rocky dungeon" effect: texture rocciosa tinteggiata con wall_color del
-## livello (TASK 72: texture PixelLab UNIFORME — la vecchia conteneva un
-## masso unico con ombra curva e i ritagli 64px casuali producevano "sfumature
-## angolari" in posizioni random, segnalate dall'utente). TASK 72: highlight
-## e ombra 3D SOLO sui bordi esposti verso celle aperte (opzione utente
-## "usare bene quelli blu"): dentro le masse di muro non ci sono piu'
-## giunzioni/griglia, l'effetto smussato appare solo dove il muro affaccia
-## sul corridoio. Crepe sottili (~10%) e muschio raro (~3%) invariati.
-## La texture e' cached static per palette (8 max, mai rigenerata
-## per lo stesso livello).
-func _is_solid_wall(c: int, r: int) -> bool:
-        # Muro "pieno" ai fini dei bevel 3D (TASK 72). Fuori mappa = pieno
-        # (il bordo esterno non deve mostrare bevel). I muri di roccia
-        # MOBILI (Task 30) si disegnano come pavimento: sono spazio aperto.
-        if c < 0 or r < 0 or c >= C.MAZE_COLS or r >= C.MAZE_ROWS:
-                return true
-        if _get_cell_type(c, r) != C.CellType.WALL:
-                return false
-        return not dynamic_walls.has("%d,%d" % [c, r])
-
-
+## livello. TASK 73 (feedback utente "il muro e' troppo uniforme, preferivo
+## lo stile precedente quello con il rettangolo rosso"): RIPRISTINATO lo
+## stile a BLOCCHI — ogni cella muro e' un blocco distinto con highlight
+## NW + ombra SE + outline perimetrale su TUTTI i lati (il look classico a
+## mattoni arcade, quello del rettangolo rosso dello screen del Task 72).
+## La "sfumature angolari casuali" che l'utente segnalava nel Task 72 NON
+## erano i bevel per-cellula (questi restano: sono lo stile che piace) ma
+## gli archi scuri del MASSO nella vecchia rock_texture.png — fix che
+## RESTA: la texture Task 72 a grana fine uniforme resta invariata, ogni
+## ritaglio 64px e' pulito. Crepe sottili (~10%) e muschio raro (~3%)
+## invariati. La texture e' cached static per palette (8 max, mai
+## rigenerata per lo stesso livello).
 func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> void:
         # FIX (muri rocciosi procedurali): sostituisce le 5 draw_rect sovrapposte
         # (sintomo "rettangoli sfumati") con una draw_texture_rect_region che
@@ -1190,35 +1182,18 @@ func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> voi
                 draw_texture_rect_region(_rock_tex, dst_rect, src_rect, Color.WHITE, false, false)
         else:
                 draw_rect(Rect2(px, py, size, size), wall_color, true)
-        # TASK 72 (feedback utente "sfumature angolari inserite a caso"):
-        # bevel 3D SOLO sui lati esposti verso celle aperte. Prima ogni cella
-        # aveva highlight in alto-sinistra + ombra in basso-destra + outline
-        # su TUTTI i lati -> griglia di giunzioni dentro le masse di muro e
-        # angoli smussati apparentemente casuali. Ora: luce coerente, il
-        # bordo smussato appare solo dove c'e' davvero un cambio muro/pavimento.
-        var top_open: bool = not _is_solid_wall(c, r - 1)
-        var bottom_open: bool = not _is_solid_wall(c, r + 1)
-        var left_open: bool = not _is_solid_wall(c - 1, r)
-        var right_open: bool = not _is_solid_wall(c + 1, r)
-        # --- Highlight sui bordi esposti verso l'alto/sinistra (luce da NW) ---
-        if top_open:
-                draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
-        if left_open:
-                draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
-        # --- Ombra sui bordi esposti verso il basso/destra (profondita') ---
-        if bottom_open:
-                draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
-        if right_open:
-                draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
-        # --- Outline scuro SOLO sui lati esposti (continuita' del bordo muro) ---
-        if top_open:
-                draw_rect(Rect2(px, py, size, 1.0), Color(0.04, 0.04, 0.04, 1.0), true)
-        if bottom_open:
-                draw_rect(Rect2(px, py + size - 1.0, size, 1.0), Color(0.04, 0.04, 0.04, 1.0), true)
-        if left_open:
-                draw_rect(Rect2(px, py, 1.0, size), Color(0.04, 0.04, 0.04, 1.0), true)
-        if right_open:
-                draw_rect(Rect2(px + size - 1.0, py, 1.0, size), Color(0.04, 0.04, 0.04, 1.0), true)
+        # TASK 73: stile a BLOCCHI per-cellula (quello del "rettangolo rosso") —
+        # bevel completo su TUTTI i lati di OGNI blocco, indipendentemente dai
+        # vicini: highlight in alto/sinistra, ombra in basso/destra, outline
+        # perimetrale. La texture sottostante e' quella uniforme Task 72.
+        # --- Highlight in alto-sinistra (luce proveniente da nord-ovest) ---
+        draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
+        draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
+        # --- Ombra in basso-destra (profondita') ---
+        draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
+        draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
+        # --- Outline scuro perimetrale (bordo del blocco) ---
+        draw_rect(Rect2(px, py, size, size), Color(0.04, 0.04, 0.04, 1.0), false, 1.0)
         # --- Crepa rara (~10% delle celle muro, cellHash > 0.90) ---
         # Sottile rettangolo 1.2x6 ruotato nero semi-trasparente, 1:1 con C++.
         if _cell_hash(c + 99, r + 17) > 0.90:
