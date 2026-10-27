@@ -120,8 +120,9 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
         # --- TASK 57: texture roccia PixelLab (luminanza) + tint palette ---
         # La texture PNG (grayscale normalizzata full-range) fornisce la
-        # LUMINANZA per pixel; il colore resta quello della palette livello
-        # (stesso mapping 0.25x-1.45x del noise procedurale). Rollback:
+        # LUMINANZA per pixel; il colore resta quello della palette livello.
+        # TASK 78: mapping compresso 0.75x-1.30x (niente zone scure, vedi
+        # commento inline). Rollback:
         # GameConstants.WALL_ROCK_PIXELLAB_ENABLED = false.
         # NB: usa la STESSA var img dichiarata sopra (lezione 12.18: mai
         # ridichiarare var omonima nello stesso scope — parse error runtime).
@@ -132,7 +133,23 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
                                 for x in range(TEX_SIZE):
                                         var c57: Color = rock.get_pixel(x, y)
                                         var lum57: float = c57.r * 0.299 + c57.g * 0.587 + c57.b * 0.114
-                                        var t57: float = 0.25 + lum57 * 1.20
+                                        # TASK 78 (feedback utente: "deve essere come il
+                                        # rettangolo rosso senza zone scure, non come il
+                                        # rettangolo blue"): la mappa precedente
+                                        # t = 0.25 + lum*1.20 portava i contorni scuri
+                                        # dei massi PixelLab (lum 0.05-0.30) a t 0.31-0.61
+                                        # -> "zone scure" grandi macchie quasi nere che
+                                        # coprivano fino al 58% di alcune celle (finestre
+                                        # 64x64 della texture). Nuova curva C scelta su
+                                        # preview VLM 3 candidate (9/10 match con
+                                        # l'area target): floor 0.75 + pendenza 0.55 ->
+                                        # range t 0.75-1.30. I blob scuri collassano nel
+                                        # grigio medio (t 0.79-0.92 = indistinguibili
+                                        # dalla grana), il pattern organico resta
+                                        # leggibile SOLO via medi/alti (0.95-1.30).
+                                        # Numerica: %pixel<40 su griglia 6x6 passa da
+                                        # 40.1% a 0.0%, spread medie per-cella 17->8.
+                                        var t57: float = 0.75 + lum57 * 0.55
                                         img.set_pixel(x, y, Color(
                                                 clampf(base_color.r * t57, 0.0, 1.0),
                                                 clampf(base_color.g * t57, 0.0, 1.0),
