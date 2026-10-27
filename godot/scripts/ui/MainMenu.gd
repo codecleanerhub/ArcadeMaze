@@ -55,18 +55,28 @@ signal credits_requested()
 signal configure_joystick_requested(player: int)
 
 # --- Exposed theme colors (match the SFML palette) -------------------------
-# TASK 76 — palette SANGUE (coerente col logo del titolo e la scritta
-# "Loading..." gocciolante): selezionato = rosso sangue acceso con ombra
-# cupa, normale = osso invecchiato, bordi pannello = rosso essiccato.
-@export var color_title_gold:    Color = Color(0.755, 0.118, 0.090)   # 193,30,23 sangue acceso
-@export var color_title_shadow:  Color = Color(0.290, 0.020, 0.016)   # 74,5,4 sangue cupo
-@export var color_item_normal:   Color = Color(0.860, 0.810, 0.700)   # osso invecchiato
-@export var color_item_selected: Color = Color(0.960, 0.160, 0.110)   # 245,41,28 sangue vivo
-@export var color_footer_by:     Color = Color(0.870, 0.420, 0.300)   # carne rosata
-@export var color_footer_name:   Color = Color(0.961, 0.922, 0.784)   # 245,235,200 avorio
-@export var color_hint:          Color = Color(0.588, 0.588, 0.588)   # 150,150,150
-@export var color_parchment_bg:  Color = Color(0.070, 0.020, 0.016, 0.820)
-@export var color_parchment_border: Color = Color(0.545, 0.110, 0.078) # 139,28,20 rosso essiccato
+# TASK 79 — palette ORO MEDIEVALE con font "Arcadia Gothic" (100% originale,
+# disegnato glifo-per-glifo: NESSUNA licenza di terzi). La selezione non
+# cambia piu' il COLORE ma il FONT: bone (osso) <-> gold (oro con bande
+# chiaro/core/scuro bake-ate + outline scuro). I colori testo sono WHITE
+# perche' moltiplicano le palette bake-ate dei .fnt BMFont.
+@export var color_title_gold:    Color = Color(1.000, 0.840, 0.000)   # oro pieno (bordo slot + fallback)
+@export var color_title_shadow:  Color = Color(0.300, 0.200, 0.050)   # umber profondo
+@export var color_item_normal:   Color = Color(1.000, 1.000, 1.000)   # WHITE -> palette osso bake-ata
+@export var color_item_selected: Color = Color(1.000, 1.000, 1.000)   # WHITE -> palette oro bake-ata
+@export var color_footer_by:     Color = Color(1.000, 1.000, 1.000)   # font oro
+@export var color_footer_name:   Color = Color(1.000, 1.000, 1.000)   # font osso
+@export var color_hint:          Color = Color(1.000, 1.000, 1.000)   # font pietra
+@export var color_parchment_bg:  Color = Color(0.090, 0.070, 0.040, 0.850)   # pergamena umber
+@export var color_parchment_border: Color = Color(0.720, 0.550, 0.160) # oro antico
+
+# TASK 79 — font pixel "Arcadia Gothic": BMFont PRE-SCALATO (32px = 1:1,
+# zero blending; gold_48 per i titoli grandi). Caricati in _ready PRIMA
+# di _build_ui; se l'import manca si resta sul font del tema (zero crash).
+var _font_gold: Font = null
+var _font_bone: Font = null
+var _font_stone: Font = null
+var _font_title: Font = null
 
 # --- Internal state (mirrors Game::xxx fields) ----------------------------
 var _menu_item_index: int = 0
@@ -129,6 +139,11 @@ func _ready() -> void:
         set_anchors_preset(Control.PRESET_FULL_RECT)
         mouse_filter = Control.MOUSE_FILTER_STOP
         focus_mode = Control.FOCUS_ALL
+        # TASK 79: font Arcadia Gothic — PRIMA di _build_ui (le label li usano).
+        _font_gold = _load_gothic_font("res://assets/fonts/arcadia_gothic_gold_32.fnt")
+        _font_bone = _load_gothic_font("res://assets/fonts/arcadia_gothic_bone_32.fnt")
+        _font_stone = _load_gothic_font("res://assets/fonts/arcadia_gothic_stone_32.fnt")
+        _font_title = _load_gothic_font("res://assets/fonts/arcadia_gothic_gold_48.fnt")
         _build_ui()
         # FIX ("2 giocatori" che si resettava a 1 — bug utente 2P): il numero
         # di players era una variabile LOCALE (_num_players = 1 di default)
@@ -303,9 +318,13 @@ func _process(delta: float) -> void:
                 var lbl: Label = _item_labels[i]
                 if i == _menu_item_index:
                         lbl.add_theme_color_override("font_color", color_item_selected)
+                        if _font_gold != null:
+                                lbl.add_theme_font_override("font", _font_gold)
                         lbl.modulate = Color(1.0, 1.0, 1.0, 0.95 + 0.05 * sin(_menu_time * 8.0))
                 else:
                         lbl.add_theme_color_override("font_color", color_item_normal)
+                        if _font_bone != null:
+                                lbl.add_theme_font_override("font", _font_bone)
                         lbl.modulate = Color(1.0, 1.0, 1.0, 1.0)
         # Pulse the title (very subtle gold shimmer).
         if _title_label:
@@ -353,8 +372,8 @@ func _draw() -> void:
         # scende sotto le gocce animate; in OPTIONS torna al posto storico.
         var logo_mode: bool = _gothic_node != null and not _in_options
         var orn_y: float = 262.0 if logo_mode else 220.0
-        # TASK 76: ornamento in rosso essiccato (palette sangue).
-        var orn_gold: Color = Color(0.545, 0.110, 0.078)
+        # TASK 76: ornamento in oro antico (palette medievale TASK 79).
+        var orn_gold: Color = Color(0.72, 0.55, 0.16)
         # Center diamond
         var cx: float = size.x / 2.0
         var pts := PackedVector2Array([
@@ -407,9 +426,9 @@ func draw_selection_flame(canvas: CanvasItem) -> void:
         # Aura
         canvas.draw_circle(Vector2(fp.x, fp.y), 8.0,
                 Color(1.0, 0.706, 0.235, 0.314))
-        # Outer red flame
+        # Outer flame (TASK 79: torcia ambrata, non piu' sangue)
         canvas.draw_circle(Vector2(fp.x - flicker, fp.y + flicker * 0.3), 4.0 + flicker,
-                Color(0.863, 0.196, 0.078, 0.902))
+                Color(0.950, 0.550, 0.150, 0.902))
         # Inner yellow flame
         canvas.draw_circle(Vector2(fp.x - 2.5, fp.y + flicker * 0.2), 2.5,
                 Color(1.0, 0.863, 0.392, 0.941))
@@ -498,6 +517,8 @@ func _build_ui() -> void:
         _title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         _title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _title_label.add_theme_font_size_override("font_size", 48)
+        if _font_title != null:
+                _title_label.add_theme_font_override("font", _font_title)
         _title_label.add_theme_color_override("font_color", color_title_gold)
         _title_label.add_theme_color_override("font_shadow_color", color_title_shadow)
         _title_label.add_theme_constant_override("shadow_offset_x", -3)
@@ -562,11 +583,11 @@ func _build_ui() -> void:
                 var lbl := Label.new()
                 lbl.text = txt
                 lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-                lbl.add_theme_font_size_override("font_size", 24)
+                if _font_bone != null:
+                        lbl.add_theme_font_override("font", _font_bone)
+                # TASK 79: 32px = scala nativa del BMFont (1:1, pixel perfetto)
+                lbl.add_theme_font_size_override("font_size", 32)
                 lbl.add_theme_color_override("font_color", color_item_normal)
-                lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
-                lbl.add_theme_constant_override("shadow_offset_x", 1)
-                lbl.add_theme_constant_override("shadow_offset_y", 1)
                 _item_labels.append(lbl)
                 items_container.add_child(lbl)
 
@@ -600,14 +621,16 @@ func _build_ui() -> void:
         _footer_by.anchor_right = 0.5
         _footer_by.anchor_bottom = 1.0
         _footer_by.offset_left = -200.0
-        _footer_by.offset_top = -50.0
+        _footer_by.offset_top = -84.0
         _footer_by.offset_right = 200.0
-        _footer_by.offset_bottom = -30.0
+        _footer_by.offset_bottom = -46.0
         _footer_by.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _footer_by.grow_vertical = Control.GROW_DIRECTION_BOTH
         _footer_by.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         _footer_by.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-        _footer_by.add_theme_font_size_override("font_size", 18)
+        if _font_gold != null:
+                _footer_by.add_theme_font_override("font", _font_gold)
+        _footer_by.add_theme_font_size_override("font_size", 32)
         _footer_by.add_theme_color_override("font_color", color_footer_by)
         add_child(_footer_by)
 
@@ -619,14 +642,16 @@ func _build_ui() -> void:
         _footer_name.anchor_right = 0.5
         _footer_name.anchor_bottom = 1.0
         _footer_name.offset_left = -200.0
-        _footer_name.offset_top = -30.0
+        _footer_name.offset_top = -46.0
         _footer_name.offset_right = 200.0
-        _footer_name.offset_bottom = -10.0
+        _footer_name.offset_bottom = -8.0
         _footer_name.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _footer_name.grow_vertical = Control.GROW_DIRECTION_BOTH
         _footer_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         _footer_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-        _footer_name.add_theme_font_size_override("font_size", 18)
+        if _font_bone != null:
+                _footer_name.add_theme_font_override("font", _font_bone)
+        _footer_name.add_theme_font_size_override("font_size", 32)
         _footer_name.add_theme_color_override("font_color", color_footer_name)
         add_child(_footer_name)
 
@@ -637,15 +662,17 @@ func _build_ui() -> void:
         _hint_label.anchor_top = 1.0
         _hint_label.anchor_right = 0.5
         _hint_label.anchor_bottom = 1.0
-        _hint_label.offset_left = -300.0
-        _hint_label.offset_top = -75.0
-        _hint_label.offset_right = 300.0
-        _hint_label.offset_bottom = -55.0
+        _hint_label.offset_left = -500.0
+        _hint_label.offset_top = -128.0
+        _hint_label.offset_right = 500.0
+        _hint_label.offset_bottom = -86.0
         _hint_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
         _hint_label.grow_vertical = Control.GROW_DIRECTION_BOTH
         _hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         _hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-        _hint_label.add_theme_font_size_override("font_size", 16)
+        if _font_stone != null:
+                _hint_label.add_theme_font_override("font", _font_stone)
+        _hint_label.add_theme_font_size_override("font_size", 32)
         _hint_label.add_theme_color_override("font_color", color_hint)
         add_child(_hint_label)
 
@@ -724,7 +751,7 @@ class GothicDrawer extends Node2D:
                         var oy: float = 95.0 - oh * 0.5
                         var oglow: float = 0.10 + 0.05 * sin(t * 1.7)
                         draw_circle(Vector2(vp.x * 0.5, 95.0), maxf(ow, oh) * 0.62,
-                                        Color(0.42, 0.04, 0.05, oglow))
+                                        Color(0.45, 0.33, 0.08, oglow))
                         draw_texture_rect(options_logo, Rect2(ox, oy, ow, oh), false,
                                         Color(1, 1, 1, 0.93 + 0.07 * sin(t * 1.9)))
                         return
@@ -737,12 +764,12 @@ class GothicDrawer extends Node2D:
                 var lh: float = lw * float(logo.get_height()) / maxf(logo.get_width(), 1.0)
                 var lx: float = vp.x * 0.5 - lw * 0.5
                 var ly: float = 30.0
-                # alone rosso cupo dietro il logo (pulsazione lenta)
+                # alone oro caldo dietro il logo (pulsazione lenta)
                 var glow_a: float = 0.10 + 0.05 * sin(t * 1.7)
                 draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
-                                maxf(lw, lh) * 0.62, Color(0.42, 0.04, 0.05, glow_a))
+                                maxf(lw, lh) * 0.62, Color(0.45, 0.33, 0.08, glow_a))
                 draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
-                                maxf(lw, lh) * 0.42, Color(0.50, 0.05, 0.05, glow_a * 1.4))
+                                maxf(lw, lh) * 0.42, Color(0.55, 0.42, 0.10, glow_a * 1.4))
                 # logo con shimmer sottile (mai blink: deve restare leggibile)
                 draw_texture_rect(logo, Rect2(lx, ly, lw, lh), false,
                                 Color(1.0, 1.0, 1.0, 0.93 + 0.07 * sin(t * 1.9)))
@@ -810,6 +837,16 @@ func _load_menu_png(path: String) -> Texture2D:
         if img.load(abs_path) != OK:
                 return null
         return ImageTexture.create_from_image(img)
+
+
+## TASK 79 — caricamento font "Arcadia Gothic" con fallback silenzioso: se
+## l'import non e' stato rigenerato load() torna null e le label restano sul
+## font del tema (zero crash, aspetto semplicemente meno gotico).
+func _load_gothic_font(path: String) -> Font:
+        var f: Font = load(path)
+        if f == null:
+                push_warning("MainMenu: font Arcadia Gothic non trovato: " + path)
+        return f
 
 
 # Builds a gold-outlined stylebox for highlighting the selected character slot.

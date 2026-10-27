@@ -1,6 +1,14 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
+
+; TASK 79 — scena con font "Arcadia Gothic" (BMFont pre-scalati, palette
+; medievale ORO al posto del sangue): Title = gold_48 48px, PlayerLabel e
+; StepLabel = bone_32 32px, HintLabel = stone_32 32px. L'outline scuro dei
+; glifi e' bake-ato: le ombre delle label sono disattivate.
 
 [ext_resource type="Script" path="res://scripts/ui/ConfigJoy.gd" id="1_cfg"]
+[ext_resource type="FontFile" uid="uid://yxapisshcd6h" path="res://assets/fonts/arcadia_gothic_gold_48.fnt" id="2_f48"]
+[ext_resource type="FontFile" uid="uid://dt450crrob8x1" path="res://assets/fonts/arcadia_gothic_bone_32.fnt" id="3_b32"]
+[ext_resource type="FontFile" uid="uid://bl7sdbu4kpv72" path="res://assets/fonts/arcadia_gothic_stone_32.fnt" id="4_s32"]
 
 [node name="ConfigJoy" type="Control"]
 anchors_preset = 15
@@ -19,12 +27,13 @@ offset_right = 600.0
 offset_top = 120.0
 offset_bottom = 220.0
 grow_horizontal = 2
-theme_override_colors/font_color = Color(0.755, 0.118, 0.09, 1)
-theme_override_colors/font_shadow_color = Color(0.29, 0.02, 0.016, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0.3, 0.2, 0.05, 1)
 theme_override_constants/shadow_offset_x = -3
 theme_override_constants/shadow_offset_y = -3
-theme_override_constants/shadow_outline_size = 5
-theme_override_font_sizes/font_size = 64
+theme_override_constants/shadow_outline_size = 0
+theme_override_fonts/font = ExtResource("2_f48")
+theme_override_font_sizes/font_size = 48
 text = "CONFIGURE JOYSTICK"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -39,11 +48,12 @@ offset_top = 280.0
 offset_bottom = 360.0
 grow_horizontal = 2
 theme_override_colors/font_color = Color(0.706, 0.847, 1, 1)
-theme_override_colors/font_shadow_color = Color(0.1, 0.2, 0.4, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0)
 theme_override_constants/shadow_offset_x = -2
 theme_override_constants/shadow_offset_y = -2
-theme_override_constants/shadow_outline_size = 4
-theme_override_font_sizes/font_size = 48
+theme_override_constants/shadow_outline_size = 0
+theme_override_fonts/font = ExtResource("3_b32")
+theme_override_font_sizes/font_size = 32
 text = "PLAYER 1"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -57,12 +67,13 @@ offset_right = 600.0
 offset_top = 440.0
 offset_bottom = 560.0
 grow_horizontal = 2
-theme_override_colors/font_color = Color(0.86, 0.81, 0.7, 1)
-theme_override_colors/font_shadow_color = Color(0.15, 0.03, 0.02, 1)
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0)
 theme_override_constants/shadow_offset_x = -2
 theme_override_constants/shadow_offset_y = -2
-theme_override_constants/shadow_outline_size = 4
-theme_override_font_sizes/font_size = 56
+theme_override_constants/shadow_outline_size = 0
+theme_override_fonts/font = ExtResource("3_b32")
+theme_override_font_sizes/font_size = 32
 text = "PRESS JUMP BUTTON"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -78,8 +89,9 @@ offset_top = -120.0
 offset_bottom = -40.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_colors/font_color = Color(0.588, 0.588, 0.588, 1)
-theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("4_s32")
+theme_override_font_sizes/font_size = 32
 text = "ESC TO CANCEL"
 horizontal_alignment = 1
 vertical_alignment = 1

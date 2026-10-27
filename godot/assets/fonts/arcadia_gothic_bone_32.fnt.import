@@ -1,0 +1,17 @@
+[remap]
+
+importer="font_data_bmfont"
+type="FontFile"
+uid="uid://dt450crrob8x1"
+path="res://.godot/imported/arcadia_gothic_bone_32.fnt-79336b8d45ecef0ef2de96364727f524.fontdata"
+
+[deps]
+
+source_file="res://assets/fonts/arcadia_gothic_bone_32.fnt"
+dest_files=["res://.godot/imported/arcadia_gothic_bone_32.fnt-79336b8d45ecef0ef2de96364727f524.fontdata"]
+
+[params]
+
+fallbacks=[]
+compress=true
+scaling_mode=2

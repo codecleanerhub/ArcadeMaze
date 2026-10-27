@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cq79fontshot"]
+
+[ext_resource type="Script" path="res://tests/shot_task79_font.gd" id="1"]
+
+[node name="ShotTask79Font" type="Node2D"]
+script = ExtResource("1")

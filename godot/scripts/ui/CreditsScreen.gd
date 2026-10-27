@@ -38,15 +38,22 @@ extends Control
 signal back_to_menu_requested()
 
 # --- Colors (mirror the SFML palette in drawCredits) ----------------------
-# TASK 76 — palette sangue: le sezioni dei credits in rosso sangue
-# (coerente col titolo del gioco e la scritta Loading).
-@export var color_section:  Color = Color(0.755, 0.118, 0.090)   # sangue acceso
-@export var color_role:     Color = Color(0.706, 0.706, 0.706)   # 180,180,180
-@export var color_name:     Color = Color(0.961, 0.922, 0.784)    # 245,235,200
-@export var color_thank:    Color = Color(0.755, 0.118, 0.090)
-@export var color_publisher: Color = Color(0.784, 0.784, 0.784)
-@export var color_hint:     Color = Color(0.588, 0.588, 0.588)
+# TASK 79 — palette ORO MEDIEVALE con font "Arcadia Gothic" (originale):
+# sezioni = font oro, ruoli = font pietra, nomi/publisher = font osso,
+# hint = font pietra. I colori WHITE mostrano le palette bake-ate dei .fnt.
+@export var color_section:  Color = Color(1.0, 1.0, 1.0)   # WHITE -> font oro
+@export var color_role:     Color = Color(1.0, 1.0, 1.0)   # WHITE -> font pietra
+@export var color_name:     Color = Color(1.0, 1.0, 1.0)   # WHITE -> font osso
+@export var color_thank:    Color = Color(1.0, 1.0, 1.0)   # WHITE -> font oro 48
+@export var color_publisher: Color = Color(1.0, 1.0, 1.0)  # WHITE -> font osso
+@export var color_hint:     Color = Color(1.0, 1.0, 1.0)   # WHITE -> font pietra
 @export var color_bg:       Color = Color(0.020, 0.020, 0.039)    # 5,5,10
+
+# TASK 79 — font BMFont pre-scalati (32 = 1:1; gold_48 per THANK YOU).
+var _font_gold: Font = null
+var _font_bone: Font = null
+var _font_stone: Font = null
+var _font_title48: Font = null
 
 # --- Background (stile delle altre schermate: cover-fit + overlay) ---------
 var _bg_texture: Texture2D = null
@@ -54,8 +61,9 @@ var _bg_texture: Texture2D = null
 # --- Scrolling constants --------------------------------------------------
 # Mirror: "Scroll speed: 30px/sec", "0.5px per frame at 60fps".
 const SCROLL_SPEED_PX_PER_SEC: float = 30.0
-# Mirror: each entry occupies ~40px vertically.
-const ENTRY_HEIGHT_PX: float = 40.0
+# TASK 79: ruolo (pietra 32) + nome (osso 32) impilati: passo 76px
+# (era 40 con ruoli/nomi a 18px col font del tema).
+const ENTRY_HEIGHT_PX: float = 76.0
 # Mirror: after scrolling we display "Thank you!" for 5 seconds.
 const END_HOLD_MS: float = 5000.0
 
@@ -73,6 +81,11 @@ func _ready() -> void:
         set_anchors_preset(Control.PRESET_FULL_RECT)
         mouse_filter = Control.MOUSE_FILTER_STOP
         focus_mode = Control.FOCUS_ALL
+        # TASK 79: font Arcadia Gothic (fallback silenzioso sul font tema).
+        _font_gold = load("res://assets/fonts/arcadia_gothic_gold_32.fnt")
+        _font_bone = load("res://assets/fonts/arcadia_gothic_bone_32.fnt")
+        _font_stone = load("res://assets/fonts/arcadia_gothic_stone_32.fnt")
+        _font_title48 = load("res://assets/fonts/arcadia_gothic_gold_48.fnt")
         # Build the credits data set (mirror of Game::startCredits).
         _build_entries()
         # Reset scroll state.
@@ -285,39 +298,47 @@ func _draw() -> void:
         if font == null:
                 font = ThemeDB.fallback_font
         var cx: float = size.x / 2.0
+        # TASK 79: font per elemento (gold = sezioni/thank, stone = ruoli/hint,
+        # bone = nomi/publisher); fallback sul font del tema se manca l'import.
+        var f_head: Font = _font_gold if _font_gold != null else font
+        var f_dim: Font = _font_stone if _font_stone != null else font
+        var f_row: Font = _font_bone if _font_bone != null else font
+        var f_big: Font = _font_title48 if _font_title48 != null else font
 
         if not _finished:
                 # Scroll entries from bottom to top.
                 var start_y: float = size.y - _scroll_y
                 var y: float = start_y
                 for entry in _entries:
-                        if y > -60.0 and y < size.y + 60.0:
+                        if y > -90.0 and y < size.y + 90.0:
                                 var role: String = entry.role
                                 var name: String = entry.name
                                 if role.is_empty() and name.is_empty():
                                         pass  # blank line
                                 elif name.is_empty():
-                                        # Section header (e.g. "PROGRAMMING")
-                                        _draw_outlined_string(font, Vector2(cx, y), role,
-                                        28, color_section, true)
+                                        # Section header (font ORO 32: l'outline
+                                        # scuro e' gia' bake-ato nel BMFont —
+                                        # niente doppio contorno nero)
+                                        _draw_plain_string(f_head, Vector2(cx, y), role,
+                                        32, color_section, true)
                                 else:
-                                        # Role + name pair
-                                        _draw_plain_string(font, Vector2(cx, y), role,
-                                        18, color_role, true)
-                                        _draw_outlined_string(font, Vector2(cx, y + 18), name,
-                                        18, color_name, true)
+                                        # Role (pietra) + name (osso) impilati
+                                        _draw_plain_string(f_dim, Vector2(cx, y), role,
+                                        32, color_role, true)
+                                        _draw_plain_string(f_row, Vector2(cx, y + 40), name,
+                                        32, color_name, true)
                         y += ENTRY_HEIGHT_PX
         else:
-                # Pulsing "THANK YOU FOR PLAYING!" centered.
+                # Pulsing "THANK YOU FOR PLAYING!" centered (font oro 48).
                 var pulse: float = (sin(_end_timer_ms * 0.003) + 1.0) * 0.5
                 var alpha: float = 100.0 + pulse * 155.0
                 var thank_col: Color = Color(color_thank.r, color_thank.g, color_thank.b, alpha / 255.0)
-                _draw_outlined_string(font, Vector2(cx, size.y / 2.0 - 20.0),
-                        I18n.t("cr.thank_you"), 40, thank_col, true)
-                _draw_plain_string(font, Vector2(cx, size.y / 2.0 + 60.0),
-                        "Marled Software", 24, color_publisher, true)
-                _draw_plain_string(font, Vector2(cx, size.y - 40.0),
-                        I18n.t("cr.press_esc"), 16, color_hint, true)
+                _draw_plain_string(f_big, Vector2(cx, size.y / 2.0 - 20.0),
+                        I18n.t("cr.thank_you"), 48, thank_col, true)
+                _draw_plain_string(f_row, Vector2(cx, size.y / 2.0 + 60.0),
+                        "Marled Software", 32, color_publisher, true)
+                _draw_plain_string(f_dim, Vector2(cx, size.y - 48.0),
+                        I18n.t("cr.press_esc"), 32, color_hint, true)
 
 
 # ----------------------------------------------------------------------------

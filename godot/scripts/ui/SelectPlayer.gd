@@ -46,6 +46,12 @@ const COL_METAL_DARK := Color(0.188, 0.157, 0.141)
 const COL_GOLD := Color(0.863, 0.627, 0.157)
 const COL_BLACK := Color(0.047, 0.047, 0.047)
 
+# TASK 79 — font Arcadia Gothic (BMFont pre-scalati, palette medievale oro).
+var _font_title48: Font = null
+var _font_gold: Font = null
+var _font_bone: Font = null
+var _font_stone: Font = null
+
 # State
 var current_index: int = 0
 var player_num: int = 1
@@ -66,6 +72,11 @@ func _ready() -> void:
         set_anchors_preset(Control.PRESET_FULL_RECT)
         mouse_filter = Control.MOUSE_FILTER_STOP
         focus_mode = Control.FOCUS_ALL
+        # TASK 79: font Arcadia Gothic (fallback silenzioso sul font tema).
+        _font_title48 = load("res://assets/fonts/arcadia_gothic_gold_48.fnt")
+        _font_gold = load("res://assets/fonts/arcadia_gothic_gold_32.fnt")
+        _font_bone = load("res://assets/fonts/arcadia_gothic_bone_32.fnt")
+        _font_stone = load("res://assets/fonts/arcadia_gothic_stone_32.fnt")
         # Initialize wheel index from GameManager
         if GameManager:
                 wheel_index = GameManager.player1_character % CHARACTER_COUNT
@@ -240,18 +251,18 @@ func _draw() -> void:
         # Dark overlay so the wheel and text stand out against the busy art
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.35), true)
 
-        # --- Titolo (TASK 76: palette sangue come titolo/logo e Loading) ---
+        # --- Titolo (TASK 79: font oro Arcadia Gothic 48, palette medievale) ---
         var title: String = I18n.t("select.title") % player_num
-        _draw_text_centered(title, cx - 4, 96, 48, Color(0.29, 0.02, 0.016))   # shadow sangue cupo
-        _draw_text_centered(title, cx, 100, 48, Color(0.755, 0.118, 0.09))     # sangue acceso
+        _draw_text_centered(title, cx - 4, 92, 48, Color(0.30, 0.20, 0.05), _font_title48)   # ombra umber
+        _draw_text_centered(title, cx, 96, 48, Color.WHITE, _font_title48)                    # oro bake-ato
 
         # --- Hint ---
         var player_color: Color = Color(1.0, 0.843, 0.0) if player_num == 1 else Color(0.471, 0.706, 1.0)
-        _draw_text_centered(I18n.t("select.hint"), cx, 160, 20, Color(0.588, 0.588, 0.588))
+        _draw_text_centered(I18n.t("select.hint"), cx, 215, 32, Color.WHITE, _font_stone)
         var char_name: String = CHARACTER_NAMES[wheel_index]
         if I18n and wheel_index < CHARACTER_NAME_KEYS.size():
                 char_name = I18n.t(CHARACTER_NAME_KEYS[wheel_index])
-        _draw_text_centered(char_name, cx, 185, 28, player_color)
+        _draw_text_centered(char_name, cx, 270, 32, player_color, _font_bone)
 
         # --- Parametri ruota ---
         # FIX (wheel radius aumentato per sprite più grandi 128px)
@@ -365,16 +376,22 @@ func _draw() -> void:
                         draw_circle(Vector2(p.x, p.y - 20),
                                 5.0 * p.scale, Color(1.0, 0.84, 0.0, 0.35 * glow))
 
-        # --- 8. Nome personaggio selezionato (in basso, palette sangue) ---
+        # --- 8. Nome personaggio selezionato (in basso, font oro medievale) ---
         _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, vp_size.y - 60, 32,
-                Color(0.96, 0.16, 0.11))
+                Color.WHITE, _font_gold)
 
 
 # Draw text centered at (x, y) with given size and color.
-func _draw_text_centered(text: String, x: float, y: float, font_size: int, col: Color) -> void:
-        var font := get_theme_default_font()
-        draw_string(font, Vector2(x - 200, y + font_size), text,
-                HORIZONTAL_ALIGNMENT_CENTER, 400, font_size, col)
+# TASK 79: font opzionale (default = font del tema, retrocompatibile).
+# FIX: centramento MISURATO su get_string_size con width -1 — il vecchio box
+# fisso di 400px mandava a capo il titolo a 48px ("SELECT P" / "LAYER 1").
+func _draw_text_centered(text: String, x: float, y: float, font_size: int, col: Color,
+                font: Font = null) -> void:
+        var f: Font = font if font != null else get_theme_default_font()
+        var w: float = f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+                        font_size).x
+        draw_string(f, Vector2(x - w * 0.5, y + font_size), text,
+                HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, col)
 
 
 # Draw filled ellipse (circle scaled vertically).
