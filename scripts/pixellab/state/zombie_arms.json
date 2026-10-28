@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/zombie_arms/base.png",
+  "anim_job_id": "d79f6eed-8896-4c95-ac15-91b4d48c9981",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/zombie_arms_sheet.png"
+}

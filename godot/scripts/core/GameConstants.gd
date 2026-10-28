@@ -1376,6 +1376,95 @@ static var WALL_ROCK_PIXELLAB_ENABLED: bool = true
 ## Rollback: false = solo le 6 PointLight2D delle torce (look pre-TASK 80).
 static var LANTERN_LIGHT_ENABLED: bool = true
 
+# ============================================================================
+# TASK 81 — FANTASMI LENZUOLO + CELLE ZOMBIE (nuove meccaniche labirinto)
+# ============================================================================
+## TASK 81.1 — fantasmi: lenzuoli trasparenti bianco/rosso/verde che
+## emergono da un muro, attraversano il labirinto a mezz'aria e si
+## compenetrano nel lato opposto. IMMORTALI e INNOCUI: il player li
+## attraversa senza danno, i proiettili passano attraverso (zero
+## interazioni: sono pura atmosfera). Grafica PixelLab
+## (env/ghost_sheet_{white,red,green}.png, 4 frame).
+## Rollback: false = niente fantasmi (MazeGhosts.gd si spegne).
+static var GHOSTS_ENABLED: bool = true
+## Quanti fantasmi popolano ogni livello (bianco, rosso, verde + 1 random
+## tra i tre colori).
+const GHOST_POOL_SIZE: int = 4
+## Apparizioni per fantasma: 3 respawn = 3 MURI DIVERSI, poi non appare
+## piu' per tutto il livello (richiesta utente).
+const GHOST_MAX_APPEARANCES: int = 3
+## Cap fisso di fantasmi simultanei su schermo ("fino a 4").
+const GHOST_MAX_SIMULTANEOUS: int = 4
+## Velocita' di attraversamento (px/s): ~1 cella al secondo.
+const GHOST_SPEED_PX_S: float = 72.0
+## Lunghezza dei muri attraversabili: segmenti WALL di 2..8 celle (i muri
+## di bordo, lunghi 15-30 celle, restano fuori: attraversarli richiederebbe
+## 15-30s a vuoto).
+const GHOST_RUN_MIN_CELLS: int = 2
+const GHOST_RUN_MAX_CELLS: int = 8
+## Intervallo tra le apparizioni di uno stesso fantasma (al livello 1);
+## si comprime fino a GHOST_SPAWN_FAST_SCALE dal livello 12 in poi.
+const GHOST_SPAWN_MIN_MS: float = 4000.0
+const GHOST_SPAWN_MAX_MS: float = 9000.0
+const GHOST_SPAWN_FAST_SCALE: float = 0.55
+const GHOST_FIRST_SPAWN_MIN_MS: float = 1500.0
+const GHOST_FIRST_SPAWN_MAX_MS: float = 4000.0
+
+
+## TASK 81: intervallo (ms) tra due apparizioni dello STESSO fantasma al
+## livello dato. L1: 4-9s; dal L12 in poi resta ~2.2-5s (il ritmo sale ma
+## il cap simultaneo resta 4).
+static func ghost_spawn_interval_ms(level: int) -> float:
+        var k: float = clampf(float(level - 1) / 11.0, 0.0, 1.0)
+        var sc: float = lerpf(1.0, GHOST_SPAWN_FAST_SCALE, k)
+        return randf_range(GHOST_SPAWN_MIN_MS * sc, GHOST_SPAWN_MAX_MS * sc)
+
+
+## TASK 81: quanti fantasmi SONO ammessi su schermo quando un nuovo spawn
+## bussa. "La probabilita' che siano 4 contemporaneamente aumenta col
+## livello" (richiesta utente): roll = randf()*randf() ha distribuzione
+## concentrata verso il basso, quindi a livelli bassi il risultato resta
+## quasi sempre 1 (2 raro); la finestra del roll cresce di 0.5 per livello
+## e al L7+ il valore 4 diventa raggiungibile, sempre piu' spesso salendo.
+## L1: 1-2 (2 ~16%) | L4: 1-3 | L7+: 1-4 | L12: 4 spesso (~30%).
+static func ghost_allowed_simultaneous(level: int) -> int:
+        var roll: float = randf() * randf()
+        return clampi(1 + int(roll * (1.2 + level * 0.5)), 1, GHOST_MAX_SIMULTANEOUS)
+
+## TASK 81.2 — celle zombie: blocchi muro con finestra inferriata e volto
+## zombie dietro le sbarre; a intervalli casuali le BRACCIA si protendono
+## nel corridoio davanti alla cella per ZOMBIE_ARM_OUT_MS, poi si ritraggono.
+## Le braccia riempiono l'intera cella corridoio: il player NON puo'
+## schivarle, puo' solo aspettare la ritrazione (richiesta utente) — oppure
+## passarci sopra pagando il danno. Grafica PixelLab (env/zombie_cell.png +
+## env/zombie_arms_sheet.png).
+## Rollback: false = niente celle zombie (ZombieCells.gd si spegne).
+static var ZOMBIE_CELLS_ENABLED: bool = true
+## Numero di celle per livello: 1 (L1-3), 2 (L4-6), 3 (L7+, il massimo).
+static func zombie_cells_for_level(level: int) -> int:
+        return clampi(1 + int((level - 1) / 3.0), 1, 3)
+
+## Distanza minima (Manhattan celle) tra due celle zombie: "ben distanziate".
+const ZOMBIE_CELLS_MIN_DIST: int = 8
+## Distanza minima (Manhattan) dallo spawn del player (1,1): niente braccia
+## in faccia all'avvio del livello.
+const ZOMBIE_CELLS_MIN_DIST_SPAWN: int = 4
+## Quanto restano fuori le braccia (richiesta utente: 5 secondi).
+const ZOMBIE_ARM_OUT_MS: float = 5000.0
+## Durata estensione/ritrazione delle braccia (animazione slide).
+const ZOMBIE_EMERGE_MS: float = 450.0
+## Danno per tocco: 20% dell'energia massima (richiesta utente), arrotondato
+## con minimo 1 (pattern HAZARD_TRAP_DAMAGE_PCT: calcolato su max_energy).
+const ZOMBIE_ARM_DAMAGE_PCT: float = 0.20
+## Intervallo casuale tra un'estensione e la successiva (al livello 1; si
+## comprime leggermente col livello fino al 70%).
+const ZOMBIE_OUT_MIN_MS: float = 4000.0
+const ZOMBIE_OUT_MAX_MS: float = 10000.0
+const ZOMBIE_OUT_FAST_SCALE: float = 0.70
+## Prima estensione dopo l'avvio del livello: 3-8s.
+const ZOMBIE_FIRST_OUT_MIN_MS: float = 3000.0
+const ZOMBIE_FIRST_OUT_MAX_MS: float = 8000.0
+
 ## Punti per ogni nemico congelato (come le altre pergamene evento).
 const SCROLL_FREEZE_POINTS: int = 5000
 

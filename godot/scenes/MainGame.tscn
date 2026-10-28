@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/core/MainGameController.gd" id="0_controller"]
 [ext_resource type="Script" path="res://scripts/core/Maze.gd" id="1_maze"]
@@ -6,12 +6,17 @@
 [ext_resource type="Script" path="res://scripts/ui/HUD.gd" id="3_hud"]
 [ext_resource type="Script" path="res://scripts/enemies/EnemySpawner.gd" id="4_spawner"]
 [ext_resource type="Script" path="res://scripts/entities/MazeHazards.gd" id="5_hazards"]
+[ext_resource type="Script" path="res://scripts/entities/ZombieCells.gd" id="6_zcells"]
+[ext_resource type="Script" path="res://scripts/entities/MazeGhosts.gd" id="7_ghosts"]
 
 [node name="MainGame" type="Node2D"]
 script = ExtResource("0_controller")
 
 [node name="Maze" type="Node2D" parent="."]
 script = ExtResource("1_maze")
+
+[node name="ZombieCells" type="Node2D" parent="."]
+script = ExtResource("6_zcells")
 
 [node name="Hazards" type="Node2D" parent="."]
 script = ExtResource("5_hazards")
@@ -35,6 +40,9 @@ script = ExtResource("4_spawner")
 [node name="EnemyProjectiles" type="Node2D" parent="."]
 
 [node name="Collectibles" type="Node2D" parent="."]
+
+[node name="Ghosts" type="Node2D" parent="."]
+script = ExtResource("7_ghosts")
 
 [node name="HUDLayer" type="CanvasLayer" parent="."]
 layer = 10

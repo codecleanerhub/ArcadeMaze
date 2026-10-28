@@ -53,6 +53,16 @@ const FF_HIT_RADIUS_SQ: float = 625.0
 ## ganasce, voragini e muri di roccia. Inserito in MainGame.tscn tra Maze
 ## e Player (draw order: pavimento -> hazard -> entita').
 @onready var hazards: Node2D = $Hazards
+
+## TASK 81.1 — fantasmi lenzuolo: nodo dopo Collectibles in MainGame.tscn
+## (i lenzuoli fluttuano SOPRA muri/player/nemici: "a mezz'aria").
+@onready var maze_ghosts: Node2D = $Ghosts
+
+## TASK 81.2 — celle zombie: nodo tra Maze e Hazards (il blocco con
+## inferriata copre la texture roccia della sua cella muro; le braccia
+## scivolano fuori dalla facciata e stanno SOTTO le entita').
+@onready var zombie_cells: Node2D = $ZombieCells
+
 @onready var hud: Control = $HUDLayer/HUD
 
 # --- Game state ---
@@ -1391,6 +1401,14 @@ func _update_playing(delta_ms: float) -> void:
         # Internamente: telegrafo/apertura voragini, ciclo dei muri di
         # roccia, cattura/mash delle ganasce, rallentamento sabbie.
         hazards.update_hazards(delta_ms, maze)
+
+        # TASK 81.2 — CELLE ZOMBIE: macchina a fasi (idle -> braccia fuori
+        # 5s -> ritrazione) e danno 20% energia per tocco sui player VIVI
+        # che attraversano la cella corridoio davanti alla facciata.
+        zombie_cells.update_cells(delta_ms, _alive_players())
+        # TASK 81.1 — FANTASMI LENZUOLO: scheduler delle apparizioni e
+        # attraversamento dei muri (nessuna interazione: pura atmosfera).
+        maze_ghosts.update_ghosts(delta_ms)
 
         # (1d) TASK 32 — NUBE DI PIPISTRELLI: spawn programmato, caccia,
         # morsi e abbattimento (lo sciame vola sopra i muri: niente
@@ -4186,6 +4204,14 @@ func start_level(lvl: int) -> void:
         # stati freschi (le voragini ri-partono dal telegrafo). generate()
         # ripulisce prima tutto (sprite + registro dynamic_walls del Maze).
         hazards.generate(current_level, maze, self)
+        # TASK 81.2 — CELLE ZOMBIE: dopo hazards.generate (le lastre mobili
+        # del Task 30 sono gia' in maze.dynamic_walls e vengono escluse dal
+        # placement). RNG seedato sul livello: al continue le celle tornano
+        # negli stessi punti della griglia ripristinata (pattern hazards).
+        zombie_cells.generate(current_level, maze)
+        # TASK 81.1 — FANTASMI LENZUOLO: pool 4 (bianco/rosso/verde+random),
+        # 3 apparizioni ciascuno su muri diversi. Orari seedati per livello.
+        maze_ghosts.generate(current_level, maze)
         # TASK 32 — NUBE DI PIPISTRELLI: programma gli eventi del livello
         # (1 dal livello 5, 2 dal 31) e rimuove l'eventuale sciame del
         # livello precedente.
