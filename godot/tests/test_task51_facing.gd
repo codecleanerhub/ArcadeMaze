@@ -99,12 +99,16 @@ func _test_f1_enemy_facing() -> void:
         g.queue_free()
 
         # SpriteManager: helper meta
+        # TASK 82b (audit facing A/B mirror): coerenza ora inclusiva dei NUOVI
+        # flag — m012 DAMNED_KNIGHT (verita' di fondo dallo screenshot utente)
+        # e miniboss_01 (A/B LEFT stabile x2; metodo validato 8/9 ground truth).
         if SpriteManager.meta_faces_left("monster_010") \
                         and SpriteManager.meta_faces_left("miniboss_08") \
                         and SpriteManager.meta_faces_left("miniboss_18") \
                         and not SpriteManager.meta_faces_left("monster_001") \
-                        and not SpriteManager.meta_faces_left("miniboss_01"):
-                _ok("F1: SpriteManager.meta_faces_left coerente su 5 id")
+                        and SpriteManager.meta_faces_left("monster_012") \
+                        and SpriteManager.meta_faces_left("miniboss_01"):
+                _ok("F1: SpriteManager.meta_faces_left coerente su 6 id")
         else:
                 _fail("F1: meta_faces_left incoerente")
 
@@ -126,10 +130,12 @@ func _test_f1_miniboss_facing() -> void:
         var mb2 := MiniBossScript.new()
         add_child(mb2)
         mb2.setup(0, 1, 6, 6)
-        if not mb2._faces_left_native:
-                _ok("F1: miniboss_01 facesLeft=false (default)")
+        # TASK 82b (audit facing): miniboss_01 ora facesLeft=true (A/B mirror
+        # LEFT stabile x2; prima dell'audit il default era false).
+        if mb2._faces_left_native:
+                _ok("F1: miniboss_01 facesLeft=true (audit task82b)")
         else:
-                _fail("F1: miniboss_01 facesLeft=true inatteso")
+                _fail("F1: miniboss_01 facesLeft=false inatteso (audit task82b)")
         mb2.queue_free()
 
 
