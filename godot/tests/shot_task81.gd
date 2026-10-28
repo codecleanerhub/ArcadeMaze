@@ -92,3 +92,39 @@ func _capture(fname: String) -> void:
                                 main.zombie_cells.cell_phase(p.x, p.y),
                                 " is_wall=", main.maze.is_wall(p.x, p.y))
         print("[SHOT] dynamic_walls: ", main.maze.dynamic_walls.keys())
+        # TASK 81b: geometria esatta per la verifica pixel esterna
+        # (cells+facciate+phase, wall_color del livello, 3 muri di
+        # riferimento lontani dalle celle) — JSON su una riga CAP81.
+        var cells_json: Array = []
+        for p in main.zombie_cells.cell_positions():
+                var d: Vector2i = main.zombie_cells.cell_facing(p.x, p.y)
+                cells_json.append({"c": p.x, "r": p.y, "dir": [d.x, d.y],
+                                "phase": main.zombie_cells.cell_phase(p.x, p.y)})
+        var refs: Array = []
+        var done: bool = false
+        for r in range(2, C.MAZE_ROWS - 2):
+                if done:
+                        break
+                for c in range(2, C.MAZE_COLS - 2):
+                        if not main.maze.is_wall(c, r):
+                                continue
+                        if main.maze.dynamic_walls.has("%d,%d" % [c, r]):
+                                continue
+                        var far: bool = true
+                        for p in main.zombie_cells.cell_positions():
+                                if absi(c - p.x) + absi(r - p.y) < 4:
+                                        far = false
+                                        break
+                        if far:
+                                refs.append([c, r])
+                                if refs.size() >= 3:
+                                        done = true
+                                        break
+        var wc: Color = main.maze.wall_color
+        print("CAP81 ", JSON.stringify({
+                "file": fname,
+                "level": GameManager.current_level,
+                "wall_color": [wc.r, wc.g, wc.b],
+                "cells": cells_json,
+                "ref_walls": refs,
+        }))

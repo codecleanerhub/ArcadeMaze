@@ -1443,8 +1443,9 @@ static func ghost_allowed_simultaneous(level: int) -> int:
 ## nel corridoio davanti alla cella per ZOMBIE_ARM_OUT_MS, poi si ritraggono.
 ## Le braccia riempiono l'intera cella corridoio: il player NON puo'
 ## schivarle, puo' solo aspettare la ritrazione (richiesta utente) — oppure
-## passarci sopra pagando il danno. Grafica PixelLab (env/zombie_cell.png +
-## env/zombie_arms_sheet.png).
+## passarci sopra pagando il danno. Grafica: finestrella PROCEDURALE del
+## colore del muro + volto PixelLab (env/zombie_face.png) + braccia PixelLab
+## (env/zombie_arms_sheet.png) — TASK 81b, niente piu' blocco opaco.
 ## Rollback: false = niente celle zombie (ZombieCells.gd si spegne).
 static var ZOMBIE_CELLS_ENABLED: bool = true
 ## Numero di celle per livello: 1 (L1-3), 2 (L4-6), 3 (L7+, il massimo).

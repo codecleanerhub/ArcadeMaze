@@ -58,9 +58,10 @@ const FF_HIT_RADIUS_SQ: float = 625.0
 ## (i lenzuoli fluttuano SOPRA muri/player/nemici: "a mezz'aria").
 @onready var maze_ghosts: Node2D = $Ghosts
 
-## TASK 81.2 — celle zombie: nodo tra Maze e Hazards (il blocco con
-## inferriata copre la texture roccia della sua cella muro; le braccia
-## scivolano fuori dalla facciata e stanno SOTTO le entita').
+## TASK 81.2 — celle zombie: nodo tra Maze e Hazards (la finestrella e'
+## disegnata SOPRA la texture roccia del muro, colori derivati dal
+## wall_color: TASK 81b; le braccia scivolano fuori dalla facciata e
+## stanno SOTTO le entita').
 @onready var zombie_cells: Node2D = $ZombieCells
 
 @onready var hud: Control = $HUDLayer/HUD

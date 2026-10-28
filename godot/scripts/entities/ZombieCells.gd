@@ -1,12 +1,10 @@
 ## ZombieCells.gd - TASK 81.2: CELLE ZOMBIE nei muri del labirinto.
 ## ============================================================
 ## Meccanica (richiesta utente):
-##   * Nei muri ci sono celle con zombie dentro, visibili dalle sbarre
-##     (blocco pietra + finestra inferriata + volto zombie: PixelLab
-##     env/zombie_cell.png).
+##   * Nei muri ci sono celle con zombie dentro, visibili dalle sbarre.
 ##   * A intervalli casuali dalle sbarre escono le BRACCIA dello zombie
-##     (env/zombie_arms_sheet.png, slide da dietro il blocco): se toccano
-##     il player tolgono il 20% dell'energia massima ad ogni tocco
+##     (env/zombie_arms_sheet.png, 4 frame "flexing"): se toccano il
+##     player tolgono il 20% dell'energia massima ad ogni tocco
 ##     (invulnerabilita' post-colpo ~1s standard del Player).
 ##   * Le braccia restano fuori e si dimenano per 5 secondi, poi si
 ##     ritraggono; quindi escono nuovamente dopo un intervallo casuale.
@@ -17,6 +15,21 @@
 ##     largo una cella). Puo' solo attendere la ritrazione — o attraversare
 ##     pagando il danno del tocco.
 ##
+## TASK 81b — CORREZIONE GRAFICA UTENTE (niente "quadrato bianco"):
+## il vecchio zombie_cell.png (blocco PixelLab OPACO con sfondo pietra
+## grigia chiara) copriva il muro scuro del Task 80 e, ruotato verso il
+## corridoio, capovolgeva il volto. Ora la cella e' INTEGRATA NEL MURO:
+##   * finestrella procedurale (cornice + interno + sbarre) con colori
+##     DERIVATI dal wall_color del livello -> stessa tinta del muro su
+##     tutte le 8 palette, per costruzione (bordo pietra LEGGERMENTE piu'
+##     scuro del muro: cella incassata, mai un quadrato chiaro);
+##   * volto zombie (env/zombie_face.png, PixelLab TRASPARENTE) disegnato
+##     in SPAZIO SCHERMO: sempre DIRITTO dietro le sbarre, mai ruotato;
+##   * glow verde pulsante nel buio della cella;
+##   * braccia in spazio locale ruotato (+x = facciata) CLIPPATE alla
+##     facciata del muro: spuntano esattamente DENTRO il muro originale,
+##     riempiono solo la cella corridoio e non sbordano oltre.
+##
 ## Piazzamento: RNG SEEDATO sul livello (pattern MazeHazards.generate:
 ## al continue le celle tornano negli stessi punti della stessa griglia,
 ## con stati freschi). Vincoli: cella WALL statica (non lastra mobile del
@@ -24,11 +37,10 @@
 ## la facciata, distante dallo spawn del player, distanza minima Manhattan
 ## 8 tra celle (fallback progressivo se il labirinto e' strano).
 ##
-## Rendering: nodo tra Maze e Hazards in MainGame.tscn — il blocco copre la
-## texture roccia della sua cella; le braccia sono disegnate PRIMA del
-## blocco e scorrono da dietro (slide 0->64px), quindi spuntano esattamente
-## dalla facciata con le sbarre. Ogni cella disegna in uno spazio locale
-## ruotato verso il proprio corridoio (facciata = +x locale).
+## Rendering: nodo tra Maze e Hazards in MainGame.tscn. Il muro resta
+## DISegnato dal Maze (texture roccia scura Task 80): la finestrella della
+## cella e' solo un velo SOPRA la piastrella muro, con la cornice derivata
+## dal wall_color del livello ("dello stesso colore del muro").
 ## ============================================================
 extends Node2D
 class_name ZombieCells
@@ -47,11 +59,26 @@ const ZONE_MARGIN_PX: float = 8.0
 # Durata frame dello sheet braccia (flexing 4 frame).
 const ARMS_FRAME_MS: int = 220
 
-# --- Texture PixelLab (cache static: 2 upload GPU a vita) ---
-static var _cell_tex_cache: Texture2D = null
-static var _cell_tex_tried: bool = false
+# --- TASK 81b: geometria finestrella cella (px, spazio piastrella 64) ---
+# Offset del centro finestra verso la facciata (la cornice esterna 50px
+# arriva a filo della facciata: "porta di cella" sullo spigolo del muro).
+const WIN_OFFSET_PX: float = 7.0
+# Larghezza apertura interna (buio della cella) e canvas del volto (draw 1:1).
+const WIN_INNER_PX: float = 42.0
+const FACE_PX: float = 40.0
+# Raggio del glow verde pulsante dentro la cella.
+const GLOW_RADIUS_PX: float = 26.0
+# Sbarre in ferro scuro (fisso: leggibili sul buio di ogni palette) con
+# bordo sinistro leggermente piu' chiaro (spigolo colpito dalla luce).
+const COL_BAR: Color = Color(0.055, 0.055, 0.070, 1.0)
+const COL_BAR_HI: Color = Color(0.210, 0.210, 0.240, 1.0)
+
+# --- Texture PixelLab (cache static: upload GPU una volta a vita) ---
+static var _face_tex_cache: Texture2D = null
+static var _face_tex_tried: bool = false
 static var _arms_tex_cache: Texture2D = null
 static var _arms_tex_tried: bool = false
+static var _glow_tex_cache: Texture2D = null
 
 # --- Stato ---
 var _level: int = 1
@@ -59,18 +86,44 @@ var _time_ms: float = 0.0
 var _cells: Array = []  # dizionari-stato per cella zombie
 var _rng := RandomNumberGenerator.new()
 
+# Colori cella derivati dal wall_color del livello (cachati in generate:
+# la finestrella e' DEL COLORE DEL MURO, il buio della cella e' lo stesso
+# colore quasi spento). TASK 81b.
+var _col_lip: Color = Color(0.377, 0.351, 0.325, 1.0)
+var _col_shadow: Color = Color(0.131, 0.122, 0.113, 1.0)
+var _col_interior: Color = Color(0.081, 0.076, 0.070, 1.0)
 
-static func _get_cell_texture() -> Texture2D:
-        if _cell_tex_tried:
-                return _cell_tex_cache
-        _cell_tex_tried = true
+
+static func _get_face_texture() -> Texture2D:
+        if _face_tex_tried:
+                return _face_tex_cache
+        _face_tex_tried = true
         var abs_path: String = ProjectSettings.globalize_path(
-                        "res://assets/sprites/env/zombie_cell.png")
+                        "res://assets/sprites/env/zombie_face.png")
         if FileAccess.file_exists(abs_path):
                 var img := Image.new()
                 if img.load(abs_path) == OK:
-                        _cell_tex_cache = ImageTexture.create_from_image(img)
-        return _cell_tex_cache
+                        _face_tex_cache = ImageTexture.create_from_image(img)
+        return _face_tex_cache
+
+
+## Glow verde: texture radiale bianca 96x96 (falloff quadratico, core
+## pieno — pattern _get_lantern_pool_texture del Maze, Task 80): il verde
+## passa via modulate al draw. Cache static UNICA (un upload GPU a vita).
+static func _get_glow_texture() -> Texture2D:
+        if _glow_tex_cache != null:
+                return _glow_tex_cache
+        const GLOW_SIZE: int = 96
+        var img := Image.create(GLOW_SIZE, GLOW_SIZE, false, Image.FORMAT_RGBA8)
+        var center := Vector2(GLOW_SIZE / 2.0, GLOW_SIZE / 2.0)
+        for y in range(GLOW_SIZE):
+                for x in range(GLOW_SIZE):
+                        var d: float = Vector2(x, y).distance_to(center) / (GLOW_SIZE / 2.0)
+                        var a: float = clampf(1.0 - d, 0.0, 1.0)
+                        a = clampf(a * a * 1.25, 0.0, 1.0)
+                        img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+        _glow_tex_cache = ImageTexture.create_from_image(img)
+        return _glow_tex_cache
 
 
 static func _get_arms_texture() -> Texture2D:
@@ -93,6 +146,16 @@ func generate(lvl: int, maze: Node) -> void:
         _cells.clear()
         _level = lvl
         _time_ms = 0.0
+        # TASK 81b: colori della finestrella derivati dal wall_color del
+        # livello (generate() del Maze ha gia' applicato la palette). La
+        # cornice e' LEGGERMENTE PIU' SCURA del muro (pietra incassata):
+        # mai piu' chiara del muro, cosi' la cella non puo' leggere come
+        # "quadrato chiaro" su NESSUNA palette (feedback utente).
+        var wc = maze.get("wall_color") if maze != null else null
+        if wc != null and wc is Color:
+                _col_lip = Color(wc.r * 0.92, wc.g * 0.92, wc.b * 0.92, 1.0)
+                _col_shadow = Color(wc.r * 0.55, wc.g * 0.55, wc.b * 0.55, 1.0)
+                _col_interior = Color(wc.r * 0.30, wc.g * 0.30, wc.b * 0.30, 1.0)
         if not C.ZOMBIE_CELLS_ENABLED:
                 queue_redraw()
                 return
@@ -301,27 +364,76 @@ func _damage_zone(cell: Dictionary) -> Rect2:
 func _draw() -> void:
         if _cells.is_empty():
                 return
-        var cell_tex: Texture2D = _get_cell_texture()
+        var face_tex: Texture2D = _get_face_texture()
         var arms_tex: Texture2D = _get_arms_texture()
+        var glow_tex: Texture2D = _get_glow_texture()
         var frame: int = (int(_time_ms) / ARMS_FRAME_MS) % 4
         for cell in _cells:
                 var center := Vector2(
                                 int(cell["col"]) * C.TILE_SIZE + C.TILE_SIZE * 0.5,
                                 C.UI_HEIGHT + int(cell["row"]) * C.TILE_SIZE + C.TILE_SIZE * 0.5)
-                # spazio locale: +x = facciata verso il corridoio
-                var angle: float = atan2(float(cell["dir"].y), float(cell["dir"].x))
-                draw_set_transform(center, angle)
-                if arms_tex != null and float(cell["slide"]) > 0.5:
-                        # braccia PRIMA del blocco: scorrono da dietro — la
-                        # parte dentro il blocco resta coperta dalla pietra.
-                        var slide: float = float(cell["slide"])
-                        var src := Rect2(float(frame) * 64.0, 0.0, 64.0, 64.0)
-                        var dst := Rect2(slide - 64.0 + 32.0, -32.0, 64.0, 64.0)
-                        draw_texture_rect_region(arms_tex, dst, src, Color.WHITE, false, false)
-                if cell_tex != null:
-                        # blocco-cella pieno: copre la texture roccia del muro
-                        draw_texture_rect(cell_tex, Rect2(-32.0, -32.0, 64.0, 64.0), false)
-                draw_set_transform(Vector2.ZERO, 0.0)
+                var dir: Vector2i = cell["dir"]
+                # -------- 1. BRACCIA (spazio locale ruotato: +x = facciata).
+                # TASK 81b: niente piu' blocco-copertura: le braccia sono
+                # CLIPPATE al tratto oltre la facciata (x in [32, 96], cioe'
+                # la sola cella corridoio). Emergono esattamente dalla
+                # facciata del muro originale e non sbordano oltre.
+                var slide: float = float(cell["slide"])
+                if arms_tex != null and slide > 0.5:
+                        var angle: float = atan2(float(dir.y), float(dir.x))
+                        draw_set_transform(center, angle)
+                        var x0: float = slide - 32.0
+                        var x1: float = x0 + 64.0
+                        const CLIP_LO: float = 32.0  # facciata muro/corridoio
+                        const CLIP_HI: float = 96.0  # fondo cella corridoio
+                        if x1 > CLIP_LO and x0 < CLIP_HI:
+                                var lo: float = maxf(x0, CLIP_LO)
+                                var hi: float = minf(x1, CLIP_HI)
+                                # mappa 1:1 il tratto visibile del frame
+                                draw_texture_rect_region(arms_tex,
+                                                Rect2(lo, -32.0, hi - lo, 64.0),
+                                                Rect2(float(frame) * 64.0 + (lo - x0),
+                                                                0.0, hi - lo, 64.0),
+                                                Color.WHITE, false, false)
+                        draw_set_transform(Vector2.ZERO, 0.0)
+                # -------- 2. FINESTRELLA CELLA (spazio schermo: volto DIRITTO).
+                # Tre veli sulla piastrella muro, tutti PIU' SCURI del muro
+                # (cella incassata: bordo pietra quasi come il muro, ombra
+                # sotto il bordo, buio interno) -> stessa tinta del muro,
+                # mai un quadrato chiaro (feedback utente TASK 81b).
+                var wc := Vector2(center.x + float(dir.x) * WIN_OFFSET_PX,
+                                center.y + float(dir.y) * WIN_OFFSET_PX)
+                var half_i: float = WIN_INNER_PX * 0.5
+                draw_rect(Rect2(wc.x - half_i - 4.0, wc.y - half_i - 4.0,
+                                WIN_INNER_PX + 8.0, WIN_INNER_PX + 8.0), _col_lip)
+                draw_rect(Rect2(wc.x - half_i - 2.0, wc.y - half_i - 2.0,
+                                WIN_INNER_PX + 4.0, WIN_INNER_PX + 4.0), _col_shadow)
+                draw_rect(Rect2(wc.x - half_i, wc.y - half_i,
+                                WIN_INNER_PX, WIN_INNER_PX), _col_interior)
+                # glow verde pulsante nel buio (il verde spinge il volto e
+                # le sbarre a leggersi per contrasto, pattern lanterne 80).
+                if glow_tex != null:
+                        var pulse: float = 0.22 + 0.07 * sin(
+                                        _time_ms * 0.0016
+                                        + float(cell["phase_seed"]) * 3.0)
+                        var gcol := Color(0.30, 0.85, 0.40, clampf(pulse, 0.0, 1.0))
+                        draw_texture_rect(glow_tex, Rect2(
+                                        wc.x - GLOW_RADIUS_PX, wc.y - GLOW_RADIUS_PX,
+                                        GLOW_RADIUS_PX * 2.0, GLOW_RADIUS_PX * 2.0),
+                                        false, gcol, false)
+                # volto zombie PixelLab: sempre DIRITTO (spazio schermo),
+                # mai ruotato qualunque sia la direzione della facciata.
+                if face_tex != null:
+                        draw_texture_rect(face_tex, Rect2(
+                                        wc.x - FACE_PX * 0.5, wc.y - FACE_PX * 0.5,
+                                        FACE_PX, FACE_PX), false)
+                # sbarre verticali in ferro: 4 barre da 3px (1px di bordo
+                # chiaro a sinistra = spigolo colpito dalla luce) sopra al volto.
+                for bx in [-15.0, -5.0, 5.0, 15.0]:
+                        draw_rect(Rect2(wc.x + bx - 1.5, wc.y - half_i + 2.0,
+                                        3.0, WIN_INNER_PX - 4.0), COL_BAR)
+                        draw_rect(Rect2(wc.x + bx - 1.5, wc.y - half_i + 2.0,
+                                        1.0, WIN_INNER_PX - 4.0), COL_BAR_HI)
 
 
 # ============================================================================
