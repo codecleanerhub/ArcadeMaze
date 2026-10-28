@@ -74,29 +74,39 @@ var wall_color: Color = Color(0.29, 0.27, 0.25, 1.0)
 ## rendering la disegna come pavimento (le due lastre di roccia che
 ## scorrono sono la parete visibile). Popolato/ripulito dal MazeHazards.
 var dynamic_walls: Dictionary = {}
-## Floor color for the current palette (TASK 79d: grigio roccia chiaro,
-## vedi _PALETTES sopra).
-var bg_color: Color = Color(0.443, 0.424, 0.400, 1.0)
+## Floor color for the current palette (TASK 80: ripristinato il valore
+## scuro originale — la visibilita' ora arriva dalle lanterne, vedi
+## _draw_lantern_floor_pools).
+var bg_color: Color = Color(0.11, 0.09, 0.07, 1.0)
 
 # 8 color palettes that cycle per level (1:1 from Maze.cpp).
 #  Index 0 = grey cavern, 1 = blue dungeon, 2 = purple crypt, 3 = red rock,
 #  4 = bone ossuary, 5 = green swamp, 6 = red hell, 7 = teal abyss.
-#  TASK 79d (feedback utente: "il pavimento era troppo scuro, con l'elf e i
-#  nemici scuri si faceva fatica a vedere — rendiamolo un grigio roccia"):
-#  i bg delle 8 palette sono passati da valori ~0.06-0.14 (pavimento quasi
-#  nero, sotto i muri) a GRIGIO ROCCIA chiaro ~0.33-0.49, PIU' chiaro dei
-#  muri (0.22-0.37): contrasto invertito a favore della lettura di player
-#  scuri (elf) e nemici scuri. La tinta per livello resta riconoscibile.
+#  TASK 80 (feedback utente: "i muri non devono essere cosi' chiari... siamo
+#  in un dungeon quindi ha senso avere toni piu' scuri mentre il pavimento
+#  l'hai reso troppo chiaro — potresti usare effetti di luce delle lanterne
+#  per rendere piu' chiaro il pavimento?"): ROLLBACK COMPLETO del TASK 79d —
+#  i bg tornano ai valori ORIGINALI scuri (~0.06-0.14, sotto i muri: e' un
+#  dungeon). La visibilita' del player scuro (elf) e dei nemici scuri non
+#  arriva piu' dal pavimento chiaro uniforme ma dalle LANTERNE:
+#    - pozza di luce calda bakeata sul pavimento per OGNI torcia
+#      (_draw_lantern_floor_pools, flicker sincrono con la fiamma);
+#    - alone caldo SOPRA i muri vicino alle torce (_draw_lantern_wall_halos);
+#    - lanterna dell'eroe: pozza che segue i player vivi
+#      (player_light_positions, aggiornata dal MainGameController);
+#    - 6 PointLight2D ridistribuite su tutta la mappa (raggio 80->140).
+#  Rollback delle lanterne: GameConstants.LANTERN_LIGHT_ENABLED = false.
+#  Rollback pavimento/muri: git revert del TASK 79d / TASK 78 (vedi worklog).
 #  Il gradiente radiale centrale (+24/255 al centro) resta invariato.
 const _PALETTES: Array = [
-        {"wall": Color(0.294, 0.275, 0.255), "bg": Color(0.443, 0.424, 0.400)},  # 0 grey cavern
-        {"wall": Color(0.216, 0.275, 0.353), "bg": Color(0.380, 0.424, 0.490)},  # 1 blue dungeon
-        {"wall": Color(0.333, 0.235, 0.353), "bg": Color(0.443, 0.380, 0.463)},  # 2 purple crypt
-        {"wall": Color(0.373, 0.235, 0.196), "bg": Color(0.490, 0.388, 0.345)},  # 3 red rock
-        {"wall": Color(0.373, 0.333, 0.235), "bg": Color(0.490, 0.463, 0.400)},  # 4 bone ossuary
-        {"wall": Color(0.235, 0.314, 0.216), "bg": Color(0.380, 0.463, 0.380)},  # 5 green swamp
-        {"wall": Color(0.373, 0.196, 0.176), "bg": Color(0.490, 0.345, 0.322)},  # 6 red hell
-        {"wall": Color(0.176, 0.333, 0.333), "bg": Color(0.325, 0.463, 0.463)},  # 7 teal abyss
+        {"wall": Color(0.294, 0.275, 0.255), "bg": Color(0.110, 0.086, 0.071)},  # 0 grey cavern
+        {"wall": Color(0.216, 0.275, 0.353), "bg": Color(0.071, 0.086, 0.137)},  # 1 blue dungeon
+        {"wall": Color(0.333, 0.235, 0.353), "bg": Color(0.110, 0.071, 0.118)},  # 2 purple crypt
+        {"wall": Color(0.373, 0.235, 0.196), "bg": Color(0.137, 0.078, 0.059)},  # 3 red rock
+        {"wall": Color(0.373, 0.333, 0.235), "bg": Color(0.125, 0.110, 0.071)},  # 4 bone ossuary
+        {"wall": Color(0.235, 0.314, 0.216), "bg": Color(0.071, 0.110, 0.071)},  # 5 green swamp
+        {"wall": Color(0.373, 0.196, 0.176), "bg": Color(0.137, 0.059, 0.047)},  # 6 red hell
+        {"wall": Color(0.176, 0.333, 0.333), "bg": Color(0.059, 0.110, 0.118)},  # 7 teal abyss
 ]
 
 # ============================================================================
@@ -129,8 +139,8 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         # --- TASK 57: texture roccia PixelLab (luminanza) + tint palette ---
         # La texture PNG (grayscale normalizzata full-range) fornisce la
         # LUMINANZA per pixel; il colore resta quello della palette livello.
-        # TASK 78: mapping compresso 0.75x-1.30x (niente zone scure, vedi
-        # commento inline). Rollback:
+        # TASK 80 (rollback TASK 78): ripristinata la mappa ORIGINALE
+        # 0.25x-1.45x (stessa del noise procedurale). Rollback:
         # GameConstants.WALL_ROCK_PIXELLAB_ENABLED = false.
         # NB: usa la STESSA var img dichiarata sopra (lezione 12.18: mai
         # ridichiarare var omonima nello stesso scope — parse error runtime).
@@ -141,23 +151,24 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
                                 for x in range(TEX_SIZE):
                                         var c57: Color = rock.get_pixel(x, y)
                                         var lum57: float = c57.r * 0.299 + c57.g * 0.587 + c57.b * 0.114
-                                        # TASK 78 (feedback utente: "deve essere come il
-                                        # rettangolo rosso senza zone scure, non come il
-                                        # rettangolo blue"): la mappa precedente
-                                        # t = 0.25 + lum*1.20 portava i contorni scuri
-                                        # dei massi PixelLab (lum 0.05-0.30) a t 0.31-0.61
-                                        # -> "zone scure" grandi macchie quasi nere che
-                                        # coprivano fino al 58% di alcune celle (finestre
-                                        # 64x64 della texture). Nuova curva C scelta su
-                                        # preview VLM 3 candidate (9/10 match con
-                                        # l'area target): floor 0.75 + pendenza 0.55 ->
-                                        # range t 0.75-1.30. I blob scuri collassano nel
-                                        # grigio medio (t 0.79-0.92 = indistinguibili
-                                        # dalla grana), il pattern organico resta
-                                        # leggibile SOLO via medi/alti (0.95-1.30).
-                                        # Numerica: %pixel<40 su griglia 6x6 passa da
-                                        # 40.1% a 0.0%, spread medie per-cella 17->8.
-                                        var t57: float = 0.75 + lum57 * 0.55
+                                        # TASK 80 (feedback utente: "i muri del
+                                        # labirinto non devono essere cosi' chiari,
+                                        # ripristina il colore dei muri, siamo in un
+                                        # dungeon quindi ha senso avere toni piu'
+                                        # scuri"): ROLLBACK della curva compressa
+                                        # del TASK 78 (t = 0.75 + lum*0.55, range
+                                        # 0.75-1.30) e RIPRISTINO della mappa
+                                        # ORIGINALE del Task 57:
+                                        # t = 0.25 + lum*1.20 (range 0.25-1.45).
+                                        # I contorni scuri dei massi PixelLab
+                                        # (lum 0.05-0.30) tornano zone scure
+                                        # t 0.31-0.61 = toni dungeon; le crepe
+                                        # profonde si leggono di nuovo e i muri
+                                        # stanno SOPRA il pavimento come nel C++.
+                                        # La luce delle lanterne (TASK 80) riprende
+                                        # i muri vicino alle torce con l'alone
+                                        # caldo (_draw_lantern_wall_halos).
+                                        var t57: float = 0.25 + lum57 * 1.20
                                         img.set_pixel(x, y, Color(
                                                 clampf(base_color.r * t57, 0.0, 1.0),
                                                 clampf(base_color.g * t57, 0.0, 1.0),
@@ -279,6 +290,12 @@ func _draw() -> void:
         # Always redraw - the C++ Maze::render also draws every frame because
         # torches animate. For static mazes you can gate this on needs_redraw.
         _render_floor_gradient()
+        # TASK 80 (luci lanterne): POZZE DI LUCE sul pavimento, subito dopo il
+        # gradiente e PRIMA delle celle: muri/tesori/armi disegnati dopo
+        # restano nitidi SOPRA la luce; le entita' (nodi separati) pure. E'
+        # qui che il dungeon scuro diventa leggibile: ogni torcia e la
+        # lanterna dell'eroe gettano luce calda sul pavimento.
+        _draw_lantern_floor_pools()
         # Disegno a passate: prima TUTTE le celle non-muro (pavimento,
         # tesori, armi — nessuna sborda dalla propria cella), poi i muri
         # veri e propri, poi le decorazioni. Il portale va PER ULTIMO
@@ -301,6 +318,9 @@ func _draw() -> void:
                                 _render_cell(c, r)
         # Decora alcune celle WALL con teschi, ragnatele, crepe
         # (vantaggio Godot: texture procedurali ad alta risoluzione)
+        # TASK 80: PRIMA delle decorazioni, l'ALONE CALDO dei muri vicino
+        # alle torce (la luce "bagna" la roccia; le fiamme restano sopra).
+        _draw_lantern_wall_halos()
         _render_wall_decorations()
         # FIX (meccanica tunnel "Pac-Man"): deformazione a SEMILUNA del
         # muro di bordo sulle 4 aperture (richiesta utente: niente grafica
@@ -320,6 +340,95 @@ var _torch_lights: Array = []
 var _torch_positions: Array = []
 # Tempo accumulato per le animazioni (flicker torce). In secondi.
 var _anim_time: float = 0.0
+
+# ============================================================================
+# TASK 80 — LANTERNE: il dungeon torna scuro, la luce e' delle lanterne
+# ============================================================================
+## Posizioni (pixel, spazio MainGame = spazio Maze) dei player VIVI.
+## Il MainGameController le aggiorna ogni frame in _update_playing: il Maze
+## disegna sotto ciascun player una pozza di luce calda ("lanterna dell'eroe")
+## cosi' il player scuro (elf) e i nemici scuri vicini restano leggibili per
+## CONTRASTO senza schiarire il pavimento di tutto il dungeon.
+var player_light_positions: Array = []
+
+## TUTTE le posizioni torcia del livello (pixel, alla fiamma). Diversamente
+## dalle PointLight2D (capped a 6 per performance) le POZZE BAKEATE sul
+## pavimento coprono OGNI torcia: costo = 2 draw_texture_rect a torcia nella
+## passata _draw() che il Maze gia' rifà ogni frame per il flicker.
+var _all_torch_positions: Array = []
+
+## Texture radiale bianca (alpha falloff quadratico, core pieno) condivisa
+## da tutte le pozze/alone: il colore caldo passa via modulate al draw.
+static var _lantern_pool_tex: Texture2D = null
+
+
+## Texture pozza di luce 256x256: bianca con alpha 1 al centro che cade a 0
+## al bordo (quadratica, leggero boost del core). Cache static UNICA per
+## tutte le lanterne del gioco (un solo upload GPU a vita).
+static func _get_lantern_pool_texture() -> Texture2D:
+        if _lantern_pool_tex != null:
+                return _lantern_pool_tex
+        const POOL_SIZE: int = 256
+        var img := Image.create(POOL_SIZE, POOL_SIZE, false, Image.FORMAT_RGBA8)
+        var center := Vector2(POOL_SIZE / 2.0, POOL_SIZE / 2.0)
+        var max_d: float = POOL_SIZE / 2.0
+        for y in range(POOL_SIZE):
+                for x in range(POOL_SIZE):
+                        var d: float = Vector2(x, y).distance_to(center) / max_d
+                        var a: float = clampf(1.0 - d, 0.0, 1.0)
+                        a = clampf(a * a * 1.25, 0.0, 1.0)
+                        img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+        _lantern_pool_tex = ImageTexture.create_from_image(img)
+        return _lantern_pool_tex
+
+
+## Disegna una pozza di luce (texture radiale) centrata in `center`, raggio
+## `radius`, colore caldo `tint` con intensita' `alpha`. Mix blending: il
+## pavimento sotto vira verso il caldo e si SCHIARISCE al centro.
+func _draw_light_pool(tex: Texture2D, center: Vector2, radius: float,
+                tint: Color, alpha: float) -> void:
+        var col := Color(tint.r, tint.g, tint.b, clampf(alpha, 0.0, 1.0))
+        var rect := Rect2(center.x - radius, center.y - radius,
+                radius * 2.0, radius * 2.0)
+        draw_texture_rect(tex, rect, false, col, false)
+
+
+## TASK 80: pozze di luce sul PAVIMENTO (passata tra gradiente e celle, cosi'
+## muri/sprite disegnati dopo restano nitidi sopra la luce):
+##   - una pozza calda per OGNI torcia (~150px, flicker sincrono con la
+##     fiamma: stessa famiglia sin() del _draw_torch);
+##   - una pozza per ogni player vivo ("lanterna dell'eroe", ~130px): il
+##     buio del dungeon resta, ma attorno all'eroe c'e' sempre luce.
+func _draw_lantern_floor_pools() -> void:
+        if not C.LANTERN_LIGHT_ENABLED:
+                return
+        var tex: Texture2D = _get_lantern_pool_texture()
+        if tex == null:
+                return
+        for i in range(_all_torch_positions.size()):
+                var pos: Vector2 = _all_torch_positions[i]
+                var fl: float = 0.90 + 0.10 * sin(_anim_time * 17.0 + pos.x * 0.37)
+                _draw_light_pool(tex, pos, 150.0, Color(1.0, 0.72, 0.40), 0.55 * fl)
+        for i in range(player_light_positions.size()):
+                var pos: Vector2 = player_light_positions[i]
+                var fl: float = 0.94 + 0.06 * sin(_anim_time * 21.0 + pos.y * 0.21)
+                _draw_light_pool(tex, pos, 130.0, Color(1.0, 0.82, 0.55), 0.50 * fl)
+
+
+## TASK 80: alone caldo SOPRA i muri vicino alle torce (passata dopo i muri,
+## prima delle decorazioni: la fiamma resta sopra tutto). Effetto "la luce
+## della torcia bagna la roccia": mix sottile (alpha ~0.17) che riprende i
+## toni caldi sui muri scuri restaurati, coordinato col flicker della pozza.
+func _draw_lantern_wall_halos() -> void:
+        if not C.LANTERN_LIGHT_ENABLED:
+                return
+        var tex: Texture2D = _get_lantern_pool_texture()
+        if tex == null:
+                return
+        for i in range(_all_torch_positions.size()):
+                var pos: Vector2 = _all_torch_positions[i]
+                var fl: float = 0.90 + 0.10 * sin(_anim_time * 17.0 + pos.x * 0.37)
+                _draw_light_pool(tex, pos, 95.0, Color(1.0, 0.74, 0.44), 0.17 * fl)
 
 
 # ============================================================================
@@ -621,6 +730,12 @@ func _draw_urn(cx: float, cy: float, variant: float) -> void:
 
 # Crea le PointLight2D per le torce una volta sola (chiamato da generate).
 # Le luci sono figli del Maze node e seguono le posizioni delle torce.
+# TASK 80: raccoglie TUTTE le torce del livello in _all_torch_positions
+# (servono alle pozze bakeate di _draw_lantern_floor_pools: una per torcia)
+# e distribuisce le 6 PointLight2D uniformemente sulla mappa invece di
+# prendere le prime 6 in ordine di scansione (che si accatastavano in alto
+# a sinistra). Raggio 80 -> 140: sui muri scuri restaurati la luce reale
+# si vede e riprende la roccia attorno alla fiamma.
 func _spawn_torch_lights() -> void:
         # Rimuovi le luci precedenti
         for light in _torch_lights:
@@ -628,17 +743,14 @@ func _spawn_torch_lights() -> void:
                         light.queue_free()
         _torch_lights.clear()
         _torch_positions.clear()
-        if not EffectsManager:
-                return
-        # FIX (performance): limita a massimo 6 PointLight2D per livello.
-        # Prima creava ~44 luci (5% di 880 celle WALL) → lag estremo su
-        # GPU entry-level. 6 luci danno atmosfera sufficiente senza lag.
-        var max_lights: int = 6
-        var light_count: int = 0
+        _all_torch_positions.clear()
+        # 1) Raccogli TUTTE le posizioni torcia del livello (hash [14,19),
+        #    stessa condizione del disegno della torcia in
+        #    _render_wall_decorations, escluse le lastre mobili Task 30).
+        #    La posizione e' alla FIAMMA: centro cella, top cella (la fiamma
+        #    _draw_torch vive a y_base-24 = top cella).
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
-                        if light_count >= max_lights:
-                                break
                         if not is_wall(c, r):
                                 continue
                         # TASK 30: niente torce sulle lastre di roccia mobili.
@@ -648,19 +760,35 @@ func _spawn_torch_lights() -> void:
                         var hash_val: int = abs(h) % 100
                         if hash_val >= 14 and hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
                                 var px: float = c * C.TILE_SIZE + C.TILE_SIZE * 0.5
-                                var py: float = r * C.TILE_SIZE + C.UI_HEIGHT - C.TILE_SIZE * 0.1
-                                var light: PointLight2D = EffectsManager.create_light(
-                                        Vector2(px, py),
-                                        Color(1.0, 0.7, 0.3, 1.0),
-                                        1.2,  # energy
-                                        80.0  # radius
-                                )
-                                add_child(light)
-                                _torch_lights.append(light)
-                                _torch_positions.append(Vector2(px, py))
-                                light_count += 1
-                if light_count >= max_lights:
-                        break
+                                var py: float = r * C.TILE_SIZE + C.UI_HEIGHT
+                                _all_torch_positions.append(Vector2(px, py))
+        if not EffectsManager:
+                return
+        # 2) FIX (performance, invariato): massimo 6 PointLight2D per livello.
+        #    Prima creava ~44 luci (5% di 880 celle WALL) → lag estremo su
+        #    GPU entry-level. 6 luci + le pozze bakeate di TASK 80 (zero costo
+        #    GPU: 2 draw_texture_rect a torcia nella passata esistente)
+        #    danno atmosfera e visibilità senza lag.
+        var max_lights: int = 6
+        var n_torches: int = _all_torch_positions.size()
+        if n_torches == 0:
+                return
+        for i in range(mini(max_lights, n_torches)):
+                # Distribuzione uniforme sull'ordine di scansione (c-major:
+                # sinistra->destra, alto->basso) = le 6 luci coprono tutta
+                # la mappa invece di ammassarsi nelle prime celle.
+                var idx: int = int(float(i) * float(n_torches) / float(mini(max_lights, n_torches)))
+                idx = mini(idx, n_torches - 1)
+                var pos: Vector2 = _all_torch_positions[idx]
+                var light: PointLight2D = EffectsManager.create_light(
+                                pos,
+                                Color(1.0, 0.7, 0.3, 1.0),
+                                1.2,  # energy
+                                140.0  # radius (TASK 80: 80 -> 140)
+                        )
+                add_child(light)
+                _torch_lights.append(light)
+                _torch_positions.append(pos)
 
 
 # ============================================================================

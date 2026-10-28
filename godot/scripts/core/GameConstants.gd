@@ -1369,6 +1369,13 @@ static var EXPLOSION_SPRITE_ENABLED: bool = true
 ## Rollback: false = noise procedurale FastNoiseLite.
 static var WALL_ROCK_PIXELLAB_ENABLED: bool = true
 
+## TASK 80 (luci lanterne): dungeon a toni scuri + visibilita' localizzata.
+## Pozze di luce calda bakeate sul pavimento per OGNI torcia + lanterna
+## dell'eroe che segue i player vivi + alone caldo sui muri vicino alle
+## torce (Maze.gd: _draw_lantern_floor_pools / _draw_lantern_wall_halos).
+## Rollback: false = solo le 6 PointLight2D delle torce (look pre-TASK 80).
+static var LANTERN_LIGHT_ENABLED: bool = true
+
 ## Punti per ogni nemico congelato (come le altre pergamene evento).
 const SCROLL_FREEZE_POINTS: int = 5000
 

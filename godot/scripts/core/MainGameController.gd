@@ -1350,6 +1350,19 @@ func _update_playing(delta_ms: float) -> void:
                 player2.update_player(maze, false, delta_ms)
                 if player2.consume_picked_weapon() and AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+        # TASK 80 (lanterna dell'eroe): aggiorna le posizioni dei player
+        # VIVI (spazio pixel = spazio Maze) — il Maze disegna sul pavimento
+        # una pozza di luce calda sotto ciascuno, cosi' il player scuro
+        # (elf) e i nemici scuri vicini restano visibili per contrasto
+        # nel dungeon a toni scuri. Player morto/in attesa dell'anima =
+        # lanterna spenta (niente pozze su posizioni stantie).
+        var lanterns: Array = []
+        if player != null and is_instance_valid(player) and player.lives > 0 \
+                        and not player.soul_pending:
+                lanterns.append(player.position)
+        if _is_p2_active() and player2.lives > 0 and not player2.soul_pending:
+                lanterns.append(player2.position)
+        maze.player_light_positions = lanterns
         if maze.get_remaining_treasures() < treasures_before:
                 # FIX (Hurry Up!): il pickup di un tesoro resetta il conteggio
                 # dei 10s — il fantasma appare solo se il player SMETTE di
