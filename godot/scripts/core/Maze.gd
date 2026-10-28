@@ -74,21 +74,29 @@ var wall_color: Color = Color(0.29, 0.27, 0.25, 1.0)
 ## rendering la disegna come pavimento (le due lastre di roccia che
 ## scorrono sono la parete visibile). Popolato/ripulito dal MazeHazards.
 var dynamic_walls: Dictionary = {}
-## Floor color for the current palette.
-var bg_color: Color = Color(0.11, 0.09, 0.07, 1.0)
+## Floor color for the current palette (TASK 79d: grigio roccia chiaro,
+## vedi _PALETTES sopra).
+var bg_color: Color = Color(0.443, 0.424, 0.400, 1.0)
 
 # 8 color palettes that cycle per level (1:1 from Maze.cpp).
 #  Index 0 = grey cavern, 1 = blue dungeon, 2 = purple crypt, 3 = red rock,
 #  4 = bone ossuary, 5 = green swamp, 6 = red hell, 7 = teal abyss.
+#  TASK 79d (feedback utente: "il pavimento era troppo scuro, con l'elf e i
+#  nemici scuri si faceva fatica a vedere — rendiamolo un grigio roccia"):
+#  i bg delle 8 palette sono passati da valori ~0.06-0.14 (pavimento quasi
+#  nero, sotto i muri) a GRIGIO ROCCIA chiaro ~0.33-0.49, PIU' chiaro dei
+#  muri (0.22-0.37): contrasto invertito a favore della lettura di player
+#  scuri (elf) e nemici scuri. La tinta per livello resta riconoscibile.
+#  Il gradiente radiale centrale (+24/255 al centro) resta invariato.
 const _PALETTES: Array = [
-        {"wall": Color(0.294, 0.275, 0.255), "bg": Color(0.110, 0.086, 0.071)},  # 0 grey cavern
-        {"wall": Color(0.216, 0.275, 0.353), "bg": Color(0.071, 0.086, 0.137)},  # 1 blue dungeon
-        {"wall": Color(0.333, 0.235, 0.353), "bg": Color(0.110, 0.071, 0.118)},  # 2 purple crypt
-        {"wall": Color(0.373, 0.235, 0.196), "bg": Color(0.137, 0.078, 0.059)},  # 3 red rock
-        {"wall": Color(0.373, 0.333, 0.235), "bg": Color(0.125, 0.110, 0.071)},  # 4 bone ossuary
-        {"wall": Color(0.235, 0.314, 0.216), "bg": Color(0.071, 0.110, 0.071)},  # 5 green swamp
-        {"wall": Color(0.373, 0.196, 0.176), "bg": Color(0.137, 0.059, 0.047)},  # 6 red hell
-        {"wall": Color(0.176, 0.333, 0.333), "bg": Color(0.059, 0.110, 0.118)},  # 7 teal abyss
+        {"wall": Color(0.294, 0.275, 0.255), "bg": Color(0.443, 0.424, 0.400)},  # 0 grey cavern
+        {"wall": Color(0.216, 0.275, 0.353), "bg": Color(0.380, 0.424, 0.490)},  # 1 blue dungeon
+        {"wall": Color(0.333, 0.235, 0.353), "bg": Color(0.443, 0.380, 0.463)},  # 2 purple crypt
+        {"wall": Color(0.373, 0.235, 0.196), "bg": Color(0.490, 0.388, 0.345)},  # 3 red rock
+        {"wall": Color(0.373, 0.333, 0.235), "bg": Color(0.490, 0.463, 0.400)},  # 4 bone ossuary
+        {"wall": Color(0.235, 0.314, 0.216), "bg": Color(0.380, 0.463, 0.380)},  # 5 green swamp
+        {"wall": Color(0.373, 0.196, 0.176), "bg": Color(0.490, 0.345, 0.322)},  # 6 red hell
+        {"wall": Color(0.176, 0.333, 0.333), "bg": Color(0.325, 0.463, 0.463)},  # 7 teal abyss
 ]
 
 # ============================================================================

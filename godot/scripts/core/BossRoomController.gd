@@ -141,6 +141,10 @@ func _ready() -> void:
                 GameManager.restore_player_carry(player, player2)
         # Setup boss fight
         start_boss_fight(died_in_boss)
+        # TASK 79d: precarica lo sfondo per-tipo FUORI dalla draw callback
+        # (prima veniva caricato al primo _draw: decode JPG + upload GPU
+        # dentro il callback di disegno = hitch sul primo frame della stanza).
+        _load_boss_bg()
         # FIX (continue = sessione ESATTA nella boss room — richiesta utente):
         # se siamo qui da un CONTINUE, ripristina lo scontro COM'E'ERA alla
         # morte: HP del boss salvati nello snapshot (NON ricomincia da capo),
@@ -443,7 +447,7 @@ func _on_boss_phase2_entered(b: Node2D) -> void:
                         var dust := EffectsManager.spawn_blast_smoke(
                                         b.pos, Color(0.5, 0.1, 0.15), 12)
                         if dust != null:
-                                boss_projectiles_node.add_child(dust)
+                                _add_capped_fx(dust)
         queue_redraw()
 
 
@@ -513,7 +517,7 @@ func _on_boss_slam_landed(world_pos: Vector2, radius: float) -> void:
                 EffectsManager.screen_shake(6.0, 0.4)
                 var dust := EffectsManager.spawn_explosion(
                                 world_pos, Color(0.45, 0.40, 0.33), 22, 0.7)
-                boss_projectiles_node.add_child(dust)
+                _add_capped_fx(dust)
         for p in [player, player2]:
                 if p == null or not p.visible:
                         continue
@@ -752,7 +756,7 @@ func _on_continue_chosen(pnum: int, yes: bool) -> void:
                         EffectsManager.screen_shake(4.0, 0.2)
                         var burst := EffectsManager.spawn_pickup_burst(
                                         p.get_pixel_pos(), Color(0.4, 0.9, 1.0))
-                        boss_projectiles_node.add_child(burst)
+                        _add_capped_fx(burst)
                 if AudioManager and GameManager and GameManager.music_enabled:
                         AudioManager.play_level_music(current_level, true)
                 print("[Continue] boss room: PLAYER ", pnum, " riprende (boss HP ",
@@ -776,7 +780,7 @@ func _eliminate_player(p: CharacterBody2D) -> void:
         if EffectsManager:
                 var burst := EffectsManager.spawn_explosion(p.get_pixel_pos(),
                         Color(0.55, 0.65, 1.0), 18, 0.7)
-                boss_projectiles_node.add_child(burst)
+                _add_capped_fx(burst)
         if hud:
                 var snap_d: Dictionary = {
                         "score": p.score,
@@ -852,6 +856,14 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                                 var to_player: Vector2 = (homing_target.get_pixel_pos() - proj.position).normalized()
                                 vel = vel.lerp(to_player * vel.length(), 0.08)
                                 proj.dir = vel
+                        # TASK 79d: ridisegna SOLO le munizioni con animazione
+                        # interna (variante 5 fase-2 = aura pulsante + corona
+                        # rotante; homing = scia in dissolvenza): prima il loro
+                        # _draw restava CONGELATO allo stato di spawn (nobody
+                        # chiamava queue_redraw). Costo trascurabile: sono ~3-6
+                        # nodi per volta, e solo in fase 2.
+                        if proj.variant == 5 or proj.homing_timer_ms > 0:
+                                proj.queue_redraw()
                 else:
                         vel = proj.get_meta("velocity", Vector2.ZERO)
                 proj.position += vel
@@ -876,7 +888,7 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                                         if EffectsManager:
                                                 var block_fx: Node2D = EffectsManager.spawn_sparks(
                                                                 proj.position, 8)
-                                                boss_projectiles_node.add_child(block_fx)
+                                                _add_capped_fx(block_fx)
                                         break
                 else:
                         for pillar in _arena_pillars:
@@ -894,7 +906,7 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                                         if EffectsManager:
                                                 var block_fx2: Node2D = EffectsManager.spawn_sparks(
                                                                 proj.position, 8)
-                                                boss_projectiles_node.add_child(block_fx2)
+                                                _add_capped_fx(block_fx2)
                                         break
                 if blocked_by_arena:
                         proj.visible = false
@@ -928,11 +940,11 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                                         EffectsManager.screen_shake(6.0, 0.25)
                                         var siege_fx := EffectsManager.spawn_blast_smoke(
                                                         proj_pos)
-                                        boss_projectiles_node.add_child(siege_fx)
+                                        _add_capped_fx(siege_fx)
                                         var smoke_fx := EffectsManager.spawn_explosion(
                                                         proj_pos + Vector2(0.0, -12.0),
                                                         Color(0.25, 0.23, 0.21), 12, 1.0)
-                                        boss_projectiles_node.add_child(smoke_fx)
+                                        _add_capped_fx(smoke_fx)
                                 if AudioManager:
                                         AudioManager.play_sound(
                                                         AudioManager.SoundType.ENEMY_EXPLODE)
@@ -942,7 +954,7 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                                 if EffectsManager:
                                         var boom := EffectsManager.spawn_blast_smoke(
                                                         proj_pos, Color(1.0, 0.55, 0.18), 12)
-                                        boss_projectiles_node.add_child(boom)
+                                        _add_capped_fx(boom)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                         proj["active"] = false
@@ -1066,7 +1078,7 @@ func _on_soul_delivered(winner: CharacterBody2D, victim: CharacterBody2D) -> voi
                         EffectsManager.screen_shake(3.0, 0.15)
                         var burst := EffectsManager.spawn_pickup_burst(
                                         winner.get_pixel_pos(), Color(0.85, 0.95, 1.0))
-                        boss_projectiles_node.add_child(burst)
+                        _add_capped_fx(burst)
         if is_instance_valid(victim):
                 victim.respawn_after_soul()
 
@@ -1207,7 +1219,7 @@ func _check_boss_death() -> void:
                                 var p := EffectsManager.spawn_blast_smoke(
                                         boss.pos + Vector2(randf() * 60 - 30, randf() * 60 - 30),
                                         Color(0.6, 0.45, 0.3), 12)
-                                boss_projectiles_node.add_child(p)
+                                _add_capped_fx(p)
                 player.add_life()
                 # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
                 # nessun proiettile vagante durante la schermata bonus).
@@ -1304,7 +1316,7 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                 if EffectsManager:
                         var hit_fx := EffectsManager.spawn_sparks(boss.pos, 14)
-                        boss_projectiles_node.add_child(hit_fx)
+                        _add_capped_fx(hit_fx)
         # TASK 39: il fendente reliquia FRANTUMA anche le architetture
         # adiacenti (una spada spacca la pietra meglio di una pallottola).
         if C.BOSS_ARENA_RUINS_ENABLED:
@@ -1357,7 +1369,7 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                 if EffectsManager:
                         var boom := EffectsManager.spawn_explosion(blast_pos,
                                         Color(1.0, 0.6, 0.15), 30, 0.8)
-                        boss_projectiles_node.add_child(boom)
+                        _add_capped_fx(boom)
                         EffectsManager.screen_shake(8.0, 0.3)
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
@@ -1381,7 +1393,7 @@ func _tick_fire_armor(p: CharacterBody2D, delta_ms: float) -> void:
         if EffectsManager:
                 var ring := EffectsManager.spawn_explosion(p.get_pixel_pos(),
                                 Color(1.0, 0.45, 0.2), 12, 0.4)
-                boss_projectiles_node.add_child(ring)
+                _add_capped_fx(ring)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
 
@@ -1594,7 +1606,7 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                 if EffectsManager:
                                         # TASK 50: nube di fumo morbida, non pallini
                                         var p := EffectsManager.spawn_blast_smoke(mine_item.pos)
-                                        boss_projectiles_node.add_child(p)
+                                        _add_capped_fx(p)
                                 mine_item.active = false
                                 mine_item.bouncing = false
                                 mine_item.queue_free()
@@ -1621,7 +1633,7 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                 if EffectsManager:
                                         # TASK 50: nube di fumo morbida, non pallini
                                         var p := EffectsManager.spawn_blast_smoke(mine_item.pos)
-                                        boss_projectiles_node.add_child(p)
+                                        _add_capped_fx(p)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                                 mine_item.active = false
@@ -1992,7 +2004,7 @@ func _update_boss_arena(delta_ms: float) -> void:
                                         var burst: Node2D = EffectsManager.spawn_pickup_burst(
                                                         _arena_siege.position,
                                                         Color(1.0, 0.80, 0.30))
-                                        boss_projectiles_node.add_child(burst)
+                                        _add_capped_fx(burst)
                                 _arena_siege.queue_free()
                                 _arena_siege = null
                                 break
@@ -2010,7 +2022,7 @@ func _update_boss_arena(delta_ms: float) -> void:
                                 if EffectsManager:
                                         var frag_fx: Node2D = EffectsManager.spawn_sparks(
                                                         node.position, 10)
-                                        boss_projectiles_node.add_child(frag_fx)
+                                        _add_capped_fx(frag_fx)
                                 if node.has_method("consume_on_boss"):
                                         node.consume_on_boss()
         # --- il boss RIMBALZA sui pilastri in piedi (ostacoli fisici).
@@ -2179,7 +2191,7 @@ func _damage_ruin(ruin: Node2D, from_pos: Vector2) -> void:
         if EffectsManager:
                 EffectsManager.screen_shake(2.5, 0.12)
                 var sparks: Node2D = EffectsManager.spawn_sparks(from_pos, 10)
-                boss_projectiles_node.add_child(sparks)
+                _add_capped_fx(sparks)
 
 
 # Danno a un pilastro + feedback comune (crack, scintille, micro-shake).
@@ -2192,7 +2204,7 @@ func _damage_pillar(pillar: Node2D, from_pos: Vector2) -> void:
         if EffectsManager:
                 EffectsManager.screen_shake(2.5, 0.12)
                 var sparks: Node2D = EffectsManager.spawn_sparks(from_pos, 10)
-                boss_projectiles_node.add_child(sparks)
+                _add_capped_fx(sparks)
 
 
 # Detonazione di un barile elementale: danno %HP al boss (x2.5 se elemento
@@ -2349,6 +2361,33 @@ func _process(delta: float) -> void:
         _boss_bg_time += delta
         queue_redraw()
 
+
+# TASK 79d (performance, richiesta utente "troppi oggetti su schermo che si
+# muovono"): CAP sugli FX COSMETICI simultanei nella boss room. In fase 2 le
+# scintille spawano di continuo (ogni proiettile bloccato dalle rovine,
+# fendenti, frammenti) e OGNI FX e' un contenitore Node2D + GPUParticles2D
+# con buffer particellari propri: su GPU/driver deboli la creazione/distruzione
+# continua provoca micro-stutter. Oltre il cap il nuovo FX cosmetico viene
+# semplicemente scartato (i danni e il gameplay NON passano di qui: sono
+# applicati prima, questi sono solo effetti visivi). Sotto il cap: identico
+# a prima. I PROIETTILI veri non passano da qui.
+const MAX_CONCURRENT_FX: int = 10
+
+
+func _add_capped_fx(fx: Node) -> void:
+        if fx == null:
+                return
+        var alive: int = 0
+        for ch in boss_projectiles_node.get_children():
+                if ch.is_in_group("fx_effect") or ch is GPUParticles2D:
+                        alive += 1
+                        if alive >= MAX_CONCURRENT_FX:
+                                break
+        if alive >= MAX_CONCURRENT_FX:
+                fx.queue_free()
+                return
+        boss_projectiles_node.add_child(fx)
+
 func _load_boss_bg() -> void:
         if _boss_bg_loaded:
                 return
@@ -2387,7 +2426,10 @@ func _draw() -> void:
         # ogni tipo di boss (golem=caverna, lich=necropoli, demon=inferno,
         # dragon=tana drago, vampire=castello gotico). Se non disponibile,
         # usa il background cripta procedurale.
-        _load_boss_bg()
+        # TASK 79d: il caricamento non avviene piu' QUI (era dentro _draw al
+        # PRIMO frame della stanza: decode JPG + upload GPU dentro la draw
+        # callback = hitch percepibile all'ingresso). Ora e' precaricato in
+        # _ready via start_boss_fight -> _load_boss_bg().
         var vp_size: Vector2 = get_viewport_rect().size
         if _boss_bg_texture != null:
                 # Cover-fit della texture
@@ -2515,48 +2557,16 @@ func _draw() -> void:
                 draw_circle(pos, 16.0, Color(0.2, 0.2, 0.2, 0.8))
                 draw_circle(pos, 12.0, col)
 
-        # FIX (boss non sparano): i proiettili del boss venivano avanzati ma
-        # mai disegnati. Aggiungiamo il disegno di tutti i proiettili figli
-        # di boss_projectiles_node. Ogni proiettile ha un colore diverso
-        # in base al BossProjKind (vedi Projectile.gd).
-        for proj in boss_projectiles_node.get_children():
-                if not proj is Node2D:
-                        continue
-                if proj.is_in_group("fx_effect"):
-                        continue
-                var ppos: Vector2 = proj.position
-                # Colore in base al tipo di proiettile
-                var bp_kind: int = 0
-                if proj is Projectile:
-                        bp_kind = proj.bp_kind
-                elif proj.has_meta("bp_kind"):
-                        bp_kind = int(proj.get_meta("bp_kind"))
-                var proj_col: Color = Color(1.0, 0.4, 0.1)  # default rosso/arancio
-                match bp_kind:
-                        1: proj_col = Color(0.6, 0.4, 0.2)  # BOULDER (marrone)
-                        2: proj_col = Color(0.2, 1.0, 0.3)   # NECRO_BOLT (verde)
-                        3: proj_col = Color(1.0, 0.3, 0.1)   # FIREBALL (rosso fuoco)
-                        4: proj_col = Color(0.8, 0.8, 0.8)   # WEBSHOT (bianco)
-                        5: proj_col = Color(0.8, 0.3, 0.5)   # FLESH_CHUNK (rosa)
-                        6: proj_col = Color(0.2, 0.6, 1.0)   # INK_SPRAY (blu)
-                        7: proj_col = Color(1.0, 0.5, 0.1)   # DRAGON_BREATH (arancio)
-                        8: proj_col = Color(0.5, 0.5, 1.0)   # GHOST_BOLT (azzurro)
-                        9: proj_col = Color(0.9, 0.1, 0.2)  # BLOOD_BOLT (rosso sangue)
-                        10: proj_col = Color(1.0, 1.0, 0.2) # EYE_RAY (giallo)
-                        11: proj_col = Color(0.4, 0.2, 0.1) # GHOUL_CLAW (marrone scuro)
-                        12: proj_col = Color(0.6, 0.6, 1.0) # SPECTRAL_FANG (blu pallido)
-                        13: proj_col = Color(0.8, 0.2, 0.8)  # CULT_ORB (viola)
-                        14: proj_col = Color(0.5, 0.8, 0.2)  # MIMIC_GOO (verde slime)
-                        15: proj_col = Color(0.6, 0.5, 0.3)  # RAT_SWARM (marrone)
-                        16: proj_col = Color(0.9, 0.3, 0.9) # WITCH_HEX (magenta)
-                        17: proj_col = Color(0.7, 0.7, 0.9)  # TWILIGHT_BLADE (argento)
-                # Glow esterno
-                draw_circle(ppos, 8.0, Color(proj_col.r, proj_col.g, proj_col.b, 0.3))
-                # Nucleo
-                draw_circle(ppos, 4.0, proj_col)
-                # Highlight
-                draw_circle(ppos - Vector2(1, 1), 1.5,
-                        Color(proj_col.r + 0.3, proj_col.g + 0.3, proj_col.b + 0.3))
+        # TASK 79d (performance — doppio draw dei proiettili RIMOSSO):
+        # questo loop disegnava a mano OGNI proiettile OGNI frame (3 cerchi
+        # ciascuno) DENTRO il _draw del controller, ma ogni Projectile e' gia'
+        # un Node2D figlio di boss_projectiles_node con un suo _draw TEMATICO
+        # (forme per BossProjKind, aura fase-2, scia homing): i proiettili
+        # venivano disegnati DUE VOLTE (strato tematico + 3 cerchi glow sopra).
+        # Ora li disegna SOLO il loro nodo: -3 draw_circle per proiettile per
+        # frame dal GDScript del controller e niente look "doppio".
+        # Verifica A/B: screenshot shot_boss79d prima/dopo (VLM) — proiettili
+        # tematici ben visibili. Rollback: git revert di questo hunk.
 
 
 # Disegna decorazioni ambiente: ARCHITETTURE BLOODBORNE (TASK 50).
