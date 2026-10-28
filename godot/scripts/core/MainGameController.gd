@@ -4212,8 +4212,10 @@ func start_level(lvl: int) -> void:
         # placement). RNG seedato sul livello: al continue le celle tornano
         # negli stessi punti della griglia ripristinata (pattern hazards).
         zombie_cells.generate(current_level, maze)
-        # TASK 81.1 — FANTASMI LENZUOLO: pool 4 (bianco/rosso/verde+random),
-        # 3 apparizioni ciascuno su muri diversi. Orari seedati per livello.
+        # TASK 81.1/81c — FANTASMI LENZUOLO: pool fisso W/R/G, respawn
+        # INFINITO a ondate (1 lenzuolo al L1 con rotazione colori, 2 dal
+        # L2, 3 dal L7; delay 30s al L1 che scende di 5s/level fino a 5s).
+        # Orari seedati per livello (continue riproducibile).
         maze_ghosts.generate(current_level, maze)
         # TASK 32 — NUBE DI PIPISTRELLI: programma gli eventi del livello
         # (1 dal livello 5, 2 dal 31) e rimuove l'eventuale sciame del

@@ -1,24 +1,39 @@
-## MazeGhosts.gd - TASK 81.1: FANTASMI LENZUOLO del labirinto.
+## MazeGhosts.gd - TASK 81.1 + 81c: FANTASMI LENZUOLO del labirinto.
 ## ============================================================
-## Meccanica (richiesta utente + CORREZIONE utente: "non devono essere
-## innocui, il player li puo' evitare saltandoli ma se toccono il player
-## levano il 33% dell'energia"):
+## Meccanica (richiesta utente + correzioni):
 ##   * Fantasmi di colore BIANCO, ROSSO e VERDE trasparente, in stile
 ##     classico lenzuolo con occhi e bocca, che fluttuano a mezz'aria.
-##   * Escono da un muro del labirinto in tempi casuali, ATTRAVERSANO
-##     IL CORRIDOIO davanti a quella faccia di muro e si compenetrano
-##     nel muro opposto, sparendo ("arrivano all'estremita' successiva
-##     del muro, compenetrandosi nel muro e sparendo").
+##   * Escono da un muro del labirinto, ATTRAVERSANO IL CORRIDOIO davanti
+##     a quella faccia di muro e si compenetrano nel muro opposto,
+##     sparendo ("arrivano all'estremo successivo del muro,
+##     compenetrandosi nel muro e sparendo").
 ##   * Sono IMMORTALI (i proiettili passano attraverso) ma DANNOSI: il
 ##     tocco toglie il 33% dell'energia max (Player.take_hazard_damage,
 ##     pattern ganasce: bypassa le armature, rispetta invulnerabilita'
 ##     post-colpo/calice/spawn). Il SALTO EVITA il tocco: il lenzuolo
 ##     occupa la mezzeria del corridoio e il player lo supera saltandoci
 ##     SOPRA ("il player li puo' evitare saltandoli").
-##   * La volta successiva respawnano da un ALTRO muro: ogni fantasma ha
-##     un budget di 3 apparizioni su 3 MURI DIVERSI, poi non appare piu'.
-##   * Fino a 4 fantasmi simultanei; la probabilita' che siano 4 in
-##     schermo aumenta col livello (GameConstants.ghost_allowed_simultaneous).
+##
+## TASK 81c (richiesta utente) — RESPAWN INFINITO A ONDATE:
+##   * "Respawnano per tutto il tempo, non per un numero di volte
+##     limitato": NIENTE budget di apparizioni, le ondate non finiscono
+##     mai per tutta la durata del livello.
+##   * Cambia la COMPOSIZIONE e il RITMO col livello
+##     (GameConstants.ghost_wave_size / ghost_wave_respawn_ms):
+##       - L1:  UN lenzuolo per ondata, colore in ROTAZIONE (bianco ->
+##              rosso -> verde -> bianco...), prossima ondata 30s dopo
+##              la scomparsa nel muro opposto;
+##       - L2:  DUE lenzuoli insieme ([bianco, rosso] -> [verde, bianco]
+##              -> [rosso, verde]...), prossima ondata dopo 25s;
+##       - L2-6: due per ondata, ritmo -5s per livello (20/15/10s);
+##       - L6+: ritmo al minimo di 5s ("dopo pochissimo tempo");
+##       - L7+: TRE lenzuoli per ondata — "tutti e 3 insieme e
+##              respawneranno insieme dopo pochissimo tempo".
+##   * Il delay parte quando l'ULTIMO lenzuolo dell'ondata e' scomparso
+##     ("sparisce contro il muro opposto e DOPO 30 secondi appare il
+##     fantasma rosso"): ondate strettamente sequenziali.
+##   * Un fantasma non ri-usa SUBITO lo stesso muro (last_run_key), per
+##     conservare il "respawnano da un altro muro" della spec originale.
 ##
 ## Rendering: sheet PixelLab 256x64 (4 frame di float) per colore,
 ## env/ghost_sheet_{white,red,green}.png — bianco nativo + rosso/verde
@@ -57,9 +72,17 @@ const COLORS: Array = ["white", "red", "green"]
 # --- Stato del sistema ---
 var _level: int = 1
 var _time_ms: float = 0.0
-var _ghosts: Array = []  # dizionari-stato per fantasma
+var _ghosts: Array = []  # dizionari-stato per fantasma (3: W/R/G fissi)
 var _crossings: Array = []  # segmenti muro-A/corridoio/muro-B attraversabili
 var _rng := RandomNumberGenerator.new()
+
+# --- TASK 81c: stato dello scheduler a ondate ---
+# Un'ondata e' "in volo" dallo spawn finche' l'ultimo lenzuolo non e'
+# scomparso nel muro opposto; SOLO allora parte il conteggio del delay.
+var _wave_flying: bool = false
+var _next_wave_ms: float = 0.0  # countdown alla prossima ondata
+var _color_wheel: int = 0  # rotazione colori (avanza di 1 per lenzuolo)
+var _total_runs: int = 0  # attraversamenti completati in totale (stat)
 
 
 ## Carica (una volta) gli sheet dei 3 colori. Null = fallback: il fantasma
@@ -86,34 +109,33 @@ func generate(lvl: int, maze: Node) -> void:
         _crossings.clear()
         _level = lvl
         _time_ms = 0.0
+        _wave_flying = false
+        _color_wheel = 0
+        _total_runs = 0
         if not C.GHOSTS_ENABLED:
                 queue_redraw()
                 return
-        _rng.seed = hash("mghosts_v2_%d" % lvl)
+        _rng.seed = hash("mghosts_v3_%d" % lvl)
         _collect_crossings(maze)
         if _crossings.is_empty():
                 queue_redraw()
                 return
-        # Pool: bianco, rosso, verde + un quarto colore random (richiesta:
-        # "fino a 4 fantasmi contemporaneamente" = pool di 4 lenzuoli).
-        var pool_colors: Array = ["white", "red", "green"]
-        pool_colors.append(COLORS[_rng.randi() % COLORS.size()])
-        for i in range(mini(C.GHOST_POOL_SIZE, pool_colors.size())):
+        # TASK 81c: pool FISSO dei 3 lenzuoli (bianco, rosso, verde) —
+        # respawnano per sempre, nessun budget da inizializzare.
+        for i in range(mini(C.GHOST_POOL_SIZE, COLORS.size())):
                 _ghosts.append({
-                        "color": pool_colors[i],
-                        "appearances_left": C.GHOST_MAX_APPEARANCES,
-                        "used_run_keys": [],
-                        # prima uscita scaglionata: 1.5-4s dall'avvio livello
-                        "next_spawn_ms": _rng.randf_range(
-                                        C.GHOST_FIRST_SPAWN_MIN_MS, C.GHOST_FIRST_SPAWN_MAX_MS),
-                        # stato attraversamento (valido solo se active)
+                        "color": COLORS[i],
                         "active": false,
                         "pos": Vector2.ZERO,
                         "dir": Vector2.RIGHT,
                         "travel_left": 0.0,
                         "travel_total": 0.0,
                         "phase": _rng.randf() * TAU,  # fase bob indipendente
+                        "last_run_key": "",  # muro dell'attraversamento precedente
                 })
+        # prima ondata scaglionata: 1.5-4s dall'avvio del livello
+        _next_wave_ms = _rng.randf_range(
+                        C.GHOST_FIRST_SPAWN_MIN_MS, C.GHOST_FIRST_SPAWN_MAX_MS)
         queue_redraw()
 
 
@@ -170,26 +192,25 @@ func update_ghosts(delta_ms: float, players: Array = []) -> void:
         _time_ms += float(delta_ms)
         if _ghosts.is_empty():
                 return
-        var active_count: int = _count_active()
         var step_px: float = C.GHOST_SPEED_PX_S * float(delta_ms) * 0.001
+        var any_active: bool = false
         for g in _ghosts:
                 if g["active"]:
                         _advance_crossing(g, step_px, players)
-                        continue
-                # IDLE: budget esaurito -> ritirato per sempre
-                if g["appearances_left"] <= 0:
-                        continue
-                g["next_spawn_ms"] -= float(delta_ms)
-                if g["next_spawn_ms"] > 0.0:
-                        continue
-                # cap simultaneo probabilistico (sale col livello)
-                if active_count >= 1 \
-                                and active_count >= C.ghost_allowed_simultaneous(_level):
-                        # spawn rimandato: riprova tra poco
-                        g["next_spawn_ms"] = _rng.randf_range(1200.0, 2500.0)
-                        continue
-                if _launch_crossing(g):
-                        active_count += 1
+                        any_active = true
+        # -------- TASK 81c: scheduler a ondate sequenziali --------
+        # Mentre un'ondata e' in volo NON parte nessun countdown; quando
+        # l'ultimo lenzuolo e' scomparso nel muro opposto, il delay della
+        # prossima ondata parte in QUEL momento ("sparisce contro il muro
+        # opposto e DOPO 30 secondi appare il prossimo").
+        if not any_active:
+                if _wave_flying:
+                        _wave_flying = false
+                        _next_wave_ms = C.ghost_wave_respawn_ms(_level)
+                else:
+                        _next_wave_ms -= float(delta_ms)
+                        if _next_wave_ms <= 0.0:
+                                _spawn_wave()
         queue_redraw()
 
 
@@ -201,19 +222,68 @@ func _count_active() -> int:
         return n
 
 
-## Sceglie un attraversamento NON ancora usato da questo fantasma e lancia
-## la traversata (muro A -> corridoio -> muro B; la direzione e' quella
-## dell'asse del crossing). Ritorna false se non ci sono crossing nuovi
-## (fantasma ritirato in anticipo, caso limite).
-func _launch_crossing(g: Dictionary) -> bool:
-        var candidates: Array = []
-        for cross in _crossings:
-                if not (g["used_run_keys"] as Array).has(cross["key"]):
-                        candidates.append(cross)
-        if candidates.is_empty():
-                g["appearances_left"] = 0
-                return false
-        var cross: Dictionary = candidates[_rng.randi() % candidates.size()]
+## TASK 81c: lancia l'ondata del livello corrente — ghost_wave_size(level)
+## lenzuoli INSIEME, colori consecutivi dalla rotazione (_color_wheel),
+## ognuno su un crossing DISTINTO (shuffle seedato) e diverso dal muro
+## usato la volta precedente (last_run_key).
+func _spawn_wave() -> void:
+        var w: int = mini(mini(C.ghost_wave_size(_level), _ghosts.size()),
+                        _crossings.size())
+        if w <= 0:
+                # labirinto degenere (o fantasmi gia' tutti in volo per via
+                # dei force_launch dei test): riprova tra poco
+                _next_wave_ms = 1500.0
+                return
+        var pool: Array = _crossings.duplicate()
+        _shuffle_seeded(pool)
+        var taken: Array = []  # crossing usati da QUESTA ondata
+        var launched: int = 0
+        for i in range(w):
+                var g: Dictionary = _ghosts[(_color_wheel + i) % _ghosts.size()]
+                if g["active"]:
+                        continue  # (force_launch dei test) resta in volo
+                var cross: Dictionary = _pick_crossing(pool, g, taken)
+                if cross.is_empty():
+                        break
+                if _launch_crossing(g, cross):
+                        launched += 1
+                        taken.append(cross["key"])
+        # la rotazione avanza di tanti passi quanti i lenzuoli SPAWNATI:
+        # L1 bianco -> rosso -> verde; L2 [W,R] -> [G,W] -> [R,G]...
+        _color_wheel = (_color_wheel + launched) % _ghosts.size()
+        _wave_flying = launched > 0
+        if not _wave_flying:
+                _next_wave_ms = 1500.0  # tutti occupati: riprova tra poco
+
+
+## Primo crossing dello shuffle che non sia gia' preso dall'ondata e non
+## sia il muro dell'uscita precedente di questo fantasma ("la volta
+## successiva respawnano da un ALTRO muro"); fallback: il primo libero.
+func _pick_crossing(pool: Array, g: Dictionary, taken: Array) -> Dictionary:
+        var fallback: Dictionary = {}
+        for cross in pool:
+                if taken.has(cross["key"]):
+                        continue
+                if fallback.is_empty():
+                        fallback = cross
+                if cross["key"] != g["last_run_key"]:
+                        return cross
+        return fallback
+
+
+## Fisher-Yates con l'RNG seedato del livello (determinismo del continue:
+## stessa sequenza di shuffle a parita' di livello e di ondate).
+func _shuffle_seeded(arr: Array) -> void:
+        for i in range(arr.size() - 1, 0, -1):
+                var j: int = _rng.randi_range(0, i)
+                var tmp = arr[i]
+                arr[i] = arr[j]
+                arr[j] = tmp
+
+
+## Lancia la traversata del fantasma `g` sul crossing `cross`
+## (muro A -> corridoio -> muro B; la direzione e' quella dell'asse).
+func _launch_crossing(g: Dictionary, cross: Dictionary) -> bool:
         var start: Vector2 = cross["start"]
         var end: Vector2 = cross["end"]
         var travel: float = start.distance_to(end)
@@ -228,8 +298,8 @@ func _launch_crossing(g: Dictionary) -> bool:
         return true
 
 
-## Avanza l'attraversamento; alla fine consuma un'apparizione e segna il
-## muro come usato ("la volta successiva respawnano da un altro muro").
+## Avanza l'attraversamento; alla fine il lenzuolo resta pronto per la
+## PROSSIMA ondata (respawn infinito TASK 81c: nessun budget).
 ## CORREZIONE UTENTE: mentre il lenzuolo e' EMERSO nel corridoio (fuori dai
 ## ramp di alpha sui muri) tocca i player VIVI entro GHOST_TOUCH_RADIUS_PX:
 ## -33% energia max per tocco (Player.take_hazard_damage: bypassa le
@@ -254,10 +324,8 @@ func _advance_crossing(g: Dictionary, step_px: float, players: Array) -> void:
                                 p.take_hazard_damage(dmg)
         if traveled >= g["travel_total"]:
                 g["active"] = false
-                g["appearances_left"] -= 1
-                (g["used_run_keys"] as Array).append(g["run_key"])
-                if g["appearances_left"] > 0:
-                        g["next_spawn_ms"] = C.ghost_spawn_interval_ms(_level)
+                g["last_run_key"] = g["run_key"]
+                _total_runs += 1
                 g["pos"] = Vector2.ZERO
 
 
@@ -306,25 +374,21 @@ func active_count() -> int:
         return _count_active()
 
 
-func appearances_left(color: String) -> int:
-        for g in _ghosts:
-                if g["color"] == color:
-                        return int(g["appearances_left"])
-        return -1
+## TASK 81c: attraversamenti COMPLETATI da quando e' iniziato il livello
+## (respawn infinito: cresce senza limite, mai "budget esaurito").
+func total_runs() -> int:
+        return _total_runs
 
 
-func total_appearances_left() -> int:
-        var n: int = 0
-        for g in _ghosts:
-                n += int(g["appearances_left"])
-        return n
-
-
-func used_run_keys_of(color: String) -> Array:
-        for g in _ghosts:
-                if g["color"] == color:
-                        return g["used_run_keys"]
-        return []
+## TASK 81c: stato dello scheduler a ondate (sola lettura, per i test):
+## flying = ondata in volo, next_ms = countdown alla prossima ondata,
+## wheel = posizione della rotazione colori.
+func wave_info() -> Dictionary:
+        return {
+                "flying": _wave_flying,
+                "next_ms": _next_wave_ms,
+                "wheel": _color_wheel,
+        }
 
 
 ## Attraversamenti (muro-A|corridoio|muro-B) disponibili nel livello.
@@ -341,12 +405,19 @@ func ghost_state(idx: int) -> Dictionary:
 
 
 ## TEST HOOK (correzione utente): lancia immediatamente l'attraversamento
-## del fantasma `idx` (scavalca il timer di spawn; la coerenza cap/budget
-## resta a carico del chiamante) e ne ritorna lo stato.
+## del fantasma `idx` su un crossing casuale (scavalca il timer di spawn)
+## e ne ritorna lo stato. L'ondata forzata conta come "in volo": lo
+## scheduler non spawnera' altro finche' non e' finita (+ delay di livello).
 func force_launch(idx: int) -> Dictionary:
         if idx < 0 or idx >= _ghosts.size():
                 return {}
         var g: Dictionary = _ghosts[idx]
-        if not bool(g["active"]) and int(g["appearances_left"]) > 0:
-                _launch_crossing(g)
+        if not bool(g["active"]):
+                var pool: Array = _crossings.duplicate()
+                _shuffle_seeded(pool)
+                var cross: Dictionary = _pick_crossing(pool, g, [])
+                if cross.is_empty():
+                        cross = pool[0] if not pool.is_empty() else {}
+                if not cross.is_empty() and _launch_crossing(g, cross):
+                        _wave_flying = true
         return g

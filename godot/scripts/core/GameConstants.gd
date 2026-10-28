@@ -1389,14 +1389,9 @@ static var LANTERN_LIGHT_ENABLED: bool = true
 ## Grafica PixelLab (env/ghost_sheet_{white,red,green}.png, 4 frame).
 ## Rollback: false = niente fantasmi (MazeGhosts.gd si spegne).
 static var GHOSTS_ENABLED: bool = true
-## Quanti fantasmi popolano ogni livello (bianco, rosso, verde + 1 random
-## tra i tre colori).
-const GHOST_POOL_SIZE: int = 4
-## Apparizioni per fantasma: 3 respawn = 3 MURI DIVERSI, poi non appare
-## piu' per tutto il livello (richiesta utente).
-const GHOST_MAX_APPEARANCES: int = 3
-## Cap fisso di fantasmi simultanei su schermo ("fino a 4").
-const GHOST_MAX_SIMULTANEOUS: int = 4
+## TASK 81c — pool FISSO dei 3 colori del lenzuolo (bianco, rosso, verde):
+## niente piu' quarto colore duplicato casuale, l'ondata ruota i 3.
+const GHOST_POOL_SIZE: int = 3
 ## Velocita' di attraversamento (px/s): ~1 cella al secondo.
 const GHOST_SPEED_PX_S: float = 72.0
 ## TASK 81 (correzione utente) — danno percentuale del tocco fantasma:
@@ -1409,34 +1404,48 @@ const GHOST_TOUCH_DAMAGE_PCT: float = 0.33
 ## fantasma percorre la mezzeria dello stesso corridoio -> allineamento
 ## garantito quando si incontrano.
 const GHOST_TOUCH_RADIUS_PX: float = 34.0
-## Intervallo tra le apparizioni di uno stesso fantasma (al livello 1);
-## si comprime fino a GHOST_SPAWN_FAST_SCALE dal livello 12 in poi.
-const GHOST_SPAWN_MIN_MS: float = 4000.0
-const GHOST_SPAWN_MAX_MS: float = 9000.0
-const GHOST_SPAWN_FAST_SCALE: float = 0.55
+## Ritardo della PRIMA ondata dall'avvio del livello (rng seedato per
+## livello: riproducibile, pattern hazards/zcells).
 const GHOST_FIRST_SPAWN_MIN_MS: float = 1500.0
 const GHOST_FIRST_SPAWN_MAX_MS: float = 4000.0
 
+## TASK 81c (richiesta utente) — RESPAWN INFINITO A ONDATE: "i fantasmi
+## lenzuolo respawnano per tutto il tempo, non per un numero di volte
+## limitato; quello che cambia da un livello all'altro e' che respawnano
+## piu' spesso ed in numero [via via crescente], finche' andando avanti
+## con i livelli appariranno tutti e 3 insieme e respawneranno insieme
+## dopo pochissimo tempo". Meccanica:
+##   * i lenzuoli escono in ONDATE simultanee (colore in rotazione:
+##     L1 bianco -> rosso -> verde -> bianco...; L2 [bianco,rosso] ->
+##     [verde,bianco] -> [rosso,verde]...; L7+ tutti e 3 insieme);
+##   * quando l'ULTIMO lenzuolo dell'ondata e' scomparso nel muro opposto
+##     parte il conteggio del respawn: "sparisce contro il muro opposto e
+##     DOPO 30 secondi appare il prossimo" (L1: 30s, L2: 25s, -5s/level
+##     fino al minimo di 5s dal L6: "dopo pochissimo tempo");
+##   * MAI budget esaurito: le ondate continuano per tutta la partita.
+## Ritmo dell'ondata successiva in funzione del livello (ms).
+const GHOST_WAVE_MAX_MS: float = 30000.0  # L1: 30s esatti (spec utente)
+const GHOST_WAVE_STEP_MS: float = 5000.0  # -5s per livello (L2: 25s)
+const GHOST_WAVE_MIN_MS: float = 5000.0   # floor dal L6 ("pochissimo")
 
-## TASK 81: intervallo (ms) tra due apparizioni dello STESSO fantasma al
-## livello dato. L1: 4-9s; dal L12 in poi resta ~2.2-5s (il ritmo sale ma
-## il cap simultaneo resta 4).
-static func ghost_spawn_interval_ms(level: int) -> float:
-        var k: float = clampf(float(level - 1) / 11.0, 0.0, 1.0)
-        var sc: float = lerpf(1.0, GHOST_SPAWN_FAST_SCALE, k)
-        return randf_range(GHOST_SPAWN_MIN_MS * sc, GHOST_SPAWN_MAX_MS * sc)
+static func ghost_wave_respawn_ms(level: int) -> float:
+        return clampf(GHOST_WAVE_MAX_MS - GHOST_WAVE_STEP_MS * float(level - 1),
+                        GHOST_WAVE_MIN_MS, GHOST_WAVE_MAX_MS)
 
+## TASK 81c — lenzuoli per ondata al livello dato: 1 (L1), 2 (L2-6), 3
+## (L7+, tutti e 3 insieme). Soglia L7 allineata alle celle zombie che
+## raggiungono il max di 3 proprio al L7 (stessa curva di difficolta').
+static func ghost_wave_size(level: int) -> int:
+        if level <= 1:
+                return 1
+        if level <= 6:
+                return 2
+        return 3
 
-## TASK 81: quanti fantasmi SONO ammessi su schermo quando un nuovo spawn
-## bussa. "La probabilita' che siano 4 contemporaneamente aumenta col
-## livello" (richiesta utente): roll = randf()*randf() ha distribuzione
-## concentrata verso il basso, quindi a livelli bassi il risultato resta
-## quasi sempre 1 (2 raro); la finestra del roll cresce di 0.5 per livello
-## e al L7+ il valore 4 diventa raggiungibile, sempre piu' spesso salendo.
-## L1: 1-2 (2 ~16%) | L4: 1-3 | L7+: 1-4 | L12: 4 spesso (~30%).
-static func ghost_allowed_simultaneous(level: int) -> int:
-        var roll: float = randf() * randf()
-        return clampi(1 + int(roll * (1.2 + level * 0.5)), 1, GHOST_MAX_SIMULTANEOUS)
+## TASK 81c (stessa richiesta utente) — "Rimpiccioliamo le gemme (rubino
+## rosso, blue) del 30%": solo GEM (zaffiro blu) e RUBY (rubino rosso);
+## corona/oro/forziere restano alle dimensioni dei task precedenti.
+const TREASURE_GEM_SHRINK: float = 0.70
 
 ## TASK 81.2 — celle zombie: blocchi muro con finestra inferriata e volto
 ## zombie dietro le sbarre; a intervalli casuali le BRACCIA si protendono

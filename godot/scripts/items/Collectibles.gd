@@ -16,6 +16,8 @@
 extends Node2D
 class_name Collectibles
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # Treasure kinds (mirror C++ enum TreasureType).
 enum TreasureType { TRES_CROWN, TRES_GOLD, TRES_CHEST, TRES_GEM, TRES_RUBY }
 
@@ -617,8 +619,16 @@ static func _load_png_cached(path: String) -> Texture2D:
 
 func _draw_treasure() -> void:
         var y_off := -bob_offset
+        # TASK 81c: le GEMME (zaffiro blu + rubino rosso) si rimpiccioliscono
+        # del 30% ("Rimpiccioliamo le gemme (rubino rosso, blue) del 30%"):
+        # anche il glow si stringe in proporzione.
+        var is_gem: bool = treasure_type == TreasureType.TRES_GEM \
+                        or treasure_type == TreasureType.TRES_RUBY
+        var glow_r: float = 10.0
+        if is_gem:
+                glow_r *= C.TREASURE_GEM_SHRINK
         # Glow dorato ridotto
-        draw_circle(Vector2.ZERO, 10.0, Color(1.0, 0.85, 0.3, 0.10))
+        draw_circle(Vector2.ZERO, glow_r, Color(1.0, 0.85, 0.3, 0.10))
         # Carica la texture PNG dedicata per questo tipo di tesoro (cached)
         var tex_path: String = ""
         match treasure_type:
@@ -635,7 +645,11 @@ func _draw_treasure() -> void:
                         # maze (73.6px netti su cella 64): il collectible è la
                         # versione da raccogliere a schermo, il maze disegna il
                         # tesoro "padre". Contenuto visivo ~43px su cella 64.
+                        # TASK 81c: GEM/RUBY -30% (48 -> 33.6px), coerente col
+                        # tesoro "padre" del maze (73.6 -> 51.5px).
                         var size: float = 48.0
+                        if is_gem:
+                                size *= C.TREASURE_GEM_SHRINK
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
                         return
@@ -683,6 +697,11 @@ func _draw_treasure() -> void:
                         # Lucchetto
                         draw_rect(Rect2(-2.0, 1.0 + y_off2, 4.0, 5.0), gold)
                 TreasureType.TRES_GEM:
+                        # TASK 81c: fallback procedurale scalato del 30% attorno
+                        # al centro gemma (draw_set_transform: pos = c*(1-s)).
+                        var sc_g: float = C.TREASURE_GEM_SHRINK
+                        draw_set_transform(Vector2(0.0, y_off2) * (1.0 - sc_g), 0.0,
+                                        Vector2(sc_g, sc_g))
                         # Gemma blu sfaccettata (diamante)
                         var gem := Color(0.3, 0.8, 1.0)
                         var gem_dark := Color(0.15, 0.5, 0.8)
@@ -698,7 +717,13 @@ func _draw_treasure() -> void:
                         draw_line(Vector2(-8.0, 0.0 + y_off2), Vector2(8.0, 0.0 + y_off2), gem_dark, 1.0)
                         # Highlight
                         draw_circle(Vector2(-3.0, -3.0 + y_off2), 2.0, gem_light)
+                        draw_set_transform(Vector2.ZERO, 0.0)
                 TreasureType.TRES_RUBY:
+                        # TASK 81c: fallback procedurale scalato del 30% attorno
+                        # al centro gemma (draw_set_transform: pos = c*(1-s)).
+                        var sc_r: float = C.TREASURE_GEM_SHRINK
+                        draw_set_transform(Vector2(0.0, y_off2) * (1.0 - sc_r), 0.0,
+                                        Vector2(sc_r, sc_r))
                         # TASK 65c: rubino (prima calice d'oro) — silhouette
                         # a punta con facet, coerente col PNG PixelLab
                         var ruby := Color(0.85, 0.1, 0.2)
@@ -722,6 +747,7 @@ func _draw_treasure() -> void:
                         draw_line(Vector2(9.0, -6.0 + y_off2), Vector2(0.0, 10.0 + y_off2), ruby_dark, 1.0)
                         # Highlight
                         draw_circle(Vector2(-3.0, -5.0 + y_off2), 2.0, ruby_light)
+                        draw_set_transform(Vector2.ZERO, 0.0)
 
 
 func _draw_exit_door() -> void:

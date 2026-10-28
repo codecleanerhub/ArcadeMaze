@@ -1,15 +1,24 @@
-## shot_task81.gd — TASK 81: screenshot FANTASMI LENZUOLO + CELLE ZOMBIE.
+## shot_task81.gd — TASK 81/81c: screenshot FANTASMI LENZUOLO + CELLE ZOMBIE
+## + GEMME (verifica -30%).
 ##
 ## Due livelli, due scatti ciascuno:
-##   - livello 2  (palette 1 blue dungeon, 1 cella zombie)
-##   - livello 8  (palette 7 teal abyss, 3 celle zombie)
-## Scatto 1 (~6s): braccia FORZATE estese su tutte le celle (force_out a
-## t=5s) + eventuali fantasmi in attraversamento (spawn 1.5-4s + RNG seedato
-## per livello = riproducibile).
-## Scatto 2 (~12s): fantasmi (altri o stessa traversata avanzata), braccia
-## ormai ritratte (negli scatti si valuta anche il riposo della cella).
+##   - livello 2  (palette 1 blue dungeon, 1 cella zombie, ondate da 2)
+##   - livello 8  (palette 7 teal abyss, 3 celle zombie, ondate da 3)
+## TASK 81c — cadenza a ondate (L2: [bianco,rosso] ogni 25s; L8: tutti e 3
+## ogni 5s): per avere lenzuoli in volo allo scatto si forza l'ondata a
+## t=2.0s (force_launch sui primi ghost_wave_size(level) fantasmi, bianco
+## e rosso al L2, tutti e 3 al L8) insieme alle braccia delle celle
+## (force_out). Scatto 1 a t=2.8s (lenzuoli a meta' corridoio emersi, braccia
+## OUT); scatto 2 a t=8.0s (braccia ritratte, nessun lenzuolo: la prossima
+## ondata naturale arriva oltre lo scatto).
 ##
-## Avvio: scripts/xvfb_shot.sh 1920x1080 res://tests/shot_task81.tscn 90
+## Il dump CAP81 include anche i TESORI (posizioni+tipi) per la verifica
+## pixel della riduzione del 30% di GEM (zaffiro blu) e RUBY (rubino rosso)
+## e le POSIZIONI dei lenzuoli in volo (crop per la verifica VLM).
+##
+## Avvio (Xvfb diretto, xauth non disponibile):
+##   Xvfb :99 -screen 0 1920x1080x24 & DISPLAY=:99 <godot> --path . \
+##     res://tests/shot_task81.tscn
 extends Node
 
 const C = preload("res://scripts/core/GameConstants.gd")
@@ -54,22 +63,28 @@ func _process(delta: float) -> void:
         t += delta
         if main == null or not main.is_node_ready():
                 return
-        # a t=5s forza le braccia fuori su tutte le celle zombie
-        if not forced and t > 5.0:
+        # a t=2.0s: braccia fuori su tutte le celle zombie + ondata fantasmi
+        # forzata (i primi ghost_wave_size(level) lenzuoli in volo subito:
+        # bianco+rosso al L2, tutti e 3 al L8)
+        if not forced and t > 2.0:
                 forced = true
                 for p in main.zombie_cells.cell_positions():
                         main.zombie_cells.force_out(p.x, p.y)
-                print("[SHOT] braccia forzate su ", main.zombie_cells.cell_positions())
-        if t > 6.0 and shot == 0:
+                var w: int = C.ghost_wave_size(GameManager.current_level)
+                for i in range(w):
+                        main.maze_ghosts.force_launch(i)
+                print("[SHOT] braccia forzate su ", main.zombie_cells.cell_positions(),
+                                " + ondata di ", w, " fantasmi")
+        if t > 2.8 and shot == 0:
                 _capture(NAMES[stage * 2])
                 shot = 1
-        elif t > 12.0 and shot == 1:
+        elif t > 8.0 and shot == 1:
                 _capture(NAMES[stage * 2 + 1])
                 shot = 2
                 stage += 1
                 if stage >= LEVELS.size():
                         print("[SHOT] fantasmi attivi L8: ",
-                                        main.maze_ghosts.active_count() if stage == 2 else "-")
+                                        main.maze_ghosts.active_count())
                         get_tree().quit(0)
                         return
                 _boot_level(LEVELS[stage])
@@ -120,6 +135,20 @@ func _capture(fname: String) -> void:
                                 if refs.size() >= 3:
                                         done = true
                                         break
+        # TASK 81c: tesori (posizioni+tipi, per la verifica -30% delle
+        # gemme) e lenzuoli in volo (posizioni, per i crop VLM).
+        var tres_json: Array = []
+        for r in range(C.MAZE_ROWS):
+                for c in range(C.MAZE_COLS):
+                        if main.maze.get_cell_type(c, r) == C.CellType.TREASURE:
+                                tres_json.append({"c": c, "r": r,
+                                                "t": main.maze._get_cell_treasure(c, r)})
+        var ghosts_json: Array = []
+        for gi in range(main.maze_ghosts.ghost_count()):
+                var gs: Dictionary = main.maze_ghosts.ghost_state(gi)
+                if bool(gs.get("active", false)):
+                        ghosts_json.append({"color": gs["color"],
+                                        "pos": [gs["pos"].x, gs["pos"].y]})
         var wc: Color = main.maze.wall_color
         print("CAP81 ", JSON.stringify({
                 "file": fname,
@@ -127,4 +156,6 @@ func _capture(fname: String) -> void:
                 "wall_color": [wc.r, wc.g, wc.b],
                 "cells": cells_json,
                 "ref_walls": refs,
+                "treasures": tres_json,
+                "ghosts": ghosts_json,
         }))

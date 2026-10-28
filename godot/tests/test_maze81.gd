@@ -1,19 +1,21 @@
 ## test_maze81.gd — TASK 81: test runtime FANTASMI LENZUOLO + CELLE ZOMBIE.
 ##
-## FANTASMI (MazeGhosts) — incl. CORREZIONE UTENTE ("non devono essere
-## innocui, il player li puo' evitare saltandoli ma se toccono il player
-## levano il 33% dell'energia"):
-##   F1. pool di 4 fantasmi, 3 apparizioni ciascuno
-##   F2. attraversamenti totali dopo lunghissima simulazione = 12 (4x3),
-##       nessun fantasma supera le 3 apparizioni
-##   F3. i 3 muri usati da ogni fantasma sono DIVERSI ("respawn da un
-##       altro muro")
-##   F4. simultanei su schermo MAI oltre 4 (cap); valore 4 raggiunto al
-##       livello alto (probabilita' crescente)
-##   F5. cap al livello 1 resta quasi sempre basso (<= 2 tolleranza)
-##   F6. CORREZIONE: il tocco del lenzuolo toglie il 33% dell'energia max
-##       (arrotondato, min 1); il SALTO sopra il lenzuolo NON colpisce;
-##       il danno vale solo nel tratto emerso del corridoio
+## FANTASMI (MazeGhosts) — TASK 81c: respawn INFINITO a ondate:
+##   F1. pool FISSO di 3 fantasmi (bianco, rosso, verde)
+##   F2. MAI budget esaurito: dopo 15 min simulati al L12 gli
+##       attraversamenti completati superano abbondantemente il vecchio
+##       budget (12) e continuano a crescere
+##   F3. rotazione colori al L1: le ondate da 1 lenzuolo sono in ordine
+##       bianco -> rosso -> verde -> bianco...
+##   F4. formule livello: ondata 1/2/3 lenzuoli (L1/L2-6/L7+) e delay
+##       30s -> -5s per livello -> floor 5s (L1:30, L2:25, L6:5)
+##   F5. al L1 mai piu' di 1 lenzuolo alla volta; il delay tra la
+##       scomparsa e la prossima ondata e' esattamente 30s
+##   F6. al L12 (ondate da 3): tutti e 3 insieme, mai oltre 3, prossima
+##       ondata entro attraversamento (~1.8s) + 5s + margine
+##   F7. CORREZIONE UTENTE (invariata): il tocco del lenzuolo toglie il
+##       33% dell'energia max (arrotondato, min 1); il SALTO sopra il
+##       lenzuolo NON colpisce; il danno vale solo nel tratto emerso
 ##
 ## CELLE ZOMBIE (ZombieCells):
 ##   Z1. numero celle per livello: 1 (L1), 2 (L4), 3 (L7), mai oltre 3
@@ -97,68 +99,108 @@ func _ready() -> void:
         print("[TEST-81] ==== TEST FANTASMI + CELLE ZOMBIE (TASK 81) ====")
 
         # ----------------------------------------------------------------
-        # FANTASMI — simulazione lunga al livello 12 (intervalli compressi,
-        # cap simultaneo alto) e al livello 1 (cap basso).
+        # FANTASMI (TASK 81c) — formule, respawn INFINITO a ondate,
+        # rotazione colori, caps per livello e danni.
         # ----------------------------------------------------------------
         var maze: Node = MazeScript.new()
         add_child(maze)
 
-        # --- livello 12: il budget si esaurisce del tutto ---
+        # --- F4: formule pure (ondate e delay in funzione del livello) ---
+        ok(C.ghost_wave_size(1) == 1, "F4 ondata L1 = 1 lenzuolo")
+        ok(C.ghost_wave_size(2) == 2, "F4 ondata L2 = 2 lenzuoli")
+        ok(C.ghost_wave_size(6) == 2, "F4 ondata L6 = 2 lenzuoli")
+        ok(C.ghost_wave_size(7) == 3, "F4 ondata L7 = 3 lenzuoli (tutti insieme)")
+        ok(C.ghost_wave_size(50) == 3, "F4 ondata L50 = 3 (cap)")
+        ok(absf(C.ghost_wave_respawn_ms(1) - 30000.0) < 0.01, "F4 delay L1 = 30s")
+        ok(absf(C.ghost_wave_respawn_ms(2) - 25000.0) < 0.01, "F4 delay L2 = 25s")
+        ok(absf(C.ghost_wave_respawn_ms(3) - 20000.0) < 0.01, "F4 delay L3 = 20s")
+        ok(absf(C.ghost_wave_respawn_ms(5) - 10000.0) < 0.01, "F4 delay L5 = 10s")
+        ok(absf(C.ghost_wave_respawn_ms(6) - 5000.0) < 0.01, "F4 delay L6 = 5s (floor)")
+        ok(absf(C.ghost_wave_respawn_ms(12) - 5000.0) < 0.01, "F4 delay L12 = 5s (floor)")
+
+        # --- F1 + F2: livello 12, respawn INFINITO (mai budget) ---
         maze.generate(12)
         var ghosts: Node = MazeGhostsScript.new()
         add_child(ghosts)
         ghosts.generate(12, maze)
-        ok(ghosts.ghost_count() == C.GHOST_POOL_SIZE, "F1 pool di %d fantasmi" % C.GHOST_POOL_SIZE)
-        ok(ghosts.total_appearances_left() == C.GHOST_POOL_SIZE * C.GHOST_MAX_APPEARANCES,
-                        "F1 budget iniziale = 4x3 = 12 apparizioni")
-        ok(ghosts.crossing_count() > 0, "F2 il labirinto offre attraversamenti (%d)" % ghosts.crossing_count())
+        ok(ghosts.ghost_count() == 3, "F1 pool fisso di 3 fantasmi")
+        var pool_colors: Array = []
+        for gi in range(3):
+                pool_colors.append(ghosts.ghost_state(gi)["color"])
+        ok(pool_colors == ["white", "red", "green"], "F1 colori pool = bianco, rosso, verde")
+        ok(ghosts.crossing_count() > 0, "F1 il labirinto offre attraversamenti (%d)" % ghosts.crossing_count())
 
         var max_simul_12: int = 0
-        var max_distinct_out: int = 0
         # 15 minuti di gioco simulati a step da ~16.7ms
         var steps: int = int(900000.0 / 16.6667)
         for i in range(steps):
                 ghosts.update_ghosts(16.6667, [])
                 max_simul_12 = maxi(max_simul_12, ghosts.active_count())
-        ok(ghosts.total_appearances_left() == 0,
-                        "F2 budget esaurito dopo 15 min simulati (residuo %d)" % ghosts.total_appearances_left())
-        ok(max_simul_12 <= C.GHOST_MAX_SIMULTANEOUS,
-                        "F4 simultanei mai oltre %d (max visto %d)" % [C.GHOST_MAX_SIMULTANEOUS, max_simul_12])
-        ok(max_simul_12 >= 2, "F4 al livello 12 i fantasmi si sovrappongono (max %d >= 2)" % max_simul_12)
-        var colors_seen: Array = []
-        for col in ["white", "red", "green"]:
-                var used: Array = ghosts.used_run_keys_of(col)
-                colors_seen.append(used.size())
-                ok(used.size() <= C.GHOST_MAX_APPEARANCES,
-                                "F2 fantasma %s: max %d apparizioni (usate %d)" % [col, C.GHOST_MAX_APPEARANCES, used.size()])
-                var distinct: bool = true
-                for k in used:
-                        if used.count(k) > 1:
-                                distinct = false
-                ok(distinct or used.is_empty(), "F3 fantasma %s: muri tutti diversi" % col)
-        max_distinct_out = colors_seen.max()
+        var runs_15min: int = ghosts.total_runs()
+        ok(runs_15min > 100,
+                        "F2 respawn INFINITO: %d attraversamenti in 15 min (vecchio budget 12)" % runs_15min)
+        ok(max_simul_12 == 3, "F6 al L12 tutti e 3 insieme (max simultanei %d)" % max_simul_12)
+        # F2: e continuano per sempre — altri 40s -> altri attraversamenti
+        for i in range(int(40000.0 / 16.6667)):
+                ghosts.update_ghosts(16.6667, [])
+        ok(ghosts.total_runs() > runs_15min,
+                        "F2 dopo altri 40s gli attraversamenti crescono ancora (%d -> %d)"
+                        % [runs_15min, ghosts.total_runs()])
 
-        # --- livello 1: il cap simultaneo resta contenuto ---
+        # --- F6: delay effettivo al L12 — quando l'ultimo lenzuolo sparisce
+        # il countdown della prossima ondata parte da 5s esatti ---
+        var delay_l12: float = -1.0
+        var guard_cad: int = 0
+        while guard_cad < int(60000.0 / 16.6667) and delay_l12 < 0.0:
+                ghosts.update_ghosts(16.6667, [])
+                if ghosts.active_count() == 0:
+                        var wi12: Dictionary = ghosts.wave_info()
+                        if not wi12["flying"] and absf(float(wi12["next_ms"]) - 5000.0) < 0.001:
+                                delay_l12 = float(wi12["next_ms"])
+                guard_cad += 1
+        ok(delay_l12 > 0.0,
+                        "F6 delay ondata successiva al L12 = 5s (visto %.1f)" % delay_l12)
+
+        # --- F3 + F5: livello 1 — un lenzuolo alla volta in ROTAZIONE,
+        # delay 30s esatti tra la scomparsa e la prossima ondata ---
         maze.generate(1)
         ghosts.generate(1, maze)
+        var run_colors: Array = []
         var max_simul_1: int = 0
-        steps = int(240000.0 / 16.6667)
+        var delay_l1: float = -1.0
+        steps = int(200000.0 / 16.6667)  # 200s: ~5-6 ondate da 1 lenzuolo
         for i in range(steps):
                 ghosts.update_ghosts(16.6667, [])
                 max_simul_1 = maxi(max_simul_1, ghosts.active_count())
-        ok(max_simul_1 <= 2, "F5 al livello 1 simultanei <= 2 (max visto %d)" % max_simul_1)
+                if ghosts.active_count() > 0:
+                        var col_now: String = ""
+                        for gi in range(3):
+                                if ghosts.ghost_state(gi)["active"]:
+                                        col_now = ghosts.ghost_state(gi)["color"]
+                                        break
+                        if run_colors.is_empty() or run_colors[-1] != col_now:
+                                run_colors.append(col_now)
+                else:
+                        var wi1: Dictionary = ghosts.wave_info()
+                        if not wi1["flying"] and absf(float(wi1["next_ms"]) - 30000.0) < 0.001:
+                                delay_l1 = float(wi1["next_ms"])
+        ok(max_simul_1 == 1, "F5 al L1 mai piu' di 1 lenzuolo alla volta (max %d)" % max_simul_1)
+        ok(delay_l1 > 0.0,
+                        "F5 delay ondata successiva al L1 = 30s esatti (visto %.1f)" % delay_l1)
+        ok(run_colors.size() >= 4 and run_colors.slice(0, 4) == ["white", "red", "green", "white"],
+                        "F3 rotazione al L1: bianco -> rosso -> verde -> bianco (%s)" % str(run_colors))
 
         # ----------------------------------------------------------------
-        # F6 — CORREZIONE UTENTE: il lenzuolo e' DANNOSO (-33% al tocco,
-        # il salto evita). L'attraversamento e' muro A -> corridoio ->
-        # muro B: il tocco vale solo nel tratto emerso (EMERGE_LEN_PX dai
-        # muri), il player a meta' corridoio viene colpito, quello che
-        # SALTA sopra il lenzuolo no.
+        # F7 — CORREZIONE UTENTE (invariata): il lenzuolo e' DANNOSO
+        # (-33% al tocco, il salto evita). L'attraversamento e' muro A ->
+        # corridoio -> muro B: il tocco vale solo nel tratto emerso
+        # (EMERGE_LEN_PX dai muri), il player a meta' corridoio viene
+        # colpito, quello che SALTA sopra il lenzuolo no.
         # ----------------------------------------------------------------
         maze.generate(12)
         ghosts.generate(12, maze)
         var g0: Dictionary = ghosts.force_launch(0)
-        ok(bool(g0.get("active", false)), "F6 lenzuolo lanciato (force_launch)")
+        ok(bool(g0.get("active", false)), "F7 lenzuolo lanciato (force_launch)")
         var stub_g := StubPlayer.new()
         var stub_far_g := StubPlayer.new()
         var expected_g_dmg: int = maxi(1, int(round(
@@ -171,28 +213,28 @@ func _ready() -> void:
                 ghosts.update_ghosts(16.6667, [])
                 guard += 1
         ok((float(g0["travel_total"]) - float(g0["travel_left"])) >= 34.0,
-                        "F6 lenzuolo emerso nel corridoio dopo %d step" % guard)
+                        "F7 lenzuolo emerso nel corridoio dopo %d step" % guard)
         # player ESATTAMENTE sul lenzuolo -> tocco
         stub_g.position = g0["pos"]
         ghosts.update_ghosts(16.6667, [stub_g, stub_far_g])
-        ok(stub_g.hits == 1, "F6 tocco lenzuolo: 1 colpo (%d)" % stub_g.hits)
+        ok(stub_g.hits == 1, "F7 tocco lenzuolo: 1 colpo (%d)" % stub_g.hits)
         ok(stub_g.last_dmg == expected_g_dmg,
-                        "F6 danno tocco = 33%% arrotondato (%d su max %d)" % [stub_g.last_dmg, stub_g.max_energy])
+                        "F7 danno tocco = 33%% arrotondato (%d su max %d)" % [stub_g.last_dmg, stub_g.max_energy])
         ok(stub_g.energy == stub_g.max_energy - expected_g_dmg,
-                        "F6 energia scalata del 33%% (%d -> %d)" % [stub_g.max_energy, stub_g.energy])
-        ok(stub_far_g.hits == 0, "F6 player lontano mai toccato (%d)" % stub_far_g.hits)
+                        "F7 energia scalata del 33%% (%d -> %d)" % [stub_g.max_energy, stub_g.energy])
+        ok(stub_far_g.hits == 0, "F7 player lontano mai toccato (%d)" % stub_far_g.hits)
         # SALTO sopra il lenzuolo: protetto
         stub_g.invuln_ms = 0.0
         stub_g.jumping = true
         stub_g.position = g0["pos"]
         ghosts.update_ghosts(16.6667, [stub_g])
-        ok(stub_g.hits == 1, "F6 SALTO sopra il lenzuolo: nessun nuovo colpo")
+        ok(stub_g.hits == 1, "F7 SALTO sopra il lenzuolo: nessun nuovo colpo")
         # atterrato sul lenzuolo: nuovo colpo
         stub_g.jumping = false
         stub_g.invuln_ms = 0.0
         stub_g.position = g0["pos"]
         ghosts.update_ghosts(16.6667, [stub_g])
-        ok(stub_g.hits == 2, "F6 atterrato sul lenzuolo: nuovo colpo (tot %d)" % stub_g.hits)
+        ok(stub_g.hits == 2, "F7 atterrato sul lenzuolo: nuovo colpo (tot %d)" % stub_g.hits)
 
         # ----------------------------------------------------------------
         # CELLE ZOMBIE

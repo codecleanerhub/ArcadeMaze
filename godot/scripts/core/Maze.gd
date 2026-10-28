@@ -1431,7 +1431,13 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                         # il tesoro resta ben visibile ma la gerarchia diventa
                         # player (83) > miniboss (82) > nemici (78) > tesori
                         # (73.6). Contenuto reale PNG ~68px, dentro la cella.
+                        # TASK 81c: le GEMME (zaffiro blu + rubino rosso) si
+                        # rimpiccioliscono del 30% (73.6 -> 51.5px): da "più
+                        # grandi dei nemici" a oggetto minore nel corridoio.
                         var draw_size: float = size * 1.15
+                        if tres_type == C.TreasureType.GEM \
+                                        or tres_type == C.TreasureType.RUBY:
+                                draw_size *= C.TREASURE_GEM_SHRINK
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
@@ -1441,6 +1447,10 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 var tex: Texture2D = EnvironmentArt.get_treasure_texture(tres_type)
                 if tex:
                         var draw_size: float = size * 1.15  # FIX: era 0.8, poi 1.3, ora 1.15 (73.6px)
+                        # TASK 81c: gemme -30% (stessa regola del PNG).
+                        if tres_type == C.TreasureType.GEM \
+                                        or tres_type == C.TreasureType.RUBY:
+                                draw_size *= C.TREASURE_GEM_SHRINK
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
@@ -1458,6 +1468,10 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
         var cx: float = px + size * 0.5
         var cy: float = py + size * 0.45
         var gs: float = size * 0.18
+        # TASK 81c: gemme -30% anche nel fallback poligonale.
+        if tres_type == C.TreasureType.GEM \
+                        or tres_type == C.TreasureType.RUBY:
+                gs *= C.TREASURE_GEM_SHRINK
         var points := PackedVector2Array([
                 Vector2(cx, cy - gs), Vector2(cx + gs, cy),
                 Vector2(cx, cy + gs), Vector2(cx - gs, cy),
