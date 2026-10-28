@@ -217,9 +217,14 @@ func _draw_screen(p: Control) -> void:
 
         var cx: float = vp.x * 0.5
         # Titolo: PLAYER N + CONTINUE?
+        # TASK 79b: "PLAYER N" localizzato (hud.player); "CONTINUE?" resta
+        # in inglese in entrambe le lingue (termine arcade, richiesta Task 44).
         var p_col: Color = Color(0.39, 0.78, 1.0) if player_num == 1 \
                         else Color(1.0, 0.59, 0.39)
-        _text_centered(p, font, "PLAYER %d" % player_num,
+        var p_title: String = "PLAYER %d" % player_num
+        if I18n:
+                p_title = I18n.t("hud.player") % player_num
+        _text_centered(p, font, p_title,
                 Vector2(cx, 92.0), 40, p_col)
         _text_centered(p, font, "CONTINUE?",
                 Vector2(cx, 158.0), 64, COLOR_TITLE)
@@ -232,20 +237,32 @@ func _draw_screen(p: Control) -> void:
         _text_centered(p, font, str(_countdown),
                 Vector2(cx, 290.0), 72, count_color)
 
-        # YES / NO (LEFT = YES, RIGHT = NO).
+        # YES / NO (LEFT = YES, RIGHT = NO). TASK 79b: localizzati (SÌ/NO).
         var yes_color: Color = COLOR_YES if _choice else COLOR_YES.darkened(0.5)
         var no_color: Color = COLOR_NO if not _choice else COLOR_NO.darkened(0.5)
+        var yes_txt: String = "YES"
+        var no_txt: String = "NO"
+        if I18n:
+                yes_txt = I18n.t("cont.yes")
+                no_txt = I18n.t("cont.no")
         if _choice:
                 _text_centered(p, font, ">", Vector2(cx - 150.0, 430.0), 36, COLOR_TITLE, 60.0)
         else:
                 _text_centered(p, font, ">", Vector2(cx + 110.0, 430.0), 36, COLOR_TITLE, 60.0)
-        _text_centered(p, font, "YES", Vector2(cx - 120.0, 430.0), 40, yes_color, 150.0)
-        _text_centered(p, font, "NO", Vector2(cx + 60.0, 430.0), 40, no_color, 150.0)
+        _text_centered(p, font, yes_txt, Vector2(cx - 120.0, 430.0), 40, yes_color, 150.0)
+        _text_centered(p, font, no_txt, Vector2(cx + 60.0, 430.0), 40, no_color, 150.0)
 
         # Crediti RESIDUI di QUESTO player (contatore separato).
-        _text_centered(p, font, "PLAYER %d CONTINUES LEFT: %d" % [player_num, credits_left],
+        # TASK 79b: riga localizzata (cont.p_left) + hint (cont.hint).
+        var left_txt: String = "PLAYER %d CONTINUES LEFT: %d" % [player_num, credits_left]
+        if I18n:
+                left_txt = I18n.t("cont.p_left") % [player_num, credits_left]
+        _text_centered(p, font, left_txt,
                 Vector2(cx, 520.0), 24, COLOR_HINT)
-        _text_centered(p, font, "LEFT/RIGHT TO SELECT - ENTER TO CONFIRM",
+        var hint_txt: String = "LEFT/RIGHT TO SELECT - ENTER TO CONFIRM"
+        if I18n:
+                hint_txt = I18n.t("cont.hint")
+        _text_centered(p, font, hint_txt,
                 Vector2(cx, 570.0), 18, COLOR_HINT)
 
 

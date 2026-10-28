@@ -39,7 +39,7 @@ const TEXTS: Dictionary = {
         "menu.num_players": {"en": "NUMBER OF PLAYERS: %d", "it": "GIOCATORI: %d"},
         "menu.game_mode": {"en": "GAME MODE: %s", "it": "MODALITÀ: %s"},
         "menu.test_mode": {"en": "TEST MODE: %s", "it": "TEST MODE: %s"},
-        "menu.options": {"en": "OPTIONS", "it": "OPZIONI"},
+        "menu.options": {"en": "OPTIONS", "it": "IMPOSTAZIONI"},
         "menu.start": {"en": "START GAME", "it": "INIZIA PARTITA"},
         "menu.credits": {"en": "CREDITS", "it": "CREDITS"},
         "menu.hall_of_fame": {"en": "HALL OF FAME", "it": "HALL OF FAME"},
@@ -174,6 +174,11 @@ const TEXTS: Dictionary = {
         # ---------------- Continue ----------------
         "cont.title": {"en": "CONTINUE?", "it": "CONTINUE?"},
         "cont.left": {"en": "CONTINUES LEFT: %d", "it": "CONTINUE RIMASTI: %d"},
+        # TASK 79b: riga completa con numero giocatore (ContinuesOverlay 2P)
+        "cont.p_left": {
+                "en": "PLAYER %d CONTINUES LEFT: %d",
+                "it": "GIOCATORE %d — CONTINUE RIMASTI: %d",
+        },
         "cont.hint": {
                 "en": "LEFT/RIGHT TO SELECT - ENTER TO CONFIRM",
                 "it": "SINISTRA/DESTRA PER SCEGLIERE - INVIO PER CONFERMARE",

@@ -350,8 +350,8 @@ func _draw() -> void:
                         # Fallback: colored circle
                         var col: Color = Color(0.7, 0.5, 0.3, p.alpha)
                         draw_circle(Vector2(p.x, p.y - 20), 20 * p.scale, col)
-                        # Name
-                        _draw_text_centered(CHARACTER_NAMES[i], p.x, p.y - 50 * p.scale, 14 * p.scale,
+                        # Name (TASK 79b: localizzato via CHARACTER_NAME_KEYS)
+                        _draw_text_centered(_char_name(i), p.x, p.y - 50 * p.scale, 14 * p.scale,
                                 Color(1, 1, 1, p.alpha))
 
                 # Glow on selected character (front)
@@ -366,8 +366,18 @@ func _draw() -> void:
                                 5.0 * p.scale, Color(1.0, 0.84, 0.0, 0.35 * glow))
 
         # --- 8. Nome personaggio selezionato (in basso, palette oro TASK 78) ---
-        _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, vp_size.y - 60, 32,
+        # TASK 79b: localizzato (CHARACTER_NAME_KEYS -> I18n "char.*").
+        _draw_text_centered(_char_name(wheel_index), cx, vp_size.y - 60, 32,
                 Color(1.0, 0.87, 0.42))
+
+
+## TASK 79b — nome personaggio localizzato (fallback inglese se I18n assente).
+func _char_name(idx: int) -> String:
+        if I18n and idx >= 0 and idx < CHARACTER_NAME_KEYS.size():
+                return I18n.t(CHARACTER_NAME_KEYS[idx])
+        if idx >= 0 and idx < CHARACTER_NAMES.size():
+                return CHARACTER_NAMES[idx]
+        return "?"
 
 
 # Draw text centered at (x, y) with given size and color.

@@ -63,6 +63,8 @@ signal heart_clicked()  # currently unused but exposed for future editor hooks
 @export var color_heart_fill:  Color = Color(0.863, 0.078, 0.078)    # 220,20,20
 @export var color_heart_outline: Color = Color(0.392, 0.000, 0.000)  # 100,0,0
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # --- Heart sprite (mirror of UI::heartTexture + heartSprite) ---------------
 var _heart_texture: Texture2D = null
 var _heart_loaded: bool = false
@@ -71,7 +73,9 @@ var _heart_loaded: bool = false
 # 1P snapshot
 var _p1: Dictionary = {
         "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
-        "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
+        # TASK 79b: default localizzato (PISTOL/PISTOLA) invece di "PISTOL"
+        # fisso: copre il frame iniziale prima del primo set_player_state.
+        "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL), "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
@@ -82,7 +86,7 @@ var _p1: Dictionary = {
 # 2P snapshot (only used when _num_players == 2)
 var _p2: Dictionary = {
         "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
-        "weapon_name": "PISTOL", "weapon_color": Color(0.784, 0.784, 0.196),
+        "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL), "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,

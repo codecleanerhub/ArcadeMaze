@@ -195,7 +195,9 @@ func _physics_process(_delta: float) -> void:
                         "lives": player.lives,
                         "energy": player.energy,
                         "max_energy": player.max_energy,
-                        "weapon_name": "PISTOL",
+                        # TASK 79b: nome arma localizzato (PISTOL/PISTOLA),
+                        # mai hardcoded "PISTOL".
+                        "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL),
                         "weapon_color": Color.WHITE,
                         "weapon_ammo": player.current_weapon.get("ammo", 0),
                         "weapon_max": 20,

@@ -107,8 +107,8 @@ const DEMO_INACTIVITY_SECONDS: float = 30.0
 # Child nodes (built in _ready).
 var _bg: TextureRect
 var _options_bg: TextureRect  # Themed background shown when _in_options == true
-var _options_logo: Texture2D = null
-var _has_options_logo: bool = false
+var _options_logo_en: Texture2D = null
+var _options_logo_it: Texture2D = null
 var _title_label: Label
 var _footer_by: Label
 var _footer_name: Label
@@ -311,10 +311,10 @@ func _process(delta: float) -> void:
         # Pulse the title (very subtle gold shimmer).
         if _title_label:
                 # TASK 51 (P5): il titolo testuale resta solo nel sottomenu
-                # OPTIONS; nel menu principale c'e' il LOGO sangue.
-                # TASK 76: anche in OPTIONS si usa il LOGO sangue se il PNG
-                # esiste (header_options.png), altrimenti fallback testuale.
-                _title_label.visible = _in_options and not _has_options_logo
+                # OPTIONS; nel menu principale c'e' il LOGO oro.
+                # TASK 79b: logo PER LINGUA (OPTIONS/IMPOSTAZIONI): la label
+                # testuale compare solo se il PNG della lingua attiva manca.
+                _title_label.visible = _in_options and _current_options_logo() == null
                 _title_label.modulate = Color(
                         1.0, 1.0, 1.0, 0.92 + 0.08 * sin(_menu_time * 2.0))
         # Hint text gentle fade.
@@ -468,10 +468,13 @@ func _build_ui() -> void:
         _options_bg.visible = false
         add_child(_options_bg)
 
-        # TASK 76: header sangue "OPTIONS" (PixelLab, stesso stile del logo
-        # del titolo) — se manca, il sottomenu usa il titolo testuale rosso.
-        _options_logo = _load_menu_png("res://assets/ui/header_options.png")
-        _has_options_logo = _options_logo != null
+        # TASK 79b: header oro del sottomenu OPTIONS in DUE lingue
+        # ("OPTIONS" / "IMPOSTAZIONI" — gold, font Goth And Gothic).
+        # _current_options_logo() sceglie in base a I18n.language; se manca
+        # il PNG della lingua attiva, fallback sull'altro; se mancano tutti
+        # resta il titolo testuale oro (label non nascosta).
+        _options_logo_en = _load_menu_png("res://assets/ui/header_options.png")
+        _options_logo_it = _load_menu_png("res://assets/ui/header_options_it.png")
 
         # Dark overlay over the background, below the panel
         var dark := ColorRect.new()
@@ -701,7 +704,6 @@ var _gothic_node: Node2D = null
 class GothicDrawer extends Node2D:
         var owner_menu: CanvasItem = null
         var logo: Texture2D = null
-        var options_logo: Texture2D = null
         var bats: Array[Texture2D] = []
         var t: float = 0.0
         # stormo: [speed, y, scala, fase, dir]
@@ -724,19 +726,23 @@ class GothicDrawer extends Node2D:
                 var in_options: bool = bool(owner_menu.get("_in_options"))
                 var vp: Vector2 = owner_menu.size
                 if in_options:
-                        # TASK 78: sottomenu OPTIONS — logo ORO medievale
-                        # "OPTIONS" (font Goth And Gothic, stesso stile del
-                        # titolo). Se manca il PNG il titolo testuale resta
-                        # visibile (label non nascosta).
+                        # TASK 79b: logo ORO del sottomenu OPTIONS PER LINGUA
+                        # (EN "OPTIONS" / IT "IMPOSTAZIONI"): recuperato dal
+                        # menu a ogni frame così lo switch LANGUAGE nel
+                        # sottomenu cambia subito l'header senza ricaricare.
+                        # (call() dinamica: owner_menu è tipizzato CanvasItem,
+                        # come il get("_in_options") qui sopra.)
+                        var options_logo: Texture2D = owner_menu.call("_current_options_logo")
                         if options_logo == null:
                                 return
                         # TASK 78: il nuovo header e' piu' largo che alto
-                        # (aspect ~4.5:1): dimensione dall'ALTEZZA con cap di
-                        # larghezza, come per il titolo.
+                        # (aspect ~4.5:1 EN / ~7.4:1 IT): dimensione dall'ALTEZZA
+                        # con cap di larghezza, come per il titolo. TASK 79b: cap
+                        # alzato a 40% per la versione IT (12 glifi vs 7).
                         var oh: float = minf(150.0, vp.y * 0.14)
                         var ow: float = oh * float(options_logo.get_width()) / maxf(options_logo.get_height(), 1.0)
-                        if ow > vp.x * 0.34:
-                                ow = vp.x * 0.34
+                        if ow > vp.x * 0.40:
+                                ow = vp.x * 0.40
                                 oh = ow * float(options_logo.get_height()) / maxf(options_logo.get_width(), 1.0)
                         var ox: float = vp.x * 0.5 - ow * 0.5
                         var oy: float = 95.0 - oh * 0.5
@@ -815,8 +821,8 @@ func _make_gothic_node() -> Node2D:
         gn.name = "GothicTitle"
         # TASK 78: logo oro medievale (font Goth And Gothic)
         gn.logo = _load_menu_png("res://assets/ui/title_logo.png")
-        # TASK 78: header oro del sottomenu OPTIONS (stesso stile).
-        gn.options_logo = _load_menu_png("res://assets/ui/header_options.png")
+        # TASK 79b: niente più options_logo fisso qui — il GothicDrawer lo
+        # chiede a owner_menu._current_options_logo() a ogni frame (per lingua).
         # pipistrelli del menu
         for i in 6:
                 var bt: Texture2D = _load_menu_png(
@@ -835,6 +841,21 @@ func _load_menu_png(path: String) -> Texture2D:
         if img.load(abs_path) != OK:
                 return null
         return ImageTexture.create_from_image(img)
+
+
+## TASK 79b — header del sottomenu OPTIONS nella lingua ATTIVA.
+## Ritorna il PNG "IMPOSTAZIONI" in italiano, "OPTIONS" in inglese; se il PNG
+## della lingua attiva manca, fallback sull'altro; null se mancano entrambi
+## (in tal caso resta visibile il titolo testuale oro).
+func _current_options_logo() -> Texture2D:
+        var want_it: bool = I18n != null and I18n.is_italian()
+        if want_it:
+                if _options_logo_it != null:
+                        return _options_logo_it
+                return _options_logo_en
+        if _options_logo_en != null:
+                return _options_logo_en
+        return _options_logo_it
 
 
 # Builds a gold-outlined stylebox for highlighting the selected character slot.
