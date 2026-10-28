@@ -1,14 +1,20 @@
 ## MazeGhosts.gd - TASK 81.1: FANTASMI LENZUOLO del labirinto.
 ## ============================================================
-## Meccanica (richiesta utente):
+## Meccanica (richiesta utente + CORREZIONE utente: "non devono essere
+## innocui, il player li puo' evitare saltandoli ma se toccono il player
+## levano il 33% dell'energia"):
 ##   * Fantasmi di colore BIANCO, ROSSO e VERDE trasparente, in stile
 ##     classico lenzuolo con occhi e bocca, che fluttuano a mezz'aria.
-##   * Escono da un muro del labirinto in tempi casuali, attraversano e
-##     arrivano all'estremita' successiva del muro, compenstrandosi nella
-##     roccia e sparendo.
-##   * Sono IMMORTALI e INNOCUI: il player li attraversa senza subire
-##     danno ("li puo' saltare"), i proiettili passano attraverso. Non
-##     collidono con nulla: sono pura atmosfera da dungeon.
+##   * Escono da un muro del labirinto in tempi casuali, ATTRAVERSANO
+##     IL CORRIDOIO davanti a quella faccia di muro e si compenetrano
+##     nel muro opposto, sparendo ("arrivano all'estremita' successiva
+##     del muro, compenetrandosi nel muro e sparendo").
+##   * Sono IMMORTALI (i proiettili passano attraverso) ma DANNOSI: il
+##     tocco toglie il 33% dell'energia max (Player.take_hazard_damage,
+##     pattern ganasce: bypassa le armature, rispetta invulnerabilita'
+##     post-colpo/calice/spawn). Il SALTO EVITA il tocco: il lenzuolo
+##     occupa la mezzeria del corridoio e il player lo supera saltandoci
+##     SOPRA ("il player li puo' evitare saltandoli").
 ##   * La volta successiva respawnano da un ALTRO muro: ogni fantasma ha
 ##     un budget di 3 apparizioni su 3 MURI DIVERSI, poi non appare piu'.
 ##   * Fino a 4 fantasmi simultanei; la probabilita' che siano 4 in
@@ -21,10 +27,12 @@
 ## il nodo sta DOPO Collectibles in MainGame.tscn cosi' i lenzuoli
 ## fluttuano SOPRA muri, player e nemici ("a mezz'aria").
 ##
-## Movimento: il fantasma percorre la mezzeria del segmento WALL scelto
-## (run orizzontale o verticale di 2..8 celle), da un'estremita' all'altra.
-## Emergere/affondare = ramp di alpha sui primi/ultimi 28px, cosi' il
-## lenzuolo "spunta" dalla roccia e ci si ricompentra dentro.
+## Movimento: il fantasma percorre la mezzeria del CORRIDOIO tra due muri
+## statici affacciati (cella corridoio con muro su entrambi i lati di un
+## asse): centro del muro A -> centro del corridoio -> centro del muro B
+## (128px). Emergere/affondare = ramp di alpha sui primi/ultimi 28px
+## dentro la roccia; il tocco dannoso vale solo quando il lenzuolo e'
+## EMERSO nel corridoio (finestra di piena visibilita').
 ## ============================================================
 extends Node2D
 class_name MazeGhosts
@@ -50,7 +58,7 @@ const COLORS: Array = ["white", "red", "green"]
 var _level: int = 1
 var _time_ms: float = 0.0
 var _ghosts: Array = []  # dizionari-stato per fantasma
-var _runs: Array = []  # segmenti WALL attraversabili
+var _crossings: Array = []  # segmenti muro-A/corridoio/muro-B attraversabili
 var _rng := RandomNumberGenerator.new()
 
 
@@ -75,15 +83,15 @@ static func _get_sheet(color: String) -> Texture2D:
 ## livello (gli orari degli spawn si ripetono al continue, pattern hazards).
 func generate(lvl: int, maze: Node) -> void:
         _ghosts.clear()
-        _runs.clear()
+        _crossings.clear()
         _level = lvl
         _time_ms = 0.0
         if not C.GHOSTS_ENABLED:
                 queue_redraw()
                 return
-        _rng.seed = hash("mghosts_v1_%d" % lvl)
-        _collect_wall_runs(maze)
-        if _runs.is_empty():
+        _rng.seed = hash("mghosts_v2_%d" % lvl)
+        _collect_crossings(maze)
+        if _crossings.is_empty():
                 queue_redraw()
                 return
         # Pool: bianco, rosso, verde + un quarto colore random (richiesta:
@@ -109,58 +117,56 @@ func generate(lvl: int, maze: Node) -> void:
         queue_redraw()
 
 
-## Scansione dei segmenti WALL contiguous (orizzontali e verticali) di
-## lunghezza GHOST_RUN_MIN..MAX_CELLS. I muri di bordo (15-30 celle) restano
-## fuori dal cap; le lastre mobili del Task 30 spezzano i segmenti; le
-## celle con la torcia (hash [14,19) in Maze._spawn_torch_lights) restano
-## valide — il lenzuolo fluttua SOPRA la fiamma, non la tocca.
-func _collect_wall_runs(maze: Node) -> void:
+## CORREZIONE UTENTE (attraversamento del corridoio): raccoglie i punti
+## di attraversamento = celle CORRIDOIO (non WALL, quindi anche tesori/armi
+## a terra: il lenzuolo ci fluttua sopra) con muro STATICO su entrambi i
+## lati lungo un asse cardinale. Il fantasma emerge dal centro del muro A,
+## attraversa la mezzeria del corridoio e si compenetra nel muro B:
+## e' l'unica geometria in cui "il player li puo' saltare" ha senso (il
+## lenzuolo blocca il corridoio su cui cammina il player).
+## Esclusioni: celle delle gallerie Pac-Man (bordo), muri dinamici Task 30
+## (le lastre si aprono: il muro d'arrivo scomparirebbe a meta' strada).
+func _collect_crossings(maze: Node) -> void:
         if maze == null:
                 return
-        # orizzontali
-        for r in range(C.MAZE_ROWS):
-                var run_start: int = -1
-                for c in range(C.MAZE_COLS + 1):
-                        var is_wall_cell: bool = c < C.MAZE_COLS \
-                                        and maze.is_wall(c, r) \
-                                        and not maze.dynamic_walls.has("%d,%d" % [c, r])
-                        if is_wall_cell and run_start < 0:
-                                run_start = c
-                        elif not is_wall_cell and run_start >= 0:
-                                _push_run(maze, run_start, c - 1, r, true)
-                                run_start = -1
-        # verticali
+        var axes: Array = [Vector2i(1, 0), Vector2i(0, 1)]
         for c in range(C.MAZE_COLS):
-                var run_start: int = -1
-                for r in range(C.MAZE_ROWS + 1):
-                        var is_wall_cell: bool = r < C.MAZE_ROWS \
-                                        and maze.is_wall(c, r) \
-                                        and not maze.dynamic_walls.has("%d,%d" % [c, r])
-                        if is_wall_cell and run_start < 0:
-                                run_start = r
-                        elif not is_wall_cell and run_start >= 0:
-                                _push_run(maze, c, run_start, r - 1, false)
-                                run_start = -1
+                for r in range(C.MAZE_ROWS):
+                        # cella corridoio reale (le lastre mobili del Task 30
+                        # hanno tipo statico WALL anche quando aperte:
+                        # restano escluse qui)
+                        if maze.get_cell_type(c, r) == C.CellType.WALL:
+                                continue
+                        if C.is_tunnel_cell(c, r):
+                                continue
+                        for a in axes:
+                                var wa: Vector2i = Vector2i(c, r) - a
+                                var wb: Vector2i = Vector2i(c, r) + a
+                                if _is_static_wall(maze, wa) and _is_static_wall(maze, wb):
+                                        _crossings.append({
+                                                "key": "%d,%d|%d,%d" % [wa.x, wa.y, wb.x, wb.y],
+                                                "start": Vector2(
+                                                                wa.x * C.TILE_SIZE + C.TILE_SIZE * 0.5,
+                                                                C.UI_HEIGHT + wa.y * C.TILE_SIZE + C.TILE_SIZE * 0.5),
+                                                "end": Vector2(
+                                                                wb.x * C.TILE_SIZE + C.TILE_SIZE * 0.5,
+                                                                C.UI_HEIGHT + wb.y * C.TILE_SIZE + C.TILE_SIZE * 0.5),
+                                        })
 
 
-func _push_run(_maze: Node, c0: int, c1: int, r: int, horizontal: bool) -> void:
-        var len_cells: int = (c1 - c0) + 1
-        if len_cells < C.GHOST_RUN_MIN_CELLS or len_cells > C.GHOST_RUN_MAX_CELLS:
-                return
-        var key: String = ("h%d,%d-%d" % [r, c0, c1]) if horizontal \
-                        else ("v%d,%d-%d" % [c0, r, c1])
-        var cells: Array = []
-        for i in range(len_cells):
-                cells.append(Vector2i(c0 + i, r) if horizontal else Vector2i(c0, r + i))
-        _runs.append({
-                "key": key,
-                "cells": cells,
-                "horizontal": horizontal,
-        })
+## Muro pieno, in griglia, non mobile (lastre Task 30: si aprono).
+func _is_static_wall(maze: Node, cell: Vector2i) -> bool:
+        if cell.x < 0 or cell.x >= C.MAZE_COLS or cell.y < 0 or cell.y >= C.MAZE_ROWS:
+                return false
+        if maze.get_cell_type(cell.x, cell.y) != C.CellType.WALL:
+                return false
+        return not maze.dynamic_walls.has("%d,%d" % [cell.x, cell.y])
 
 
 ## Update del sistema (chiamato da MainGameController._update_playing).
-func update_ghosts(delta_ms: float) -> void:
+## CORREZIONE UTENTE: `players` = i player VIVI (per il tocco dannoso
+## -33% energia; il salto protegge dentro Player.take_hazard_damage).
+func update_ghosts(delta_ms: float, players: Array = []) -> void:
         _time_ms += float(delta_ms)
         if _ghosts.is_empty():
                 return
@@ -168,7 +174,7 @@ func update_ghosts(delta_ms: float) -> void:
         var step_px: float = C.GHOST_SPEED_PX_S * float(delta_ms) * 0.001
         for g in _ghosts:
                 if g["active"]:
-                        _advance_crossing(g, step_px)
+                        _advance_crossing(g, step_px, players)
                         continue
                 # IDLE: budget esaurito -> ritirato per sempre
                 if g["appearances_left"] <= 0:
@@ -195,28 +201,21 @@ func _count_active() -> int:
         return n
 
 
-## Sceglie un segmento NON ancora usato da questo fantasma e lancia
-## l'attraversamento in una delle due direzioni (random). Ritorna false se
-## non ci sono segmenti nuovi (fantasma ritirato in anticipo, caso limite).
+## Sceglie un attraversamento NON ancora usato da questo fantasma e lancia
+## la traversata (muro A -> corridoio -> muro B; la direzione e' quella
+## dell'asse del crossing). Ritorna false se non ci sono crossing nuovi
+## (fantasma ritirato in anticipo, caso limite).
 func _launch_crossing(g: Dictionary) -> bool:
         var candidates: Array = []
-        for run in _runs:
-                if not (g["used_run_keys"] as Array).has(run["key"]):
-                        candidates.append(run)
+        for cross in _crossings:
+                if not (g["used_run_keys"] as Array).has(cross["key"]):
+                        candidates.append(cross)
         if candidates.is_empty():
                 g["appearances_left"] = 0
                 return false
-        var run: Dictionary = candidates[_rng.randi() % candidates.size()]
-        var cells: Array = run["cells"]
-        var from_a: bool = _rng.randi() % 2 == 0
-        var first: Vector2i = cells[0] if from_a else cells[cells.size() - 1]
-        var last: Vector2i = cells[cells.size() - 1] if from_a else cells[0]
-        var start: Vector2 = Vector2(
-                        first.x * C.TILE_SIZE + C.TILE_SIZE * 0.5,
-                        C.UI_HEIGHT + first.y * C.TILE_SIZE + C.TILE_SIZE * 0.5)
-        var end: Vector2 = Vector2(
-                        last.x * C.TILE_SIZE + C.TILE_SIZE * 0.5,
-                        C.UI_HEIGHT + last.y * C.TILE_SIZE + C.TILE_SIZE * 0.5)
+        var cross: Dictionary = candidates[_rng.randi() % candidates.size()]
+        var start: Vector2 = cross["start"]
+        var end: Vector2 = cross["end"]
         var travel: float = start.distance_to(end)
         if travel < 1.0:
                 return false
@@ -225,16 +224,34 @@ func _launch_crossing(g: Dictionary) -> bool:
         g["dir"] = (end - start).normalized()
         g["travel_total"] = travel
         g["travel_left"] = travel
-        g["run_key"] = run["key"]
+        g["run_key"] = cross["key"]
         return true
 
 
 ## Avanza l'attraversamento; alla fine consuma un'apparizione e segna il
 ## muro come usato ("la volta successiva respawnano da un altro muro").
-func _advance_crossing(g: Dictionary, step_px: float) -> void:
+## CORREZIONE UTENTE: mentre il lenzuolo e' EMERSO nel corridoio (fuori dai
+## ramp di alpha sui muri) tocca i player VIVI entro GHOST_TOUCH_RADIUS_PX:
+## -33% energia max per tocco (Player.take_hazard_damage: bypassa le
+## armature come le ganasce, il SALTO e l'invulnerabilita' post-colpo
+## proteggono — "il player li puo' evitare saltandoli").
+func _advance_crossing(g: Dictionary, step_px: float, players: Array) -> void:
         g["travel_left"] = maxf(0.0, g["travel_left"] - step_px)
         g["pos"] = g["pos"] + g["dir"] * step_px
         var traveled: float = g["travel_total"] - g["travel_left"]
+        # --- Tocco dannoso: solo con il lenzuolo nel corridoio ---
+        if not players.is_empty() \
+                        and traveled >= EMERGE_LEN_PX \
+                        and g["travel_left"] >= EMERGE_LEN_PX:
+                for p in players:
+                        if p == null or not is_instance_valid(p):
+                                continue
+                        if (p.position as Vector2).distance_to(g["pos"]) \
+                                        <= C.GHOST_TOUCH_RADIUS_PX:
+                                var dmg: int = maxi(1, int(round(
+                                                float(p.max_energy)
+                                                * C.GHOST_TOUCH_DAMAGE_PCT)))
+                                p.take_hazard_damage(dmg)
         if traveled >= g["travel_total"]:
                 g["active"] = false
                 g["appearances_left"] -= 1
@@ -310,5 +327,26 @@ func used_run_keys_of(color: String) -> Array:
         return []
 
 
-func run_count() -> int:
-        return _runs.size()
+## Attraversamenti (muro-A|corridoio|muro-B) disponibili nel livello.
+func crossing_count() -> int:
+        return _crossings.size()
+
+
+## TEST HOOK (correzione utente): stato del fantasma attivo `idx` nel pool
+## (dict interno, sola lettura) — per verificare pos/direzioni nei test.
+func ghost_state(idx: int) -> Dictionary:
+        if idx < 0 or idx >= _ghosts.size():
+                return {}
+        return _ghosts[idx]
+
+
+## TEST HOOK (correzione utente): lancia immediatamente l'attraversamento
+## del fantasma `idx` (scavalca il timer di spawn; la coerenza cap/budget
+## resta a carico del chiamante) e ne ritorna lo stato.
+func force_launch(idx: int) -> Dictionary:
+        if idx < 0 or idx >= _ghosts.size():
+                return {}
+        var g: Dictionary = _ghosts[idx]
+        if not bool(g["active"]) and int(g["appearances_left"]) > 0:
+                _launch_crossing(g)
+        return g

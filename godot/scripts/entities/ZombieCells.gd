@@ -268,6 +268,9 @@ func _next_out_interval() -> float:
 ## (arrotondato, min 1). L'invulnerabilita' post-tocco (~1s) e la gestione
 ## morte/vita persa sono gia' dentro Player.take_hazard_damage (pattern
 ## ganasce/voragini: BYPASS armature, danno ambientale del dungeon).
+## TASK 81 (spec utente): unblockable=true — il SALTO NON protegge
+## ("Il player non puo' schivare le braccia ma solo attendere le vengano
+## ritratte"): si subisce il tocco finche' le braccia restano estese.
 func _apply_damage(players: Array) -> void:
         for cell in _cells:
                 if float(cell["slide"]) < SLIDE_DAMAGE_PX:
@@ -279,7 +282,7 @@ func _apply_damage(players: Array) -> void:
                         if zone.has_point(p.position):
                                 var dmg: int = maxi(1, int(round(
                                                 p.max_energy * C.ZOMBIE_ARM_DAMAGE_PCT)))
-                                p.take_hazard_damage(dmg)
+                                p.take_hazard_damage(dmg, true)
 
 
 ## Zona danno: la cella corridoio davanti alla facciata (+ margine), in

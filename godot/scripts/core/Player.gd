@@ -1461,14 +1461,21 @@ func take_damage() -> void:
 #     (damage_timer) proteggono come per qualunque altro danno.
 # A energia esaurita: vita persa, reliquie perse, respawn (pattern della
 # morte standard).
-func take_hazard_damage(dmg: int) -> void:
+# TASK 81 (correzione utente — braccia zombie): `unblockable = true` ignora
+# ANCHE il salto (spec: "Il player non può schivare le braccia ma solo
+# attendere le vengano ritratte"). Le invulnerabilita' (post-colpo/calice/
+# spawn guard) restano valide in ogni caso: "20% ad ogni tocco" = cadenza
+# del damage_timer ~1s.
+func take_hazard_damage(dmg: int, unblockable: bool = false) -> void:
         if soul_pending:
                 return
         # GHOST (pozione): il fantasma fluttua sopra ogni pericolo (spec
         # Task 30) — niente danni ambientali.
         if ghost_mode:
                 return
-        if is_jumping() or is_invulnerable():
+        if is_invulnerable():
+                return
+        if not unblockable and is_jumping():
                 return
         energy -= dmg
         damage_timer = 1000

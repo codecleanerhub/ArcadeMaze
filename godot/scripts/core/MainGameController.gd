@@ -1407,8 +1407,10 @@ func _update_playing(delta_ms: float) -> void:
         # che attraversano la cella corridoio davanti alla facciata.
         zombie_cells.update_cells(delta_ms, _alive_players())
         # TASK 81.1 — FANTASMI LENZUOLO: scheduler delle apparizioni e
-        # attraversamento dei muri (nessuna interazione: pura atmosfera).
-        maze_ghosts.update_ghosts(delta_ms)
+        # attraversamento dei corridoi. CORREZIONE UTENTE: immortali ma
+        # DANNOSI (-33% energia al tocco, il salto evita) -> passano i
+        # player VIVI per il check del tocco.
+        maze_ghosts.update_ghosts(delta_ms, _alive_players())
 
         # (1d) TASK 32 — NUBE DI PIPISTRELLI: spawn programmato, caccia,
         # morsi e abbattimento (lo sciame vola sopra i muri: niente

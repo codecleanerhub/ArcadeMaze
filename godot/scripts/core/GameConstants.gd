@@ -1380,11 +1380,13 @@ static var LANTERN_LIGHT_ENABLED: bool = true
 # TASK 81 — FANTASMI LENZUOLO + CELLE ZOMBIE (nuove meccaniche labirinto)
 # ============================================================================
 ## TASK 81.1 — fantasmi: lenzuoli trasparenti bianco/rosso/verde che
-## emergono da un muro, attraversano il labirinto a mezz'aria e si
-## compenetrano nel lato opposto. IMMORTALI e INNOCUI: il player li
-## attraversa senza danno, i proiettili passano attraverso (zero
-## interazioni: sono pura atmosfera). Grafica PixelLab
-## (env/ghost_sheet_{white,red,green}.png, 4 frame).
+## emergono da un muro, ATTRAVERSANO IL CORRIDOIO e si compenetrano nel
+## muro opposto. IMMORTALI e DANNOSI (correzione utente: "non devono
+## essere innocui, il player li puo' evitare saltandoli ma se toccono il
+## player levano il 33% dell'energia"): il tocco scala il 33% dell'energia
+## max (Player.take_hazard_damage — il SALTO protegge, come per gli altri
+## pericoli del dungeon); i proiettili passano attraverso (immortali).
+## Grafica PixelLab (env/ghost_sheet_{white,red,green}.png, 4 frame).
 ## Rollback: false = niente fantasmi (MazeGhosts.gd si spegne).
 static var GHOSTS_ENABLED: bool = true
 ## Quanti fantasmi popolano ogni livello (bianco, rosso, verde + 1 random
@@ -1397,11 +1399,16 @@ const GHOST_MAX_APPEARANCES: int = 3
 const GHOST_MAX_SIMULTANEOUS: int = 4
 ## Velocita' di attraversamento (px/s): ~1 cella al secondo.
 const GHOST_SPEED_PX_S: float = 72.0
-## Lunghezza dei muri attraversabili: segmenti WALL di 2..8 celle (i muri
-## di bordo, lunghi 15-30 celle, restano fuori: attraversarli richiederebbe
-## 15-30s a vuoto).
-const GHOST_RUN_MIN_CELLS: int = 2
-const GHOST_RUN_MAX_CELLS: int = 8
+## TASK 81 (correzione utente) — danno percentuale del tocco fantasma:
+## -33% dell'energia max per tocco ("se toccono il player levano il 33%
+## dell'energia"), arrotondato, min 1 (5 energie -> 2 punti). Il salto
+## EVITA il tocco ("il player li puo' evitare saltandoli").
+const GHOST_TOUCH_DAMAGE_PCT: float = 0.33
+## Raggio del tocco dannoso (px, centro lenzuolo - centro player): il
+## player grid-locked passa per il centro della cella corridoio, il
+## fantasma percorre la mezzeria dello stesso corridoio -> allineamento
+## garantito quando si incontrano.
+const GHOST_TOUCH_RADIUS_PX: float = 34.0
 ## Intervallo tra le apparizioni di uno stesso fantasma (al livello 1);
 ## si comprime fino a GHOST_SPAWN_FAST_SCALE dal livello 12 in poi.
 const GHOST_SPAWN_MIN_MS: float = 4000.0

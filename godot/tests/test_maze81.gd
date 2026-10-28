@@ -1,6 +1,8 @@
 ## test_maze81.gd — TASK 81: test runtime FANTASMI LENZUOLO + CELLE ZOMBIE.
 ##
-## FANTASMI (MazeGhosts):
+## FANTASMI (MazeGhosts) — incl. CORREZIONE UTENTE ("non devono essere
+## innocui, il player li puo' evitare saltandoli ma se toccono il player
+## levano il 33% dell'energia"):
 ##   F1. pool di 4 fantasmi, 3 apparizioni ciascuno
 ##   F2. attraversamenti totali dopo lunghissima simulazione = 12 (4x3),
 ##       nessun fantasma supera le 3 apparizioni
@@ -9,6 +11,9 @@
 ##   F4. simultanei su schermo MAI oltre 4 (cap); valore 4 raggiunto al
 ##       livello alto (probabilita' crescente)
 ##   F5. cap al livello 1 resta quasi sempre basso (<= 2 tolleranza)
+##   F6. CORREZIONE: il tocco del lenzuolo toglie il 33% dell'energia max
+##       (arrotondato, min 1); il SALTO sopra il lenzuolo NON colpisce;
+##       il danno vale solo nel tratto emerso del corridoio
 ##
 ## CELLE ZOMBIE (ZombieCells):
 ##   Z1. numero celle per livello: 1 (L1), 2 (L4), 3 (L7), mai oltre 3
@@ -21,6 +26,8 @@
 ##   Z5. danno: player nella cella corridoio davanti alle braccia estese
 ##       prende 20% dell'energia massima (arrotondato, min 1); player
 ##       fuori zona non prende nulla; braccia ritratte non fanno danno
+##   Z6. CORREZIONE/SPEC: il SALTO non schiva le braccia (il tocco e'
+##       unblockable: si attende solo la ritrazione)
 ##
 ## Uso: Godot --headless --path . res://tests/test_maze81.tscn
 extends Node
@@ -36,7 +43,8 @@ var checks: int = 0
 
 ## Stub player per il test del danno (duck-typing: position/max_energy/
 ## take_hazard_damage). Simula anche l'invulnerabilita' post-tocco (~1s,
-## damage_timer del Player reale) per contare i TOCCHI, non i frame.
+## damage_timer del Player reale) per contare i TOCCHI, non i frame, e il
+## SALTO (is_jumping del Player reale) per la correzione utente TASK 81.
 class StubPlayer:
         extends RefCounted
         var position: Vector2 = Vector2.ZERO
@@ -45,12 +53,17 @@ class StubPlayer:
         var hits: int = 0
         var last_dmg: int = 0
         var invuln_ms: float = 0.0
+        var jumping: bool = false
 
         func tick(delta_ms: float) -> void:
                 invuln_ms = maxf(0.0, invuln_ms - delta_ms)
 
-        func take_hazard_damage(dmg: int) -> void:
+        func take_hazard_damage(dmg: int, unblockable: bool = false) -> void:
                 if invuln_ms > 0.0:
+                        return
+                # mirror Player.take_hazard_damage: il salto protegge dai
+                # pericoli NORMALI, non da quelli unblockable (braccia).
+                if not unblockable and jumping:
                         return
                 hits += 1
                 last_dmg = dmg
@@ -98,14 +111,14 @@ func _ready() -> void:
         ok(ghosts.ghost_count() == C.GHOST_POOL_SIZE, "F1 pool di %d fantasmi" % C.GHOST_POOL_SIZE)
         ok(ghosts.total_appearances_left() == C.GHOST_POOL_SIZE * C.GHOST_MAX_APPEARANCES,
                         "F1 budget iniziale = 4x3 = 12 apparizioni")
-        ok(ghosts.run_count() > 0, "F2 il labirinto offre segmenti muro (%d)" % ghosts.run_count())
+        ok(ghosts.crossing_count() > 0, "F2 il labirinto offre attraversamenti (%d)" % ghosts.crossing_count())
 
         var max_simul_12: int = 0
         var max_distinct_out: int = 0
         # 15 minuti di gioco simulati a step da ~16.7ms
         var steps: int = int(900000.0 / 16.6667)
         for i in range(steps):
-                ghosts.update_ghosts(16.6667)
+                ghosts.update_ghosts(16.6667, [])
                 max_simul_12 = maxi(max_simul_12, ghosts.active_count())
         ok(ghosts.total_appearances_left() == 0,
                         "F2 budget esaurito dopo 15 min simulati (residuo %d)" % ghosts.total_appearances_left())
@@ -131,9 +144,55 @@ func _ready() -> void:
         var max_simul_1: int = 0
         steps = int(240000.0 / 16.6667)
         for i in range(steps):
-                ghosts.update_ghosts(16.6667)
+                ghosts.update_ghosts(16.6667, [])
                 max_simul_1 = maxi(max_simul_1, ghosts.active_count())
         ok(max_simul_1 <= 2, "F5 al livello 1 simultanei <= 2 (max visto %d)" % max_simul_1)
+
+        # ----------------------------------------------------------------
+        # F6 — CORREZIONE UTENTE: il lenzuolo e' DANNOSO (-33% al tocco,
+        # il salto evita). L'attraversamento e' muro A -> corridoio ->
+        # muro B: il tocco vale solo nel tratto emerso (EMERGE_LEN_PX dai
+        # muri), il player a meta' corridoio viene colpito, quello che
+        # SALTA sopra il lenzuolo no.
+        # ----------------------------------------------------------------
+        maze.generate(12)
+        ghosts.generate(12, maze)
+        var g0: Dictionary = ghosts.force_launch(0)
+        ok(bool(g0.get("active", false)), "F6 lenzuolo lanciato (force_launch)")
+        var stub_g := StubPlayer.new()
+        var stub_far_g := StubPlayer.new()
+        var expected_g_dmg: int = maxi(1, int(round(
+                        float(stub_g.max_energy) * C.GHOST_TOUCH_DAMAGE_PCT)))
+        # avanza finche' il lenzuolo e' EMERSO nel corridoio (> EMERGE_LEN_PX
+        # = 28px dal muro A, e' a 72px/s -> ~30 step da 16.7ms)
+        var guard: int = 0
+        while guard < 120 \
+                        and (float(g0["travel_total"]) - float(g0["travel_left"])) < 34.0:
+                ghosts.update_ghosts(16.6667, [])
+                guard += 1
+        ok((float(g0["travel_total"]) - float(g0["travel_left"])) >= 34.0,
+                        "F6 lenzuolo emerso nel corridoio dopo %d step" % guard)
+        # player ESATTAMENTE sul lenzuolo -> tocco
+        stub_g.position = g0["pos"]
+        ghosts.update_ghosts(16.6667, [stub_g, stub_far_g])
+        ok(stub_g.hits == 1, "F6 tocco lenzuolo: 1 colpo (%d)" % stub_g.hits)
+        ok(stub_g.last_dmg == expected_g_dmg,
+                        "F6 danno tocco = 33%% arrotondato (%d su max %d)" % [stub_g.last_dmg, stub_g.max_energy])
+        ok(stub_g.energy == stub_g.max_energy - expected_g_dmg,
+                        "F6 energia scalata del 33%% (%d -> %d)" % [stub_g.max_energy, stub_g.energy])
+        ok(stub_far_g.hits == 0, "F6 player lontano mai toccato (%d)" % stub_far_g.hits)
+        # SALTO sopra il lenzuolo: protetto
+        stub_g.invuln_ms = 0.0
+        stub_g.jumping = true
+        stub_g.position = g0["pos"]
+        ghosts.update_ghosts(16.6667, [stub_g])
+        ok(stub_g.hits == 1, "F6 SALTO sopra il lenzuolo: nessun nuovo colpo")
+        # atterrato sul lenzuolo: nuovo colpo
+        stub_g.jumping = false
+        stub_g.invuln_ms = 0.0
+        stub_g.position = g0["pos"]
+        ghosts.update_ghosts(16.6667, [stub_g])
+        ok(stub_g.hits == 2, "F6 atterrato sul lenzuolo: nuovo colpo (tot %d)" % stub_g.hits)
 
         # ----------------------------------------------------------------
         # CELLE ZOMBIE
@@ -262,6 +321,24 @@ func _ready() -> void:
                 zcells.update_cells(16.6667, [stub])
         ok(stub.hits == hits_before,
                         "Z5 braccia ritratte: player sopra la cella NON prende danni")
+
+        # --- Z6 (spec utente): le braccia NON si schivano saltando ---
+        # il tocco e' unblockable (take_hazard_damage(dmg, true)): il salto
+        # protegge dai fantasmi ma MAI dalle braccia ("Il player non puo'
+        # schivare le braccia ma solo attendere le vengano ritratte").
+        ok(zcells.force_out(cell_pos.x, cell_pos.y), "Z6 force_out di nuovo")
+        stub.jumping = true
+        stub.invuln_ms = 0.0
+        # avanza fino a OUT (EMERGE ~450ms) e poi ancora un tocco: anche
+        # saltando, il player nella cella davanti viene colpito
+        for i in range(int(500.0 / 16.6667)):
+                stub.tick(16.6667)
+                zcells.update_cells(16.6667, [stub])
+        ok(zcells.cell_phase(cell_pos.x, cell_pos.y) == 2, "Z6 braccia di nuovo OUT")
+        ok(stub.hits == hits_before + 1,
+                        "Z6 SALTO non schiva le braccia: colpo comunque (%d -> %d)" % [hits_before, stub.hits])
+        ok(stub.last_dmg == expected_dmg,
+                        "Z6 danno braccia invariato anche saltando (%d)" % stub.last_dmg)
 
         # ----------------------------------------------------------------
         print("[TEST-81] ==== %s (%d check) ====" % [
