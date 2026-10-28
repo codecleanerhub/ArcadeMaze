@@ -92,6 +92,29 @@ static var ui_language: int = 0
 static func ui_is_italian() -> bool:
         return ui_language == 1
 
+# ============================================================================
+# 0e. TASK 78 — FONT MEDIEVALE "GOTH AND GOTHIC" (scelta dell'utente)
+# ============================================================================
+# Font blackletter x grotesk (Aaron Amar, 2021, licenza libera anche
+# commerciale — readme allegato in assets/fonts/goth_and_gothic_readme.txt).
+# Caricata RUNTIME con FontFile.load_dynamic_font (pattern Image.load delle
+# UI: niente dipendenza dall'import di Godot, funziona anche a .godot/ vuoto).
+# Cache statica: un solo FontFile per tutta la sessione.
+static var _gothic_font: FontFile = null
+
+## TASK 78 — ritorna la FontFile medievale Goth And Gothic (o null se manca).
+static func gothic_font() -> FontFile:
+        if _gothic_font == null:
+                var abs_path: String = ProjectSettings.globalize_path(
+                                "res://assets/fonts/goth_and_gothic.otf")
+                if FileAccess.file_exists(abs_path):
+                        var f := FontFile.new()
+                        if f.load_dynamic_font(abs_path) == OK:
+                                _gothic_font = f
+                        else:
+                                push_warning("GameConstants: load_dynamic_font fallita su " + abs_path)
+        return _gothic_font
+
 #   BOSS_SHOOT_SFX_ENABLED -> SFX procedurali di sparo dei boss, UNO per tipo
 #                          di "munizione" (masso=tonfo di pietra, ragnatela=
 #                          fruscio di seta, fiamma=soffio, raggio=zap...):

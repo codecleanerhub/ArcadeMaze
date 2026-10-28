@@ -9,8 +9,9 @@
 #   * Background:   bg_menu.jpg (cover-fit to the window)
 #                   bg_options.png shown when _in_options == true (Options
 #                   submenu with ancient bronze gears / Tomb Raider style)
-#   * Title:        "ARCADE MAZE FANTASY" (blood logo PixelLab;
-#                   becomes "OPTIONS" while the Options submenu is open.
+#   * Title:        "ARCADE MAZE FANTASY" (TASK 78: logo ORO medievale, font
+#                   Goth And Gothic; becomes "OPTIONS" while the Options
+#                   submenu is open.
 #   * Ornament:     gold horizontal line + diamond (between title and items)
 #   * Scroll panel: dark parchment-style rounded rectangle (items list)
 #       Main menu (7 items, selected highlighted in yellow + animated flame):
@@ -55,18 +56,18 @@ signal credits_requested()
 signal configure_joystick_requested(player: int)
 
 # --- Exposed theme colors (match the SFML palette) -------------------------
-# TASK 76 — palette SANGUE (coerente col logo del titolo e la scritta
-# "Loading..." gocciolante): selezionato = rosso sangue acceso con ombra
-# cupa, normale = osso invecchiato, bordi pannello = rosso essiccato.
-@export var color_title_gold:    Color = Color(0.755, 0.118, 0.090)   # 193,30,23 sangue acceso
-@export var color_title_shadow:  Color = Color(0.290, 0.020, 0.016)   # 74,5,4 sangue cupo
+# TASK 78 — palette ORO MEDIEVALE (richiesta utente: dal sangue all'oro
+# medievale, font Goth And Gothic): selezionato = oro acceso con ombra
+# bruno cupa, normale = osso invecchiato, bordi pannello = bronzo invecchiato.
+@export var color_title_gold:    Color = Color(0.941, 0.780, 0.373)   # 240,199,95 oro caldo
+@export var color_title_shadow:  Color = Color(0.180, 0.110, 0.020)   # 46,28,5 bruno cupo
 @export var color_item_normal:   Color = Color(0.860, 0.810, 0.700)   # osso invecchiato
-@export var color_item_selected: Color = Color(0.960, 0.160, 0.110)   # 245,41,28 sangue vivo
-@export var color_footer_by:     Color = Color(0.870, 0.420, 0.300)   # carne rosata
+@export var color_item_selected: Color = Color(1.000, 0.870, 0.420)   # 255,222,107 oro vivo
+@export var color_footer_by:     Color = Color(0.850, 0.680, 0.350)   # ambra calda
 @export var color_footer_name:   Color = Color(0.961, 0.922, 0.784)   # 245,235,200 avorio
 @export var color_hint:          Color = Color(0.588, 0.588, 0.588)   # 150,150,150
-@export var color_parchment_bg:  Color = Color(0.070, 0.020, 0.016, 0.820)
-@export var color_parchment_border: Color = Color(0.545, 0.110, 0.078) # 139,28,20 rosso essiccato
+@export var color_parchment_bg:  Color = Color(0.055, 0.038, 0.016, 0.820) # pergamena bruno scuro
+@export var color_parchment_border: Color = Color(0.615, 0.443, 0.180) # 157,113,46 bronzo invecchiato
 
 # --- Internal state (mirrors Game::xxx fields) ----------------------------
 var _menu_item_index: int = 0
@@ -353,8 +354,8 @@ func _draw() -> void:
         # scende sotto le gocce animate; in OPTIONS torna al posto storico.
         var logo_mode: bool = _gothic_node != null and not _in_options
         var orn_y: float = 262.0 if logo_mode else 220.0
-        # TASK 76: ornamento in rosso essiccato (palette sangue).
-        var orn_gold: Color = Color(0.545, 0.110, 0.078)
+        # TASK 78: ornamento in bronzo invecchiato (palette oro medievale).
+        var orn_gold: Color = Color(0.615, 0.443, 0.180)
         # Center diamond
         var cx: float = size.x / 2.0
         var pts := PackedVector2Array([
@@ -498,6 +499,11 @@ func _build_ui() -> void:
         _title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         _title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _title_label.add_theme_font_size_override("font_size", 48)
+        # TASK 78: font medievale Goth And Gothic sul titolo testuale
+        # (fallback quando manca il logo PNG: nel sottomenu OPTIONS senza PNG).
+        var _gf: FontFile = GameConstants.gothic_font()
+        if _gf != null:
+                _title_label.add_theme_font_override("font", _gf)
         _title_label.add_theme_color_override("font_color", color_title_gold)
         _title_label.add_theme_color_override("font_shadow_color", color_title_shadow)
         _title_label.add_theme_constant_override("shadow_offset_x", -3)
@@ -562,7 +568,11 @@ func _build_ui() -> void:
                 var lbl := Label.new()
                 lbl.text = txt
                 lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-                lbl.add_theme_font_size_override("font_size", 24)
+                # TASK 78: voci menu in font medievale Goth And Gothic
+                # (28px: le maiuscole blackletter restano leggibili a quest'area).
+                lbl.add_theme_font_size_override("font_size", 28)
+                if _gf != null:
+                        lbl.add_theme_font_override("font", _gf)
                 lbl.add_theme_color_override("font_color", color_item_normal)
                 lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
                 lbl.add_theme_constant_override("shadow_offset_x", 1)
@@ -678,10 +688,11 @@ func _make_flame_node() -> Node2D:
 
 # ----------------------------------------------------------------------------
 # TASK 51 (P5) — SCHERMATA INIZIALE GOTICA: logo "ARCADE MAZE FANTASY"
-# rosso sangue PixelLab + STORMO DI PIPISTRELLI (character menu-bat, volo a
-# 6 frame). TASK 76: le GOCCE ANIMATE sotto il titolo sono state RIMOSSE su
-# richiesta utente ("togli l'animazione del sangue che sgocciola dal
-# titolo"): restano logo, alone pulsante e pipistrelli. Nodo dedicato
+# TASK 78: logo ORO MEDIEVALE (font Goth And Gothic scelta dall'utente,
+# trattamento oro = gradiente per-lettera + bevel + bordo bronzo) + STORMO
+# DI PIPISTRELLI (character menu-bat, volo a 6 frame). TASK 76: le GOCCE
+# ANIMATE sotto il titolo sono state RIMOSSE su richiesta utente: restano
+# logo, alone pulsante ambrato e pipistrelli. Nodo dedicato
 # aggiunto per ULTIMO (dopo la fiamma): disegna sopra sfondo e pannello.
 # ----------------------------------------------------------------------------
 var _gothic_node: Node2D = null
@@ -713,18 +724,25 @@ class GothicDrawer extends Node2D:
                 var in_options: bool = bool(owner_menu.get("_in_options"))
                 var vp: Vector2 = owner_menu.size
                 if in_options:
-                        # TASK 76: sottomenu OPTIONS — logo sangue PixelLab
-                        # "OPTIONS" (stesso stile del titolo). Se manca il PNG
-                        # il titolo testuale resta visibile (label non nascosta).
+                        # TASK 78: sottomenu OPTIONS — logo ORO medievale
+                        # "OPTIONS" (font Goth And Gothic, stesso stile del
+                        # titolo). Se manca il PNG il titolo testuale resta
+                        # visibile (label non nascosta).
                         if options_logo == null:
                                 return
-                        var ow: float = minf(520.0, vp.x * 0.34)
-                        var oh: float = ow * float(options_logo.get_height()) / maxf(options_logo.get_width(), 1.0)
+                        # TASK 78: il nuovo header e' piu' largo che alto
+                        # (aspect ~4.5:1): dimensione dall'ALTEZZA con cap di
+                        # larghezza, come per il titolo.
+                        var oh: float = minf(150.0, vp.y * 0.14)
+                        var ow: float = oh * float(options_logo.get_width()) / maxf(options_logo.get_height(), 1.0)
+                        if ow > vp.x * 0.34:
+                                ow = vp.x * 0.34
+                                oh = ow * float(options_logo.get_height()) / maxf(options_logo.get_width(), 1.0)
                         var ox: float = vp.x * 0.5 - ow * 0.5
                         var oy: float = 95.0 - oh * 0.5
                         var oglow: float = 0.10 + 0.05 * sin(t * 1.7)
                         draw_circle(Vector2(vp.x * 0.5, 95.0), maxf(ow, oh) * 0.62,
-                                        Color(0.42, 0.04, 0.05, oglow))
+                                        Color(0.55, 0.38, 0.10, oglow))
                         draw_texture_rect(options_logo, Rect2(ox, oy, ow, oh), false,
                                         Color(1, 1, 1, 0.93 + 0.07 * sin(t * 1.9)))
                         return
@@ -732,17 +750,24 @@ class GothicDrawer extends Node2D:
                         return
                 if vp.x < 2.0 or vp.y < 2.0:
                         return
-                # --- LOGO sangue (ARCADE MAZE FANTASY, pixflux 3 parole) ---
-                var lw: float = minf(660.0, vp.x * 0.42)
-                var lh: float = lw * float(logo.get_height()) / maxf(logo.get_width(), 1.0)
+                # --- LOGO oro medievale (ARCADE MAZE FANTASY, TASK 78: font
+                # Goth And Gothic + trattamento oro; il nuovo logo e' molto
+                # piu' largo che alto, aspect ~11.6:1) ---
+                # Dimensione dall'ALTEZZA (~118px, come il vecchio logo sangue)
+                # con cap di larghezza per non invadere lo schermo.
+                var lh: float = minf(118.0, vp.y * 0.16)
+                var lw: float = lh * float(logo.get_width()) / maxf(logo.get_height(), 1.0)
+                if lw > vp.x * 0.86:
+                        lw = vp.x * 0.86
+                        lh = lw * float(logo.get_height()) / maxf(logo.get_width(), 1.0)
                 var lx: float = vp.x * 0.5 - lw * 0.5
                 var ly: float = 30.0
-                # alone rosso cupo dietro il logo (pulsazione lenta)
+                # alone AMBRATO dietro il logo (pulsazione lenta)
                 var glow_a: float = 0.10 + 0.05 * sin(t * 1.7)
                 draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
-                                maxf(lw, lh) * 0.62, Color(0.42, 0.04, 0.05, glow_a))
+                                maxf(lw, lh) * 0.62, Color(0.55, 0.38, 0.10, glow_a))
                 draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
-                                maxf(lw, lh) * 0.42, Color(0.50, 0.05, 0.05, glow_a * 1.4))
+                                maxf(lw, lh) * 0.42, Color(0.68, 0.48, 0.13, glow_a * 1.4))
                 # logo con shimmer sottile (mai blink: deve restare leggibile)
                 draw_texture_rect(logo, Rect2(lx, ly, lw, lh), false,
                                 Color(1.0, 1.0, 1.0, 0.93 + 0.07 * sin(t * 1.9)))
@@ -788,9 +813,9 @@ func _make_gothic_node() -> Node2D:
         var gn := GothicDrawer.new()
         gn.owner_menu = self
         gn.name = "GothicTitle"
-        # logo sangue (pixflux ARCADE + MAZE + FANTASY composti)
+        # TASK 78: logo oro medievale (font Goth And Gothic)
         gn.logo = _load_menu_png("res://assets/ui/title_logo.png")
-        # TASK 76: header sangue del sottomenu OPTIONS (se presente).
+        # TASK 78: header oro del sottomenu OPTIONS (stesso stile).
         gn.options_logo = _load_menu_png("res://assets/ui/header_options.png")
         # pipistrelli del menu
         for i in 6:

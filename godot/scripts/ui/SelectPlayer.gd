@@ -240,10 +240,10 @@ func _draw() -> void:
         # Dark overlay so the wheel and text stand out against the busy art
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.35), true)
 
-        # --- Titolo (TASK 76: palette sangue come titolo/logo e Loading) ---
+        # --- Titolo (TASK 78: palette ORO MEDIEVALE, font Goth And Gothic) ---
         var title: String = I18n.t("select.title") % player_num
-        _draw_text_centered(title, cx - 4, 96, 48, Color(0.29, 0.02, 0.016))   # shadow sangue cupo
-        _draw_text_centered(title, cx, 100, 48, Color(0.755, 0.118, 0.09))     # sangue acceso
+        _draw_text_centered(title, cx - 4, 96, 48, Color(0.18, 0.11, 0.02))     # shadow bruno cupo
+        _draw_text_centered(title, cx, 100, 48, Color(0.941, 0.78, 0.373))     # oro caldo
 
         # --- Hint ---
         var player_color: Color = Color(1.0, 0.843, 0.0) if player_num == 1 else Color(0.471, 0.706, 1.0)
@@ -365,14 +365,19 @@ func _draw() -> void:
                         draw_circle(Vector2(p.x, p.y - 20),
                                 5.0 * p.scale, Color(1.0, 0.84, 0.0, 0.35 * glow))
 
-        # --- 8. Nome personaggio selezionato (in basso, palette sangue) ---
+        # --- 8. Nome personaggio selezionato (in basso, palette oro TASK 78) ---
         _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, vp_size.y - 60, 32,
-                Color(0.96, 0.16, 0.11))
+                Color(1.0, 0.87, 0.42))
 
 
 # Draw text centered at (x, y) with given size and color.
 func _draw_text_centered(text: String, x: float, y: float, font_size: int, col: Color) -> void:
-        var font := get_theme_default_font()
+        var font: Font = get_theme_default_font()
+        # TASK 78: font medievale Goth And Gothic se disponibile (fallback
+        # al font di tema se la font manca).
+        var gf: FontFile = GameConstants.gothic_font()
+        if gf != null:
+                font = gf
         draw_string(font, Vector2(x - 200, y + font_size), text,
                 HORIZONTAL_ALIGNMENT_CENTER, 400, font_size, col)
 
