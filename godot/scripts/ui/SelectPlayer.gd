@@ -371,6 +371,10 @@ func _draw() -> void:
 
 
 # Draw text centered at (x, y) with given size and color.
+# TASK 79 (port dal merge): centramento MISURATO su get_string_size con
+# width -1 — il vecchio box fisso di 400px mandava a capo il titolo a 48px
+# ("SELECT P" / "LAYER 1"). Vale anche per la Goth And Gothic, il cui
+# advance blackletter e' piu' largo del font di default.
 func _draw_text_centered(text: String, x: float, y: float, font_size: int, col: Color) -> void:
         var font: Font = get_theme_default_font()
         # TASK 78: font medievale Goth And Gothic se disponibile (fallback
@@ -378,8 +382,10 @@ func _draw_text_centered(text: String, x: float, y: float, font_size: int, col: 
         var gf: FontFile = GameConstants.gothic_font()
         if gf != null:
                 font = gf
-        draw_string(font, Vector2(x - 200, y + font_size), text,
-                HORIZONTAL_ALIGNMENT_CENTER, 400, font_size, col)
+        var w: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+                        font_size).x
+        draw_string(font, Vector2(x - w * 0.5, y + font_size), text,
+                HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, col)
 
 
 # Draw filled ellipse (circle scaled vertically).

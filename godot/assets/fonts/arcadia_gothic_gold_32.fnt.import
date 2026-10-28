@@ -1,0 +1,17 @@
+[remap]
+
+importer="font_data_bmfont"
+type="FontFile"
+uid="uid://dxepimevdse4f"
+path="res://.godot/imported/arcadia_gothic_gold_32.fnt-1037275f93757cdb0556ac09a1fc540a.fontdata"
+
+[deps]
+
+source_file="res://assets/fonts/arcadia_gothic_gold_32.fnt"
+dest_files=["res://.godot/imported/arcadia_gothic_gold_32.fnt-1037275f93757cdb0556ac09a1fc540a.fontdata"]
+
+[params]
+
+fallbacks=[]
+compress=true
+scaling_mode=2
