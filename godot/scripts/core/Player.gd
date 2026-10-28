@@ -92,7 +92,12 @@ const CHARACTER_NAME := {
 # dei frame del main sheet e XHD = upscale 4x esatto del SD -> un solo flag
 # per personaggio copre tutte le pose.
 const SPRITE_DEFAULT_FACES_RIGHT := {
-        CharacterType.HERO_M:   true,   # FIX: user reports HERO_M still flipped wrong; toggled
+        # TASK 82 (eroe si girava al contrario): verificato con VLM sul PNG
+        # attuale player1_sheet.png (v2, 256x64): il personaggio guarda
+        # NATIVAMENTE a SINISTRA come gli altri 7/9 sheet v2. Il vecchio flag
+        # true (retaggio dello sheet v1) invertiva il facing in entrambe le
+        # direzioni. Con false: muove a destra -> flip_h=true -> guarda bene.
+        CharacterType.HERO_M:   false,  # TASK 82: sheet v2 guarda a sinistra (VLM)
         CharacterType.HERO_F:   false,  # FIX task67: sheet v2 guarda a sinistra -> era true
         CharacterType.MAGE:     true,
         CharacterType.ORC:      false,
@@ -178,6 +183,27 @@ var shoot_cooldown: int = 0
 var shoot_anim_timer: int = 0  # >0 = attack animation playing
 var anim_time: int = 0  # accumulated for idle/walk anim (NEVER reset)
 var next_life_threshold: int = 100000  # extra life every 100k points
+
+# ===========================================================================
+# TASK 82 — LAMPO DI VOLATA (muzzle flash): feedback visivo dello sparo.
+# Quando un'arma spara, per ~160 ms all'estremita' dell'arma appare un
+# piccolo effetto GRAFICO DEDICATO per arma/elemento (fuoco per pistol/
+# shotgun/rocket, energia per laser, polvere+brace per il cannone d'assedio,
+# fiamma/brina/arcano colorato per le armi elementali) + un piccolo
+# PointLight2D riusato (solo se le luci sono attive) che illumina il muro
+# accanto nel dungeon buio. La POSIZIONE e' la volata (punta dell'arma
+# disegnata in mano: PNG PixelLab se presente, fallback procedurale).
+# ===========================================================================
+const MUZZLE_FLASH_MS: int = 160          # durata del lampo (ms simulati)
+const MUZZLE_LIGHT_ENABLED: bool = true   # piccolo PointLight2D durante il lampo
+const MUZZLE_LIGHT_RADIUS: float = 104.0  # raggio della luce di sparo (px)
+
+var _muzzle_timer_ms: int = 0             # countdown del lampo
+var _muzzle_pos: Vector2 = Vector2.ZERO   # posizione LOCALE della volata
+var _muzzle_dir: Vector2 = Vector2(1.0, 0.0)  # direzione del colpo allo sparo
+var _muzzle_color: Color = Color(1.0, 0.55, 0.15)
+var _muzzle_style: String = "fire"        # fire|wide|blast|energy|cannon|flame|frost|arcane
+var _muzzle_light: PointLight2D = null    # luce riusata (mai ricreata a colpo)
 
 # ===========================================================================
 # FIX (stamina dei salti): il player può eseguire al massimo 2 SALTI
@@ -1012,6 +1038,10 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         damage_timer = _tick_timer_ms(damage_timer, delta_ms)
         shoot_cooldown = _tick_timer_ms(shoot_cooldown, delta_ms)
         shoot_anim_timer = _tick_timer_ms(shoot_anim_timer, delta_ms)
+        # TASK 82: decadimento del lampo di volata + sync della luce di sparo.
+        if _muzzle_timer_ms > 0:
+                _muzzle_timer_ms = maxi(0, _muzzle_timer_ms - int(delta_ms))
+        _update_muzzle_light()
         anim_time += int(delta_ms)
         speed_boost_timer = _tick_timer_ms(speed_boost_timer, delta_ms)
         invincible_timer = _tick_timer_ms(invincible_timer, delta_ms)
@@ -1296,6 +1326,9 @@ func shoot() -> void:
                 current_weapon.ammo -= 1
                 _after_player_shot_fired()
                 shoot_anim_timer = 300
+                # TASK 82: vampa del cannone (bianco-oro + fumo) alla volata.
+                _begin_muzzle_flash(shoot_dx, shoot_dy, "cannon",
+                                Color(1.0, 0.80, 0.30))
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.SIEGE_FIRE)
                 return
@@ -1325,6 +1358,118 @@ func shoot() -> void:
         _after_player_shot_fired()
         # Trigger attack animation for ~300 ms (6 frames at 50 ms).
         shoot_anim_timer = 300
+        # TASK 82 — LAMPO DI VOLATA per arma da fuoco: stile+colore dedicati
+        # (pistol scintilla, shotgun cono ampio, rocket vampata, laser energia;
+        # REFLECT_BOLT e le armi senza ramo dedicato usano l'arcano colorato).
+        var w_type: int = int(current_weapon.get("type", 0))
+        match w_type:
+                WeaponType.SHOTGUN:
+                        _begin_muzzle_flash(shoot_dx, shoot_dy, "wide",
+                                        Color(1.0, 0.50, 0.20))
+                WeaponType.ROCKET:
+                        _begin_muzzle_flash(shoot_dx, shoot_dy, "blast",
+                                        Color(1.0, 0.45, 0.12))
+                WeaponType.LASER:
+                        _begin_muzzle_flash(shoot_dx, shoot_dy, "energy",
+                                        Color(0.45, 1.00, 0.62))
+                _:
+                        # PISTOL e reliquie a percorso proiettile (es. riflesso):
+                        # se c'e' una def reliquia col colore, la usiamo (arcano).
+                        var rd: Dictionary = GameConstants.get_relic_def(w_type)
+                        if not rd.is_empty() and rd.has("color"):
+                                _begin_muzzle_flash(shoot_dx, shoot_dy, "arcane",
+                                                rd["color"])
+                        else:
+                                _begin_muzzle_flash(shoot_dx, shoot_dy, "fire",
+                                                Color(1.0, 0.62, 0.18))
+
+
+# ----------------------------------------------------------------------------
+# TASK 82 — LAMPO DI VOLATA (muzzle flash).
+# ----------------------------------------------------------------------------
+## Registra lo sparo appena avvenuto: salva posizione della volata (punta
+## dell'arma in mano), direzione del colpo, stile e colore. Il disegno vero
+## e proprio avviene in _draw_muzzle_flash() finche' _muzzle_timer_ms > 0.
+func _begin_muzzle_flash(shoot_dx: int, shoot_dy: int, style: String,
+                col: Color) -> void:
+        var dir: Vector2 = Vector2(float(shoot_dx), float(shoot_dy))
+        if dir == Vector2.ZERO:
+                dir = Vector2(1.0, 0.0)
+        var aim: Vector2 = dir.normalized()
+        var w_type: int = int(current_weapon.get("type", 0))
+        # Le reliquia a distanza ruotano col mira (_draw_relic_png_in_hand):
+        # la volata sta lungo la mira, poco oltre la punta (~46 px dalla mano).
+        var is_ranged_relic: bool = GameConstants.is_relic_weapon(w_type) \
+                        and w_type != GameConstants.RelicType.REFLECT_BOLT
+        var tip: Vector2
+        if is_ranged_relic:
+                var hand: Vector2 = Vector2(10.0, -6.0 - jump_offset)
+                tip = hand + aim * 46.0
+        elif dir.x != 0.0:
+                # Arma da fuoco orizzontale: volata = punta dell'arma in mano.
+                tip = Vector2(_weapon_tip_dist_px() * (1.0 if dir.x > 0.0 else -1.0),
+                                -5.0 - jump_offset)
+        else:
+                # Sparo verticale con arma da fuoco: il lampo accompagna
+                # l'uscita del proiettile (l'arma resta impugnata di fianco).
+                tip = Vector2(6.0, -8.0 - jump_offset + aim.y * 20.0)
+        _muzzle_pos = tip
+        _muzzle_dir = aim
+        _muzzle_style = style
+        _muzzle_color = col
+        _muzzle_timer_ms = MUZZLE_FLASH_MS
+
+
+## Distanza della volata dal centro del player lungo il facing, allineata al
+## render dell'arma in mano: PNG PixelLab (grip a +22, punta a +0.8*disp_len)
+## oppure fallback procedurale (muzzle/emettitore a 15-24 px).
+func _weapon_tip_dist_px() -> float:
+        var png: bool = EnvironmentArt != null \
+                        and EnvironmentArt.get_weapon_pickup_texture(
+                                        int(current_weapon.get("type", 0))) != null
+        match int(current_weapon.get("type", 0)):
+                WeaponType.PISTOL:
+                        return 56.0 if png else 24.0
+                WeaponType.SHOTGUN:
+                        return 75.0 if png else 20.0
+                WeaponType.ROCKET:
+                        return 68.0 if png else 17.0
+                WeaponType.LASER:
+                        return 67.0 if png else 15.0
+                WeaponType.SIEGE:
+                        return 30.0
+                _:
+                        return 24.0
+
+
+## Luce di sparo (TASK 82): UN solo PointLight2D riusato per player — si
+## accende per la durata del lampo e si spegne (mai create/destroy a colpo,
+## zero churn di nodi). Segue il flag master delle luci (LANTERN_LIGHT_ENABLED)
+## cosi' i test perf e le configurazioni senza luci restano invariate.
+func _update_muzzle_light() -> void:
+        if not MUZZLE_LIGHT_ENABLED:
+                return
+        if _muzzle_timer_ms <= 0:
+                if _muzzle_light != null and _muzzle_light.visible:
+                        _muzzle_light.visible = false
+                return
+        if not GameConstants.LANTERN_LIGHT_ENABLED:
+                return
+        if _muzzle_light == null:
+                if EffectsManager == null:
+                        return
+                _muzzle_light = EffectsManager.create_light(
+                                _muzzle_pos, _muzzle_color,
+                                1.0, MUZZLE_LIGHT_RADIUS)
+                add_child(_muzzle_light)
+        var t: float = float(_muzzle_timer_ms) / float(MUZZLE_FLASH_MS)
+        _muzzle_light.position = _muzzle_pos
+        _muzzle_light.color = Color(
+                        clampf(_muzzle_color.r + 0.25, 0.0, 1.0),
+                        clampf(_muzzle_color.g + 0.25, 0.0, 1.0),
+                        clampf(_muzzle_color.b + 0.25, 0.0, 1.0), 1.0)
+        _muzzle_light.energy = 0.35 + 1.15 * t  # picco al colpo, poi cala
+        _muzzle_light.visible = true
 
 
 # ----------------------------------------------------------------------------
@@ -1374,6 +1519,20 @@ func _fire_relic(rdef: Dictionary, shoot_dx: int, shoot_dy: int) -> void:
                 current_weapon.ammo -= 1
         _after_player_shot_fired()
         shoot_anim_timer = 300
+        # TASK 82 — LAMPO DI VOLATA ELEMENTALE: alla punta dell'arma (che
+        # ruota con la mira) appare un lampo colorato col TEMA dell'arma:
+        # lingua di fiamma per le armi che incendiano (burn_ms), scintillio
+        # di brina per quelle che congelano (freeze), impulso arcano per le
+        # altre (lame/rozzi/dardi). Le reliquia da MISCHIA non sparano: il
+        # fendente ha gia' il suo visual dedicato.
+        if not is_melee:
+                var m_style: String = "arcane"
+                if rdef.has("burn_ms"):
+                        m_style = "flame"
+                elif bool(rdef.get("freeze", false)):
+                        m_style = "frost"
+                _begin_muzzle_flash(shoot_dx, shoot_dy, m_style,
+                                rdef.get("color", Color(1.0, 0.62, 0.18)))
         # COLPI ESAURITI: la reliquia SI ROMPE e si torna alla PISTOL
         # (richiesta utente: "le armi quando finiscono i colpi spariscono").
         if int(current_weapon.get("ammo", 0)) <= 0 and not relic_infinite_shots:
@@ -1860,8 +2019,9 @@ func _find_nearest_open_cell(maze: Object, col: int, row: int) -> Vector2i:
 
 
 # _update_sprite(): applies the side-view flip + jump offset each frame.
-# Sprite is right-facing by default for HERO_M/MAGE/DRAGON/VAMPIRE; the
-# others default left and the flip logic inverts.
+# TASK 82: solo MAGE guarda nativamente a destra; gli altri 8 sheet v2
+# (hero, heroine, orc, elf, knight, golem, dragon, vampire) guardano a
+# SINISTRA e il flag SPRITE_DEFAULT_FACES_RIGHT lo registra.
 #
 # Behaviour (mirrors Player::render() line 432-443):
 #   * last_dx > 0 -> no flip
@@ -2061,20 +2221,12 @@ func _draw() -> void:
                                 draw_circle(local_pos, 2.0, col)
                                 draw_circle(local_pos, 1.0, Color(1.0, 1.0, 0.8, 1.0))
 
-        # Draw muzzle flash if shoot animation is playing.
-        # FIX (muzzle flash troppo grande e giallo): era 8px+5px giallo,
-        # ora 3px+2px rosso/arancio (più realistico).
-        if shoot_anim_timer > 0:
-                var flash_dir: Vector2 = Vector2(last_dx, last_dy)
-                if flash_dir == Vector2.ZERO:
-                        flash_dir = Vector2(1, 0)
-                # FIX (arma scollegata nel salto): il lampo di sparo segue
-                # l'arma alzata durante il salto (jump_offset), coerente con
-                # lo sprite del corpo che si alza in aria.
-                var flash_pos: Vector2 = flash_dir * 18.0 \
-                                + Vector2(0.0, -jump_offset)
-                draw_circle(flash_pos, 3.0, Color(1.0, 0.3, 0.1, 0.9))
-                draw_circle(flash_pos, 1.5, Color(1.0, 0.9, 0.5, 1.0))
+        # TASK 82 — LAMPO DI VOLATA: feedback visivo dello sparo con forma,
+        # colore e comportamento DEDICATI per arma/elemento (sostituisce il
+        # vecchio lampo generico rosso/arancio sempre uguale a 18 px dal
+        # centro). Ora il lampo sta ALLA PUNTA dell'arma e dura ~160 ms.
+        if _muzzle_timer_ms > 0:
+                _draw_muzzle_flash()
 
         # RELIC (Task 21): visual del fendente in mischia (arco/cerchio/linea
         # che sfuma in ~250ms) + outfit overlay dell'armatura equipaggiata.
@@ -2111,6 +2263,141 @@ func _draw() -> void:
         # i figli Sprite2D (personaggio) disegnano SOPRA il _draw del parent,
         # quindi qui resterebbe NASCOSTO dietro il corpo. Usa il child
         # Sprite2D dedicato _hammer_sprite (vedi _update_hammer_sprite).
+
+
+# ===========================================================================
+# TASK 82 — _draw_muzzle_flash(): lampo di volata per arma/elemento.
+#
+# Disegnato in locale alla PUNTA dell'arma (_muzzle_pos, registrata allo
+# sparo) mentre _muzzle_timer_ms scende da MUZZLE_FLASH_MS a 0 (~160 ms):
+# `t` va da 1 (appena sparato) a 0 (spegnimento) e guida dimensioni/alpha.
+# Stili (scelti in shoot()/_fire_relic in base all'arma/elemento):
+#   fire    — pistola: scintilla bianca + bagliore ambra + fumo
+#   wide    — shotgun: cono ampio a 3 lobi + 5 scintille in ventaglio
+#   blast   — rocket: vampata + anello di braci + fumo di rinculo
+#   energy  — laser: nucleo + anello carico + streak di emissione
+#   cannon  — cannone d'assedio: vampa oro + 2 sbuffi di polvere + braci
+#   flame   — armi elementali che INCENDIANO: lingua di fiamma colorata
+#   frost   — armi elementali che CONGELANO: glint cristallino a stella
+#   arcane  — lame/dardi lanciati: anello + impulso + streak di velocita'
+# Tutto volutamente PICCOLO (max ~7 px di raggio): deve leggere come
+# feedback del colpo, non coprire il corridoio.
+# ===========================================================================
+func _draw_muzzle_flash() -> void:
+        var t: float = float(_muzzle_timer_ms) / float(MUZZLE_FLASH_MS)
+        var pos: Vector2 = _muzzle_pos
+        var dir: Vector2 = _muzzle_dir
+        var col: Color = _muzzle_color
+        var perp: Vector2 = Vector2(-dir.y, dir.x)
+        # Leggero flicker: il lampo "vive" invece di restare statico.
+        var flick: float = 0.85 + 0.15 * sin(float(Time.get_ticks_msec()) * 0.09)
+        var bright: Color = Color(minf(col.r + 0.40, 1.0),
+                        minf(col.g + 0.40, 1.0), minf(col.b + 0.40, 1.0))
+        var hot: Color = Color(1.0, 0.96, 0.82)
+        var smoke: Color = Color(0.55, 0.53, 0.50)
+
+        match _muzzle_style:
+                "fire":
+                        # Pistola: scintilla compatta.
+                        draw_circle(pos, 5.0 * t * flick, Color(col.r, col.g, col.b, 0.30))
+                        draw_circle(pos, 2.8 * t + 0.8, col)
+                        draw_circle(pos, 1.3, hot)
+                        for i in 3:
+                                var sp: Vector2 = pos + dir * (3.5 + 3.0 * float(i)) \
+                                                * (1.0 - 0.6 * t)
+                                draw_circle(sp, 0.9 * t + 0.3, bright)
+                        draw_circle(pos + Vector2(0.0, -2.0 - 2.5 * (1.0 - t)),
+                                        1.5 + 1.5 * (1.0 - t),
+                                        Color(smoke.r, smoke.g, smoke.b, 0.22 * t))
+                "wide":
+                        # Shotgun: cono ampio a 3 lobi + scintille in ventaglio.
+                        for k in 3:
+                                var k_off: float = float(k - 1) * 5.2
+                                var lobe: Vector2 = pos + perp * k_off
+                                draw_circle(lobe, 4.0 * t * flick,
+                                                Color(col.r, col.g, col.b, 0.30))
+                                draw_circle(lobe, 1.9 * t + 0.6, col)
+                        draw_circle(pos, 2.2, hot)
+                        for k in 5:
+                                var spread_a: float = (float(k) - 2.0) * 0.45
+                                var s_dir: Vector2 = dir.rotated(spread_a)
+                                draw_circle(pos + s_dir * (5.5 + 3.5 * (1.0 - t)),
+                                                1.1 * t + 0.3, bright)
+                        draw_circle(pos + Vector2(0.0, -3.0 - 3.0 * (1.0 - t)),
+                                        2.0 + 2.0 * (1.0 - t),
+                                        Color(smoke.r, smoke.g, smoke.b, 0.20 * t))
+                "blast":
+                        # Rocket: vampata + braci + fumo di rinculo.
+                        draw_circle(pos, 6.5 * t * flick, Color(col.r, col.g, col.b, 0.35))
+                        draw_circle(pos, 3.6 * t + 1.2, col)
+                        draw_circle(pos, 1.8, hot)
+                        for k in 4:
+                                var e_a: float = float(k) * (PI * 0.5) + 0.7 * t
+                                draw_circle(pos + dir.rotated(e_a) * 4.5 * t,
+                                                1.0 * t + 0.3, bright)
+                        draw_circle(pos - dir * (5.0 + 3.0 * (1.0 - t)),
+                                        2.5 + 2.5 * (1.0 - t),
+                                        Color(smoke.r, smoke.g, smoke.b, 0.28 * t))
+                "energy":
+                        # Laser: nucleo + anello carico + streak di emissione.
+                        draw_circle(pos, 5.5 * t * flick, Color(col.r, col.g, col.b, 0.40))
+                        draw_arc(pos, 4.2 * t + 1.2, 0.0, TAU, 20,
+                                        Color(col.r, col.g, col.b, 0.70 * t + 0.20), 1.0)
+                        draw_circle(pos, 1.6, Color(1.0, 1.0, 1.0))
+                        for i in 3:
+                                var st: Vector2 = pos + dir * (2.5 + 2.5 * float(i)) \
+                                                * (1.2 - 0.4 * t)
+                                draw_circle(st, 1.3 - 0.3 * float(i),
+                                                Color(col.r, col.g, col.b, 0.85 - 0.25 * float(i)))
+                "cannon":
+                        # Cannone d'assedio: vampa oro + polvere + braci.
+                        draw_circle(pos, 7.0 * t * flick, Color(col.r, col.g, col.b, 0.40))
+                        draw_circle(pos, 3.0 * t + 1.4, col)
+                        draw_circle(pos, 2.0, hot)
+                        for k in 2:
+                                var p_off: Vector2 = perp * (3.0 * float(k) - 1.5)
+                                draw_circle(pos + p_off + Vector2(0.0, -2.0 * (1.0 - t)),
+                                                3.0 + 2.5 * (1.0 - t),
+                                                Color(smoke.r, smoke.g, smoke.b, 0.30 * t))
+                        for k in 3:
+                                draw_circle(pos + dir.rotated(0.6 * float(k) - 0.6) \
+                                                * (5.0 * t + 1.0), 1.0 * t + 0.3, bright)
+                "flame":
+                        # Elementale di fuoco: lingua di fiamma colorata.
+                        for j in 3:
+                                var f_d: Vector2 = dir * (2.0 + 3.5 * float(j)) \
+                                                * (0.4 + 0.6 * t)
+                                var f_r: float = (2.6 - 0.7 * float(j)) * t + 0.6
+                                draw_circle(pos + f_d, f_r,
+                                                Color(col.r, col.g, col.b, 0.85))
+                                draw_circle(pos + f_d, f_r * 0.55, bright)
+                        draw_circle(pos, 1.4, hot)
+                        for k in 2:
+                                draw_circle(pos + Vector2(float(k) * 3.0 - 1.5,
+                                                -2.0 - 3.0 * (1.0 - t)),
+                                                0.8 * t + 0.3, bright)
+                "frost":
+                        # Elementale di ghiaccio: glint cristallino a stella.
+                        draw_circle(pos, 4.6 * t, Color(col.r, col.g, col.b, 0.35))
+                        draw_circle(pos, 1.5, Color(1.0, 1.0, 1.0))
+                        for k in 3:
+                                var ray_a: float = float(k) * (PI / 3.0) + 0.3
+                                var ray_dir: Vector2 = Vector2(cos(ray_a), sin(ray_a))
+                                var ray_len: float = 4.5 * t + 1.5
+                                draw_line(pos - ray_dir * ray_len, pos + ray_dir * ray_len,
+                                                Color(col.r, col.g, col.b, 0.80), 0.8)
+                        draw_circle(pos + perp * 2.8 * t, 0.9, col)
+                        draw_circle(pos - perp * 2.8 * t, 0.9, col)
+                _:
+                        # Arcano (lame/dardi lanciati): anello + impulso.
+                        draw_circle(pos, 4.0 * t * flick, Color(col.r, col.g, col.b, 0.35))
+                        draw_arc(pos, 5.0 * t + 1.5, 0.0, TAU, 20,
+                                        Color(col.r, col.g, col.b, 0.65 * t + 0.15), 1.2)
+                        draw_circle(pos, 1.6, bright)
+                        draw_circle(pos + dir * 3.5, 1.2,
+                                        Color(col.r, col.g, col.b, 0.80))
+                        draw_circle(pos + dir * 6.5, 0.8,
+                                        Color(col.r, col.g, col.b, 0.50))
 
 
 # FIX (dinamite): variabile di stato per il rendering della dinamite.
