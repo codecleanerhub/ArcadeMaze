@@ -1142,6 +1142,60 @@ static func blade_count_for_level(level: int) -> int:
 
 
 # ============================================================================
+# TASK 89 — BLOCCHI DI LANCE (spike traps)
+# ============================================================================
+# Lance appuntite che escono dal pavimento: a riposo si VEDONO APPENA LE
+# PUNTE; a un momento casuale VIBRANO (avviso) e poi si ALZANO per infilzare
+# il player sulla cella. Una volta uscite restano SU 5 secondi, poi vibrano
+# e rientrano. Il player colpito perde il 50% dell'energia: NON possono
+# essere saltate (danno unblockable, pattern braccia zombie) — deve
+# attendere che ritornino giu'. Mai sulle corsie delle lame.
+## Flag di rollback: false = nessun blocco di lance generato.
+static var SPEARS_ENABLED: bool = true
+
+## Primo livello con le lance (dopo le lame L10: i TIPI crescono prima dei
+## NUMERI — priorita' tipi > quantita').
+const SPEAR_GRACE_LEVEL: int = 12
+
+## +1 blocco di lance ogni 12 livelli (L12:1, L24:2, L36:3, L48:4).
+const SPEAR_GROWTH_EVERY: int = 12
+
+## Massimo blocchi di lance per livello (specifica utente: "al massimo 4").
+const SPEAR_MAX_PER_LEVEL: int = 4
+
+## Danno in frazione dell'energia max (50%, specifica utente).
+const SPEAR_DAMAGE_PCT: float = 0.5
+
+## Ritardo casuale tra un ciclo e l'altro (punte ferme, appena visibili).
+const SPEAR_HIDDEN_MIN_MS: int = 3500
+const SPEAR_HIDDEN_MAX_MS: int = 9000
+
+## Vibrazione di preavviso prima dell'emersione (le punte tremano).
+const SPEAR_WARN_MS: int = 700
+
+## Durata dell'emersione (da punte a lance complete).
+const SPEAR_RISE_MS: int = 380
+
+## Tempo con le lance COMPLETAMENTE fuori ("una volta uscite, dopo 5
+## secondi vibrano e ritornano giu'" — specifica utente).
+const SPEAR_HOLD_MS: int = 5000
+
+## Vibrazione prima del rientro.
+const SPEAR_RETRACT_WARN_MS: int = 450
+
+## Durata del rientro.
+const SPEAR_RETRACT_MS: int = 380
+
+## Numero di blocchi di lance per livello (0 sotto il grace level, poi
+## 1 + 1 ogni 12 livelli, cap 4).
+static func spear_count_for_level(level: int) -> int:
+        if not SPEARS_ENABLED or level < SPEAR_GRACE_LEVEL:
+                return 0
+        var n: int = 1 + int((level - SPEAR_GRACE_LEVEL) / SPEAR_GROWTH_EVERY)
+        return mini(n, SPEAR_MAX_PER_LEVEL)
+
+
+# ============================================================================
 # TASK 31 — BARILI ESPLOSIVI + TERREMOTO CON ROCCE DAL SOFFITTO
 # ============================================================================
 # Due eventi ambientali supplementari (approvati dall'utente insieme agli

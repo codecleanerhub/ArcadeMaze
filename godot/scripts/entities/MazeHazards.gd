@@ -48,7 +48,7 @@ class_name MazeHazards
 
 const C = preload("res://scripts/core/GameConstants.gd")
 
-enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL, BLADE }
+enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL, BLADE, SPEAR }
 
 # Stati per tipo:
 # QUICKSAND: nessuno stato (sempre attiva).
@@ -62,6 +62,10 @@ enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL, BLADE }
 enum TrapState { ARMED, SNAPPED, SPRUNG }
 enum ChasmState { DORMANT, CRACK, OPEN }
 enum WallPhase { OPEN, WARN, CLOSED }
+# TASK 89 — LANCE: punte appena visibili -> VIBRAZIONE (avviso) ->
+# EMERSSIONE -> FUORI 5s (infisse, danno unblockable) -> VIBRAZIONE ->
+# RIENTRO -> pausa casuale.
+enum SpearState { HIDDEN, WARN, RISING, UP, RETRACT_WARN, RETRACTING }
 
 ## Referenza al MainGameController (player/player2/spawner/collectible check).
 var controller: Node = null
@@ -108,6 +112,7 @@ var scroll_chasm_owner: CharacterBody2D = null
 var blade_rows: Array[int] = []
 var blade_cols: Array[int] = []
 var _blade_frames: Array = []
+var _spear_frames: Array = []
 
 var _rng := RandomNumberGenerator.new()
 var _time := 0.0
@@ -140,7 +145,8 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
         var count: int = C.hazard_count_for_level(level)
         var barrels: int = C.barrel_count_for_level(level)
         var blades: int = C.blade_count_for_level(level)
-        if count <= 0 and barrels <= 0 and blades <= 0:
+        var spears: int = C.spear_count_for_level(level)
+        if count <= 0 and barrels <= 0 and blades <= 0 and spears <= 0:
                 _init_quake(level)
                 return
         _rng.seed = hash("hazards_v1_%d" % level)
@@ -174,6 +180,16 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
                                 blade_cols.append(run["lane"])
                                 for rr in range(run["c0"], run["c1"] + 1):
                                         used.append(Vector2i(run["lane"], rr))
+
+        # TASK 89: BLOCCHI DI LANCE — dopo le lame: mai sulle loro corsie
+        # ("su uno stesso pavimento non possono stare sia le lance che le
+        # lame"), stesso gap minimo dagli altri hazard.
+        for _i in spears:
+                var spear_cell: Vector2i = _pop_spear_cell(floor_cells, used)
+                if spear_cell == Vector2i(-1, -1):
+                        break
+                _spawn_spear(spear_cell)
+                used.append(spear_cell)
 
         for t in [HazardType.QUICKSAND, HazardType.TRAP, HazardType.CHASM]:
                 for _i in count:
@@ -762,6 +778,188 @@ func _blade_wall_hit(h: Dictionary) -> void:
 
 
 # ===========================================================================
+# TASK 89 — BLOCCHI DI LANCE (spike traps)
+# ===========================================================================
+# Lance che escono dal pavimento: a riposo si vedono APPENA LE PUNTE
+# (scale.y ~0.18), a momento casuale VIBRANO (jitter, avviso ~0.7s) e si
+# ALZANO (scale.y -> 1.0, ~0.38s) infilzando chi e' sulla cella. Restano
+# fuori SPEAR_HOLD_MS (5s), poi vibrano e rientrano. Danno 50% UNBLOCKABLE:
+# il salto NON protegge (pattern braccia zombie) — il player deve attendere
+# che ritornino giu'. Piazzate DOPO le lame: mai sulle corsie delle lame.
+
+## Cella per un blocco di lance: pattern _pop_cell con in piu' l'esclusione
+## delle corsie delle lame (riga/colonna).
+func _pop_spear_cell(cells: Array[Vector2i], used: Array[Vector2i]) -> Vector2i:
+        for _attempt in 24:
+                if cells.is_empty():
+                        break
+                var idx: int = _rng.randi_range(0, cells.size() - 1)
+                var cell: Vector2i = cells[idx]
+                var ok := not blade_rows.has(cell.y) and not blade_cols.has(cell.x)
+                if ok:
+                        for u in used:
+                                if absi(cell.x - u.x) + absi(cell.y - u.y) < C.HAZARD_MIN_GAP:
+                                        ok = false
+                                        break
+                if ok:
+                        cells.remove_at(idx)
+                        return cell
+                cells.remove_at(idx)
+        return Vector2i(-1, -1)
+
+
+func _spawn_spear(cell: Vector2i) -> void:
+        var cc: Vector2 = _cell_center(cell)
+        var sprite := Sprite2D.new()
+        sprite.texture = _spear_frame(_rng.randi_range(0, 3))
+        sprite.z_index = 0
+        add_child(sprite)
+        hazard_list.append({
+                "type": HazardType.SPEAR,
+                "cell": cell,
+                "cc": cc,
+                "state": SpearState.HIDDEN,
+                "timer_ms": float(_rng.randi_range(
+                                C.SPEAR_HIDDEN_MIN_MS, C.SPEAR_HIDDEN_MAX_MS)),
+                "sprite": sprite,
+        })
+        _spear_set_scale(hazard_list[hazard_list.size() - 1], 0.18)
+
+
+## Scala verticale della sprite con ancoraggio al fondo cella: le punte
+## spuntano dal pavimento e le lance crescono verso l'alto.
+func _spear_set_scale(h: Dictionary, sc: float) -> void:
+        var s: Sprite2D = h["sprite"]
+        var cc: Vector2 = h["cc"]
+        s.scale = Vector2(0.95, sc)
+        s.position = Vector2(cc.x, cc.y + 24.0 - 32.0 * sc)
+
+
+## Varianti pixel-art del blocco di lance (sheet 4 frame 64x64, PixelLab
+## TASK 89) caricate via Image.load; fallback procedurale se manca l'asset.
+func _spear_frame(i: int) -> Texture2D:
+        if _spear_frames.is_empty():
+                _load_spear_frames()
+        if _spear_frames.is_empty():
+                return null
+        return _spear_frames[i % _spear_frames.size()]
+
+
+func _load_spear_frames() -> void:
+        var sheet: Texture2D = null
+        var path := "res://assets/sprites/hazards/spear_tips_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        sheet = ImageTexture.create_from_image(img)
+        if sheet == null:
+                sheet = _make_spear_fallback_tex()
+        if sheet == null:
+                return
+        var fw: float = float(sheet.get_width()) / 4.0
+        var fh: float = float(sheet.get_height())
+        for i in 4:
+                var at := AtlasTexture.new()
+                at.atlas = sheet
+                at.region = Rect2(fw * float(i), 0.0, fw, fh)
+                _spear_frames.append(at)
+
+
+func _make_spear_fallback_tex() -> Texture2D:
+        var img := Image.create(256, 64, false, Image.FORMAT_RGBA8)
+        img.fill(Color(0.0, 0.0, 0.0, 0.0))
+        for f in 4:
+                var bx: int = 10 + f * 64
+                # 3 lance per variante: asta + punta triangolare
+                for k in 3:
+                        var x: int = bx + 12 + k * 16
+                        # asta legno
+                        for y in range(28, 60):
+                                img.set_pixel(x, y, Color(0.55, 0.42, 0.28, 1.0))
+                                img.set_pixel(x + 1, y, Color(0.45, 0.34, 0.22, 1.0))
+                        # punta acciaio (triangolo)
+                        for ty in range(10, 30):
+                                var wdt: int = maxi(1, int(float(30 - ty) * 0.28))
+                                for tx in range(-wdt, wdt + 1):
+                                        img.set_pixel(x + tx, ty,
+                                                        Color(0.78, 0.79, 0.82, 1.0))
+                        img.set_pixel(x, 10, Color(0.92, 0.93, 0.95, 1.0))
+        return ImageTexture.create_from_image(img)
+
+
+## Update del blocco di lance: macchina a stati HIDDEN -> WARN (vibrazione)
+## -> RISING -> UP (5s) -> RETRACT_WARN (vibrazione) -> RETRACTING -> HIDDEN
+## (nuovo delay casuale). Danno 50% UNBLOCKABLE quando le lance sono
+## sufficientemente fuori (il salto NON protegge: nessun check grounded).
+func _update_spear(h: Dictionary, delta_ms: float, players: Array) -> void:
+        h["timer_ms"] = float(h["timer_ms"]) - delta_ms
+        var s: Sprite2D = h["sprite"]
+        var state: int = h["state"]
+        match state:
+                SpearState.HIDDEN:
+                        _spear_set_scale(h, 0.18)
+                        if h["timer_ms"] <= 0.0:
+                                h["state"] = SpearState.WARN
+                                h["timer_ms"] = C.SPEAR_WARN_MS
+                SpearState.WARN:
+                        # vibrazione delle punte (jitter orizzontale + pulsazione)
+                        _spear_set_scale(h, 0.24 + 0.02 * sin(float(h["timer_ms"]) * 0.08))
+                        s.position.x = (h["cc"] as Vector2).x + randf_range(-2.4, 2.4)
+                        if h["timer_ms"] <= 0.0:
+                                h["state"] = SpearState.RISING
+                                h["timer_ms"] = C.SPEAR_RISE_MS
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.HAZARD_SNAP)
+                SpearState.RISING:
+                        var k: float = 1.0 - clampf(float(h["timer_ms"])
+                                        / C.SPEAR_RISE_MS, 0.0, 1.0)
+                        _spear_set_scale(h, lerpf(0.24, 1.0, k))
+                        s.position.x = (h["cc"] as Vector2).x
+                        if h["timer_ms"] <= 0.0:
+                                h["state"] = SpearState.UP
+                                h["timer_ms"] = C.SPEAR_HOLD_MS
+                SpearState.UP:
+                        _spear_set_scale(h, 1.0)
+                        if h["timer_ms"] <= 0.0:
+                                h["state"] = SpearState.RETRACT_WARN
+                                h["timer_ms"] = C.SPEAR_RETRACT_WARN_MS
+                SpearState.RETRACT_WARN:
+                        s.position.x = (h["cc"] as Vector2).x + randf_range(-2.0, 2.0)
+                        if h["timer_ms"] <= 0.0:
+                                h["state"] = SpearState.RETRACTING
+                                h["timer_ms"] = C.SPEAR_RETRACT_MS
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.HAZARD_THUD)
+                SpearState.RETRACTING:
+                        var k2: float = clampf(float(h["timer_ms"])
+                                        / C.SPEAR_RETRACT_MS, 0.0, 1.0)
+                        _spear_set_scale(h, lerpf(0.24, 1.0, k2))
+                        s.position.x = (h["cc"] as Vector2).x
+                        if h["timer_ms"] <= 0.0:
+                                h["state"] = SpearState.HIDDEN
+                                h["timer_ms"] = float(_rng.randi_range(
+                                                C.SPEAR_HIDDEN_MIN_MS,
+                                                C.SPEAR_HIDDEN_MAX_MS))
+        # danno: lance abbastanza fuori (emersione oltre meta', fuori pieno,
+        # vibrazione pre-rientro, rientro oltre meta') — UNBLOCKABLE: il
+        # salto NON protegge, il player deve attendere che rientrino.
+        var armed: bool = state == SpearState.UP or state == SpearState.RETRACT_WARN
+        if state == SpearState.RISING and float(h["timer_ms"]) < C.SPEAR_RISE_MS * 0.5:
+                armed = true
+        if state == SpearState.RETRACTING and float(h["timer_ms"]) < C.SPEAR_RETRACT_MS * 0.4:
+                armed = true
+        if armed:
+                for p in players:
+                        if _player_cell(p) != h["cell"]:
+                                continue
+                        p.take_hazard_damage(maxi(1, int(
+                                        float(p.max_energy) * C.SPEAR_DAMAGE_PCT)), true)
+
+
+# ===========================================================================
 # UPDATE
 # ===========================================================================
 
@@ -789,6 +987,8 @@ func update_hazards(delta_ms: float, maze: Node) -> void:
                                 _update_barrel(h, delta_ms, players)
                         HazardType.BLADE:
                                 _update_blade(h, delta_ms, players)
+                        HazardType.SPEAR:
+                                _update_spear(h, delta_ms, players)
 
         # Mjolnir: se la cella muro non e' piu' WALL (spezzata), il muro di
         # roccia si sgretola e despawna.
