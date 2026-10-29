@@ -8,6 +8,15 @@
 ##        resta false e viene liberato se era tenuto).
 ##   F3 — Nessuno screen shake alla chiusura dei muri di roccia (il
 ##        registro di EffectsManager non registra shake da _close_wall).
+##   F5 — TASK 82c: i 6 fix facesLeft dal feedback utente sullo shot
+##        task82_facing_muzzle (le label del vecchio harness erano SFASATE
+##        rispetto agli sprite reali: nemici label=m%03d%type ma sprite=
+##        SPRITE_ID[type]; miniboss sprite=miniboss_%02d%(t+1)). Verita'
+##        di fondo rimappata: m009=ORC/monster_027, m029=GIBBERING_MOUTHER/
+##        monster_031, m043=POSSESSED_SOLDIER/monster_045, mb10=miniboss_11,
+##        mb15=miniboss_16, mb23=miniboss_24. Flag: 4 AGGIUNTI (027, 031,
+##        045, mb16 — nativi a sinistra) e 2 RIMOSSI (mb11, mb24 — nativi
+##        a destra, l'audit task82b li aveva specchiati al contrario).
 extends Node
 
 
@@ -58,6 +67,7 @@ func _ready() -> void:
         _test_f2_ghost_wall_immunity()
         _test_f3_no_close_shake()
         _test_f4_anti_overlap()
+        _test_f5_task82c_facing_fixes()
         _report()
         get_tree().quit(1 if _fails > 0 else 0)
 
@@ -251,6 +261,65 @@ func _report() -> void:
                         % ["TEST TASK 51 FACING SUPERATO" if _fails == 0
                                         else "TEST TASK 51 FALLITO",
                                 _checks, _fails])
+
+
+# ===========================================================================
+# F5 — TASK 82c: i 6 fix facesLeft dal feedback utente (label rimappate)
+# ===========================================================================
+func _test_f5_task82c_facing_fixes() -> void:
+        # Valori attesi: 4 flag AGGIUNTI (sprite nativi a sinistra) e 2
+        # RIMOSSI (sprite nativi a destra che l'audit A/B task82b aveva
+        # giudicato al contrario — con il flag venivano specchiati e
+        # marciavano guardando indietro).
+        var want := {
+                "monster_027": true,   # ORC (label utente 'm009')
+                "monster_031": true,   # GIBBERING_MOUTHER (label 'm029')
+                "monster_045": true,   # POSSESSED_SOLDIER (label 'm043')
+                "miniboss_16": true,   # label utente 'mb15'
+                "miniboss_11": false,  # label utente 'mb10' (flag rimosso)
+                "miniboss_24": false,  # label utente 'mb23' (flag rimosso)
+        }
+        var all_ok: bool = true
+        for id in want:
+                var got: bool = SpriteManager.meta_faces_left(id)
+                if got != want[id]:
+                        _fail("F5: %s facesLeft=%s (atteso %s)"
+                                        % [id, str(got), str(want[id])])
+                        all_ok = false
+        if all_ok:
+                _ok("F5: 6 fix task82c coerenti (4 aggiunti + 2 rimossi)")
+
+        # Propagazione su Enemy: ORC (type 9) -> monster_027.
+        var e := EnemyScript.new()
+        add_child(e)
+        e.init(C.EnemyType.ORC, 2, 2)
+        if e._sprite_loaded and e._faces_left_native:
+                _ok("F5: ORC (monster_027) facesLeft=true propagato su Enemy")
+        else:
+                _fail("F5: ORC facesLeft=%s loaded=%s (atteso true/true)"
+                                % [str(e._faces_left_native), str(e._sprite_loaded)])
+        e.queue_free()
+
+        # Propagazione su MiniBoss: type 15 -> miniboss_16 (flag aggiunto)
+        # e type 10 -> miniboss_11 (flag rimosso dall'audit).
+        var mb := MiniBossScript.new()
+        add_child(mb)
+        mb.setup(15, 1, 5, 5)
+        if mb._faces_left_native:
+                _ok("F5: miniboss_16 facesLeft=true propagato su MiniBoss")
+        else:
+                _fail("F5: miniboss_16 facesLeft=false (atteso true, loaded=%s)"
+                                % str(mb.sprite_loaded))
+        mb.queue_free()
+
+        var mb2 := MiniBossScript.new()
+        add_child(mb2)
+        mb2.setup(10, 1, 6, 6)
+        if not mb2._faces_left_native:
+                _ok("F5: miniboss_11 facesLeft=false (flag audit RIMOSSO)")
+        else:
+                _fail("F5: miniboss_11 facesLeft=true inatteso (flag da rimuovere)")
+        mb2.queue_free()
 
 
 # ===========================================================================
