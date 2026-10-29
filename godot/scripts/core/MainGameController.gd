@@ -4277,6 +4277,12 @@ func start_level(lvl: int) -> void:
         # stati freschi (le voragini ri-partono dal telegrafo). generate()
         # ripulisce prima tutto (sprite + registro dynamic_walls del Maze).
         hazards.generate(current_level, maze, self)
+        # TASK 91 (fix scatti alle distruzioni): pre-carica i contenuti lazy
+        # di EffectsManager usati dalle esplosioni del labirinto (barili,
+        # martello, voragini) PRIMA del gameplay: il primo scoppio non paga
+        # Image.load + upload GPU nel frame.
+        if EffectsManager:
+                EffectsManager.prewarm()
         # TASK 81.2 — CELLE ZOMBIE: dopo hazards.generate (le lastre mobili
         # del Task 30 sono gia' in maze.dynamic_walls e vengono escluse dal
         # placement). RNG seedato sul livello: al continue le celle tornano

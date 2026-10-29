@@ -216,6 +216,14 @@ func _phase_e_verdict() -> void:
                 p.lives = 3
                 p.energy = p.max_energy
                 p.damage_timer = 0
+                # TASK 87: se il player del demo e' morto durante i 28s
+                # simulati puo' essere ancora in collasso (respawn differito,
+                # gate soul_pending): sbloccalo come fa il controller a fine
+                # animazione, altrimenti il danno da contatto resta bloccato.
+                p.soul_pending = false
+                p.collapse_requested = false
+                if p.sprite != null:
+                        p.sprite.visible = true
                 demo.demo_duration_timer_ms = 10000
                 var e_before: int = p.energy
                 var l_before: int = p.lives

@@ -110,11 +110,16 @@ func _process(delta: float) -> void:
                         _collapse_ms -= delta * 1000.0
                         if _collapse_ms <= 0.0:
                                 state = PillarState.RUBBLE
+                                queue_redraw()  # TASK 91: ultimo ridisegno del cumulo
                         elif not _fragments_spawned and _collapse_ms < COLLAPSE_MS * 0.55:
                                 _spawn_fragments()
                 PillarState.RUBBLE:
                         pass
-        queue_redraw()
+        # TASK 91 (fix scatti): il cumulo RUBBLE e' statico — niente
+        # queue_redraw per sempre ogni frame (prima ridisegnava ~150 righe
+        # di primitive a vuoto finche' la stanza restava aperta).
+        if state != PillarState.RUBBLE:
+                queue_redraw()
 
 
 ## Un colpo (proiettile player, fendente reliquia, proiettile boss).
@@ -171,6 +176,9 @@ func restore_from_snapshot(rubble: bool,
 
 # Frammenti lanciati a raggiera (il controller li registra nel gruppo
 # arena_debris e li conteggia per il rinnovo dell'arena).
+# TASK 91 (fix scatti alla distruzione): frammenti e sbuffi aggiunti con
+# call_deferred (mai 5 nodi + 3 esplosioni GPUParticles2D nello stesso
+# frame del crollo); sbuffi 2 invece di 3.
 func _spawn_fragments() -> void:
         _fragments_spawned = true
         if _debris_parent == null:
@@ -182,18 +190,18 @@ func _spawn_fragments() -> void:
                 var speed: float = 4.2 + 2.6 * absf(sin(_seed + float(i) * 2.1))
                 var vel: Vector2 = Vector2(cos(ang), sin(ang) * 0.82) * speed
                 var frag: Node2D = DebrisClass.new()
-                _debris_parent.add_child(frag)
                 if frag.has_method("setup"):
                         frag.setup(position + vel.normalized() * 24.0, vel, tint,
                                         0.85 + 0.45 * absf(cos(_seed + float(i))))
+                _debris_parent.add_child.call_deferred(frag)
         # polvere del crollo (cumulo piu' largo: architettura piu' grande)
         if EffectsManager:
-                for i in 3:
+                for i in 2:
                         var puff: Node2D = EffectsManager.spawn_explosion(
                                         position + Vector2(randf_range(-18.0, 18.0),
                                                         randf_range(0.0, 24.0)),
                                         Color(0.42, 0.38, 0.34), 12, 0.9)
-                        _debris_parent.add_child(puff)
+                        _debris_parent.add_child.call_deferred(puff)
 
 
 # ============================================================================

@@ -131,6 +131,9 @@ func _collapse() -> void:
 
 ## Schegge di pietra che volano + polvere del crollo (solo la prima volta:
 ## il restore dallo snapshot non ripete l'animazione).
+## TASK 91 (fix scatti alla distruzione): i 5 frammenti e i 2 sbuffi di
+## polvere vengono aggiunti con call_deferred (mai ~10 nodi + GPU nel
+## frame del colpo fatale) e gli sbuffi sono 2 invece di 3.
 func _spawn_debris() -> void:
         var parent: Node = _debris_parent if _debris_parent != null else get_parent()
         var n: int = C.BOSS_ARENA_RUIN_FRAGMENTS
@@ -142,19 +145,19 @@ func _spawn_debris() -> void:
                 var spd: float = 3.6 + 2.2 * absf(sin(_rng_seed + float(i) * 2.3))
                 var vel: Vector2 = Vector2(cos(ang), sin(ang) * 0.8 - 0.35) * spd
                 var frag: Node2D = DebrisClass.new()
-                parent.add_child(frag)
                 if frag.has_method("setup"):
                         frag.setup(origin + pos_along + vel.normalized() * 18.0, vel,
                                         Color.WHITE, 0.9 + 0.5 * absf(cos(_rng_seed + float(i))))
+                parent.add_child.call_deferred(frag)
         var em: Node = _find_autoload("EffectsManager")
         if em != null:
-                for i in 3:
+                for i in 2:
                         var puff: Node2D = em.spawn_blast_smoke(
                                         origin + Vector2(randf_range(-20.0, 20.0),
                                                         randf_range(-8.0, 8.0)),
                                         Color(0.45, 0.40, 0.34), 7)
                         if puff != null:
-                                parent.add_child(puff)
+                                parent.add_child.call_deferred(puff)
 
 
 ## Trova un autoload per nome (EffectsManager, EnvironmentArt, ...).

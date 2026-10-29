@@ -458,7 +458,24 @@ func set_music_enabled(enabled: bool) -> void:
 func _build_synth_queue() -> void:
         _synth_queue.clear()
         _synth_queue.append(["music", TRACK_MENU])
+        # TASK 91 (fix scatti distruzioni): gli SFX della BOSS ARENA
+        # (crollo pilastri/rovine, esplosioni barili, burst elementali)
+        # vanno in TESTA alla coda SFX: se una distruzione avviene nei
+        # primi secondi di boot, lo stream e' gia' sintetizzato (niente
+        # fallback on-demand SINCRONO nel frame del crollo, che congela
+        # il main thread per ~25-50ms).
+        var arena_first: Array = [
+                        SoundType.PILLAR_CRACK, SoundType.PILLAR_COLLAPSE,
+                        SoundType.BARREL_EXPLODE, SoundType.SIEGE_FIRE,
+                        SoundType.BARREL_TOSS, SoundType.BURST_FROST,
+                        SoundType.BURST_LIGHTNING, SoundType.BURST_POISON,
+                        SoundType.WEAKNESS_HIT, SoundType.BOSS_HIT,
+                        SoundType.BOSS_DEATH, SoundType.HAZARD_COLLAPSE]
+        for i in arena_first:
+                _synth_queue.append(["sfx", i])
         for i in SOUND_TYPE_COUNT:
+                if arena_first.has(i):
+                        continue
                 _synth_queue.append(["sfx", i])
         for i in 4:
                 _synth_queue.append(["music", i])  # tracce livello 0..3

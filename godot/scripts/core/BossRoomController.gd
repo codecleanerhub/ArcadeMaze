@@ -1563,6 +1563,12 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
                         boss.spawn_pit.connect(_on_boss_spawn_pit)
                 if not boss.slam_landed.is_connected(_on_boss_slam_landed):
                         boss.slam_landed.connect(_on_boss_slam_landed)
+        # TASK 91 (fix scatti alle distruzioni): pre-carica i contenuti
+        # lazy di EffectsManager usati dai crolli (sheet esplosione,
+        # materiali polvere/fumo) PRIMA che il fight parta: il primo
+        # colpo fatale non paga piu' Image.load + upload GPU nel frame.
+        if EffectsManager:
+                EffectsManager.prewarm()
         # TASK 51: reset dello stato fase-2 del controller (buche/flash).
         boss_pits.clear()
         _phase2_flash_ms = 0.0

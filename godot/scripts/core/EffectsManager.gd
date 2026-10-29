@@ -293,6 +293,22 @@ class ExplosionSprite extends Node2D:
 var _explosion_sheet_cache: Texture2D = null
 var _explosion_sheet_tried: bool = false
 
+# TASK 91 — prewarm dei contenuti lazy usati alla DISTRUZIONE degli
+# elementi ambientali (boss room e labirinto): sheet esplosione, texture
+# puntino e materiali fumo/esplosione per le tinte della polvere dei
+# crolli. Da chiamare all'avvio della stanza: elimina i first-use hitch
+# (Image.load da disco + upload GPU + creazione materiali) dal frame del
+# crollo, che e' esattamente quando il player nota lo scatto.
+func prewarm() -> void:
+        _get_explosion_sheet()
+        _get_particle_dot_tex()
+        # tinte della polvere dei crolli (BossArenaRuin/Pillar/barili)
+        _get_smoke_material(Color(0.45, 0.40, 0.34))
+        _get_smoke_material(Color(0.42, 0.38, 0.34))
+        _get_explosion_material(Color(1.0, 0.4, 0.1))
+        _get_explosion_material(Color(1.0, 0.9, 0.3))
+        _get_explosion_material(Color(0.42, 0.38, 0.34))
+
 func _get_explosion_sheet() -> Texture2D:
         if _explosion_sheet_tried:
                 return _explosion_sheet_cache
