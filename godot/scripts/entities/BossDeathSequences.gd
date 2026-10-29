@@ -440,9 +440,18 @@ func _upd_bat(t: float, prev_t: float) -> void:
                         boss.visible = false
                         _flash(Color(1.0, 0.95, 1.0, 0.5), 160.0)
                         # nasce il pipistrello: vola via a zig-zag
+                        # (psize 12 -> sprite ~36px: ben visibile)
                         _spawn("bat", boss_base + Vector2(0.0, -boss_size * 0.25),
-                                        Vector2(240.0, -130.0), 7.0, Color(0.12, 0.08, 0.14),
+                                        Vector2(240.0, -130.0), 12.0, Color(0.12, 0.08, 0.14),
                                         1450.0, {"floor_y": -99999.0})
+                # scia di nebbia scura dietro il pipistrello in volo
+                if int(t / 110.0) != int(prev_t / 110.0):
+                        for ch in chunks:
+                                if ch["kind"] == "bat":
+                                        _spawn("mist", ch["pos"] + Vector2(-12.0, 4.0),
+                                                        Vector2(-14.0, -6.0), 7.0,
+                                                        Color(0.16, 0.08, 0.16, 0.45), 480.0)
+                                        break
         else:
                 _snd("bat_end", AudioManager.SoundType.DARK_LAUGH)
                 if prev_t < 2000.0 and t >= 2000.0:
@@ -766,7 +775,7 @@ func _upd_crows(t: float, prev_t: float) -> void:
                                 _spawn("crow", boss_base + Vector2(rng.randf_range(-20.0, 20.0),
                                                 -boss_size * 0.25),
                                                 Vector2(cos(a) * sp, sin(a) * sp),
-                                                rng.randf_range(5.0, 8.0),
+                                                rng.randf_range(8.0, 11.0),
                                                 Color(0.08, 0.06, 0.12), 1500.0,
                                                 {"floor_y": -99999.0})
         else:
@@ -1075,6 +1084,17 @@ func _draw_hell_ground(t: float) -> void:
                 var ry: float = rx * 0.42
                 _ellipse(pit_center, rx * 1.4, ry * 1.4,
                                 Color(1.0, 0.40, 0.10, 0.16 * (1.0 - k)))
+                # vortice pixel-art che si restringe e svanisce insieme
+                # alla voragine (nessuno stacco brusco a t=2300)
+                var vt2: AtlasTexture = _fx_frame("vortex", int(t * 0.012) % 4)
+                if vt2 != null and k < 1.0 and rx > 4.0:
+                        var vsize2: float = rx * 2.7
+                        draw_set_transform(pit_center, -t * 0.0051, Vector2.ONE)
+                        draw_texture_rect(vt2,
+                                        Rect2(-vsize2 * 0.5, -vsize2 * 0.52,
+                                                        vsize2, vsize2 * 0.96),
+                                        false, Color(1.0, 1.0, 1.0, 0.88 * (1.0 - k)))
+                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
                 if rx > 1.0:
                         _ellipse(pit_center, rx, ry, Color(0.03, 0.01, 0.01, 0.95))
                         _ellipse(pit_center, rx * 0.5, ry * 0.5,
@@ -1216,7 +1236,7 @@ func _draw_chunk(ch: Dictionary) -> void:
                         if bt != null:
                                 # osso pixel-art (variante per seed)
                                 draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
-                                var bs: float = psize * 2.2
+                                var bs: float = psize * 2.6
                                 draw_texture_rect(bt,
                                                 Rect2(-bs * 0.5, -bs * 0.5, bs, bs),
                                                 false, Color(1.0, 1.0, 1.0, f))
