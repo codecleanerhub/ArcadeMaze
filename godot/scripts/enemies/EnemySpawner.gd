@@ -328,9 +328,15 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
         # FIX (respawn non avviene): prima richiedeva is_death_anim_done()
         # che spesso non era true al momento del trigger. Ora raccogliamo
         # tutti i nemici morti (is_dead) indipendentemente dall'anim.
+        # TASK 84 (bug "quadrati bianchi sul portale"): ESCLUDERE le statue
+        # di ghiaccio (freeze_kill, TASK 50) — il loro contratto e' restare
+        # sul labirinto come statue fino alla fine del livello. Includerle
+        # faceva riportare in vita dal portale il nodo-statua via init()
+        # (teletrasportando la statua vicino al portale) e, prima del fix
+        # in Enemy.init(), il nemico respawnato restava congelato per sempre.
         for i in range(enemies.size()):
                 var e = enemies[i]
-                if e is Enemy and e.is_dead():
+                if e is Enemy and e.is_dead() and not e.is_frozen():
                         magic_portal.dead_indices.append(i)
 
         portal_used = true

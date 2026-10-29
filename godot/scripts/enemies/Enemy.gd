@@ -323,6 +323,13 @@ func init(t: int, start_col: int, start_row: int) -> void:
 
         # Reset all timers (constructor initializer list in C++).
         path_update_timer = 0
+        # TASK 84 (bug "quadrati bianchi sul portale"): init() re-inizializza
+        # un nemico respawnato dal portale magico — deve resettare ANCHE lo
+        # stato congelato, altrimenti una statua di ghiaccio (freeze_kill,
+        # TASK 50) riportata in vita dal portale restava VIVA ma congelata
+        # per sempre: non si muoveva e disegnava mostro+iceblock come un
+        # "quadrato bianco con palla celeste" che nascondeva il portale.
+        frozen = false
         # TASK 51 (desync visivo — "nemici cosi' sincroni da sovrapporsi"):
         # fase di camminata e velocita' sfasate per nemico: due nemici che
         # convergono sullo stesso corridoio non marciano piu' in lockstep
