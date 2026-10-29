@@ -19,6 +19,7 @@ var demo_frames := 0
 var demo_stall_hits := 0
 var demo_last_snapshot: Array = []
 var demo_snapshot_frames: Array[int] = []
+var _collapse_sim_left: int = 0
 var menu: Control = null
 
 
@@ -54,6 +55,7 @@ func _physics_process(delta: float) -> void:
                                 for k in 10:
                                         demo._physics_process(1.0 / 60.0)
                                         demo_frames += 1
+                                        _drive_collapse()
                                         _demo_frame_checks()
                         if demo_frames >= 1700:
                                 _phase_e_verdict()
@@ -174,6 +176,34 @@ func _phase_abcd() -> void:
 # ---------------------------------------------------------------------------
 # E) demo mode
 # ---------------------------------------------------------------------------
+## TASK 87 (emulazione controller): il fix reale sta in DemoController
+## (_start_pending_collapses + _on_collapse_finished), ma in questo test la
+## demo vien guidata 10x in tempo simulato mentre l'effetto di collasso
+## (PlayerCollapseFx) scalerebbe col tempo REALE della tree (~11x troppo
+## lungo, respawn duplicato a fine corsa). Qui si neutralizza l'fx avviato
+## dal game-side e si completa il ciclo morte->respawn in sim-time.
+func _drive_collapse() -> void:
+        if demo == null or not is_instance_valid(demo):
+                return
+        var p: CharacterBody2D = demo.player
+        if p == null or not is_instance_valid(p):
+                return
+        if not demo._collapses.is_empty():
+                for fx in demo._collapses:
+                        if fx != null and is_instance_valid(fx):
+                                fx.queue_free()
+                demo._collapses.clear()
+                _collapse_sim_left = 70  # ~1.16s di animazione in sim-time
+                return
+        if _collapse_sim_left > 0:
+                _collapse_sim_left -= 1
+                return
+        if p.soul_pending:
+                p.respawn_after_soul()
+                demo.demo_target_enemy = null
+                demo.demo_target_treasure = Vector2i(-1, -1)
+
+
 func _demo_frame_checks() -> void:
         # snapshot anti-stallo ogni 60 frame simulati: se TUTTE le posizioni
         # (player + nemici vivi) restano identiche per un intero secondo
@@ -216,6 +246,12 @@ func _phase_e_verdict() -> void:
                 p.lives = 3
                 p.energy = p.max_energy
                 p.damage_timer = 0
+                # reset TUTTE le fonti di invulnerabilita' (is_invulnerable =
+                # damage_timer OR invincible_timer OR spawn_guard_ms): una
+                # pozione calice o una rinascita recente del demo bloccava il
+                # danno da contatto con FAIL finti (flaky).
+                p.invincible_timer = 0
+                p.spawn_guard_ms = 0
                 # TASK 87: se il player del demo e' morto durante i 28s
                 # simulati puo' essere ancora in collasso (respawn differito,
                 # gate soul_pending): sbloccalo come fa il controller a fine
@@ -224,6 +260,18 @@ func _phase_e_verdict() -> void:
                 p.collapse_requested = false
                 if p.sprite != null:
                         p.sprite.visible = true
+                # TASK 87: neutralizza eventuali fx di collasso ancora in
+                # volo (il loro finished arriverebbe in tempo REALE, durante
+                # il loop del danno, teletrasportando il player a meta' check).
+                if not demo._collapses.is_empty():
+                        for fx in demo._collapses:
+                                if fx != null and is_instance_valid(fx):
+                                        fx.queue_free()
+                        demo._collapses.clear()
+                # il nemico teletrasportato NON deve poter morire sotto il
+                # fuoco dell'AI demo durante il check (nemico morto = niente
+                # danno da contatto = FAIL finto): salute extra.
+                enemy.health = 999
                 demo.demo_duration_timer_ms = 10000
                 var e_before: int = p.energy
                 var l_before: int = p.lives

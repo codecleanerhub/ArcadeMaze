@@ -16,6 +16,7 @@ extends Node2D
 const C = preload("res://scripts/core/GameConstants.gd")
 const WeaponClass = preload("res://scripts/items/Weapon.gd")
 const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
+const PlayerCollapseFx = preload("res://scripts/entities/PlayerCollapseEffect.gd")
 
 @onready var maze: Node2D = $Maze
 @onready var player: CharacterBody2D = $Player
@@ -56,6 +57,10 @@ var _last_lives: int = 3                   # rileva morte/respawn del demo
 
 # Boss reference (se demo boss)
 var boss: Node2D = null
+
+# TASK 87 (fix demo freeze): collassi in corso nel demo (mirror di
+# MainGameController._collapses).
+var _collapses: Array = []
 
 
 func _ready() -> void:
@@ -132,6 +137,14 @@ func _physics_process(_delta: float) -> void:
                 _stop_demo()
                 return
 
+        # TASK 87 (fix demo freeze): alla morte il player passa da
+        # begin_collapse() -> animazione + respawn differito. Nel gioco vero
+        # li avvia MainGameController, ma il DEMO non ha un controller:
+        # senza questo driver il player morto restava INVISIBILE e congelato
+        # fino alla scadenza dei 30s (regressione del respawn differito,
+        # rilevata dagli stalli di test_task26 fase E).
+        _start_pending_collapses()
+
         # AI control
         _update_ai(delta_ms)
 
@@ -205,6 +218,46 @@ func _physics_process(_delta: float) -> void:
                 hud.set_remaining_treasures(maze.get_remaining_treasures())
 
         queue_redraw()
+
+
+# TASK 87 (fix demo freeze): mirror di MainGameController._start_pending_
+# collapses — avvia l'animazione di collasso richiesta da begin_collapse().
+func _start_pending_collapses() -> void:
+        if player == null or not is_instance_valid(player):
+                return
+        if not player.collapse_requested:
+                return
+        player.collapse_requested = false
+        var fx: Node2D = PlayerCollapseFx.new()
+        fx.setup(player)
+        add_child(fx)
+        fx.finished.connect(_on_collapse_finished.bind(player))
+        _collapses.append(fx)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PLAYER_SUFFER)
+
+
+# TASK 87 (fix demo freeze): a fine animazione il player demo RESPAWNA
+# SEMPRE (anche a 0 vite): e' il comportamento pre-Task-87 del demo (il
+# vecchio take_damage faceva reset_position incondizionato e il flusso
+# continue non esiste nel demo). Il guard `lives > 0` del contatto nemico
+# (riga sopra) evita che scenda sotto zero.
+func _on_collapse_finished(p: CharacterBody2D) -> void:
+        for i in _collapses.size():
+                if _collapses[i] != null and is_instance_valid(_collapses[i]) \
+                                and _collapses[i].victim == p:
+                        _collapses.remove_at(i)
+                        break
+        if p == null or not is_instance_valid(p):
+                return
+        p.respawn_after_soul()
+        # il respawn rimette il player alla cella (1,1): i nemici che
+        # convergevano sul punto di morte restano lì a girare a vuoto finché
+        # l'isteresi non ripesca il target — riparto pulito come fa il
+        # controller vero alla morte.
+        demo_target_enemy = null
+        demo_target_treasure = Vector2i(-1, -1)
+        demo_target_hold_ms = 0.0
 
 
 func _update_ai(delta_ms: float) -> void:

@@ -39,7 +39,21 @@ func _physics_process(delta: float) -> void:
         t += delta
         if t < 1.0:
                 return
-        if AudioManager == null or AudioManager._boss_shoot_streams.is_empty():
+        if AudioManager == null:
+                _fail("AudioManager non disponibile")
+                _finish()
+                return
+        # TASK 76: la sintesi e' asincrona (thread in background) e gli spari
+        # boss sono ULTIMI nella coda di priorita' (menu -> SFX -> tracce ->
+        # boss): al momento del check (~1s dal boot) il worker e' ancora nelle
+        # tracce musicali e gli 18 stream sono null. Il gioco in questo caso
+        # usa il fallback on-demand di play_boss_shoot() (stesso generatore
+        # _generate_boss_shoot del worker, contenuto identico): lo sfruttiamo
+        # qui per portare gli stream in memoria PRIMA del QA, senza aspettare
+        # ~15s di coda.
+        for k in AudioManager.BOSS_SHOOT_KIND_COUNT:
+                AudioManager.play_boss_shoot(k)
+        if AudioManager._boss_shoot_streams.is_empty():
                 _fail("stream boss-shoot non generati (flag o _ready)")
                 _finish()
                 return
