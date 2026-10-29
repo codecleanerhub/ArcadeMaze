@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+  <style>
+    @page { size: 794px 1123px; margin: 0; }
+    :root {
+      --c-bg: #f2f1f0;
+      --c-accent: #8f7423;
+      --c-text: #22211f;
+      --c-muted: #86837c;
+      --c-mid: #6b603e;
+      --c-surface: #eaeae8;
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 794px; height: 1123px;
+      background: var(--c-bg);
+      font-family: 'Inter', 'Liberation Sans', sans-serif;
+      color: var(--c-text);
+    }
+    @media screen {
+      html { height: auto; display: flex; justify-content: center; min-height: 100vh; background: var(--c-bg); }
+      body { transform-origin: top center; scale: min(1, calc(100vw / 794), calc(100vh / 1123)); margin: 0 auto; box-shadow: 0 0 60px rgba(0,0,0,0.15); }
+    }
+    .cover { position: relative; width: 794px; height: 1123px; border: none; outline: none; box-shadow: none; }
+    /* Layer 1: griglia di fondo (clip obbligatorio SOLO qui) */
+    .layer1 {
+      position: absolute; inset: 0; overflow: hidden; z-index: 1;
+      background-image:
+        linear-gradient(to right, rgba(107, 96, 62, 0.05) 0.5px, transparent 0.5px),
+        linear-gradient(to bottom, rgba(107, 96, 62, 0.05) 0.5px, transparent 0.5px);
+      background-size: 50px 50px;
+    }
+    /* Layer 2: linea di ancoraggio verticale */
+    .layer2 { position: absolute; inset: 0; z-index: 2; }
+    .anchor-line {
+      position: absolute;
+      left: 95px; top: 112px; bottom: 112px;
+      width: 8px;
+      background: var(--c-accent);
+    }
+    /* Layer 3: contenuto */
+    .layer3 { position: absolute; inset: 0; z-index: 3; }
+    .kicker {
+      position: absolute; left: 145px; top: 168px;
+      font-size: 16px; font-weight: 400;
+      letter-spacing: 4px; text-transform: uppercase;
+      color: var(--c-text); opacity: 0.6;
+      max-width: 560px; line-height: 1.6;
+    }
+    .hero {
+      position: absolute; left: 145px; top: 300px;
+      font-size: 62px; font-weight: 900; line-height: 1.12;
+      color: var(--c-text); max-width: 600px;
+      letter-spacing: 1px;
+    }
+    .summary {
+      position: absolute; left: 145px; top: 560px;
+      font-size: 17px; font-weight: 400; line-height: 1.65;
+      color: var(--c-text); opacity: 0.85;
+      max-width: 476px;
+    }
+    .meta {
+      position: absolute; left: 145px; top: 842px;
+      font-size: 17px; line-height: 1.7; color: var(--c-text);
+    }
+    .meta .label { color: var(--c-muted); }
+    .footer {
+      position: absolute; left: 145px; bottom: 64px; right: 96px;
+      display: flex; justify-content: space-between;
+      font-size: 14px; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--c-text); opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <div class="layer1"></div>
+    <div class="layer2"><div class="anchor-line"></div></div>
+    <div class="layer3">
+      <div class="kicker">Report di game design<br>Meccaniche di punteggio &amp; sistema Level Up</div>
+      <div class="hero">ARCADE<br>MAZE</div>
+      <div class="summary">
+        Analisi dell'economia dei punti dopo la ricalibrazione per durezza,
+        calcolo del massimo cumulabile in una run completa e proposta completa
+        del sistema di livellamento: otto abilità, curva a soglie crescenti,
+        modale di scelta in pausa ed effetti grafici in pixel art.
+      </div>
+      <div class="meta">
+        <span class="label">Documento&nbsp;&nbsp;</span>Bozza per la discussione — v1<br>
+        <span class="label">Data&nbsp;&nbsp;</span>30 ottobre 2026
+      </div>
+      <div class="footer">
+        <span>Task 98 — Game Design</span>
+        <span>ArcadeMaze</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
