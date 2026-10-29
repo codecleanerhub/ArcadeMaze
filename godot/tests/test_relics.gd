@@ -694,15 +694,23 @@ func _phaseG_boss_room() -> void:
         brp1.projectiles.clear()
         brp1.armor_relic = {}
 
-        # G4: morte del boss -> SCHERMATA BONUS (fight congelato).
+        # G4: morte del boss -> SEQUENZA DI MORTE (Task 86) -> SCHERMATA BONUS.
         brp1.current_weapon = C.make_relic_weapon(C.RELIC_MELEE[0])
         brp2.visible = true
         boss_room.boss.take_damage(99999)
         boss_room._check_boss_death()
+        # TASK 86: alla morte il controller avvia ora l'animazione per-tipo
+        # (~2.4-2.8s in gioco) e le card compaiono SOLO a `finished`. Qui la
+        # sequenza viene guidata a passi sincroni da 16ms fino alla fine,
+        # poi il flusso originale apre la schermata bonus.
+        var seq_guard: int = 0
+        while boss_room._death_seq != null and seq_guard < 400:
+                boss_room._death_seq.update(16.0)
+                seq_guard += 1
         if not boss_room._bonus_active or boss_room._bonus_screen == null:
-                _fail("G4: la schermata bonus non si è aperta alla morte del boss")
+                _fail("G4: la schermata bonus non si è aperta dopo la sequenza di morte")
         else:
-                _ok("G4: morte del boss -> schermata bonus (fight congelato)")
+                _ok("G4: morte del boss -> sequenza morte -> schermata bonus (fight congelato)")
 
         # G5: offerta corretta + 2 choosers (2P, entrambi vivi).
         var screen = boss_room._bonus_screen
