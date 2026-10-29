@@ -207,6 +207,19 @@ var level: int = 1
 var skill_points: int = 0
 var pending_levelup_fx: int = 0
 
+# TASK 99 FASE 2 — livelli acquistati delle otto abilità (id -> int, vedi
+# GameConstants.SKILL_DEFS). Aggiornati SOLO alla conferma della modale
+# (confirm_skills): le +/− nella finestra sono assegnazioni temporanee.
+# Segue la stessa semantica di level (reset() a nuova partita, carry e
+# session snapshot la conservano tra scene e continue).
+var skill_levels: Dictionary = {}
+# Rigenerazione (accumulatori): +0.2 energia ogni 5s per livello di Rigenerazione.
+var _skill_regen_timer_ms: float = 0.0
+var _skill_regen_acc: float = 0.0
+# Quota di salti aggiuntivi in aria ancora disponibili (si resetta al
+# salto da terra, si consuma a ogni salto a mezz'aria).
+var _air_jumps_left: int = 0
+
 # ===========================================================================
 # TASK 82 — LAMPO DI VOLATA (muzzle flash): feedback visivo dello sparo.
 # Quando un'arma spara, per ~160 ms all'estremita' dell'arma appare un
@@ -333,7 +346,7 @@ func equip_relic_armor(def: Dictionary) -> void:
         armor_relic = def.duplicate()
         armor_relic["charges"] = int(def.get("charges", 5))
         armor_relic["max_charges"] = int(def.get("charges", 5))
-        max_energy = 5 + ARMOR_ENERGY_BONUS
+        max_energy = 5 + _perk_energy_bonus_units() + ARMOR_ENERGY_BONUS
         energy = max_energy  # cura piena all'equipaggiamento
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
@@ -354,7 +367,7 @@ func restore_relic_armor(saved: Dictionary) -> void:
         if saved.is_empty():
                 return
         armor_relic = saved.duplicate()
-        max_energy = 5 + ARMOR_ENERGY_BONUS
+        max_energy = 5 + _perk_energy_bonus_units() + ARMOR_ENERGY_BONUS
         energy = max_energy
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
@@ -477,11 +490,12 @@ func _tick_fury_shot() -> void:
 
 
 ## L'armatura si rompe (durabilita' esaurita): slot liberato, energia max
-## torna a 5 (l'energia eccedente viene troncata).
+## torna alla base + il perk Energia Vitale (TASK 99: il perk NON si perde
+## quando l'armatura si rompe; l'energia eccedente viene troncata).
 func _break_relic_armor() -> void:
         armor_relic = {}
-        max_energy = 5
-        energy = mini(energy, 5)
+        max_energy = 5 + _perk_energy_bonus_units()
+        energy = mini(energy, max_energy)
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
         # TASK 25: il vestito torna al colore originale.
@@ -601,8 +615,8 @@ func lose_relics_on_death() -> void:
                         AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
         if not armor_relic.is_empty():
                 armor_relic = {}
-                max_energy = 5
-                energy = mini(energy, 5)
+                max_energy = 5 + _perk_energy_bonus_units()
+                energy = mini(energy, max_energy)
                 _armor_regen_timer_ms = 0.0
                 _armor_aura_timer_ms = 0.0
                 # TASK 25: vestito torna originale anche alla morte.
@@ -690,6 +704,10 @@ func reset() -> void:
         level = 1
         skill_points = 0
         pending_levelup_fx = 0
+        skill_levels.clear()
+        _skill_regen_timer_ms = 0.0
+        _skill_regen_acc = 0.0
+        _air_jumps_left = 0
         current_weapon = _make_weapon(WeaponType.PISTOL)
         projectiles.clear()
         picked_weapon_this_frame = false
@@ -746,8 +764,10 @@ func reset_position() -> void:
         # TASK 38 (nascita/rinascita): 3 secondi di immortalita' con
         # lampeggio, per dare il tempo di allontanarsi dai nemici.
         spawn_guard_ms = SPAWN_GUARD_MS
-        # FIX (stamina): al respawn le "gambe" sono riposate (barra piena).
-        stamina = 1.0
+        # FIX (stamina): al respawn le "gambe" sono riposate (barra piena
+        # alla CAPACITÀ CORRENTE: con Resistenza > 0 la barra massima è
+        # oltre 1.0, TASK 99).
+        stamina = get_stamina_max()
         stamina_exhausted = false
         _stamina_since_jump_ms = 99999.0
         _stamina_click_cd_ms = 0.0
@@ -1089,9 +1109,26 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         if _stamina_click_cd_ms > 0.0:
                 _stamina_click_cd_ms = maxf(0.0, _stamina_click_cd_ms - delta_ms)
         if not is_jumping() and _stamina_since_jump_ms >= STAMINA_RECHARGE_DELAY_MS:
-                stamina = minf(1.0, stamina + delta_ms / STAMINA_RECHARGE_FULL_MS)
-        if stamina_exhausted and stamina >= 1.0:
+                # TASK 99 (Resistenza): barra massima maggiore (+7%/liv) e
+                # ricarica più rapida (-5% tempo per liv).
+                stamina = minf(get_stamina_max(), stamina + delta_ms
+                                / STAMINA_RECHARGE_FULL_MS
+                                * get_stamina_recharge_mult())
+        if stamina_exhausted and stamina >= get_stamina_max() - 0.0001:
                 stamina_exhausted = false
+
+        # TASK 99 (Rigenerazione): +0.2 energia ogni 5s per livello, solo se
+        # manca energia (pattern della Veste dell'Arcimago, senza cariche:
+        # l'accumulo frazionario converte le mezze unità in cuori interi).
+        var regen_rate: float = get_regen_rate()
+        if regen_rate > 0.0 and energy < max_energy:
+                _skill_regen_timer_ms += delta_ms
+                if _skill_regen_timer_ms >= C.SKILL_REGEN_STEP_MS:
+                        _skill_regen_timer_ms -= C.SKILL_REGEN_STEP_MS
+                        _skill_regen_acc += regen_rate
+                        while _skill_regen_acc >= 1.0:
+                                _skill_regen_acc -= 1.0
+                                energy = mini(max_energy, energy + 1)
 
         # RELIC (Task 21) — VESTE DELL'ARCIMAGO (rigenerazione): 1 energia
         # ogni regen_ms FINCHE' l'energia manca; ogni rigenerazione consuma
@@ -1150,7 +1187,7 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
         # boost TEMPORANEO post-salto NON protegge: si corre comunque nella
         # sabbia (spec: solo gli stivali). Salto e ghost sono gestiti dal
         # MazeHazards (slow=1 mentre si e' a mezz'aria/evanescenti).
-        var move_speed: float = float(effective_speed)
+        var move_speed: float = float(effective_speed) * get_speed_mult()
         if not permanent_speed_boost:
                 move_speed *= hazard_slow
 
@@ -1795,6 +1832,10 @@ func collect_weapon(w: Dictionary) -> void:
                         and not bool(current_weapon.get("ground", false)):
                 return
         current_weapon = w.duplicate()
+        # TASK 99 (Caricatore Esteso): ogni arma appena raccolta parte col
+        # bonus colpi del perk (le reliquie restano intatte: la loro "ammo"
+        # e' durabilita').
+        _apply_magazine_bonus_to_weapon()
 
 
 # add_score(points): add points and grant an extra life every 50k
@@ -1842,6 +1883,113 @@ func consume_pending_levelup_fx() -> int:
 
 
 # ===========================================================================
+# TASK 99 FASE 2 — LE OTTO ABILITÀ: effetti e conferma
+# ===========================================================================
+func get_skill_level(skill_id: String) -> int:
+        return int(skill_levels.get(skill_id, 0))
+
+
+# --- Energia Vitale: +5%/livello su base 5 (unità discrete) ---------------
+## Unità di energia extra dal perk: ceil(0.05 x livello x 5) — il PRIMO
+## acquisto vale subito +1 unità (~+20% reale sul primo), a cap 10 sono +3
+## (5 -> 8, +60%: leggermente sopra il +50% del report per l'arrotondamento
+## per eccesso delle unità discrete).
+func _perk_energy_bonus_units() -> int:
+        var lvl: int = get_skill_level("energy")
+        if lvl <= 0:
+                return 0
+        return int(ceil(0.05 * float(lvl) * 5.0))
+
+
+# --- Resistenza: +7% max, -5% attesa per livello --------------------------
+func get_stamina_max() -> float:
+        return 1.0 + 0.07 * float(get_skill_level("stamina"))
+
+
+func get_stamina_recharge_mult() -> float:
+        return 1.0 + 0.05 * float(get_skill_level("stamina"))
+
+
+# --- Rapidità: +4%/livello ------------------------------------------------
+func get_speed_mult() -> float:
+        return 1.0 + 0.04 * float(get_skill_level("swiftness"))
+
+
+# --- Potenza di Fuoco: +5%/livello ----------------------------------------
+func get_damage_mult() -> float:
+        return 1.0 + 0.05 * float(get_skill_level("firepower"))
+
+
+# --- Caricatore Esteso: +1 colpo/livello ----------------------------------
+func get_magazine_bonus() -> int:
+        return get_skill_level("magazine")
+
+
+# --- Fortuna del Cacciatore: +3%/livello di drop --------------------------
+func get_luck_drop_chance() -> float:
+        return 0.03 * float(get_skill_level("luck"))
+
+
+# --- Rigenerazione: +0.2 energia ogni 5s per livello ---------------------
+func get_regen_rate() -> float:
+        return 0.2 * float(get_skill_level("regen"))
+
+
+# --- Salto Aggiuntivo: +1 salto in aria per livello (richiede Stam 4) -----
+func get_extra_air_jumps() -> int:
+        return get_skill_level("jump")
+
+
+## Applica il bonus caricatore all'arma CORRENTE (le reliquie usano ammo
+## come durabilità: mai toccarle). La chiave "mag_bonus_applied" nel dict
+## dell'arma traccia quanto bonus è già dentro, così le +/− multiple in
+## sessione modale e i cambi arma restano coerenti.
+func _apply_magazine_bonus_to_weapon() -> void:
+        var w: Dictionary = current_weapon
+        if w.is_empty() or w.has("relic"):
+                return
+        var bonus: int = get_magazine_bonus()
+        var applied: int = int(w.get("mag_bonus_applied", 0))
+        if bonus == applied:
+                return
+        w["ammo"] = maxi(0, int(w.get("ammo", 0)) + bonus - applied)
+        w["mag_bonus_applied"] = bonus
+
+
+## Conferma della modale abilità: `final_levels` è il dict COMPLETO
+## id->livello dopo le assegnazioni (confermate = definitive). Ricalcola
+## tutti gli effetti derivati con gain immediato (es. nuova energia massima
+## si riempie subito delle unità appena guadagnate).
+func confirm_skills(final_levels: Dictionary) -> void:
+        skill_levels = {}
+        for k in final_levels.keys():
+                skill_levels[k] = int(final_levels[k])
+        _recalc_skill_effects()
+
+
+## Ripristino della progressione da snapshot (carry tra scene / sessione
+## continue): identico a confirm_skills, esplicito per chi legge il call-site.
+func restore_skills(skills: Dictionary) -> void:
+        confirm_skills(skills)
+
+
+## Ricalcola gli effetti derivati delle abilità (chiamato anche dopo
+## carry/restore e quando l'armatura reliquia cambia il max energia base).
+func _recalc_skill_effects() -> void:
+        var new_max: int = 5 + _perk_energy_bonus_units()
+        if has_relic_armor():
+                new_max += ARMOR_ENERGY_BONUS
+        if new_max != max_energy:
+                var delta: int = new_max - max_energy
+                max_energy = new_max
+                if delta > 0:
+                        energy = mini(max_energy, energy + delta)
+                else:
+                        energy = mini(energy, max_energy)
+        _apply_magazine_bonus_to_weapon()
+
+
+# ===========================================================================
 # Jump
 # ===========================================================================
 
@@ -1869,7 +2017,19 @@ func activate_jump() -> bool:
                 input_mash_count += 1
                 return false
         if jump_timer > 0:
-                return false  # già in salto
+                # TASK 99 (Salto Aggiuntivo): con l'abilità sbloccata si può
+                # saltare ANCHE a mezz'aria, consumando uno dei salti extra;
+                # il costo di stamina resta il gate fisico (per questo il
+                # perk richiede Resistenza 4: serve barra oltre il secondo
+                # salto per pagarselo).
+                if _air_jumps_left > 0 and not stamina_exhausted \
+                                and stamina >= STAMINA_JUMP_COST - 0.0001:
+                        _air_jumps_left -= 1
+                else:
+                        return false  # già in salto, nessun salto extra
+        else:
+                # Salto da terra: ricarica la quota di salti a mezz'aria.
+                _air_jumps_left = get_extra_air_jumps()
         # Gate di stamina: ci vuole almeno 1/2 barra per un salto.
         if stamina_exhausted or stamina < STAMINA_JUMP_COST - 0.0001:
                 # Click "a vuoto": tenendo premuto il tasto di salto il
@@ -1882,7 +2042,7 @@ func activate_jump() -> bool:
         stamina = maxf(0.0, stamina - STAMINA_JUMP_COST)
         _stamina_since_jump_ms = 0.0
         if stamina <= 0.0001:
-                # 2° salto consecutivo: barra vuota → player "stanco".
+                # barra vuota → player "stanco" (fino a ricarica completa).
                 stamina_exhausted = true
         max_jump_time = 40
         jump_timer = max_jump_time
@@ -1899,9 +2059,12 @@ func is_jumping() -> bool:
 
 # ===========================================================================
 # FIX (stamina): accessor per la barra verde in HUD (1.0 = piena).
+# TASK 99 (Resistenza): con barra massima > 1.0 il ratio è relativo alla
+# CAPACITÀ CORRENTE (la HUD mostra "quanto è piena la barra che ho").
 # ===========================================================================
 func get_stamina_ratio() -> float:
-        return clampf(stamina, 0.0, 1.0)
+        var cap: float = maxf(0.0001, get_stamina_max())
+        return clampf(stamina / cap, 0.0, 1.0)
 
 
 # FIX (stamina): true dopo il 2° salto consecutivo, finché la barra non si

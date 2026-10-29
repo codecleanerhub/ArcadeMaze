@@ -26,6 +26,7 @@ const C = preload("res://scripts/core/GameConstants.gd")
 const PlayerClass = preload("res://scripts/core/Player.gd")
 const HUDClass = preload("res://scripts/ui/HUD.gd")
 const AnnounceClass = preload("res://scripts/ui/LevelUpAnnounce.gd")
+const OverlayClass = preload("res://scripts/ui/LevelUpOverlay.gd")
 
 const SRC_PLAYER := "res://scripts/core/Player.gd"
 const SRC_MAIN := "res://scripts/core/MainGameController.gd"
@@ -41,7 +42,7 @@ func _on_announce_done(n: int) -> void:
 
 
 func _ready() -> void:
-        print("[TEST] TASK 99 FASE 1 — motore XP (punteggio = esperienza)")
+        print("[TEST] TASK 99 FASE 1+2 — motore XP + abilità + modale")
         _test_thresholds()
         _test_level_for_score()
         _test_add_score()
@@ -50,6 +51,15 @@ func _ready() -> void:
         _test_hud_keys()
         await _test_announce()
         _test_source_guards()
+        _test_skill_defs()
+        _test_skill_effects()
+        _test_air_jump()
+        _test_magazine()
+        _test_damage_mult()
+        _test_stamina_ratio()
+        await _test_modal()
+        _test_carry_skills()
+        _test_source_guards_f2()
         if fails > 0:
                 print("[TEST] ESITO: FALLITO (%d errori)" % fails)
                 get_tree().quit(1)
@@ -305,3 +315,278 @@ func _test_source_guards() -> void:
                 _fail("H: i18n levelup.title = '%s'" % t_title)
         else:
                 _ok("H5: i18n levelup.* presenti (title/reached/gained)")
+
+
+# --- I: defs delle otto abilità ---
+func _test_skill_defs() -> void:
+        if C.SKILL_IDS.size() != 8:
+                _fail("I: SKILL_IDS = %d (attese 8)" % C.SKILL_IDS.size())
+                return
+        var expect_caps := {
+                "energy": 10, "stamina": 10, "jump": 2, "firepower": 10,
+                "magazine": 8, "swiftness": 8, "luck": 6, "regen": 4,
+        }
+        for id in C.SKILL_IDS:
+                var def: Dictionary = C.get_skill_def(id)
+                if def.is_empty() or not def.has("name_it") or not def.has("name_en"):
+                        _fail("I: def incompleta per '%s'" % id)
+                        return
+                if int(def.get("cap", -1)) != int(expect_caps[id]):
+                        _fail("I: cap '%s' = %s (atteso %d)"
+                                        % [id, def.get("cap"), expect_caps[id]])
+                        return
+        _ok("I1: 8 abilità bilingue con cap corretti (totale %d livelli)"
+                        % [10 + 10 + 2 + 10 + 8 + 8 + 6 + 4])
+        # requisito salto
+        if C.skill_upgrade_allowed("jump", {"stamina": 3, "jump": 0}):
+                _fail("I: salto acquistabile con Resistenza 3")
+                return
+        if not C.skill_upgrade_allowed("jump", {"stamina": 4, "jump": 0}):
+                _fail("I: salto NON acquistabile con Resistenza 4")
+                return
+        _ok("I2: Salto sbloccato solo a Resistenza 4 (domanda aperta n.4)")
+        if C.skill_upgrade_allowed("energy", {"energy": 10}):
+                _fail("I: energy supera il cap")
+                return
+        _ok("I3: cap rispettato da skill_upgrade_allowed")
+
+
+# --- J: effetti delle abilità sul player ---
+func _test_skill_effects() -> void:
+        var p := PlayerClass.new()
+        p.max_energy = 5
+        p.energy = 5
+        p.confirm_skills({"energy": 1})
+        if p.max_energy != 6 or p.energy != 6:
+                _fail("J: energy 1 -> max %d en %d (attesi 6/6)" % [p.max_energy, p.energy])
+                return
+        p.confirm_skills({"energy": 10})
+        if p.max_energy != 8:
+                _fail("J: energy 10 -> max %d (atteso 8 = 5+3)" % p.max_energy)
+                return
+        _ok("J1: Energia: +1 al primo acquisto, cap +3 unità (5->8)")
+        p.confirm_skills({"stamina": 4})
+        if absf(p.get_stamina_max() - 1.28) > 0.001 \
+                        or absf(p.get_stamina_recharge_mult() - 1.2) > 0.001:
+                _fail("J: stamina 4 -> max %.3f ricarica %.3f" % [p.get_stamina_max(), p.get_stamina_recharge_mult()])
+                return
+        _ok("J2: Resistenza 4: barra 1.28x e ricarica 1.2x")
+        p.confirm_skills({"swiftness": 8})
+        if absf(p.get_speed_mult() - 1.32) > 0.001:
+                _fail("J: swiftness 8 -> %.3f" % p.get_speed_mult())
+                return
+        _ok("J3: Rapidità cap: velocita' x1.32")
+        p.confirm_skills({"firepower": 10})
+        if absf(p.get_damage_mult() - 1.5) > 0.001:
+                _fail("J: firepower 10 -> %.3f" % p.get_damage_mult())
+                return
+        _ok("J4: Potenza di Fuoco cap: danno x1.5")
+        p.confirm_skills({"luck": 6})
+        if absf(p.get_luck_drop_chance() - 0.18) > 0.001:
+                _fail("J: luck 6 -> %.3f" % p.get_luck_drop_chance())
+                return
+        _ok("J5: Fortuna cap: 18% drop")
+        p.confirm_skills({"regen": 4})
+        if absf(p.get_regen_rate() - 0.8) > 0.001:
+                _fail("J: regen 4 -> %.3f" % p.get_regen_rate())
+                return
+        _ok("J6: Rigenerazione cap: 0.8 energia ogni 5s")
+        p.confirm_skills({})
+        if p.max_energy != 5 or p.get_skill_level("energy") != 0:
+                _fail("J: confirm {} non azzera")
+                return
+        _ok("J7: conferma vuota = progressione azzera")
+        p.queue_free()
+
+
+# --- K: salto aggiuntivo a mezz'aria ---
+func _test_air_jump() -> void:
+        var p := PlayerClass.new()
+        p.stamina = 1.0
+        p.stamina_exhausted = false
+        if p.activate_jump() != true:
+                _fail("K: primo salto da terra non parte")
+                return
+        # in aria SENZA perk: nessun secondo salto
+        if p.activate_jump() != false:
+                _fail("K: doppio salto senza perk (regressione!)")
+                return
+        p.jump_timer = 0
+        p.confirm_skills({"stamina": 4, "jump": 1})
+        p.stamina = p.get_stamina_max()
+        p.stamina_exhausted = false
+        if p.activate_jump() != true:
+                _fail("K: salto da terra con perk non parte")
+                return
+        # in aria CON perk jump 1 (e barra 1.28): secondo salto pagato
+        if p.activate_jump() != true:
+                _fail("K: salto a mezz'aria non disponibile con perk")
+                return
+        # terzo salto: quota air jump esaurita
+        if p.activate_jump() != false:
+                _fail("K: terzo salto conceduto oltre la quota perk")
+                return
+        _ok("K: Salto Aggiuntivo: 1 salto extra in aria, poi stop (quota 1)")
+        p.queue_free()
+
+
+# --- L: caricatore esteso ---
+func _test_magazine() -> void:
+        var p := PlayerClass.new()
+        p.confirm_skills({"magazine": 3})
+        p.collect_weapon({"type": 0, "power": 1, "ammo": 20})
+        if int(p.current_weapon.get("ammo", -1)) != 23:
+                _fail("L: pistola con perk 3 -> ammo %d (attesi 23)"
+                                % int(p.current_weapon.get("ammo", -1)))
+                return
+        # le reliquie non vengono toccate
+        p.collect_weapon({"type": 0, "power": 2, "ammo": 5, "relic": "spadone"})
+        if int(p.current_weapon.get("ammo", -1)) != 5:
+                _fail("L: arma reliquia toccata dal perk (%d)" % int(p.current_weapon.get("ammo", -1)))
+                return
+        _ok("L: Caricatore +3 sulle armi base, reliquie intatte")
+        p.queue_free()
+
+
+# --- M: moltiplicatore danno ---
+func _test_damage_mult() -> void:
+        var base: int = C.weapon_damage_for(0, 40, false, -1, 1.0)
+        var buffed: int = C.weapon_damage_for(0, 40, false, -1, 1.5)
+        if base != 10 or buffed != 15:
+                _fail("M: danno base %d / x1.5 -> %d (attesi 10/15)" % [base, buffed])
+                return
+        if C.weapon_damage_for(0, 4, false, -1, 2.0) < 1:
+                _fail("M: danno minimo violato")
+                return
+        _ok("M: Potenza di Fuoco x1.5 = 15 su nemico da 40 HP (10 base)")
+
+
+# --- N: ratio stamina con barra estesa ---
+func _test_stamina_ratio() -> void:
+        var p := PlayerClass.new()
+        p.confirm_skills({"stamina": 4})
+        p.stamina = 1.0
+        if absf(p.get_stamina_ratio() - 1.0 / 1.28) > 0.001:
+                _fail("N: ratio a barra 1.0/1.28 = %.3f" % p.get_stamina_ratio())
+                return
+        p.stamina = 1.28
+        if absf(p.get_stamina_ratio() - 1.0) > 0.001:
+                _fail("N: ratio pieno = %.3f" % p.get_stamina_ratio())
+                return
+        _ok("N: HUD stamina relativa alla capacità corrente (1.0 = piena)")
+        p.queue_free()
+
+
+# --- O: modale abilità (drive diretto) ---
+var _modal_closed_num: int = -1
+
+
+func _on_modal_closed_for_test(n: int) -> void:
+        _modal_closed_num = n
+
+
+func _test_modal() -> void:
+        var p := PlayerClass.new()
+        p.player_num = 1
+        p.skill_points = 2
+        var modal: CanvasLayer = OverlayClass.new()
+        modal.setup(p)
+        _modal_closed_num = -1
+        modal.modal_closed.connect(_on_modal_closed_for_test)
+        add_child(modal)
+        await get_tree().process_frame
+        # riga 1 = Resistenza: assegna 1 punto dal banco
+        modal._row = 1
+        modal._try_alloc(1)
+        if modal._bank != 1 or int(modal._alloc.get("stamina", 0)) != 1:
+                _fail("O: alloc stamina -> banco %d alloc %d" % [modal._bank, modal._alloc.get("stamina", 0)])
+                return
+        # riga 2 = Salto: bloccato (Resistenza visual 1 < 4)
+        modal._row = 2
+        modal._try_alloc(1)
+        if int(modal._alloc.get("jump", 0)) != 0:
+                _fail("O: salto assegnato senza requisito")
+                return
+        # riga 7 = Rigenerazione: secondo punto
+        modal._row = 7
+        modal._try_alloc(1)
+        if modal._bank != 0:
+                _fail("O: banco %d dopo 2 assegnazioni" % modal._bank)
+                return
+        # toglie la rigenerazione: il punto torna al banco
+        modal._try_alloc(-1)
+        if modal._bank != 1:
+                _fail("O: banco %d dopo il -" % modal._bank)
+                return
+        _ok("O1: +/− assegnano e restituiscono; requisito salto rispettato")
+        # OK: conferma (banco 1 resta bancato)
+        modal._confirm()
+        await get_tree().process_frame
+        if _modal_closed_num != 1:
+                _fail("O: modal_closed = %d" % _modal_closed_num)
+                return
+        if p.skill_points != 1 or p.get_skill_level("stamina") != 1 \
+                        or p.get_skill_level("regen") != 0:
+                _fail("O: conferma -> pt %d stam %d regen %d (attesi 1/1/0)"
+                                % [p.skill_points, p.get_skill_level("stamina"), p.get_skill_level("regen")])
+                return
+        _ok("O2: OK conferma stamina 1, punto residuo BANCATO sul player")
+        modal.queue_free()
+        p.queue_free()
+
+
+# --- P: carry di skill_levels ---
+func _test_carry_skills() -> void:
+        var p := PlayerClass.new()
+        p.skill_points = 1
+        p.confirm_skills({"stamina": 5, "firepower": 2})
+        var snap: Dictionary = GameManager.make_player_carry(p)
+        var carried: Dictionary = snap.get("skill_levels", {})
+        if int(carried.get("stamina", -1)) != 5 or int(carried.get("firepower", -1)) != 2:
+                _fail("P: carry skill_levels %s" % [carried])
+                return
+        var p2 := PlayerClass.new()
+        p2.reset()
+        GameManager._apply_carry(p2, snap)
+        if p2.get_skill_level("stamina") != 5 or p2.get_skill_level("firepower") != 2:
+                _fail("P: _apply_carry non ripristina (stam %d fire %d)"
+                                % [p2.get_skill_level("stamina"), p2.get_skill_level("firepower")])
+                return
+        if p2.skill_points != 1:
+                _fail("P: skill_points nel carry = %d" % p2.skill_points)
+                return
+        if absf(p2.get_stamina_max() - 1.35) > 0.001:
+                _fail("P: effetti non ricalcolati dopo carry (max %.3f)" % p2.get_stamina_max())
+                return
+        _ok("P: skill_levels attraversa make_player_carry/_apply_carry con ricalcolo effetti")
+        p.queue_free()
+        p2.queue_free()
+
+
+# --- Q: guardie sorgente fase 2 ---
+func _test_source_guards_f2() -> void:
+        var s_main := _read(SRC_MAIN)
+        if "_maybe_open_levelup_modal" not in s_main \
+                        or "LevelUpOverlayClass" not in s_main:
+                _fail("Q: modale non cablata nel MainGameController")
+        else:
+                _ok("Q1: modale aperta a fine annuncio nel labirinto")
+        var s_boss := _read(SRC_BOSS)
+        if "_maybe_open_levelup_modal" not in s_boss:
+                _fail("Q: modale non cablata nel BossRoomController")
+        else:
+                _ok("Q2: modale cablata anche in boss room")
+        if "get_damage_mult()" not in s_main:
+                _fail("Q: dmg_mult non passato dal MainGameController")
+        else:
+                _ok("Q3: Potenza di Fuoco cablata nel loop proiettili")
+        if "get_luck_drop_chance()" not in s_main:
+                _fail("Q: fortuna non cablata")
+        else:
+                _ok("Q4: Fortuna cablata sui drop da nemico")
+        var s_player := _read(SRC_PLAYER)
+        if "_apply_magazine_bonus_to_weapon()" not in s_player \
+                        or "get_speed_mult()" not in s_player:
+                _fail("Q: magazine/speed non cablati nel Player")
+        else:
+                _ok("Q5: Caricatore e Rapidità cablate nel Player")

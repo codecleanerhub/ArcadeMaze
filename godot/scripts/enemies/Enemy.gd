@@ -908,11 +908,12 @@ func take_damage(dmg: int) -> void:
 ## RELIC (Task 21): `fury` = true con la Corazza del Furore — l'arma
 ## colpisce come se avesse 1 hit-to-kill in meno (floor 2: mai one-shot).
 func take_weapon_hit(weapon_type: int, fury: bool = false,
-                char_type: int = -1) -> int:
+                char_type: int = -1, dmg_mult: float = 1.0) -> int:
         # TASK 61: char_type dell'archetipo che ha sparato — serve alla
         # penalita' -50% per arma TROVATA fuori affinita' (squadre miste).
+        # TASK 99 (Potenza di Fuoco): dmg_mult del tiratore (+5%/livello).
         var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health,
-                        fury, char_type)
+                        fury, char_type, dmg_mult)
         take_damage(dmg)
         return dmg
 

@@ -148,13 +148,18 @@ enum SoundType {
         #   impatto sub-bass, stabs di ottoni eroici (Rem → Sib → Do → Rem)
         #   e coda scintillante dorata che sfuma. Resta un SFX normale
         #   (pool voci, volume SFX), NON un jingle sul canale epic.
-        CHALICE_POWER
+        CHALICE_POWER,
+        # TASK 99 (LEVEL UP): jingle trionfale ascendente (~1.2s) quando la
+        #   soglia di livello scatta: quartine pulse Do-Mi-Sol-Do che salgono,
+        #   accordo tenuto con swell e coda scintillante. Parte insieme alla
+        #   scritta "LEVEL UP!", subito dopo il crack del fulmine.
+        LEVEL_UP
 }
 # NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
 # dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
 # 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 + 1 Task 50b +
-# 1 Task 87 + 1 Task 93 = 58 (0..57).
-const SOUND_TYPE_COUNT: int = 58
+# 1 Task 87 + 1 Task 93 + 1 Task 99 = 59 (0..58).
+const SOUND_TYPE_COUNT: int = 59
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -750,6 +755,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.FREEZE_HIT:      s = _sfx_freeze_hit()
                 SoundType.PLAYER_SUFFER:   s = _sfx_player_suffer()
                 SoundType.CHALICE_POWER:   s = _sfx_chalice_power()
+                SoundType.LEVEL_UP:         s = _sfx_level_up()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1131,6 +1137,45 @@ func _sfx_menu_confirm() -> PackedFloat32Array:
                         var env: float = exp(-t * 15.0)
                         var v: float = pulse_wave(t * note, 0.5)
                         s.append(2200.0 / 32767.0 * v * env)
+        return s
+
+
+# --- TASK 99 (LEVEL UP): jingle trionfale ~1.2s -----------------------------
+# Quartine pulse Do4-Mi4-Sol4-Do5 (90ms l'una, env percussivo) che salgono,
+# poi accordo tenuto Do5-Mi5-Sol5 con swell (la "vittoria" del level up) e
+# coda scintillante di triangolari alte che salgono ulteriormente e sfumano.
+func _sfx_level_up() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # --- 1) arpeggio veloce Do-Mi-Sol-Do -----------------------------
+        var arp := [523.25, 659.25, 783.99, 1046.5]
+        for note in arp:
+                var seg: int = int(SR * 0.09)
+                for i in seg:
+                        var t: float = float(i) / SR
+                        var env: float = exp(-t * 9.0) * (1.0 - exp(-t * 60.0))
+                        var v: float = 0.55 * pulse_wave(t * note, 0.5) \
+                                        + 0.45 * triangle_wave(t * note * 2.0)
+                        s.append(2400.0 / 32767.0 * v * env)
+        # --- 2) accordo tenuto con swell (0.45s) -------------------------
+        var chord := [1046.5, 1318.5, 1568.0]
+        var hold: int = int(SR * 0.45)
+        for i in hold:
+                var t: float = float(i) / SR
+                var swell: float = minf(1.0, t * 12.0) * exp(-t * 3.2)
+                var v: float = 0.0
+                for note in chord:
+                        v += 0.33 * (0.6 * pulse_wave(t * note, 0.35)
+                                        + 0.4 * triangle_wave(t * note))
+                s.append(2600.0 / 32767.0 * v * swell)
+        # --- 3) coda scintillante (0.35s) -------------------------------
+        var tail: int = int(SR * 0.35)
+        for i in tail:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 4.5)
+                var shimmer: float = 0.5 * triangle_wave(
+                                t * (2093.0 + 300.0 * t)) \
+                                + 0.5 * triangle_wave(t * 2637.0)
+                s.append(1400.0 / 32767.0 * shimmer * env * 0.7)
         return s
 
 

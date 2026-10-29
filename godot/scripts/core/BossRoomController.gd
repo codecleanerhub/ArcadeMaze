@@ -98,6 +98,12 @@ var _bonus_active: bool = false
 var _levelup_announce: CanvasLayer = null
 const LevelUpAnnounceClass = preload("res://scripts/ui/LevelUpAnnounce.gd")
 
+# TASK 99 (LEVEL UP): modale delle abilità anche in boss room (stesso
+# pattern del labirinto: pausa del tree + PROCESS_MODE_ALWAYS + freeze
+# del fight tramite early-return in _physics_process).
+var _levelup_card: CanvasLayer = null
+const LevelUpOverlayClass = preload("res://scripts/ui/LevelUpOverlay.gd")
+
 # TASK 86 — sequenza di animazione di morte del boss (null = non in corsa).
 var _death_seq: Node2D = null
 var _death_seq_started: bool = false
@@ -187,6 +193,9 @@ func _ready() -> void:
                         player.level = int(p1_snap_b.get("level", 1))
                         player.skill_points = int(p1_snap_b.get("skill_points", 0))
                         player.pending_levelup_fx = int(p1_snap_b.get("pending_levelup_fx", 0))
+                        var skills1_b: Dictionary = p1_snap_b.get("skill_levels", {})
+                        if not skills1_b.is_empty():
+                                player.restore_skills(skills1_b)
                         var w1_b: Dictionary = p1_snap_b.get("weapon", {})
                         if not w1_b.is_empty():
                                 player.current_weapon = w1_b.duplicate()
@@ -206,6 +215,9 @@ func _ready() -> void:
                         player2.level = int(p2_snap_b.get("level", 1))
                         player2.skill_points = int(p2_snap_b.get("skill_points", 0))
                         player2.pending_levelup_fx = int(p2_snap_b.get("pending_levelup_fx", 0))
+                        var skills2_b: Dictionary = p2_snap_b.get("skill_levels", {})
+                        if not skills2_b.is_empty():
+                                player2.restore_skills(skills2_b)
                         var w2_b: Dictionary = p2_snap_b.get("weapon", {})
                         if not w2_b.is_empty():
                                 player2.current_weapon = w2_b.duplicate()
@@ -248,6 +260,10 @@ func _unhandled_input(event: InputEvent) -> void:
         # (la fase è già un congelamento controllato del fight).
         if _bonus_active:
                 return
+        # TASK 99 (LEVEL UP): niente pausa mentre annuncio o modale sono
+        # aperti (congelamenti controllati).
+        if _levelup_card != null or _levelup_announce != null:
+                return
         if event.is_action_pressed("pause") and not event.is_echo():
                 _toggle_pause()
                 var vp: Viewport = get_viewport()
@@ -276,6 +292,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(_delta: float) -> void:
         # TASK 23: continue per-player aperto — fight CONGELATO.
         if _continue_pending_player != 0:
+                return
+        # TASK 99 (LEVEL UP): modale abilità aperta — fight CONGELATO
+        # (l'overlay gira in PROCESS_MODE_ALWAYS e si chiude con l'OK).
+        if _levelup_card != null:
                 return
         if is_paused:
                 return
@@ -325,10 +345,39 @@ func _check_levelup_celebrations() -> void:
         add_child(ann)
 
 
-func _on_levelup_announcement_done(_player_num: int) -> void:
+func _on_levelup_announcement_done(player_num: int) -> void:
         if _levelup_announce != null:
                 _levelup_announce.queue_free()
                 _levelup_announce = null
+        _maybe_open_levelup_modal(player_num)
+
+
+## Apre la modale abilità del player `player_num` (pattern del labirinto:
+## pausa del tree; il controller e' ALWAYS e si congela da solo con
+## l'early-return in _physics_process).
+func _maybe_open_levelup_modal(player_num: int) -> void:
+        var p: CharacterBody2D = player if player_num != 2 else player2
+        if p == null or not is_instance_valid(p):
+                return
+        if int(p.skill_points) <= 0:
+                return  # nulla da spendere: i punti restano bancati
+        if _levelup_card != null or _bonus_screen != null or _bonus_active:
+                return
+        var modal: CanvasLayer = LevelUpOverlayClass.new()
+        modal.setup(p)
+        modal.modal_closed.connect(_on_levelup_modal_closed)
+        _levelup_card = modal
+        add_child(modal)
+        get_tree().paused = true
+
+
+func _on_levelup_modal_closed(_player_num: int) -> void:
+        if _levelup_card != null:
+                _levelup_card.queue_free()
+                _levelup_card = null
+        if get_tree():
+                get_tree().paused = false
+        _update_hud()
 
 
 # ============================================================================
@@ -1329,6 +1378,7 @@ func _check_boss_death() -> void:
                                                 "level": player.level,
                                                 "skill_points": player.skill_points,
                                                 "pending_levelup_fx": player.pending_levelup_fx,
+                                                "skill_levels": player.skill_levels.duplicate(),
                                         },
                                         "p2": {
                                                 "score": player2.score,
@@ -1336,6 +1386,7 @@ func _check_boss_death() -> void:
                                                 "level": player2.level,
                                                 "skill_points": player2.skill_points,
                                                 "pending_levelup_fx": player2.pending_levelup_fx,
+                                                "skill_levels": player2.skill_levels.duplicate(),
                                         } if (GameManager.num_players == 2 and player2.visible) else {},
                                 }
                                 if GameManager.continues_left > 0:

@@ -57,12 +57,14 @@ func _test_audio() -> void:
         if am == null:
                 _fail("A: autoload AudioManager non trovato")
                 return
-        if am.SOUND_TYPE_COUNT != 58:
-                _fail("A: SOUND_TYPE_COUNT=%d atteso 58 (57 + CHALICE_POWER Task 93)" % am.SOUND_TYPE_COUNT)
+        if am.SOUND_TYPE_COUNT != 59:
+                _fail("A: SOUND_TYPE_COUNT=%d atteso 59 (58 + LEVEL_UP Task 99)" % am.SOUND_TYPE_COUNT)
         if int(am.SoundType.PLAYER_SUFFER) != 56:
                 _fail("A: PLAYER_SUFFER=%d atteso 56" % int(am.SoundType.PLAYER_SUFFER))
         if int(am.SoundType.CHALICE_POWER) != 57:
                 _fail("A: CHALICE_POWER=%d atteso 57 (Task 93)" % int(am.SoundType.CHALICE_POWER))
+        if int(am.SoundType.LEVEL_UP) != 58:
+                _fail("A: LEVEL_UP=%d atteso 58 (Task 99)" % int(am.SoundType.LEVEL_UP))
         var samples: PackedFloat32Array = am._sfx_player_suffer()
         if samples.size() < int(44100 * 0.8):
                 _fail("A: ricetta troppo corta (%d campioni)" % samples.size())

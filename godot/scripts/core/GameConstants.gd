@@ -1141,6 +1141,107 @@ static func levelup_level_for_score(score: int) -> int:
                 lv += 1
         return lv
 
+# ============================================================================
+# TASK 99 (LEVEL UP) FASE 2 — LE OTTO ABILITÀ (report Task 98, Tabella 4)
+# ============================================================================
+# 58 livelli spendibili contro i 19 punti della run perfetta: si può
+# completare al massimo un terzo dell'albero, ogni scelta esclude
+# qualcos'altro. Incrementi piccoli e PERMANENTI (irreversibili una volta
+# confermati con OK). I nomi sono bilingue PER DESIGN (la modale mostra
+# "italiano / inglese" insieme, come le card reliquia del report).
+#
+#   energy     +5%/liv (cap 10) = unità di energia massima extra
+#   stamina    +7% max / -5% attesa per liv (cap 10)
+#   jump       +1 salto a mezz'aria (cap 2), RICHIEDE stamina 4
+#   firepower  +5% danno per colpo (cap 10)
+#   magazine   +1 colpo per caricatore (cap 8)
+#   swiftness  +4% velocità di movimento (cap 8)
+#   luck       +3% probabilità che un nemico lasci un item (cap 6)
+#   regen      +0.2 energia ogni 5s fuori combattimento (cap 4)
+const SKILL_IDS: PackedStringArray = [
+        "energy", "stamina", "jump", "firepower",
+        "magazine", "swiftness", "luck", "regen",
+]
+const SKILL_JUMP_REQUIRES_STAMINA: int = 4
+const SKILL_REGEN_STEP_MS: float = 5000.0
+
+const SKILL_DEFS: Dictionary = {
+        "energy": {
+                "name_it": "Energia Vitale", "name_en": "Vital Energy",
+                "desc_it": "Più energia massima: i cuori si sgretolano più tardi",
+                "desc_en": "Higher max energy: hearts crumble later",
+                "per": "+5%", "cap": 10, "color": Color(0.95, 0.30, 0.35),
+        },
+        "stamina": {
+                "name_it": "Resistenza", "name_en": "Stamina",
+                "desc_it": "Stamina massima maggiore e ricarica più rapida",
+                "desc_en": "Bigger stamina pool and faster recharge",
+                "per": "+7% max, -5% attesa", "cap": 10,
+                "color": Color(0.30, 0.85, 0.40),
+        },
+        "jump": {
+                "name_it": "Salto Aggiuntivo", "name_en": "Extra Jump",
+                "desc_it": "Un salto in più a mezz'aria (richiede Resistenza 4)",
+                "desc_en": "One more mid-air jump (requires Stamina 4)",
+                "per": "+1 salto", "cap": 2, "color": Color(0.40, 0.85, 0.95),
+        },
+        "firepower": {
+                "name_it": "Potenza di Fuoco", "name_en": "Firepower",
+                "desc_it": "Danno per colpo di ogni arma",
+                "desc_en": "Damage per hit of every weapon",
+                "per": "+5%", "cap": 10, "color": Color(1.0, 0.55, 0.20),
+        },
+        "magazine": {
+                "name_it": "Caricatore Esteso", "name_en": "Extended Magazine",
+                "desc_it": "Più colpi disponibili per caricatore",
+                "desc_en": "More shots per magazine",
+                "per": "+1 colpo", "cap": 8, "color": Color(0.85, 0.72, 0.35),
+        },
+        "swiftness": {
+                "name_it": "Rapidità", "name_en": "Swiftness",
+                "desc_it": "Velocità di movimento nel labirinto",
+                "desc_en": "Movement speed in the maze",
+                "per": "+4%", "cap": 8, "color": Color(0.45, 0.60, 1.0),
+        },
+        "luck": {
+                "name_it": "Fortuna del Cacciatore", "name_en": "Hunter's Luck",
+                "desc_it": "Probabilità che i nemici lascino un item a terra",
+                "desc_en": "Chance that enemies drop an item",
+                "per": "+3%", "cap": 6, "color": Color(0.50, 0.90, 0.50),
+        },
+        "regen": {
+                "name_it": "Rigenerazione", "name_en": "Regeneration",
+                "desc_it": "Recupero lento di energia fuori dal combattimento",
+                "desc_en": "Slow energy recovery out of combat",
+                "per": "+0.2 ogni 5s", "cap": 4, "color": Color(0.90, 0.95, 0.80),
+        },
+}
+
+
+## Def di una abilità (dict di SKILL_DEFS, {} se id sconosciuto).
+static func get_skill_def(skill_id: String) -> Dictionary:
+        return SKILL_DEFS.get(skill_id, {})
+
+
+## True se l'abilità `skill_id` può essere alzata di un livello partendo da
+## `current_levels` (dict id->livello attuale VISUAL, confermato + alloc):
+## cap rispettato e requisito di sblocco soddisfatto (il Salto Aggiuntivo
+## si sblocca a Resistenza 4: il requisito valuta il livello VISUALE, così
+## nella stessa sessione si può comprare Resistenza fino a 4 e poi il salto).
+static func skill_upgrade_allowed(skill_id: String,
+                current_levels: Dictionary) -> bool:
+        var def: Dictionary = SKILL_DEFS.get(skill_id, {})
+        if def.is_empty():
+                return false
+        var lvl: int = int(current_levels.get(skill_id, 0))
+        if lvl >= int(def.get("cap", 0)):
+                return false
+        if skill_id == "jump":
+                var stamina_lvl: int = int(current_levels.get("stamina", 0))
+                if stamina_lvl < SKILL_JUMP_REQUIRES_STAMINA:
+                        return false
+        return true
+
 ## Distanza minima (Chebyshev, in celle) dallo spawn del player (1,1).
 const HAZARD_MIN_SPAWN_DIST: int = 3
 
@@ -1813,8 +1914,13 @@ const WEAPON_HITS_TO_KILL: Dictionary = {
 ## RELIC (Task 21): `fury` = true con la Corazza del Furore equipaggiata →
 ## l'arma colpisce come se avesse 1 hit-to-kill in MENO (floor 2: la regola
 ## "nessuna arma one-shot" resta sacra anche potenziata).
+## TASK 99 (Potenza di Fuoco): `dmg_mult` = moltiplicatore del tiratore
+## (+5% per livello): il danno finale viene scalato e arrotondato (resta
+## comunque >= 1 e NON one-shot: il numero di colpi per uccidere scende
+## solo quando l'accumulo di danno supera gli HP del nemico).
 static func weapon_damage_for(weapon_type: int, target_max_health: int,
-                fury: bool = false, char_type: int = -1) -> int:
+                fury: bool = false, char_type: int = -1,
+                dmg_mult: float = 1.0) -> int:
         var hits: int = int(WEAPON_HITS_TO_KILL.get(weapon_type, 4))
         if fury:
                 hits = maxi(2, hits - 1)
@@ -1828,6 +1934,8 @@ static func weapon_damage_for(weapon_type: int, target_max_health: int,
         if hits < 2:
                 hits = 2  # sicurezza: mai one-shot per costruzione
         var dmg: int = int(ceil(float(target_max_health) / float(hits)))
+        if dmg_mult != 1.0:
+                dmg = maxi(1, int(round(float(dmg) * dmg_mult)))
         return maxi(1, dmg)
 
 

@@ -146,6 +146,18 @@ const TEXTS: Dictionary = {
         "levelup.reached": {"en": "LEVEL %d", "it": "LIVELLO %d"},
         "levelup.gained_one": {"en": "+1 SKILL POINT", "it": "+1 PUNTO ABILITÀ"},
         "levelup.gained_many": {"en": "+%d SKILL POINTS", "it": "+%d PUNTI ABILITÀ"},
+        "levelup.points": {"en": "POINTS: %d", "it": "PUNTI: %d"},
+        "levelup.hint": {
+                "en": "UP/DOWN select - LEFT/RIGHT -/+ - HOLD FIRE to confirm",
+                "it": "SU/GIÙ scegli — SINISTRA/DESTRA +/− — TENI FUOCO per confermare",
+        },
+        "levelup.ok_hold": {"en": "HOLD FIRE = OK", "it": "TENI PREMUTO FUOCO = OK"},
+        "levelup.banked": {
+                "en": "Not spending is fine: unspent points stay banked for the next level up",
+                "it": "Puoi anche non spendere: i punti non spesi restano bancati per il prossimo level up",
+        },
+        "levelup.locked": {"en": "REQUIRES STAMINA 4", "it": "RICHIEDE RESISTENZA 4"},
+        "levelup.max": {"en": "MAX", "it": "MAX"},
         # ---------------- Win / Lose ----------------
         "win.title": {"en": "VICTORY!", "it": "VITTORIA!"},
         "win.subtitle": {

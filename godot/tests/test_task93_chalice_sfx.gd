@@ -135,11 +135,11 @@ func _phase_static() -> bool:
                                 + ", atteso 57")
         else:
                 _ok("A1: SoundType.CHALICE_POWER = 57 (nuova voce)")
-        if am.SOUND_TYPE_COUNT != 58:
+        if am.SOUND_TYPE_COUNT != 59:
                 _fail("A: SOUND_TYPE_COUNT = " + str(am.SOUND_TYPE_COUNT)
-                                + ", atteso 58")
+                                + ", atteso 59 (LEVEL_UP Task 99)")
         else:
-                _ok("A2: SOUND_TYPE_COUNT = 58")
+                _ok("A2: SOUND_TYPE_COUNT = 59")
 
         var w: PackedFloat32Array = am._sfx_chalice_power()
         if w.size() != EXPECT_LEN:

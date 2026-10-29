@@ -900,6 +900,13 @@ func _unhandled_input(event: InputEvent) -> void:
         # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
         # fase di uscita dalla scena. Usiamo una variabile locale con null check.
         if event.is_action_pressed("pause") and not event.is_echo():
+                # TASK 99 (LEVEL UP): niente pausa/classico menu mentre la
+                # modale abilità è aperta (è già un congelamento controllato).
+                if _levelup_card != null or _levelup_announce != null:
+                        var vp9: Viewport = get_viewport()
+                        if vp9 != null:
+                                vp9.set_input_as_handled()
+                        return
                 _toggle_pause()
                 var vp: Viewport = get_viewport()
                 if vp != null:
@@ -930,6 +937,12 @@ func _exit_tree() -> void:
         if _levelup_announce != null:
                 _levelup_announce.queue_free()
                 _levelup_announce = null
+        # TASK 99 (LEVEL UP): idem per la modale abilità (sblocca il tree).
+        if _levelup_card != null:
+                _levelup_card.queue_free()
+                _levelup_card = null
+                if get_tree():
+                        get_tree().paused = false
         # FIX (pausa attiva al cambio scena): se si esce dal MainGame mentre
         # è in pausa (ESC dal menu gestito sotto, transizioni), il tree va
         # ripristinato sennò la scena successiva parte congelata.
@@ -970,6 +983,11 @@ const BonusCardOverlayClass = preload("res://scripts/ui/BonusCardOverlay.gd")
 var _levelup_announce: CanvasLayer = null
 const LevelUpAnnounceClass = preload("res://scripts/ui/LevelUpAnnounce.gd")
 
+# TASK 99 (LEVEL UP): modale delle abilità (gioco in pausa mentre si
+# scelgono le assegnazioni; si chiude con l'OK tenuto premuto).
+var _levelup_card: CanvasLayer = null
+const LevelUpOverlayClass = preload("res://scripts/ui/LevelUpOverlay.gd")
+
 func _physics_process(_delta: float) -> void:
         # TASK 23: continue per-player aperto — gioco CONGELATO (mirror della
         # pausa: nessun update, nessun input di gameplay; l'overlay gira in
@@ -979,6 +997,9 @@ func _physics_process(_delta: float) -> void:
         # TASK 51 — CARD BONUS aperta: gioco in pausa (l'overlay gira in
         # PROCESS_MODE_ALWAYS e si chiude da solo con l'hold del fuoco).
         if _bonus_card != null:
+                return
+        # TASK 99 (LEVEL UP): modale abilità aperta: gioco in pausa.
+        if _levelup_card != null:
                 return
         if is_paused:
                 return
@@ -1789,9 +1810,12 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 # per la penalita' -50% fuori affinita'.
                                 var w_type61: int = int(proj.get("type", 0))
                                 var edef61: Dictionary = C.get_relic_def(w_type61)
+                                # TASK 99 (Potenza di Fuoco): il danno scala
+                                # col perk del tiratore (+5%/livello).
                                 var dmg61: int = C.weapon_damage_for(w_type61,
                                                 enemy.max_health, fury,
-                                                p.character_type)
+                                                p.character_type,
+                                                p.get_damage_mult())
                                 if enemy.health - dmg61 <= 0 \
                                                 and not edef61.is_empty() \
                                                 and not enemy.is_dead():
@@ -1802,10 +1826,12 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                                 enemy.freeze_kill()
                                         else:
                                                 enemy.take_weapon_hit(w_type61, fury,
-                                                                p.character_type)
+                                                                p.character_type,
+                                                                p.get_damage_mult())
                                 else:
                                         enemy.take_weapon_hit(w_type61, fury,
-                                                        p.character_type)
+                                                        p.character_type,
+                                                        p.get_damage_mult())
                                 hit_ids.append(enemy)
                                 # TASK 51 (P3) — KNOCKBACK da armi reliquia a
                                 # DISTANZA: spinta visiva ~24px in direzione
@@ -1951,6 +1977,18 @@ func _on_relic_enemy_killed(p: CharacterBody2D, pos: Vector2,
                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
         _spawn_blood_stain(pos)
         _spawn_fire_burst(pos, 1.0)
+        # TASK 99 (Fortuna del Cacciatore): chance che il nemico lasci un
+        # piccolo medikit a terra (+3%/livello, cap 18%). Il drop è UNO PER
+        # MORTE, sulla cella della vittima: lo raccoglie chi ci passa sopra
+        # (pickup automatico, 1 energia). Non droppa punti/xp: solo salute,
+        # così la fortuna non gonfia l'economia del punteggio.
+        var luck: float = p.get_luck_drop_chance()
+        if luck > 0.0 and randf() < luck \
+                        and collectibles_node != null \
+                        and p.energy < p.max_energy:
+                var drop := _create_collectible(
+                                CollectiblesClass.Kind.MEDIKIT, pos)
+                collectibles_node.add_child(drop)
 
 
 # Fendente in mischia: shoot() con arma mischia alza melee_pending; qui si
@@ -3771,14 +3809,49 @@ func _check_levelup_celebrations() -> void:
         add_child(ann)
 
 
-## Fine dell'annuncio: libera il layer. La modale abilità si aggancia
-## qui nella Fase 2 (il gioco andrà in pausa e si aprirà LevelUpOverlay).
-func _on_levelup_announcement_done(_player_num: int) -> void:
+## Fine dell'annuncio: libera il layer e apre la modale delle abilità
+## per lo stesso player (se ha punti da spendere; altrimenti restano
+## bancati e la HUD continua a mostrarli con il badge lampeggiante).
+func _on_levelup_announcement_done(player_num: int) -> void:
         if _levelup_announce != null:
                 _levelup_announce.queue_free()
                 _levelup_announce = null
-        # FASE 2 (modale abilità): il gate del fuoco si riarmo qui quando
-        # la modale si aprirà in pausa (pattern _on_bonus_card_closed).
+        _maybe_open_levelup_modal(player_num)
+
+
+## Apre la modale abilità del player `player_num` (pattern
+## _maybe_show_bonus_card: pausa del tree + PROCESS_MODE_ALWAYS). In 2P le
+## modali sono in sequenza: la prossima arriva col prossimo annuncio.
+func _maybe_open_levelup_modal(player_num: int) -> void:
+        var p: CharacterBody2D = player if player_num != 2 else player2
+        if p == null or not is_instance_valid(p):
+                return
+        if int(p.skill_points) <= 0:
+                return  # nulla da spendere: i punti restano bancati
+        if _levelup_card != null or _bonus_card != null:
+                return  # una finestra alla volta; il pending attende
+        var modal: CanvasLayer = LevelUpOverlayClass.new()
+        modal.setup(p)
+        modal.modal_closed.connect(_on_levelup_modal_closed)
+        _levelup_card = modal
+        add_child(modal)
+        get_tree().paused = true
+
+
+## Chiusura della modale: applica le scelte definitive, riarma il fuoco
+## di entrambi i player (anti ghost-click, pattern Task 75) e riprende.
+func _on_levelup_modal_closed(player_num: int) -> void:
+        if _levelup_card != null:
+                _levelup_card.queue_free()
+                _levelup_card = null
+        _fire_rearm_p1 = true
+        _fire_rearm_p2 = true
+        if get_tree():
+                get_tree().paused = false
+        _update_hud()
+        # In 2P l'altro player potrebbe avere un level up in coda: la sua
+        # celebrazione parte dal prossimo _physics_process.
+        pass
 
 
 # TASK 75 — stato FISICO attuale del fuoco P1 (tastiera + joystick), mirror
@@ -4502,6 +4575,7 @@ func _build_session_snapshot() -> Dictionary:
                 "level": player.level,
                 "skill_points": player.skill_points,
                 "pending_levelup_fx": player.pending_levelup_fx,
+                "skill_levels": player.skill_levels.duplicate(),
         }
         snap["p1"] = p1_snap
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -4514,6 +4588,7 @@ func _build_session_snapshot() -> Dictionary:
                         "level": player2.level,
                         "skill_points": player2.skill_points,
                         "pending_levelup_fx": player2.pending_levelup_fx,
+                        "skill_levels": player2.skill_levels.duplicate(),
                 }
         return snap
 
@@ -4694,6 +4769,9 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 player.level = int(p1_snap.get("level", 1))
                 player.skill_points = int(p1_snap.get("skill_points", 0))
                 player.pending_levelup_fx = int(p1_snap.get("pending_levelup_fx", 0))
+                var skills1: Dictionary = p1_snap.get("skill_levels", {})
+                if not skills1.is_empty():
+                        player.restore_skills(skills1)
         var p2_snap: Dictionary = snap.get("p2", {})
         if not p2_snap.is_empty() and GameManager and GameManager.num_players == 2:
                 player2.visible = true
@@ -4707,6 +4785,9 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 player2.level = int(p2_snap.get("level", 1))
                 player2.skill_points = int(p2_snap.get("skill_points", 0))
                 player2.pending_levelup_fx = int(p2_snap.get("pending_levelup_fx", 0))
+                var skills2: Dictionary = p2_snap.get("skill_levels", {})
+                if not skills2.is_empty():
+                        player2.restore_skills(skills2)
         # --- HUD: aggiorna subito con lo stato ripristinato ---
         _update_hud_snapshot()
         print("[Continue] Sessione maze ripristinata: livello ", current_level,

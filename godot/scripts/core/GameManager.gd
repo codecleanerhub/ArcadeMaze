@@ -255,6 +255,7 @@ static func make_player_carry(p: Node) -> Dictionary:
                 "level": int(p.get("level")),
                 "skill_points": int(p.get("skill_points")),
                 "pending_levelup_fx": int(p.get("pending_levelup_fx")),
+                "skill_levels": (p.get("skill_levels") as Dictionary).duplicate(),
         }
         # Arma reliquia (le armi base NON si portano: comportamento storico
         # invariato — la boss room dà già la sua arma potenziata d'ingresso).
@@ -300,6 +301,9 @@ func _apply_carry(p: Node, snap: Dictionary) -> void:
         p.level = int(snap.get("level", 1))
         p.skill_points = int(snap.get("skill_points", 0))
         p.pending_levelup_fx = int(snap.get("pending_levelup_fx", 0))
+        var skills_snap: Dictionary = snap.get("skill_levels", {})
+        if not skills_snap.is_empty() and p.has_method("restore_skills"):
+                p.restore_skills(skills_snap)
         # RELIC (Task 21): ripristina arma reliquia e armatura nella scena
         # appena caricata (il player e' gia' passato da reset() = pulito).
         var rw: Dictionary = snap.get("relic_weapon", {})
