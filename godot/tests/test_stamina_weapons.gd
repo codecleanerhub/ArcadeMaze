@@ -222,13 +222,17 @@ func _physics_process(delta: float) -> void:
                                                 else:
                                                         print("[TEST] OK D1: stream STAMINA_CLICK presente (",
                                                                         click_stream.data.size(), " bytes)")
-                                                var ch: PackedFloat32Array = AudioManager._gen_epic_chalice()
-                                                var expect_len: int = int(44100 * 9.5)
+                                                # TASK 93: _gen_epic_chalice rimosso
+                                                # (musica del calice eliminata) —
+                                                # ora si testa il nuovo SFX epico
+                                                # del calice (CHALICE_POWER).
+                                                var ch: PackedFloat32Array = AudioManager._sfx_chalice_power()
+                                                var expect_len: int = int(44100 * 2.2)
                                                 if ch.size() != expect_len:
-                                                        _fail("D: tema calice lungo " + str(ch.size())
+                                                        _fail("D: SFX calice lungo " + str(ch.size())
                                                                         + " campioni, attesi " + str(expect_len))
                                                 else:
-                                                        print("[TEST] OK D2: tema calice = 9.5s esatti (loop effetto)")
+                                                        print("[TEST] OK D2: SFX CHALICE_POWER = 2.2s esatti (one-shot)")
                                                 var peak: float = 0.0
                                                 var energy: float = 0.0
                                                 for i in range(0, ch.size(), 997):
@@ -237,9 +241,9 @@ func _physics_process(delta: float) -> void:
                                                                 peak = av
                                                         energy += av * av
                                                 if peak > 0.87:
-                                                        _fail("D: tema calice in clipping (peak " + str(peak) + ")")
+                                                        _fail("D: SFX calice in clipping (peak " + str(peak) + ")")
                                                 else:
-                                                        print("[TEST] OK D3: tema calice peak ", "%.3f" % peak, " (no clip)")
+                                                        print("[TEST] OK D3: SFX calice peak ", "%.3f" % peak, " (no clip)")
                                         # Passiamo alla boss room
                                         main.queue_free()
                                         phase = 4

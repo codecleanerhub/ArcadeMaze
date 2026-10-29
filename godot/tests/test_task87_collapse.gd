@@ -3,7 +3,8 @@
 ## accasciandosi al pavimento ed emette un suono di sofferenza").
 ##
 ## Check:
-##   A — AudioManager: PLAYER_SUFFER in enum (indice 56), SOUND_TYPE_COUNT=57,
+##   A — AudioManager: PLAYER_SUFFER in enum (indice 56), SOUND_TYPE_COUNT=58
+##       (57 fino al Task 87; +1 dal Task 93: CHALICE_POWER),
 ##       dispatch presente, ricetta sintetizzabile (campioni > 0, non nulli)
 ##   B — effetto standalone: setup + fasi FALL→TWITCH→FADE→finished
 ##       (durata totale ~1.16s), con player fittizio (fallback draw)
@@ -56,10 +57,12 @@ func _test_audio() -> void:
         if am == null:
                 _fail("A: autoload AudioManager non trovato")
                 return
-        if am.SOUND_TYPE_COUNT != 57:
-                _fail("A: SOUND_TYPE_COUNT=%d atteso 57" % am.SOUND_TYPE_COUNT)
+        if am.SOUND_TYPE_COUNT != 58:
+                _fail("A: SOUND_TYPE_COUNT=%d atteso 58 (57 + CHALICE_POWER Task 93)" % am.SOUND_TYPE_COUNT)
         if int(am.SoundType.PLAYER_SUFFER) != 56:
                 _fail("A: PLAYER_SUFFER=%d atteso 56" % int(am.SoundType.PLAYER_SUFFER))
+        if int(am.SoundType.CHALICE_POWER) != 57:
+                _fail("A: CHALICE_POWER=%d atteso 57 (Task 93)" % int(am.SoundType.CHALICE_POWER))
         var samples: PackedFloat32Array = am._sfx_player_suffer()
         if samples.size() < int(44100 * 0.8):
                 _fail("A: ricetta troppo corta (%d campioni)" % samples.size())
@@ -70,7 +73,7 @@ func _test_audio() -> void:
         if peak < 0.01:
                 _fail("A: ricetta silente (picco %.4f)" % peak)
                 return
-        _ok("A: PLAYER_SUFFER (idx 56, count 57) con ricetta ~%.2fs, picco %.3f" % [
+        _ok("A: PLAYER_SUFFER (idx 56, count 58 con CHALICE_POWER) con ricetta ~%.2fs, picco %.3f" % [
                         float(samples.size()) / 44100.0, peak])
 
 

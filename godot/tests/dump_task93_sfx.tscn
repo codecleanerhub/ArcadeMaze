@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://t93chaldump1"]
+
+[ext_resource type="Script" path="res://tests/dump_task93_sfx.gd" id="1"]
+
+[node name="DumpTask93Sfx" type="Node"]
+script = ExtResource("1")

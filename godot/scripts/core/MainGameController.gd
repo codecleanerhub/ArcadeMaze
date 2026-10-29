@@ -1597,8 +1597,8 @@ func _update_playing(delta_ms: float) -> void:
                 if AudioManager:
                         AudioManager.stop_ghost_music()
                         # Ripristina la musica di livello se attiva (e se non
-                        # c'è un calice in corso sul canale epic: quella va
-                        # fermata dal suo gestore, non qui).
+                        # c'e' un jingle one-shot di scettro/vittoria in corso
+                        # sul canale epic: TASK 93, il calice non lo usa piu').
                         if AudioManager.music_enabled and not AudioManager._epic_playing:
                                 AudioManager.play_level_music(current_level, false)
 
@@ -2499,13 +2499,10 @@ func _update_invincible_burn(p: CharacterBody2D, _delta_ms: float) -> void:
         # prima veniva scalato UNA SECONDA volta per frame e l'effetto durava
         # la metà del valore impostato.
         if p.invincible_timer <= 0:
-                # FIX (musica calice): quando l'effetto del calice termina,
-                # ferma la musica epic (era in loop per tutta la durata) e
-                # ripristina la musica di livello se la musica è attiva.
-                if AudioManager and AudioManager._epic_playing:
-                        AudioManager.stop_epic_music()
-                        if AudioManager.music_enabled:
-                                AudioManager.play_level_music(current_level, false)
+                # TASK 93: niente piu' musica del calice da fermare (al pickup
+                # suona solo l'SFX one-shot CHALICE_POWER e la musica di livello
+                # non e' mai stata interrotta). Il canale epic resta libero per
+                # i jingle one-shot di scettro/vittoria, che si spengono da soli.
                 return
         var p_pos: Vector2 = p.get_pixel_pos()
         for enemy in spawner.enemies:
@@ -3871,17 +3868,18 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         item.queue_free()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TREASURE)
-                                # FIX (musica calice non partiva + deve durare
-                                # tutto l'effetto): come nel C++ originale
-                                # (Game.cpp:2209, AudioManager.cpp:98) il
-                                # jingle epico suona sul canale SEPARATO epic
-                                # SENZA il gate musicEnabled (il gate impediva
-                                # di sentirlo con la musica disattivata) e ora
-                                # va in LOOP per tutta la durata dell'effetto:
-                                # lo ferma _update_invincible_burn quando
-                                # l'invincibilità scade.
-                                AudioManager.play_epic_music(
-                                                AudioManager.TRACK_EPIC_CHALICE, true)
+                                # TASK 93 (musica calice ELIMINATA): su richiesta
+                                # utente al pickup NON parte piu' il jingle epico
+                                # in loop sul canale epic (ex TRACK_EPIC_CHALICE,
+                                # Intermezzo di Cavalleria Rusticana, durata
+                                # dell'effetto). Al suo posto UN SOLO effetto
+                                # sonoro "epico di potere" one-shot (~2.2s:
+                                # riser -> impatto sub -> fanfara Rem-Sib-Do-Rem
+                                # -> scintillio) sul pool SFX. La musica di
+                                # livello resta in sottofondo indisturbata e non
+                                # c'e' piu' nulla da fermare alla scadenza.
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.CHALICE_POWER)
                         # Particelle pickup oro (Godot-native)
                         if EffectsManager:
                                 var burst := EffectsManager.spawn_pickup_burst(p.get_pixel_pos(),
@@ -4307,18 +4305,13 @@ func start_level(lvl: int) -> void:
         # seedato per livello: al continue gli orari si ripetono).
         _reset_parchments(current_level)
         # Play level music
-        # FIX (musica calice tra livelli): se l'effetto del calice è ancora
-        # attivo (player uscito dal livello mentre era invincibile) la
-        # musica epic resta in loop e NON viene sovrapposta dalla musica di
-        # livello: la fermerà _update_invincible_burn alla scadenza.
-        # Se invece non c'è nessun calice attivo, stop difensivo del canale
-        # epic (evita jingle residui) e musica di livello normale.
-        var chalice_still_active: bool = player.invincible_timer > 0 \
-                        or (GameManager and GameManager.num_players == 2 \
-                                and player2.visible and player2.invincible_timer > 0)
+        # TASK 93: il calice non occupa piu' il canale epic (musica eliminata:
+        # al pickup parte l'SFX CHALICE_POWER), quindi nessun caso "calice
+        # ancora attivo tra i livelli": stop difensivo del canale epic per
+        # spegnere eventuali jingle residui di scettro/vittoria, poi la
+        # normale musica di livello.
         if AudioManager:
-                if not chalice_still_active:
-                        AudioManager.stop_epic_music()
+                AudioManager.stop_epic_music()
                 if GameManager and GameManager.music_enabled:
                         AudioManager.play_level_music(current_level, false)
 

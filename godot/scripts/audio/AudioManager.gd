@@ -21,10 +21,12 @@
 #       0..3 = level music (dark/dramatic dungeon mood)
 #       4    = boss (aggressive, 130 BPM)
 #       5    = magic portal (slow, mystical)
-#       6    = EPIC CHALICE jingle (golden hero fanfare)
+#       6    = [TASK 93] EPIC CHALICE jingle RETIRED (musica del calice
+#              eliminata su richiesta utente: al pickup parte l'SFX
+#              CHALICE_POWER; l'indice resta riservato per stabilita')
 #       7    = EPIC SCEPTER jingle (arcane, tense)
 #       8    = main menu (choiral fantasy, loop)
-#   The two epic jingles play on a SEPARATE channel (`epic_player`) so they
+#   The epic jingles play on a SEPARATE channel (`epic_player`) so they
 #   do NOT interrupt the background music.
 #
 # Synthesis notes (Godot 4):
@@ -139,19 +141,27 @@ enum SoundType {
         # TASK 87 — MORTE DEL PLAYER: gemito di sofferenza mentre il corpo
         #   si accascia al pavimento (due onde: urletto discendente +
         #   gemito grave morente con respiro, ~0.85s).
-        PLAYER_SUFFER
+        PLAYER_SUFFER,
+        # TASK 93 — CALICE DI FUOCO: al posto della musica epica in loop
+        #   (eliminata su richiesta utente) parte UN SOLO effetto sonoro
+        #   "epico di potere" one-shot (~2.2s): carica ascendente (riser),
+        #   impatto sub-bass, stabs di ottoni eroici (Rem → Sib → Do → Rem)
+        #   e coda scintillante dorata che sfuma. Resta un SFX normale
+        #   (pool voci, volume SFX), NON un jingle sul canale epic.
+        CHALICE_POWER
 }
 # NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
 # dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
 # 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 + 1 Task 50b +
-# 1 Task 87 = 57 (0..56).
-const SOUND_TYPE_COUNT: int = 57
+# 1 Task 87 + 1 Task 93 = 58 (0..57).
+const SOUND_TYPE_COUNT: int = 58
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
 const TRACK_BOSS:          int = 4
 const TRACK_PORTAL:        int = 5
-const TRACK_EPIC_CHALICE:  int = 6    # jingle (one-shot, separate channel)
+const TRACK_EPIC_CHALICE:  int = 6    # TASK 93: RITIRATO (musica calice eliminata;
+                                      # al pickup suona l'SFX CHALICE_POWER)
 const TRACK_EPIC_SCEPTER:  int = 7    # jingle (one-shot, separate channel)
 const TRACK_MENU:          int = 8    # main-menu music (loop)
 # FIX (pozione magica): tema fantasmagorico/suspense che accompagna tutto il
@@ -371,16 +381,14 @@ func play_menu_music() -> void:
 
 
 # Play an epic jingle on the dedicated channel.
-# track_idx must be TRACK_EPIC_CHALICE, TRACK_EPIC_SCEPTER or TRACK_MENU.
-# FIX (musica calice): nuovo parametro `loop` - il jingle del calice suona
-# in LOOP per tutta la durata dell'invincibilità (lo ferma il Game con
-# stop_epic_music quando l'effetto scade). Scettro/victory restano one-shot
+# track_idx must be TRACK_EPIC_SCEPTER or TRACK_MENU (victory usa 7).
+# TASK 93: il calice NON usa piu' questo canale (musica eliminata: al pickup
+# parte l'SFX CHALICE_POWER sul pool SFX). Restano scettro/vittoria, one-shot
 # come nel C++ originale (AudioManager.cpp:104 epicSound.setLoop(false)).
 # FIX (gate rimosso): come nel C++ originale, il canale epic è un canale
-# EFFETTO separato NON soggetto al flag musicEnabled (il gate impediva di
-# sentire il jingle del calice con la musica disattivata).
-# Un jingle DIVERSO da quello in riproduzione ha la priorità (es. calice
-# raccolto mentre suona ancora lo scettro): il canale si riavvia.
+# EFFETTO separato NON soggetto al flag musicEnabled.
+# Un jingle DIVERSO da quello in riproduzione ha la priorità (es. vittoria
+# mentre suona ancora lo scettro): il canale si riavvia.
 func play_epic_music(track_idx: int, loop: bool = false) -> void:
         if track_idx < TRACK_EPIC_CHALICE or track_idx > TRACK_MENU:
                 return
@@ -481,7 +489,10 @@ func _build_synth_queue() -> void:
                 _synth_queue.append(["music", i])  # tracce livello 0..3
         _synth_queue.append(["music", TRACK_BOSS])
         _synth_queue.append(["music", TRACK_PORTAL])
-        _synth_queue.append(["music", TRACK_EPIC_CHALICE])
+        # TASK 93: TRACK_EPIC_CHALICE non viene piu' sintetizzato (musica del
+        # calice eliminata: al pickup parte l'SFX CHALICE_POWER, gia' nella
+        # coda SFX qui sopra). Indice ritirato, slot di _music_streams[6]
+        # resta null per sempre.
         _synth_queue.append(["music", TRACK_EPIC_SCEPTER])
         _synth_queue.append(["music", TRACK_GHOST])
         for i in BOSS_SHOOT_KIND_COUNT:
@@ -738,6 +749,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.FREEZE_RAY:      s = _sfx_freeze_ray()
                 SoundType.FREEZE_HIT:      s = _sfx_freeze_hit()
                 SoundType.PLAYER_SUFFER:   s = _sfx_player_suffer()
+                SoundType.CHALICE_POWER:   s = _sfx_chalice_power()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -870,6 +882,135 @@ func _sfx_player_suffer() -> PackedFloat32Array:
                         env = exp(-(t - cry_s) * 3.0) * 0.8
                         v += noise_gen() * 0.12
                 s.append(2400.0 / 32767.0 * _soft_clip(v * env * 1.2))
+        return s
+
+
+# --- TASK 93 — CALICE DI FUOCO: "epico potere" one-shot (~2.2s) --------------
+# Sostituisce la musica epica in loop del calice (eliminata): un solo grande
+# effetto che accompagna il burst dorato del pickup e l'accensione dell'aura.
+# Struttura in 4 fasi:
+#   0.00-0.55  CARICA (riser): saw ascendente 90->900 Hz con tremolo che
+#              accelera (14->46 Hz) + soffio di rumore che sale: l'energia
+#              si raccoglie (l'oro "converge" sul player).
+#   0.55       IMPATTO: colpo sub-bass che scivola 220->38 Hz (drop) +
+#              burst di rumore compresso: il potere esplode.
+#   0.55-1.65  FANFARA (ottoni chiptune): stabs eroici Rem -> Sib -> Do,
+#              poi Rem tenuto con raddoppio all'ottava e swell finale:
+#              trionfo da "power-up leggendario".
+#   1.65-2.20  CODA: arpeggio scintillante ascendente (la5-do6-re6-mi6-sol6)
+#              su triangolari con decay rapido + brontolio grave che sfuma.
+# Timbri: saw doppio detunato (ottoni), pulse all'ottava (lame d'ottone),
+# triangolari (scintille), sub sine (impatto). Mix con _soft_clip.
+func _sfx_chalice_power() -> PackedFloat32Array:
+        const DUR: float = 2.2
+        const IMPACT_S: float = 0.55
+        var n: int = int(SR * DUR)
+        var s := PackedFloat32Array()
+        s.resize(n)
+
+        # --- Fase 1-2: carica + impatto -----------------------------------
+        for i in n:
+                var t: float = float(i) / SR
+                if t < IMPACT_S:
+                        # riser: frequenza esponenziale 90->900 Hz,
+                        # tremolo che accelera, guadagno che sale
+                        var k: float = t / IMPACT_S
+                        var freq: float = 90.0 * pow(10.0, k)  # 90 -> 900
+                        var trem_hz: float = 14.0 + 32.0 * k
+                        var trem: float = 0.55 + 0.45 * absf(sin(TAU * trem_hz * t))
+                        var env: float = 0.10 + 0.62 * k * k
+                        var v: float = 0.62 * sawtooth_wave(t * freq * trem) \
+                                        + 0.38 * noise_gen() * (0.25 + 0.75 * k)
+                        s[i] += 2600.0 / 32767.0 * v * env
+                elif t < IMPACT_S + 0.30:
+                        # impatto: sub che dropa 220->38 Hz + rumore compresso
+                        var k2: float = (t - IMPACT_S) / 0.30
+                        var drop: float = 220.0 * exp(-k2 * 4.2) + 38.0
+                        var env2: float = exp(-(t - IMPACT_S) * 6.5)
+                        var v2: float = 0.75 * sine_wave(t * drop) \
+                                        + 0.25 * _soft_clip(noise_gen() * 3.0)
+                        s[i] += 3400.0 / 32767.0 * _soft_clip(v2 * env2 * 1.35)
+
+        # --- Fase 3: fanfara eroica (stabs di ottoni) ---------------------
+        # [start_s, dur_s, freq, gain] — saw doppio detunato + pulse 8va.
+        const BRASS: Array = [
+                # stab Rem (re3-fa3-la3)
+                [0.55, 0.22, 146.83, 0.30], [0.55, 0.22, 174.61, 0.26],
+                [0.55, 0.22, 220.00, 0.24],
+                # stab Sib (sib2-re3-fa3)
+                [0.85, 0.22, 116.54, 0.30], [0.85, 0.22, 146.83, 0.26],
+                [0.85, 0.22, 174.61, 0.24],
+                # stab Do (do3-mi3-sol3) — prepara la risoluzione
+                [1.15, 0.22, 130.81, 0.30], [1.15, 0.22, 164.81, 0.26],
+                [1.15, 0.22, 196.00, 0.24],
+                # Rem tenuto (re3-fa3-la3) + re4/re5: culmine con swell
+                [1.45, 0.55, 146.83, 0.34], [1.45, 0.55, 174.61, 0.28],
+                [1.45, 0.55, 220.00, 0.26], [1.45, 0.55, 293.66, 0.20],
+                [1.45, 0.55, 587.33, 0.085],
+        ]
+        for note in BRASS:
+                var start_s: float = float(note[0])
+                var dur_s: float = float(note[1])
+                var freq_b: float = float(note[2])
+                var gain_b: float = float(note[3])
+                var i0: int = int(start_s * SR)
+                var nb: int = int(dur_s * SR)
+                var ph1: float = 0.0
+                var ph2: float = 0.0
+                var lp: float = 0.0
+                var held: bool = start_s >= 1.45  # nota lunga: swell finale
+                for i in nb:
+                        var idx: int = i0 + i
+                        if idx >= n:
+                                break
+                        var tt: float = float(i) / SR
+                        # attacco d'ottone ~18ms, rilascio morbido
+                        var env_b: float = (1.0 - exp(-tt * 55.0)) \
+                                        * (1.0 - exp(-(dur_s - tt) * 20.0))
+                        if held:
+                                # swell: la tenuta cresce verso il culmine
+                                env_b *= 0.55 + 0.45 * sin(0.5 * PI * clampf(tt / dur_s, 0.0, 1.0))
+                        ph1 += freq_b / SR
+                        ph2 += freq_b * 1.0045 / SR
+                        var raw: float = 0.55 * sawtooth_wave(ph1) \
+                                        + 0.45 * sawtooth_wave(ph2)
+                        lp += 0.28 * (raw - lp)
+                        var v3: float = lp + 0.22 * pulse_wave(tt * freq_b * 2.0, 0.5)
+                        s[idx] += 4900.0 / 32767.0 * gain_b * _soft_clip(v3 * env_b * 1.25)
+
+        # --- Fase 4: coda scintillante dorata + brontolio ------------------
+        # Arpeggio ascendente (la5-do6-re6-mi6-sol6) su triangolari.
+        const SPARKLE: Array = [
+                [1.62, 440.00, 0.16], [1.72, 523.25, 0.15],
+                [1.82, 587.33, 0.14], [1.92, 659.26, 0.13],
+                [2.02, 783.99, 0.12], [2.10, 880.00, 0.10],
+        ]
+        for sp in SPARKLE:
+                var sp_start: float = float(sp[0])
+                var sp_freq: float = float(sp[1])
+                var sp_gain: float = float(sp[2])
+                var i0s: int = int(sp_start * SR)
+                var ns: int = int(0.16 * SR)
+                for i in ns:
+                        var idx: int = i0s + i
+                        if idx >= n:
+                                break
+                        var tts: float = float(i) / SR
+                        var env_s: float = exp(-tts * 22.0) * (1.0 - exp(-tts * 400.0))
+                        s[idx] += 3200.0 / 32767.0 * sp_gain \
+                                        * triangle_wave(tts * sp_freq) * env_s
+        # brontolio grave morente sotto la coda (re2 + rumore filtrato)
+        for i in range(int(1.45 * SR), n):
+                var t4: float = float(i) / SR - 1.45
+                var env4: float = exp(-t4 * 4.0) * 0.5
+                s[i] += 1800.0 / 32767.0 * env4 \
+                                * (0.7 * sine_wave(t4 * 73.42) + 0.3 * noise_gen())
+
+        # limiter finale leggero (il mix di 4 fasi puo' sfiorare il limite):
+        # gain globale 1.7 per portare l'effetto al livello degli altri SFX
+        # "grossi" del gioco (BOSS_DEATH ~0.085, jingle epic ~0.3).
+        for i in n:
+                s[i] = _soft_clip(s[i] * 1.7)
         return s
 
 
@@ -2028,8 +2169,11 @@ func _sfx_bat_flap() -> PackedFloat32Array:
 
 
 func _generate_track(track_idx: int) -> AudioStreamWAV:
+        # TASK 93: TRACK_EPIC_CHALICE (6) RITIRATO — il calice non suona più
+        # musica: al pickup parte l'effetto CHALICE_POWER. L'indice resta
+        # riservato (gli indici 7/8/9 non si spostano); se richiesto, il
+        # canale epic genera on-demand e non trova lo stream (no-op).
         match track_idx:
-                TRACK_EPIC_CHALICE: return _samples_to_stream(_gen_epic_chalice())
                 TRACK_EPIC_SCEPTER: return _samples_to_stream(_gen_epic_scepter())
                 TRACK_MENU:         return _samples_to_stream(_gen_menu_track())
                 TRACK_GHOST:        return _samples_to_stream(_gen_ghost_track())
@@ -2164,219 +2308,6 @@ func _gen_level_track(track_idx: int) -> PackedFloat32Array:
         return out
 
 
-# --- Musica del calice: tema dall'INTERMEZZO della "Cavalleria Rusticana"
-# di Pietro Mascagni, ~9.5s (loop = durata esatta dell'effetto calice,
-# 9500ms) -------------------------------------------------------------------
-# FIX (musica calice = Cavalleria Rusticana, richiesta utente): sostituisce
-# la fanfara "Trionfo d'Oro". Melodia fedele alle note e ai ritmi del tema
-# (originale in Fa maggiore; la celebre salita FA5-LA5-DO6, il giro
-# Sib5-LA5-SOL5, il salto RE6-FA5 e i LA5 tenuti), resa con:
-#   * violini sintetici (doppio saw detunato + lowpass monopolo + vibrato
-#     d'arco 5.5Hz + inviluppo ad arco con attacco morbido),
-#   * raddoppio all'ottava al LA5 del culmine (shimmer),
-#   * viole/violoncelli sulle note tenute degli accordi,
-#   * contrabbasso (toniche) e il caratteristico accompagnamento "a culla"
-#     in ottavi pizzicati (tonica-quinta-terza-quinta),
-#   * crescendo dolce fino al culmine (swell gaussiano sul LA5 lungo),
-#   * cadenza finale sul Do7 che risolve sul Fa alla ripartenza del loop,
-#   * riverbero "da sala" con 2 tap CIRCOLARI: la coda dell'accordo finale
-#     riaffiora all'inizio del loop → giunzione senza "taglio".
-# Armonia: Fa | Sib | Solm7 | Fa | Do7 | Fa | Rem | Do7 → (loop) Fa.
-# Struttura melodia (battuta = 0.65s, ~92 BPM):
-#   b0-3    salita FA5-LA5-DO6 + DO6 puntata (il gesto piu' famoso)
-#   b3-5    DO6 puntata, respiro Sib5-LA5
-#   b5-7    giro SOL5 + salto RE6-FA5 (Sol minore7)
-#   b7-9    LA5 tenuto sul Fa (prima culminazione)
-#   b9-10   SOL5 sul Do7 (dominante)
-#   b10-12.5 LA5 tenuto raddoppiato all'ottava (culmine con swell)
-#   b12.5-14 cadenza FA5-MI5-RE5 + DO5 sospeso sul Do7 → riparte il Fa
-func _gen_epic_chalice() -> PackedFloat32Array:
-        const DUR: float = 9.5              # secondi (loop = durata calice)
-        const BEAT: float = 0.65             # ~92 BPM
-        var total: int = int(SR * DUR)
-        var out := PackedFloat32Array()
-        out.resize(total)
-
-        # --- Melodia (violini): tema dell'Intermezzo, note fedeli ----------
-        # [start_beat, dur_beats, freq, gain] (bilanciamento QA: la melodia
-        # deve dominare chiaramente l'armonia di fondo — violini in prima
-        # fila, viole di sostegno)
-        const LEAD: Array = [
-                # salita FA5-LA5-DO6 e DO6 puntata
-                [0.0, 1.0, 698.46, 0.270], [1.0, 1.0, 880.00, 0.290],
-                [2.0, 1.0, 1046.50, 0.320],
-                [3.0, 1.5, 1046.50, 0.320], [4.5, 0.5, 939.89, 0.275],
-                # respiro LA5-SOL5 e salto RE6-FA5
-                [5.0, 0.5, 880.00, 0.265], [5.5, 0.5, 783.99, 0.260],
-                [6.0, 0.5, 1174.66, 0.300], [6.5, 0.5, 698.46, 0.255],
-                # LA5 tenuto (prima culminazione)
-                [7.0, 2.0, 880.00, 0.340],
-                # SOL5 sul Do7 (dominante)
-                [9.0, 1.0, 783.99, 0.295],
-                # LA5 tenuto lungo: culmine della frase
-                [10.0, 2.5, 880.00, 0.385],
-                # cadenza FA5-MI5-RE5 + DO5 sospeso (il Fa riparte in loop)
-                [12.5, 0.5, 698.46, 0.230], [13.0, 0.5, 659.26, 0.210],
-                [13.5, 0.5, 587.33, 0.195],
-                [14.0, 0.55, 523.25, 0.190],
-        ]
-        # Raddoppio all'ottava (violini sopra + arpa): shimmer al culmine.
-        const LEAD_OCT: Array = [
-                [7.0, 2.0, 1760.00, 0.055],
-                [10.0, 2.5, 1760.00, 0.100],
-                # Arpa che raddoppia la salita iniziale (un'ottava sotto)
-                [0.0, 0.9, 349.23, 0.050], [1.0, 0.9, 440.00, 0.050],
-                [2.0, 0.9, 523.25, 0.055],
-        ]
-        # Armonia (viole/violoncelli): note tenute sugli accordi — di
-        # SOSTEGNO (guadagni ridotti in QA: la melodia deve stare davanti).
-        const HARMONY: Array = [
-                [0.0, 4.5, 349.23, 0.070], [0.0, 4.5, 440.00, 0.060],  # Fa
-                [4.5, 1.0, 293.66, 0.065], [4.5, 1.0, 349.23, 0.060],  # Sib
-                [5.5, 1.5, 233.08, 0.068], [5.5, 1.5, 293.66, 0.058],  # Solm7
-                [7.0, 2.0, 349.23, 0.075], [7.0, 2.0, 440.00, 0.064],  # Fa
-                [9.0, 1.0, 329.63, 0.068], [9.0, 1.0, 392.00, 0.058],  # Do7
-                [10.0, 2.5, 349.23, 0.085], [10.0, 2.5, 440.00, 0.072],
-                [10.0, 2.5, 523.25, 0.046],                             # Fa (climax)
-                [12.5, 0.5, 293.66, 0.060], [12.5, 0.5, 349.23, 0.056], # Rem
-                [13.0, 1.6, 329.63, 0.068], [13.0, 1.6, 392.00, 0.058], # Do7
-        ]
-        # Basso (contrabbasso/violoncello): toniche sostenute.
-        const BASS: Array = [
-                [0.0, 4.5, 87.31, 0.170],    # Fa2
-                [4.5, 1.0, 116.54, 0.165],   # Sib2
-                [5.5, 1.5, 98.00, 0.165],    # Sol2
-                [7.0, 2.0, 87.31, 0.170],    # Fa2
-                [9.0, 1.0, 130.81, 0.165],   # Do3
-                [10.0, 2.5, 87.31, 0.180],    # Fa2
-                [12.5, 0.5, 146.83, 0.150],   # Re3 (Rem)
-                [13.0, 1.6, 130.81, 0.165],  # Do3 (Do7) → risolve sul Fa in loop
-        ]
-        # Accompagnamento "a culla" (ottavi pizzicati): [inizio, fine,
-        # [tonica, quinta, terza]] — il dondolio tipico dell'Intermezzo.
-        const ACC_CHORDS: Array = [
-                [0.0, 4.5, [174.61, 261.63, 220.00]],       # Fa: F3 C4 A3
-                [4.5, 5.5, [233.08, 349.23, 293.66]],       # Sib: Bb3 F4 D4
-                [5.5, 7.0, [196.00, 293.66, 233.08]],       # Solm7: G3 D4 Bb3
-                [7.0, 9.0, [174.61, 261.63, 220.00]],       # Fa
-                [9.0, 10.0, [261.63, 392.00, 329.63]],      # Do7: C4 G4 E4
-                [10.0, 12.5, [174.61, 261.63, 220.00]],     # Fa (climax)
-                [12.5, 13.0, [293.66, 440.00, 349.23]],    # Rem: D4 A4 F4
-                [13.0, 14.5, [261.63, 392.00, 329.63]],    # Do7
-        ]
-
-        # --- Rendering: violini (doppio saw detunato + lowpass + vibrato) ---
-        for note in LEAD + LEAD_OCT:
-                var start_s: float = float(note[0]) * BEAT
-                var dur_s: float = float(note[1]) * BEAT
-                var freq: float = float(note[2])
-                var gain: float = float(note[3])
-                var n: int = int(dur_s * SR)
-                var i0: int = int(start_s * SR)
-                var phase1: float = 0.0
-                var phase2: float = 0.0
-                var lp: float = 0.0
-                for i in n:
-                        var idx: int = i0 + i
-                        if idx >= total:
-                                break
-                        var t: float = float(i) / SR
-                        # Arco d'arco: attacco morbido ~90ms, rilascio morbido
-                        var env: float = (1.0 - exp(-t * 16.0)) \
-                                        * (1.0 - exp(-(dur_s - t) * 14.0))
-                        # Vibrato d'archi (5.5 Hz) che entra dopo 0.2s
-                        var vib: float = 1.0 + 0.0045 * sin(TAU * 5.5 * t) \
-                                        * clampf((t - 0.2) * 2.5, 0.0, 1.0)
-                        phase1 += freq * vib / SR
-                        phase2 += freq * vib * 1.0035 / SR
-                        var raw: float = 0.55 * sawtooth_wave(phase1) \
-                                        + 0.45 * sawtooth_wave(phase2)
-                        # Filtro passa-basso monopolo: ammorbidisce i saw
-                        lp += 0.25 * (raw - lp)
-                        out[idx] += gain * lp * env
-
-        # --- Armonia (viole): pad tenuti, pulse morbida + triangolare -------
-        for note in HARMONY:
-                var start_s: float = float(note[0]) * BEAT
-                var dur_s: float = float(note[1]) * BEAT
-                var freq: float = float(note[2])
-                var gain: float = float(note[3])
-                var n: int = int(dur_s * SR)
-                var i0: int = int(start_s * SR)
-                var phase: float = 0.0
-                for i in n:
-                        var idx: int = i0 + i
-                        if idx >= total:
-                                break
-                        var t: float = float(i) / SR
-                        var env: float = (1.0 - exp(-t * 8.0)) \
-                                        * (1.0 - exp(-(dur_s - t) * 6.0))
-                        phase += freq / SR
-                        out[idx] += gain * (0.6 * pulse_wave(phase, 0.5) \
-                                        + 0.4 * triangle_wave(phase)) * env
-
-        # --- Basso: triangolare + pulse, attacco lento ----------------------
-        for note in BASS:
-                var start_s: float = float(note[0]) * BEAT
-                var dur_s: float = float(note[1]) * BEAT
-                var freq: float = float(note[2])
-                var gain: float = float(note[3])
-                var n: int = int(dur_s * SR)
-                var i0: int = int(start_s * SR)
-                var phase: float = 0.0
-                for i in n:
-                        var idx: int = i0 + i
-                        if idx >= total:
-                                break
-                        var t: float = float(i) / SR
-                        var env: float = (1.0 - exp(-t * 8.0)) \
-                                        * (1.0 - exp(-(dur_s - t) * 5.0))
-                        phase += freq / SR
-                        out[idx] += gain * (0.7 * triangle_wave(phase) \
-                                        + 0.3 * pulse_wave(phase, 0.5)) * env
-
-        # --- Accompagnamento "a culla": pizzicati in ottavi -----------------
-        # Pattern per ogni semibattuta: tonica-quinta-terza-quinta.
-        for chord in ACC_CHORDS:
-                var b_start: float = float(chord[0])
-                var b_end: float = float(chord[1])
-                var tones: Array = chord[2]
-                var pluck_idx: int = 0
-                var b: float = b_start
-                while b < b_end - 0.001:
-                        var tone_freq: float = float(tones[pluck_idx % 4 if pluck_idx % 4 != 3 else 1])
-                        var start_s: float = b * BEAT
-                        var dur_s: float = 0.5 * BEAT
-                        var i0: int = int(start_s * SR)
-                        # swell gaussiano centrato sul culmine (b≈11.2)
-                        var d_swell: float = b - 11.2
-                        var swell: float = 1.0 + 0.35 * exp(-d_swell * d_swell / 5.12)
-                        var n_p: int = int(dur_s * 1.4 * SR)
-                        var phase: float = 0.0
-                        for i in n_p:
-                                var idx: int = i0 + i
-                                if idx >= total:
-                                        break
-                                var t: float = float(i) / SR
-                                var env: float = (1.0 - exp(-t * 400.0)) * exp(-t * 6.5)
-                                phase += tone_freq / SR
-                                out[idx] += 0.085 * swell \
-                                                * (0.7 * triangle_wave(phase) \
-                                                + 0.3 * sawtooth_wave(phase)) * env
-                        pluck_idx += 1
-                        b += 0.5
-
-        # --- Mix finale: riverbero "da sala" con 2 tap CIRCOLARI -------------
-        # La coda dell'accordo finale riaffiora all'inizio del loop: la
-        # giunzione del loop resta "bagnata" di sala, senza taglio secco.
-        var wet := out.duplicate()
-        for i in total:
-                var v: float = out[i]
-                wet[(i + int(0.097 * SR)) % total] += 0.20 * v
-                wet[(i + int(0.211 * SR)) % total] += 0.11 * v
-        for i in total:
-                out[i] = 0.85 * _soft_clip(wet[i] * 1.15)
-        return out
 
 
 # --- FIX (stamina salti): click "a vuoto" del tasto di salto ------------------
