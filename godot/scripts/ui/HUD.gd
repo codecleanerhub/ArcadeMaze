@@ -6,28 +6,35 @@
 #   - UI.cpp
 #
 # The HUD is an 80 px tall bar at the top of the screen (UI_HEIGHT = 80) that
-# shows: SCORE, LIVES (hearts), ENERGY bar, WEAPON name, AMMO bar, TREASURES
+# shows: SCORE, LIVES (hearts), WEAPON name, AMMO bar, TREASURES
 # remaining. Supports both 1P and 2P layouts (in 2P the bar is split between
 # the left = P1, center = treasures, right = P2).
 #
+# TASK 96 (cuori al posto della barra vita): la barra ENERGIA è RIMOSSA.
+# Lo stato di salute si legge dal CUORE CORRENTE (l'ultimo della fila):
+# integro a energia piena, poi sgretolato in 4 stadi man mano che l'energia
+# scende (ogni 20% perso = uno stadio); a energia 0 la vita è persa e il
+# cuore sparisce con un burst di frammenti. Al colpo: scossa + detriti che
+# cadono. Cuori leggermente più grandi (16->24px 1:1 dallo sheet PixelLab).
+#
 # Heart sprite:
-#   * Loaded via loadHeartSprite() from res://assets/sprites/ui_heart.png.
-#   * Used by drawHeart() for each life; if the PNG is missing, falls back
-#     to a procedural heart drawn in _draw_detailed_heart() (same fallback
-#     logic as the original UI.cpp).
+#   * Sheet 4 stadi PixelLab: res://assets/sprites/ui_heart_crumble_sheet.png
+#     (24px/frame: f0 integro, f1 crepe, f2 profondo, f3 quasi distrutto).
+#   * Fallback: ui_heart.png singolo (solo stadio 0) o cuore procedurale
+#     (_draw_detailed_heart) con degrado per stadio.
 #
 # Layout (1P mode) - mirrors UI.cpp::render(target, player, remainingTreasures):
 #       x=  10  SCORE       + score
-#       x= 150  LIVES       + hearts
-#       x= 280  ENERGY      + energy bar (100x18, magenta on gray)
+#       x= 150  LIVES       + hearts (24px, l'ultimo = cuore corrente sgretolabile)
+#       x= 280  STAMINA     + barra stamina (100x10, verde/arancione/rosso)
 #       x= 420  WPN         + weapon name (colored)
 #       x= 570  AMMO        + ammo bar (100x18, yellow on gray, norm. on 15)
 #       x= 700  TRES        + remaining treasures
 #
 # Layout (2P mode) - mirrors UI.cpp::render(target, p1, p2, remainingTreasures):
-#   P1 (left):   P1 score, LIFE hearts (16px), EN bar (60x14), WPN name, ammo#
+#   P1 (left):   P1 score, LIFE hearts (24px), STAMINA, WPN name, ammo#
 #   Center:      TRES + remainingTreasures
-#   P2 (right):  P2 score, LIFE hearts (16px), EN bar (60x14), WPN name, ammo#
+#   P2 (right):  P2 score, LIFE hearts (24px), STAMINA, WPN name, ammo#
 # ============================================================================
 extends Control
 
@@ -54,7 +61,6 @@ signal heart_clicked()  # currently unused but exposed for future editor hooks
 @export var color_bg:        Color = Color(0.078, 0.078, 0.078)      # 20,20,20
 @export var color_score:     Color = Color(1.000, 1.000, 0.000)      # Yellow
 @export var color_label:     Color = Color.WHITE
-@export var color_energy:     Color = Color(0.0, 0.9, 0.0)       # FIX (energia invisibile): era Magenta, ora verde (vedi _draw_energy_bar per gradiente)
 @export var color_energy_bg:  Color = Color(0.392, 0.392, 0.392)
 @export var color_energy_border: Color = Color(0.235, 0.235, 0.235)
 @export var color_ammo:       Color = Color(1.000, 1.000, 0.000)
@@ -69,10 +75,20 @@ const C = preload("res://scripts/core/GameConstants.gd")
 var _heart_texture: Texture2D = null
 var _heart_loaded: bool = false
 
+# --- TASK 96: sheet cuore sgretolabile (4 stadi, PixelLab 24px/frame) -------
+var _crumble_texture: Texture2D = null
+var _crumble_loaded: bool = false
+
+# --- TASK 96: effetto colpo sul cuore corrente (scossa + detriti) ----------
+var _heart_fx_p1: float = 0.0        # ms residui dell'effetto
+var _heart_fx_p2: float = 0.0
+var _heart_burst_p1: bool = false     # true = vita persa (burst grande)
+var _heart_burst_p2: bool = false
+
 # --- HUD state (set externally before _draw) ------------------------------
 # 1P snapshot
 var _p1: Dictionary = {
-        "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
+        "score": 0, "lives": 3, "energy": 5.0, "max_energy": 5.0,
         # TASK 79b: default localizzato (PISTOL/PISTOLA) invece di "PISTOL"
         # fisso: copre il frame iniziale prima del primo set_player_state.
         "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL), "weapon_color": Color(0.784, 0.784, 0.196),
@@ -85,7 +101,7 @@ var _p1: Dictionary = {
 }
 # 2P snapshot (only used when _num_players == 2)
 var _p2: Dictionary = {
-        "score": 0, "lives": 3, "energy": 100.0, "max_energy": 100.0,
+        "score": 0, "lives": 3, "energy": 5.0, "max_energy": 5.0,
         "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL), "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
@@ -122,6 +138,31 @@ func _ready() -> void:
         # _update_hud ritornava subito senza aggiornare.
         position = Vector2.ZERO
         load_heart_sprite("res://assets/sprites/ui_heart.png")
+        _load_crumble_sheet()
+
+
+func _process(delta: float) -> void:
+        # TASK 96: avanzamento degli effetti colpo/vita-persa sui cuori:
+        # il ridisegno arriva dai controller ogni physics frame, ma gli
+        # effetti vivono sul tempo REALE (funzionano anche in pausa bonus).
+        if _heart_fx_p1 > 0.0 or _heart_fx_p2 > 0.0:
+                _heart_fx_p1 = maxf(0.0, _heart_fx_p1 - delta * 1000.0)
+                _heart_fx_p2 = maxf(0.0, _heart_fx_p2 - delta * 1000.0)
+                queue_redraw()
+
+
+## TASK 96: carica lo sheet 4-stadi del cuore sgretolabile (Pattern
+## SpriteManager: Image.load diretto, bypass import system). Se manca si
+## resta sul cuore singolo/procedurale con degrado per stadio.
+func _load_crumble_sheet() -> void:
+        var path := "res://assets/sprites/ui_heart_crumble_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return
+        var img := Image.new()
+        if img.load(abs_path) == OK:
+                _crumble_texture = ImageTexture.create_from_image(img)
+                _crumble_loaded = _crumble_texture != null
 
 
 # ----------------------------------------------------------------------------
@@ -154,15 +195,37 @@ func load_heart_sprite(path: String) -> bool:
 # score, lives, energy, max_energy, weapon_name, weapon_color, weapon_ammo,
 # weapon_max.
 func set_player_state(snap: Dictionary) -> void:
+        # TASK 96: rileva il colpo (energia che scende) e la vita persa
+        # (vite che scendono) per gli effetti sul cuore corrente.
+        var prev_e: float = float(_p1.get("energy", 0.0))
+        var prev_l: int = int(_p1.get("lives", 0))
         for k in snap.keys():
                 _p1[k] = snap[k]
+        var new_e: float = float(_p1.get("energy", 0.0))
+        var new_l: int = int(_p1.get("lives", 0))
+        if new_l < prev_l:
+                _heart_fx_p1 = 620.0
+                _heart_burst_p1 = true
+        elif new_e < prev_e - 0.001:
+                _heart_fx_p1 = 380.0
+                _heart_burst_p1 = false
         queue_redraw()
 
 
 # Set the 2P snapshot (used only when num_players == 2).
 func set_player2_state(snap: Dictionary) -> void:
+        var prev_e: float = float(_p2.get("energy", 0.0))
+        var prev_l: int = int(_p2.get("lives", 0))
         for k in snap.keys():
                 _p2[k] = snap[k]
+        var new_e: float = float(_p2.get("energy", 0.0))
+        var new_l: int = int(_p2.get("lives", 0))
+        if new_l < prev_l:
+                _heart_fx_p2 = 620.0
+                _heart_burst_p2 = true
+        elif new_e < prev_e - 0.001:
+                _heart_fx_p2 = 380.0
+                _heart_burst_p2 = false
         queue_redraw()
 
 
@@ -297,14 +360,15 @@ func _draw_1p() -> void:
         # (si sovrapponeva a ENERGY/WPN): si mostra il numero con la "x"
         # + UN solo simbolo di cuore (es. "6x ♥" = 6 vite).
         _draw_label(I18n.t("hud.lives"), 150, 10)
-        _draw_lives_row(int(_p1.lives), 160.0, 35.0, 8.0, 24.0)
-        # ENERGY (gradiente verde→arancione→rosso)
-        _draw_label(I18n.t("hud.energy"), 280, 10)
-        _draw_energy_bar(280, 30, 100, 18,
-                float(_p1.energy) / float(_p1.max_energy))
-        # FIX (stamina salti): barra STAMINA sotto la barra vita/energia:
-        # ROSA piena (2 salti disponibili), ARANCIONE dopo il 1° salto,
-        # ROSSA dopo il 2° (lampeggia finché la ricarica non è completa).
+        _draw_lives_row(int(_p1.lives), 160.0, 35.0, 12.0, 27.0,
+                        float(_p1.energy) / maxf(1.0, float(_p1.max_energy)),
+                        _heart_fx_p1, _heart_burst_p1)
+        # TASK 96: barra ENERGIA RIMOSSA — lo stato di salute si legge dal
+        # cuore corrente che si sgretola (vedi _draw_lives_row). Lo slot
+        # x=280 resta alla sola barra STAMINA (libera spazio in alto).
+        # STAMINA (Task 37/96): VERDE piena (2 salti disponibili),
+        # ARANCIONE dopo il 1° salto, ROSSA dopo il 2° (lampeggia finché
+        # la ricarica non è completa).
         _draw_stamina_bar(280, 52, 100, 10,
                 _p1.stamina, _p1.stamina_exhausted)
         # WPN — TASK 26: le armi speciali (reliquie) NON mostrano il nome
@@ -334,11 +398,11 @@ func _draw_2p() -> void:
         _draw_label_colored("P1", 10, 10, color_p1_label)
         _draw_label_int(_p1.score, 10, 30, color_score)
         _draw_label(I18n.t("hud.life"), 80, 10)
-        _draw_lives_row(int(_p1.lives), 90.0, 35.0, 6.0, 16.0)
-        _draw_label(I18n.t("hud.en"), 180, 10)
-        _draw_energy_bar(180, 32, 60, 14,
-                float(_p1.energy) / float(_p1.max_energy))
-        # FIX (stamina salti): barra STAMINA sotto la vita, P1 (rosa/arancione/rosso).
+        _draw_lives_row(int(_p1.lives), 90.0, 35.0, 11.0, 24.0,
+                        float(_p1.energy) / maxf(1.0, float(_p1.max_energy)),
+                        _heart_fx_p1, _heart_burst_p1)
+        # TASK 96: barra ENERGIA RIMOSSA (cuore corrente sgretolabile);
+        # STAMINA P1 al suo posto (verde/arancione/rosso).
         _draw_stamina_bar(180, 50, 60, 8,
                 _p1.stamina, _p1.stamina_exhausted)
         if not str(_p1.weapon_name).is_empty():
@@ -357,11 +421,11 @@ func _draw_2p() -> void:
         _draw_label_colored("P2", 1560, 10, color_p2_label)
         _draw_label_int(_p2.score, 1560, 30, color_score)
         _draw_label(I18n.t("hud.life"), 1630, 10)
-        _draw_lives_row(int(_p2.lives), 1640.0, 35.0, 6.0, 16.0)
-        _draw_label(I18n.t("hud.en"), 1730, 10)
-        _draw_energy_bar(1730, 32, 60, 14,
-                float(_p2.energy) / float(_p2.max_energy))
-        # FIX (stamina salti): barra STAMINA sotto la vita, P2 (rosa/arancione/rosso).
+        _draw_lives_row(int(_p2.lives), 1640.0, 35.0, 11.0, 24.0,
+                        float(_p2.energy) / maxf(1.0, float(_p2.max_energy)),
+                        _heart_fx_p2, _heart_burst_p2)
+        # TASK 96: barra ENERGIA RIMOSSA (cuore corrente sgretolabile);
+        # STAMINA P2 al suo posto (verde/arancione/rosso).
         _draw_stamina_bar(1730, 50, 60, 8,
                 _p2.stamina, _p2.stamina_exhausted)
         if not str(_p2.weapon_name).is_empty():
@@ -406,17 +470,41 @@ func _draw_armor_status(snap: Dictionary, x: float, y: float) -> void:
 
 
 # ----------------------------------------------------------------------------
-# TASK 26 — fila dei cuori delle vite: fino a 5 cuoricini singoli; oltre,
-# numero + "x" + UN solo cuore (es. "6x ♥" = 6 vite). Evita la sovrapposizione
-# con ENERGY/WPN quando le vite crescono (bonus boss + soglie punteggio).
+# TASK 26/96 — fila dei cuori delle vite: fino a 5 cuori singoli; oltre,
+# numero + "x" + UN solo cuore (es. "6x ♥" = 6 vite).
+#
+# TASK 96 (cuori al posto della barra vita): il CUORE CORRENTE (l'ultimo
+# della fila, quello che si sta consumando) mostra lo SGRETOLOMENTO
+# legato all'energia residua: stadio 0 = integro (energia piena), stadio
+# 3 = quasi distrutto (energia al minimo). Quando l'energia arriva a 0
+# la vita è persa: il cuore sparisce del tutto e la fila si accorcia.
+# Le vite "di scorta" (cuori precedenti) restano integre. Al colpo
+# recente: scossa del cuore + detriti che cadono (fx_ms > 0).
 # ----------------------------------------------------------------------------
 func _draw_lives_row(lives: int, x: float, y: float, size: float,
-                spacing: float) -> void:
+                spacing: float, energy_ratio: float = 1.0,
+                fx_ms: float = 0.0, fx_burst: bool = false) -> void:
+        if lives <= 0:
+                return
+        var stage: int = _heart_crumble_stage(energy_ratio)
         if lives <= 5:
                 for i in lives:
-                        _draw_heart(x + float(i) * spacing, y, size)
+                        var is_current: bool = i == lives - 1
+                        var st: int = stage if is_current else 0
+                        var jx: float = 0.0
+                        var jy: float = 0.0
+                        if is_current and fx_ms > 0.0:
+                                # scossa del cuore colpito (6-7 Hz, si smorza)
+                                var k: float = fx_ms / 380.0
+                                jx = sin(fx_ms * 0.042) * 1.6 * k
+                                jy = cos(fx_ms * 0.061) * 1.1 * k
+                        _draw_heart(x + float(i) * spacing + jx, y + jy, size, st)
+                        if is_current and fx_ms > 0.0:
+                                _draw_heart_debris(x + float(i) * spacing, y,
+                                                size, fx_ms, fx_burst)
                 return
-        # Oltre 5: contatore "Nx" + simbolo singolo.
+        # Oltre 5: contatore "Nx" + simbolo singolo (il cuore corrente,
+        # con lo sgretolamento dell'energia).
         var txt: String = str(lives) + "x"
         _draw_label_colored(txt, x, y - 12.0, color_heart_fill)
         var font := get_theme_default_font()
@@ -426,27 +514,84 @@ func _draw_lives_row(lives: int, x: float, y: float, size: float,
         if font != null:
                 txt_w = font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT,
                         -1, 16).x
-        _draw_heart(x + txt_w + size + 2.0, y, size)
+        _draw_heart(x + txt_w + size + 2.0, y, size, stage)
+        if fx_ms > 0.0:
+                _draw_heart_debris(x + txt_w + size + 2.0, y, size, fx_ms, fx_burst)
+
+
+## Stadio di sgretolamento del cuore corrente dall'energia residua:
+## ogni 20% di energia persa avanza di uno stadio (max 3). Pura funzione
+## del ratio — testabile da test_task96_hearts (B). Con max_energy 5:
+## 5->0, 4->1, 3->2, 2->3, 1->3 (l'ultimo colpo prima della morte mostra
+## il cuore quasi distrutto).
+static func _heart_crumble_stage(energy_ratio: float) -> int:
+        var r: float = clampf(energy_ratio, 0.0, 1.0)
+        # +0.001: epsilon anti-FP (1.0-0.8 = 0.1999... -> int(0.999)=0 sbagliato)
+        return clampi(int((1.0 - r + 0.001) / 0.2), 0, 3)
+
+
+## Detriti del cuore colpito: 5 (9 nel burst di vita persa) frammenti
+## rossi che cadono sotto il cuore e svaniscono. Deterministici (seed =
+## indice), niente RNG per frame.
+func _draw_heart_debris(x: float, y: float, size: float,
+                fx_ms: float, burst: bool) -> void:
+        var total_ms: float = 620.0 if burst else 380.0
+        var k: float = clampf(1.0 - fx_ms / total_ms, 0.0, 1.0)  # 0->1
+        var n: int = 9 if burst else 5
+        for i in n:
+                var a: float = (float(i) / float(n) - 0.5) * 1.7
+                var dx: float = a * size * (0.7 + 0.5 * float((i * 37) % 3) / 2.0)
+                var dy: float = size * 0.45 + k * k * (26.0 + 10.0 * float(i % 3))
+                var al: float = (1.0 - k) * 0.9
+                var s: float = 2.4 - float(i % 2) * 0.9
+                var col := color_heart_fill if i % 2 == 0 else color_heart_outline
+                draw_rect(Rect2(x + dx - s * 0.5, y + dy, s, s),
+                                Color(col.r, col.g, col.b, al), true)
 
 
 # ----------------------------------------------------------------------------
-# drawHeart(x, y, size): draws a heart at (x, y) with radius `size`.
-# Mirrors UI::drawHeart(target, x, y, size).
-#   * If the PNG heart sprite is loaded, uses it (much higher quality, AI-gen).
-#   * Otherwise falls back to drawDetailedHeart (procedural): two semicircles
-#     + triangle + a small white highlight.
-# The PNG is 32x32; the anchor is at its center (16, 16).
+# drawHeart(x, y, size, stage): draws a heart at (x, y) with radius `size`.
+# TASK 96: `stage` (0-3) = stadio di sgretolamento del cuore corrente.
+#   * Se lo sheet PixelLab 4-stadi è caricato, disegna il frame dello
+#     stadio via draw_texture_rect_region (24px, scalato a size*2).
+#   * Altrimenti usa il PNG singolo ui_heart.png (solo stadio 0) con
+#     degrado procedurale per gli stadi (rimpicciolito + sbiadito).
+#   * Fallback finale: cuore procedurale (mirror UI.cpp) con degrado.
 # ----------------------------------------------------------------------------
-func _draw_heart(x: float, y: float, size: float) -> void:
+func _draw_heart(x: float, y: float, size: float, stage: int = 0) -> void:
+        var st: int = clampi(stage, 0, 3)
+        if _crumble_loaded and _crumble_texture != null:
+                var fw: float = float(_crumble_texture.get_width()) / 4.0
+                var fh: float = float(_crumble_texture.get_height())
+                var disp: float = size * 2.0
+                draw_texture_rect_region(_crumble_texture,
+                                Rect2(x - disp * 0.5, y - disp * 0.5, disp,
+                                                disp * (fh / fw)),
+                                Rect2(fw * float(st), 0.0, fw, fh),
+                                Color(1.0, 1.0, 1.0, 1.0), false,
+                                CanvasItem.TEXTURE_FILTER_NEAREST)
+                return
         if _heart_loaded and _heart_texture != null:
                 # Scale so the sprite is ~size*2 px wide (mirror UI.cpp:scale = size/16).
                 var scale: float = size / 16.0
+                var mod := Color(1.0, 1.0, 1.0, 1.0)
+                if st > 0:
+                        # fallback senza sheet: cuore che rimpicciolisce e sbiadisce
+                        var k: float = 1.0 - 0.18 * float(st)
+                        scale *= k
+                        mod = Color(1.0, 1.0, 1.0, 0.95 - 0.18 * float(st))
                 var w: float = _heart_texture.get_width() * scale
                 var h: float = _heart_texture.get_height() * scale
                 var rect := Rect2(x - w / 2.0, y - h / 2.0, w, h)
-                draw_texture_rect(_heart_texture, rect, false)
-        else:
-                _draw_detailed_heart(x, y, size, color_heart_fill, color_heart_outline)
+                draw_texture_rect(_heart_texture, rect, false, mod)
+                return
+        # degrado procedurale
+        var sz: float = size * (1.0 - 0.15 * float(st))
+        _draw_detailed_heart(x, y, sz,
+                        Color(color_heart_fill.r, color_heart_fill.g,
+                                        color_heart_fill.b,
+                                        1.0 - 0.15 * float(st)),
+                        color_heart_outline)
 
 
 # ----------------------------------------------------------------------------
@@ -549,18 +694,20 @@ func _draw_stamina_bar(x: float, y: float, w: float, h: float,
                         minf(fill.b + 0.25, 1.0), 0.55), true)
 
 
-# Colore del riempimento per numero di salti DISPONIBILI (Task 37):
-#   * ratio >= 1.0  → ROSA       (barra piena: 2 salti disponibili)
+# Colore del riempimento per numero di salti DISPONIBILI (Task 37;
+# TASK 96: piena VERDE, era ROSA — feedback utente: "la barra da che era
+# rosa diventa verde, gli altri colori non cambiano"):
+#   * ratio >= 1.0  → VERDE      (barra piena: 2 salti disponibili)
 #   * ratio >= 0.5  → ARANCIONE  (dopo il 1° salto: 1 salto disponibile)
 #   * ratio <  0.5  → ROSSO      (dopo il 2° salto: 0 salti disponibili)
-# Pura funzione del ratio (testabile da test_stamina_weapons A9): il
-# lampeggio da esausto vive nel _draw perché dipende dal tempo reale.
+# Pura funzione del ratio (testabile da test_stamina_weapons A9 e
+# test_task96_hearts A): il lampeggio da esausto vive nel _draw.
 func _stamina_fill_color(ratio: float) -> Color:
         if ratio >= 0.999:
-                return Color(1.00, 0.42, 0.72)   # ROSA
+                return Color(0.22, 0.85, 0.35)   # VERDE (TASK 96, era rosa)
         if ratio >= 0.5:
-                return Color(1.00, 0.55, 0.10)   # ARANCIONE
-        return Color(0.92, 0.16, 0.16)           # ROSSO
+                return Color(1.00, 0.55, 0.10)   # ARANCIONE (invariato)
+        return Color(0.92, 0.16, 0.16)           # ROSSO (invariato)
 
 
 # Draw a horizontal bar (mirror of the energy/ammo bar in UI.cpp).
@@ -576,34 +723,5 @@ func _draw_bar(x: float, y: float, w: float, h: float,
                 draw_rect(Rect2(x, y, w * r, h), fg_color, true)
 
 
-# FIX (energia gradiente): disegna la barra energia con gradiente
-# verde (100%) → arancione (50%) → rosso (0%). Man mano che l'energia
-# scende, il colore cambia per dare feedback visivo immediato.
-func _draw_energy_bar(x: float, y: float, w: float, h: float, ratio: float) -> void:
-        # Background
-        draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
-        draw_rect(Rect2(x, y, w, h), color_energy_border, false, 2.0)
-        var r: float = clampf(ratio, 0.0, 1.0)
-        if r <= 0.0:
-                return
-        # FIX (gradiente non visibile): prima disegnava 100 strisce da 1px
-        # ciascuna che non si vedevano. Ora disegna 3 segmenti: verde, arancione,
-        # rosso — proporzionali al ratio. Più visibile e performante.
-        var bar_w: float = w * r
-        # Colore principale basato sul ratio
-        var bar_col: Color
-        if r > 0.5:
-                # verde → arancione
-                var t: float = (1.0 - r) * 2.0  # 0 at r=1, 1 at r=0.5
-                bar_col = Color(t * 1.0, 0.9 - t * 0.3, 0.0)
-        else:
-                # arancione → rosso
-                var t2: float = (0.5 - r) * 2.0  # 0 at r=0.5, 1 at r=0
-                bar_col = Color(1.0, 0.6 - t2 * 0.5, 0.0)
-        # Disegna barra piena con colore unico
-        draw_rect(Rect2(x, y, bar_w, h), bar_col, true)
-        # Aggiungi highlight superiore (riflesso luce)
-        var hl_col: Color = Color(bar_col.r + 0.2, bar_col.g + 0.2, bar_col.b + 0.2, 0.6)
-        draw_rect(Rect2(x, y, bar_w, 3.0), hl_col, true)
-        # Outline
-        draw_rect(Rect2(x, y, bar_w, h), Color(0.1, 0.1, 0.1, 0.8), false, 1.0)
+# TASK 96: _draw_energy_bar RIMOSSA — la barra vita è sostituita dallo
+# sgretolamento del cuore corrente (vedi _draw_lives_row/_draw_heart).

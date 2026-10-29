@@ -163,8 +163,8 @@ func _physics_process(delta: float) -> void:
                                                 _fail("A8: dopo respawn la stamina non è piena")
                                         else:
                                                 print("[TEST] OK A8: al respawn la stamina è piena")
-                                        # --- A9: colori barra stamina (Task 37) ---
-                                        # ROSA piena (2 salti disponibili), ARANCIONE
+                                        # --- A9: colori barra stamina (Task 37; TASK 96: piena VERDE) ---
+                                        # VERDE piena (2 salti disponibili; TASK 96, era rosa), ARANCIONE
                                         # dopo il 1° salto (1 disponibile), ROSSA dopo
                                         # il 2° (0 disponibili). Colore = salti usati.
                                         var st_hud = main.hud
@@ -175,10 +175,11 @@ func _physics_process(delta: float) -> void:
                                                 var c_orange: Color = st_hud._stamina_fill_color(0.5)
                                                 var c_red: Color = st_hud._stamina_fill_color(0.0)
                                                 var c_mid: Color = st_hud._stamina_fill_color(0.75)
-                                                if c_pink.b <= c_pink.g or c_pink.r < 0.9:
-                                                        _fail("A9: barra piena non ROSA: " + str(c_pink))
+                                                # TASK 96: piena = VERDE (era ROSA — feedback utente)
+                                                if c_pink.g <= c_pink.r or c_pink.b > 0.5:
+                                                        _fail("A9: barra piena non VERDE: " + str(c_pink))
                                                 else:
-                                                        print("[TEST] OK A9a: barra piena = ROSA ", str(c_pink))
+                                                        print("[TEST] OK A9a: barra piena = VERDE ", str(c_pink))
                                                 if c_orange.g <= c_orange.b or c_orange.r < 0.9:
                                                         _fail("A9: metà barra non ARANCIONE: " + str(c_orange))
                                                 else:

@@ -28,12 +28,12 @@ func _process(delta: float) -> void:
         match stage:
                 0:
                         if hud != null and hud.is_node_ready() and t > 0.6:
-                                _set_state(1.0, false)    # ROSA: piena, 0 salti usati
+                                _set_state(1.0, false)    # VERDE: piena, 0 salti usati (TASK 96, era rosa)
                                 stage = 1
                                 t = 0.0
                 1:
                         if t > 0.3:
-                                _capture("stamina_1_pink")
+                                _capture("stamina_1_green")
                                 _set_state(0.5, false)    # ARANCIONE: 1° salto fatto
                                 stage = 2
                                 t = 0.0
@@ -55,7 +55,7 @@ func _process(delta: float) -> void:
                         # Il frame precedente è stato renderizzato in fase ON:
                         # la texture contiene lo stub ROSSO brillante.
                         _capture("stamina_3_red")
-                        print("[SHOT-STAMINA] 3 stati catturati: rosa, arancione, rosso")
+                        print("[SHOT-STAMINA] 3 stati catturati: verde, arancione, rosso")
                         get_tree().quit(0)
 
 
