@@ -1155,7 +1155,8 @@ func _kill_enemies_on_chasm(h: Dictionary) -> void:
                         continue
                 e.take_damage(99999)
                 if e.is_dead() and scroll_chasm_owner != null:
-                        scroll_chasm_owner.add_score(C.SCROLL_CHASM_KILL_POINTS)
+                        # TASK 97: valore della vittima (era flat 5000)
+                        scroll_chasm_owner.add_score(e.get_score_reward())
                 if e.is_dead():
                         if AudioManager:
                                 AudioManager.play_sound(
@@ -1173,9 +1174,9 @@ func _kill_enemies_on_chasm(h: Dictionary) -> void:
                 if mb_cell == h["cell"]:
                         mb.take_damage(99999)
                         if mb.is_dead():
-                                if scroll_chasm_owner != null:
-                                        scroll_chasm_owner.add_score(
-                                                        C.HAZARD_WALL_KILL_POINTS)
+                                # TASK 97: premio unico nel cleanup morte
+                                # mini-boss del controller (get_score_reward)
+                                pass
                                 if AudioManager:
                                         AudioManager.play_sound(
                                                         AudioManager.SoundType.BOSS_DEATH)
@@ -1546,7 +1547,7 @@ func _close_wall(h: Dictionary, maze: Node) -> void:
                 if e.is_dead():
                         var winner := _nearest_player(e.position)
                         if winner != null:
-                                winner.add_score(C.HAZARD_WALL_KILL_POINTS)
+                                winner.add_score(e.get_score_reward())
                         if EffectsManager:
                                 var blood := EffectsManager.spawn_blood(
                                         e.position, 18)
@@ -1670,7 +1671,7 @@ func _explode_barrel(h: Dictionary) -> void:
                                 if e.is_dead():
                                         var winner := _nearest_player(e.position)
                                         if winner != null:
-                                                winner.add_score(C.BARREL_KILL_POINTS)
+                                                winner.add_score(e.get_score_reward())
                                         if EffectsManager:
                                                 var blood := EffectsManager.spawn_blood(
                                                         e.position, 14)
@@ -1878,7 +1879,7 @@ func _boulder_impact(b: Dictionary, players: Array) -> void:
                         if e.is_dead():
                                 var winner := _nearest_player(e.position)
                                 if winner != null:
-                                        winner.add_score(C.QUAKE_KILL_POINTS)
+                                        winner.add_score(e.get_score_reward())
         # il masso innesca un eventuale barile sulla cella (combo!)
         for other in hazard_list:
                 if other["type"] == HazardType.BARREL \

@@ -229,14 +229,16 @@ func _phaseC_explosion() -> void:
                 _fail("C: il barile non e' stato rimosso dall'esplosione")
         elif not test_enemy.is_dead():
                 _fail("C: nemico adiacente al barile non ucciso")
-        elif p.score != score_before + C.BARREL_KILL_POINTS:
+        elif p.score != score_before + test_enemy.get_score_reward():
+                # TASK 97: il barile paga il valore della VITTIMA
                 _fail("C: punti kill barile %d, attesi %d"
-                                % [p.score - score_before, C.BARREL_KILL_POINTS])
+                                % [p.score - score_before,
+                                                test_enemy.get_score_reward()])
         elif p.energy != e_before:
                 _fail("C: player lontano danneggiato dall'esplosione")
         else:
                 _ok("C: esplosione = nemico ucciso (+%d), player lontano illeso"
-                                % C.BARREL_KILL_POINTS)
+                                % test_enemy.get_score_reward())
         # player VICINO al secondo barile: -33% energia
         var h2: Dictionary = _find_barrel()
         if h2.is_empty():

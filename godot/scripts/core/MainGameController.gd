@@ -1824,7 +1824,7 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                         last_hit_enemy = enemy
                                         last_hit_enemy_timer_ms = 3000  # 3s di visibilità
                                 if enemy.is_dead():
-                                        _on_relic_enemy_killed(p, e_pos)
+                                        _on_relic_enemy_killed(p, e_pos, enemy)
                                 hit_something = true
                                 break
                 # FIX (mid-boss immune): controlla anche il mini-boss.
@@ -1847,7 +1847,6 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                         if mini_boss.is_dead():
-                                                p.add_score(10000)
                                                 if AudioManager:
                                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
                 # FIX (Hurry Up! — fantasma immortale): i proiettili NON lo
@@ -1922,8 +1921,14 @@ func _reflect_enemy_projectile_if_armored(p: CharacterBody2D, proj: Node2D,
 
 # Kill-effects condivisi da tutte le fonti reliquia (mischia, bombe, catena,
 # aura, spine, dardi perforanti): punteggio + suoni + macchie + scoppio.
-func _on_relic_enemy_killed(p: CharacterBody2D, pos: Vector2) -> void:
-        p.add_score(5000)
+# TASK 97: punteggio = valore DELLA VITTIMA (HP base x 10, era flat 5000).
+func _on_relic_enemy_killed(p: CharacterBody2D, pos: Vector2,
+                enemy: Node = null) -> void:
+        var pts: int = 30
+        if enemy != null and is_instance_valid(enemy) \
+                        and enemy.has_method("get_score_reward"):
+                pts = enemy.get_score_reward()
+        p.add_score(pts)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
                 AudioManager.play_sound(AudioManager.SoundType.BLOOD_SPLAT)
@@ -1983,7 +1988,7 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                         last_hit_enemy = enemy
                         last_hit_enemy_timer_ms = 3000
                 if enemy.is_dead():
-                        _on_relic_enemy_killed(p, e_pos)
+                        _on_relic_enemy_killed(p, e_pos, enemy)
                 # Lama del Vampiro: cura 1 energia per nemico colpito.
                 if bool(def.get("vampiric", false)) and not p.soul_pending:
                         p.energy = mini(p.max_energy, p.energy + 1)
@@ -2004,7 +2009,7 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                                                         float(enemy2.max_health) / float(splash_hits))))
                                         enemy2.take_damage(splash_dmg)
                                         if enemy2.is_dead():
-                                                _on_relic_enemy_killed(p, enemy2.get_pixel_pos())
+                                                _on_relic_enemy_killed(p, enemy2.get_pixel_pos(), enemy2)
         # Mini-boss nella shape: danno flat (+1 col Furore).
         if mini_boss != null and is_instance_valid(mini_boss) and not mini_boss.is_dead():
                 if C.relic_melee_in_shape(def, aim, p_pos, mini_boss.get_pixel_pos()):
@@ -2013,7 +2018,6 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                         if mini_boss.is_dead():
-                                p.add_score(10000)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
         # TASK 34 (richiesta utente — "i pipistrelli devono poter essere
@@ -2091,7 +2095,7 @@ func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
                                 last_hit_enemy = enemy
                                 last_hit_enemy_timer_ms = 3000
                         if enemy.is_dead():
-                                _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                                _on_relic_enemy_killed(p, enemy.get_pixel_pos(), enemy)
         # TASK 23: il fulmine SI VEDE attraversare i nemici (traiettoria).
         if arc_path.size() >= 2:
                 var arc: Node2D = LightningArcFx.new()
@@ -2122,7 +2126,7 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                                         < radius * radius:
                                 enemy.take_weapon_hit(type, fury, p.character_type)
                                 if enemy.is_dead():
-                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos(), enemy)
                 if mini_boss != null and is_instance_valid(mini_boss) \
                                 and not mini_boss.is_dead():
                         if blast_pos.distance_squared_to(mini_boss.get_pixel_pos()) \
@@ -2130,7 +2134,8 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                                 mini_boss.take_damage(int(proj.get("power", 4)) \
                                                 + (1 if fury else 0))
                                 if mini_boss.is_dead():
-                                        p.add_score(10000)
+                                        # TASK 97: premio unico nel cleanup
+                                        # morte mini-boss (get_score_reward)
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
                 # TASK 34 (pipistrelli): le Bombe dell'Alchimista sono un'arma
@@ -2166,7 +2171,7 @@ func _tick_fire_armor(p: CharacterBody2D, delta_ms: float) -> void:
                 if p_pos.distance_squared_to(enemy.get_pixel_pos()) < radius * radius:
                         enemy.take_damage(aura_dmg)
                         if enemy.is_dead():
-                                _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                                _on_relic_enemy_killed(p, enemy.get_pixel_pos(), enemy)
         if mini_boss != null and is_instance_valid(mini_boss) \
                         and not mini_boss.is_dead():
                 if p_pos.distance_squared_to(mini_boss.get_pixel_pos()) \
@@ -2373,7 +2378,7 @@ func _explode_mine(explode_pos: Vector2) -> void:
                 if explode_pos.distance_squared_to(e_pos) < blast_radius_sq:
                         enemy.take_damage(999)
                         enemy.start_burning(30)
-                        player.add_score(2000)
+                        player.add_score(enemy.get_score_reward())
         # Danno al mini-boss: 50% degli HP massimi
         if mini_boss != null and not mini_boss.is_dead():
                 var mb_pos: Vector2 = mini_boss.get_pixel_pos()
@@ -2424,7 +2429,7 @@ func _check_melee_collisions(p: CharacterBody2D, delta_ms: float = 16.0) -> void
                                                 p.armor_relic, enemy.get_max_health())
                                 enemy.take_damage(burn_dmg)
                                 if enemy.is_dead():
-                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos(), enemy)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                 if EffectsManager:
@@ -2439,7 +2444,7 @@ func _check_melee_collisions(p: CharacterBody2D, delta_ms: float = 16.0) -> void
                         if thorn_dmg > 0:
                                 enemy.take_damage(thorn_dmg)
                                 if enemy.is_dead():
-                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos())
+                                        _on_relic_enemy_killed(p, enemy.get_pixel_pos(), enemy)
                         p.take_damage()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
@@ -2487,7 +2492,7 @@ func _update_invincible_burn(p: CharacterBody2D, _delta_ms: float) -> void:
                 enemy.clear_burned_flag()
                 var dead_pos: Vector2 = enemy.get_pixel_pos()
                 enemy.take_damage(999)
-                p.add_score(5000)
+                p.add_score(enemy.get_score_reward())
                 _spawn_ash_pile(dead_pos)
                 _spawn_fire_burst(dead_pos, 0.9)
                 if AudioManager:
@@ -2510,7 +2515,8 @@ func _update_invincible_burn(p: CharacterBody2D, _delta_ms: float) -> void:
                         continue
                 if p_pos.distance_squared_to(enemy.get_pixel_pos()) < 600.0:
                         enemy.start_burning(50)
-                        p.add_score(5000)
+                        # TASK 97: niente punti all'accensione (doppio premio
+                        # con la kill a fine combustione)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
         # Also burn mini-boss if present
@@ -2534,7 +2540,7 @@ func _update_invincible_burn(p: CharacterBody2D, _delta_ms: float) -> void:
                         if mb_dmg < 1:
                                 mb_dmg = 1
                         mini_boss.take_damage(mb_dmg)
-                        p.add_score(2000)
+                        # TASK 97: premio alla morte nel cleanup
 
 
 # FIX (2P — P2 spawnava dentro il muro): il posizionamento fisso a
@@ -3157,7 +3163,7 @@ func _fire_freeze_ray(p: CharacterBody2D) -> void:
                         continue
                 enemy.freeze_kill()
                 frozen_count += 1
-                p.add_score(C.SCROLL_FREEZE_POINTS)
+                p.add_score(enemy.get_score_reward())
                 # esplosione di brina + frantumazione ghiaccio sul nemico
                 if EffectsManager:
                         var burst := EffectsManager.spawn_explosion(
@@ -3255,7 +3261,7 @@ func _activate_scroll_quake(p: CharacterBody2D) -> void:
                         enemy.take_damage(99999)
                         killed += 1
                         if p != null:
-                                p.add_score(C.SCROLL_QUAKE_KILL_POINTS)
+                                p.add_score(enemy.get_score_reward())
                         if EffectsManager:
                                 var blood := EffectsManager.spawn_blood(
                                                 enemy.get_pixel_pos(), 14)
@@ -3275,7 +3281,8 @@ func _activate_scroll_quake(p: CharacterBody2D) -> void:
                 if mini_boss.health - mb_dmg < mb_threshold:
                         mini_boss.take_damage(99999)
                         if mini_boss.is_dead() and p != null:
-                                p.add_score(C.HAZARD_WALL_KILL_POINTS)
+                                # TASK 97: premio unico nel cleanup
+                                pass
                 else:
                         mini_boss.take_damage(mb_dmg)
         if AudioManager and killed > 0:
@@ -3863,7 +3870,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         # Player.update_player) e impostata la durata richiesta:
                         # 12.5s percepite - 3s = 9.5s reali.
                         p.set_invincible_timer(9500)
-                        p.add_score(15000)
+                        p.add_score(C.CHALICE_PICKUP_POINTS)
                         item.active = false
                         item.queue_free()
                         if AudioManager:
@@ -4779,7 +4786,7 @@ func _update_thrown_hammer(delta_ms: float) -> void:
                                         collectibles_node.add_child(hit_burst)
                                         EffectsManager.screen_shake(6.0, 0.25)
                                 if enemy.is_dead():
-                                        owner_p.add_score(5000)
+                                        owner_p.add_score(enemy.get_score_reward())
                                         if AudioManager:
                                                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
                                         _spawn_blood_stain(enemy.get_pixel_pos())
@@ -5708,7 +5715,7 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
                 if dt.position.distance_squared_to(enemy.get_pixel_pos()) < 600.0:
                         enemy.take_damage(999)
                         enemy.start_burning(30)
-                        player.add_score(2000)
+                        player.add_score(enemy.get_score_reward())
                         _explode_dynamite(true, dt.position)
                         dt.queue_free()
                         dynamite_thrown = null
@@ -5773,7 +5780,7 @@ func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
                         if pos.distance_squared_to(enemy.get_pixel_pos()) < blast_sq:
                                 enemy.take_damage(999)
                                 enemy.start_burning(30)
-                                player.add_score(2000)
+                                player.add_score(enemy.get_score_reward())
                 # TASK 34 (richiesta utente — "...dinamite e barili"): la
                 # dinamite lanciata che esplode sullo sciame lo disperde
                 # SUBITO (punti al proprietario della dinamite).
@@ -5874,7 +5881,7 @@ func _fire_lightning_strike() -> void:
                                 enemy.take_damage(999)
                                 if enemy.has_method("start_electrified"):
                                         enemy.start_electrified(30)
-                                player.add_score(3000)
+                                player.add_score(enemy.get_score_reward())
                                 break
         # Damage mini-boss if present (35% max HP)
         if mini_boss != null and is_instance_valid(mini_boss):

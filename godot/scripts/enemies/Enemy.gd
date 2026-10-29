@@ -37,6 +37,8 @@ const MAZE_COLS: int = 30
 const MAZE_ROWS: int = 15
 const UI_HEIGHT: int = 80
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # --- EnemyType (mirror Enemy.h enum, 28 types) ------------------------------
 # Order is significant: Game::spawnEnemies picks from this set randomly,
 # so re-ordering would shift the spawn distribution.
@@ -863,6 +865,16 @@ func _report_grid_cell(maze: Object, col: int, row: int) -> void:
 # take_damage(dmg): reduce HP by `dmg`. If HP reaches 0, trigger the death
 # animation (dying_timer = 600 ms ~= 6 frames at 120 ms each).
 # Mirrors Enemy::takeDamage() line 516-523.
+## TASK 97 — punti per l'uccisione di QUESTO nemico: HP base x 10 (la
+## "durezza" del tipo: 10 per i fantasmi da 1 HP, 60 per i coriacei da 6).
+## Il danno in % degli HP azzera le differenze di colpi tra tipi, ma il
+## tipo piu' tosto vale di piu' (feedback utente: "piu' sono duri a morire
+## e piu' punti danno"). Usato da TUTTE le fonti di uccisione.
+func get_score_reward() -> int:
+        return int(round(float(max_health) / float(ENEMY_HEALTH_SCALE))) \
+                        * C.ENEMY_POINTS_PER_HP
+
+
 func take_damage(dmg: int) -> void:
         if dying_timer > 0:
                 return  # already dying: ignore further damage

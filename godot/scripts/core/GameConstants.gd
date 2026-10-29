@@ -1072,8 +1072,34 @@ const HAZARD_WALL_CLOSED_MS: int = 3000
 const HAZARD_WALL_PLAYER_DAMAGE_PCT: float = 0.66
 const HAZARD_WALL_ENEMY_DAMAGE_PCT: float = 0.33
 
-## Punti per un nemico ucciso dal muro di roccia (2x il valore standard).
-const HAZARD_WALL_KILL_POINTS: int = 10000
+# ============================================================================
+# TASK 97 — RICALIBRAZIONE PUNTI (feedback utente: "più sono duri a morire
+# e più punti danno, il mini boss quindi è quello che darà più punti...
+# al momento siamo molto generosi"). PRIMA: flat 5000 per OGNI nemico da
+# QUALSIASI fonte, +10000 espliciti al mini-boss che si SOMMAVANO al
+# cleanup (doppio premio 15000-30000), tesori 10000, calice 15000,
+# boss 0 punti, vita extra ogni 100k -> massimo cumulabile ~12,4M a run
+# (~124 vite extra!). ORA (durezza -> punti, fonte unica = valore vittima):
+#   * nemico     -> HP base x 10                (10..60 per tipo)
+#   * mini-boss  -> 300 + 15 x tipo              (300..1050: il mostro
+#                   più remunerativo del labirinto, come richiesto)
+#   * boss       -> 2500 + 100 x indice boss     (2500..4100: sopra tutto)
+#   * tesoro     -> 150 (cella + collectible), calice 300, sciame 40
+#   * vita extra -> ogni 50000 punti (era 100000)
+# TUTTE le fonti (muro/barile/terremoto/voragine/ghiaccio/mina/dinamite/
+# martello/scettro/combustione calice/armi) assegnano il valore DELLA
+# VITTIMA via get_score_reward(): le vecchie costanti per-fonte sono
+# RIMOSSE. Massimo cumulabile in una run completa ~190-210k (calcolo nel
+# report Task 98).
+# ============================================================================
+const ENEMY_POINTS_PER_HP: int = 10
+const MINIBOSS_POINTS_BASE: int = 300
+const MINIBOSS_POINTS_PER_TYPE: int = 15
+const BOSS_KILL_POINTS_BASE: int = 2500
+const BOSS_KILL_POINTS_PER_INDEX: int = 100
+const TREASURE_CELL_POINTS: int = 150
+const CHALICE_PICKUP_POINTS: int = 300
+const EXTRA_LIFE_EVERY_POINTS: int = 50000
 
 ## Distanza minima (Chebyshev, in celle) dallo spawn del player (1,1).
 const HAZARD_MIN_SPAWN_DIST: int = 3
@@ -1296,9 +1322,6 @@ const BARREL_PLAYER_DAMAGE_PCT: float = 0.33
 ## Ritardo della reazione a catena tra barili.
 const BARREL_CHAIN_DELAY_MS: int = 220
 
-## Punti per un nemico ucciso dall'esplosione di un barile (valore standard).
-const BARREL_KILL_POINTS: int = 5000
-
 ## Barili per livello: 2 al grace level, +1 ogni 6 livelli, cap 6.
 static func barrel_count_for_level(level: int) -> int:
         if not BARRELS_ENABLED or level < BARREL_GRACE_LEVEL:
@@ -1342,9 +1365,6 @@ const QUAKE_ENEMY_DAMAGE_PCT: float = 0.6
 
 ## Le macerie restano a terra per questo tempo prima di svanire.
 const QUAKE_RUBBLE_MS: int = 3000
-
-## Punti per un nemico ucciso da un masso (valore standard).
-const QUAKE_KILL_POINTS: int = 5000
 
 
 # ============================================================================
@@ -1396,9 +1416,11 @@ const BAT_CLOUD_FLEE_MS: int = 900
 ## Danno del morso (frazione dell'energia max).
 const BAT_CLOUD_PLAYER_DAMAGE_PCT: float = 0.2
 
-## Colpi di proiettile per disperdere lo sciame e punti bonus.
+## Colpi di proiettile per disperdere lo sciame e punti bonus (TASK 97:
+## 40 — evento senza "tipo nemico", tutte le altre fonti usano il valore
+## della vittima).
 const BAT_CLOUD_HITS_TO_DIE: int = 2
-const BAT_CLOUD_KILL_POINTS: int = 5000
+const BAT_CLOUD_KILL_POINTS: int = 40
 
 ## Vita massima dello sciame se nessuno lo abbatte (poi vola via).
 const BAT_CLOUD_LIFETIME_MS: int = 20000
@@ -1482,7 +1504,6 @@ const PARCHMENT_NEXT_MAX_MS: int = 45000
 ## soglia di eliminazione (chi resta sotto quella frazione viene ucciso).
 const SCROLL_QUAKE_DAMAGE_PCT: float = 0.5
 const SCROLL_QUAKE_KILL_PCT: float = 0.5
-const SCROLL_QUAKE_KILL_POINTS: int = 5000
 
 ## Pergamena delle voragini: numero di voragini per ondata, durata di
 ## ogni ondata, ondate totali, distanza minima tra voragini (Manhattan,
@@ -1494,7 +1515,6 @@ const SCROLL_CHASM_WAVE_MS: int = 5600
 const SCROLL_CHASM_WAVES: int = 3
 const SCROLL_CHASM_MIN_GAP: int = 5
 const SCROLL_CHASM_FADE_MS: int = 350
-const SCROLL_CHASM_KILL_POINTS: int = 5000
 
 ## TASK 50 (pergamena del GHIACCIO): raccolta = il player la EQUIPAGGIA.
 ## Il tasto di fuoco spara un RAGGIO CONGELANTE (2 colpi): congela i
@@ -1644,9 +1664,6 @@ const ZOMBIE_OUT_FAST_SCALE: float = 0.70
 ## Prima estensione dopo l'avvio del livello: 3-8s.
 const ZOMBIE_FIRST_OUT_MIN_MS: float = 3000.0
 const ZOMBIE_FIRST_OUT_MAX_MS: float = 8000.0
-
-## Punti per ogni nemico congelato (come le altre pergamene evento).
-const SCROLL_FREEZE_POINTS: int = 5000
 
 ## Gittata massima del raggio (in celle del labirinto). Il beam si
 ## ferma al primo muro incontrato.

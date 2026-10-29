@@ -23,6 +23,8 @@
 class_name Player
 extends CharacterBody2D
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # --- Engine config ----------------------------------------------------------
 # Run in physics step so timers/snap-to-grid stay deterministic at 60 FPS.
 # Game node is expected to call `update_player()` from its own _physics_process;
@@ -182,7 +184,7 @@ var _ghost_exiting: bool = false
 var shoot_cooldown: int = 0
 var shoot_anim_timer: int = 0  # >0 = attack animation playing
 var anim_time: int = 0  # accumulated for idle/walk anim (NEVER reset)
-var next_life_threshold: int = 100000  # extra life every 100k points
+var next_life_threshold: int = 50000  # TASK 97: extra life ogni 50k (era 100k)
 
 # ===========================================================================
 # TASK 82 — LAMPO DI VOLATA (muzzle flash): feedback visivo dello sparo.
@@ -660,7 +662,7 @@ func reset() -> void:
         max_energy = 5
         energy = max_energy
         score = 0
-        next_life_threshold = 100000
+        next_life_threshold = C.EXTRA_LIFE_EVERY_POINTS
         current_weapon = _make_weapon(WeaponType.PISTOL)
         projectiles.clear()
         picked_weapon_this_frame = false
@@ -1218,7 +1220,8 @@ func update_player(maze: Object, free_movement: bool, delta_ms: float = 16.0) ->
                 var cell_type: int = maze.get_cell_type(col, row)
                 if cell_type == CELL_TREASURE:
                         maze.collect_treasure(col, row)
-                        add_score(10000)
+                        # TASK 97: 10000 -> C.TREASURE_CELL_POINTS (150)
+                        add_score(C.TREASURE_CELL_POINTS)
                         # Particle emission is left to the Game node (it owns particles).
                 elif cell_type == CELL_WEAPON:
                         # FIX (salto sopra armi): non raccogliere armi durante il salto
@@ -1767,12 +1770,14 @@ func collect_weapon(w: Dictionary) -> void:
         current_weapon = w.duplicate()
 
 
-# add_score(points): add points and grant an extra life every 100k.
+# add_score(points): add points and grant an extra life every 50k
+# (TASK 97: EXTRA_LIFE_EVERY_POINTS, era 100k — la ricalibrazione ha
+# ridotto il massimo cumulabile a ~200k per run completa).
 func add_score(points: int) -> void:
         score += points
         if score >= next_life_threshold:
                 lives += 1
-                next_life_threshold += 100000
+                next_life_threshold += C.EXTRA_LIFE_EVERY_POINTS
 
 
 # add_life(): bonus life (reward after defeating a boss).

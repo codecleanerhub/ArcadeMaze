@@ -370,8 +370,10 @@ func _phaseD_quake_scroll() -> void:
         elif p.energy != e_before:
                 _fail("D: il player ha subito danni (%d -> %d)" % [e_before, p.energy])
         elif hurt != null and hurt.is_dead() \
-                        and p.score < score_before + C.SCROLL_QUAKE_KILL_POINTS:
-                _fail("D: punti kill mancanti (%d)" % (p.score - score_before))
+                        and p.score < score_before + hurt.get_score_reward():
+                # TASK 97: il terremoto paga il valore della VITTIMA
+                _fail("D: punti kill mancanti (%d, attesi +%d)"
+                                % [p.score - score_before, hurt.get_score_reward()])
         else:
                 var kills: int = 0
                 for e in main.spawner.enemies:
@@ -426,14 +428,15 @@ func _phaseE_chasm_scroll() -> void:
         hz.update_hazards(16.0, main.maze)
         if not victim.is_dead():
                 _fail("E: nemico sulla voragine non ucciso (%d HP)" % victim.health)
-        elif p.score != score_before + C.SCROLL_CHASM_KILL_POINTS:
+        elif p.score != score_before + victim.get_score_reward():
+                # TASK 97: la voragine paga il valore della VITTIMA
                 _fail("E: punti kill voragine %d, attesi %d"
-                                % [p.score - score_before, C.SCROLL_CHASM_KILL_POINTS])
+                                % [p.score - score_before, victim.get_score_reward()])
         elif p.energy != e_before or p.lives != lives_before:
                 _fail("E: il player ha subito qualcosa sulla voragine")
         else:
                 _ok("E: nemico caduto = ucciso (+%d punti), player immune"
-                                % C.SCROLL_CHASM_KILL_POINTS)
+                                % victim.get_score_reward())
         # ciclo completo: 3 ondate con RIPOSIZIONAMENTO (celle nuove)
         var wave1: Array[Vector2i] = hz.scroll_chasm_cells()
         var advances: int = 0

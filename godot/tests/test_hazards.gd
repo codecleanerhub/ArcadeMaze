@@ -263,11 +263,14 @@ func _phaseC_rock_wall() -> void:
                 _drive_wall_phase(hz, h, true)
                 if not test_enemy.is_dead():
                         _fail("C: nemico a 1 HP non ucciso dal muro")
-                elif p.score != score_before + C.HAZARD_WALL_KILL_POINTS:
+                elif p.score != score_before + test_enemy.get_score_reward():
+                        # TASK 97: il muro paga il valore della VITTIMA
                         _fail("C: bonus kill ambientale %d, atteso %d"
-                                        % [p.score - score_before, C.HAZARD_WALL_KILL_POINTS])
+                                        % [p.score - score_before,
+                                                        test_enemy.get_score_reward()])
                 else:
-                        _ok("C: kill ambientale = +%d punti" % C.HAZARD_WALL_KILL_POINTS)
+                        _ok("C: kill ambientale = +%d punti"
+                                        % test_enemy.get_score_reward())
         # --- Riapertura: flag rilasciati, is_wall di nuovo false ---
         p.held_by_wall = false  # reset difensivo per il confronto
         _drive_wall_phase(hz, h, false)

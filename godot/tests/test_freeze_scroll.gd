@@ -220,8 +220,8 @@ func _face_corridor_dir() -> void:
 func _phaseA_constants() -> void:
         if C.SCROLL_FREEZE_CHARGES != 2:
                 _fail("A: colpi %d, attesi 2" % C.SCROLL_FREEZE_CHARGES)
-        elif C.SCROLL_FREEZE_POINTS != 5000:
-                _fail("A: punti %d, attesi 5000" % C.SCROLL_FREEZE_POINTS)
+        elif C.ENEMY_POINTS_PER_HP != 10:
+                _fail("A: TASK 97 punti/HP %d, attesi 10" % C.ENEMY_POINTS_PER_HP)
         elif C.SCROLL_FREEZE_RANGE_CELLS != 9:
                 _fail("A: gittata %d, attesa 9 celle" % C.SCROLL_FREEZE_RANGE_CELLS)
         elif absf(C.SCROLL_FREEZE_HIT_RADIUS_PX - 20.0) > 0.01:
@@ -370,10 +370,13 @@ func _phaseD_freeze_ray() -> void:
         elif main.spawner.alive_count() != alive_before - 2:
                 _fail("D: vivi %d, attesi %d"
                                 % [main.spawner.alive_count(), alive_before - 2])
-        elif main.player.score < score_before + 2 * C.SCROLL_FREEZE_POINTS:
+        elif main.player.score < score_before \
+                        + targets[0].get_score_reward() + targets[1].get_score_reward():
+                # TASK 97: il raggio paga il valore di OGNI vittima (HP base x 10)
                 _fail("D: punti +%d, attesi +%d"
                                 % [main.player.score - score_before,
-                                        2 * C.SCROLL_FREEZE_POINTS])
+                                        targets[0].get_score_reward()
+                                                        + targets[1].get_score_reward()])
         else:
                 _ok("D: raggio = one-shot multipli (+%d punti, colpi 2->1)"
                                 % (main.player.score - score_before))

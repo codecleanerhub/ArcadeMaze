@@ -8,7 +8,7 @@
 ##   D. MORSO: player a contatto = -20% energia max, poi FLEE (niente
 ##      secondo morso immediato grazie al cooldown).
 ##   E. ABBATTIMENTO: 1° colpo = -1 pipistrello; 2° colpo = dispersione
-##      +5000 punti al tiratore; controller libera lo sciame.
+##      +BAT_CLOUD_KILL_POINTS (40) al tiratore; controller libera lo sciame.
 ##   F. SCADENZA: lifetime esaurito -> vola via (LEAVE) -> gone.
 ##   G. ROLLBACK: BATS_ENABLED=false -> nessun evento armato.
 ##   H. TASK 34 (armi): SPADA (reliquia mischia) nella shape del fendente

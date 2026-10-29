@@ -28,6 +28,8 @@
 extends Node2D
 class_name MiniBoss
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # Mirrors C++ enum MiniBossType (51 types).
 enum Type {
         MB_GOBLIN_CHIEFTAIN, MB_CAVE_TROLL, MB_ORC_BERSERKER, MB_WARG_RIDER,
@@ -356,7 +358,11 @@ func get_attack_range() -> float:
 
 
 func get_score_reward() -> int:
-        return 5000 + mb_type * 300
+        ## TASK 97: 300 + 15 x tipo (300..1050): il mini-boss e' il mostro
+        ## piu' remunerativo del labirinto (sotto solo al boss della boss
+        ## room). Era 5000 + 300 x tipo con DOPPIO premio esplicito
+        ## (+10000) sulle uccisioni da proiettile/mischia/bombe.
+        return C.MINIBOSS_POINTS_BASE + mb_type * C.MINIBOSS_POINTS_PER_TYPE
 
 
 func is_dead() -> bool:

@@ -22,8 +22,9 @@ const C = preload("res://scripts/core/GameConstants.gd")
 enum TreasureType { TRES_CROWN, TRES_GOLD, TRES_CHEST, TRES_GEM, TRES_RUBY }
 
 # All treasure kinds (5) give the same score on collection.
+# TASK 97: 10000 -> 150 (ricalibrazione punti per durezza).
 const TREASURE_COUNT := 5
-const TREASURE_POINTS := 10000
+const TREASURE_POINTS := 150
 
 # Power-up types (sub-enum for the collectibles kinds themselves).
 enum Kind {

@@ -1341,6 +1341,15 @@ func _finish_boss_death(with_sequence: bool) -> void:
                                         Color(0.6, 0.45, 0.3), 12)
                         _add_capped_fx(p)
         player.add_life()
+        # TASK 97: il boss e' il nemico PIU' REMUNERATIVO del gioco ( prima
+        # dava 0 punti!): 2500 + 100 x indice boss (2500..4100). In 2P il
+        # premio va a ENTRAMBI i player (hanno combattuto insieme).
+        var boss_pts: int = C.BOSS_KILL_POINTS_BASE \
+                        + GameManager.get_boss_index(current_level) \
+                        * C.BOSS_KILL_POINTS_PER_INDEX
+        player.add_score(boss_pts)
+        if GameManager.num_players == 2 and player2 != null and player2.visible:
+                player2.add_score(boss_pts)
         # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
         # nessun proiettile vagante durante la schermata bonus).
         _clear_boss_arena()
