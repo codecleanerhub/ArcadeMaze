@@ -139,6 +139,13 @@ const TEXTS: Dictionary = {
         "hud.boss": {"en": "BOSS", "it": "BOSS"},
         "hud.treasures": {"en": "Treasures remaining:", "it": "Tesori rimasti:"},
         "hud.player": {"en": "PLAYER %d", "it": "GIOCATORE %d"},
+        # TASK 99 (LEVEL UP): HUD + annuncio + modale abilità
+        "hud.level": {"en": "LV %d", "it": "LV %d"},
+        "hud.skill_points": {"en": "SKILL +%d", "it": "PUNTI +%d"},
+        "levelup.title": {"en": "LEVEL UP!", "it": "LEVEL UP!"},
+        "levelup.reached": {"en": "LEVEL %d", "it": "LIVELLO %d"},
+        "levelup.gained_one": {"en": "+1 SKILL POINT", "it": "+1 PUNTO ABILITÀ"},
+        "levelup.gained_many": {"en": "+%d SKILL POINTS", "it": "+%d PUNTI ABILITÀ"},
         # ---------------- Win / Lose ----------------
         "win.title": {"en": "VICTORY!", "it": "VITTORIA!"},
         "win.subtitle": {

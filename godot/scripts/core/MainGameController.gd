@@ -925,6 +925,11 @@ func _exit_tree() -> void:
                 _bonus_card = null
                 if get_tree():
                         get_tree().paused = false
+        # TASK 99 (LEVEL UP): idem per l'annuncio del level up (mai un
+        # CanvasLayer sopravvissuto al cambio scena).
+        if _levelup_announce != null:
+                _levelup_announce.queue_free()
+                _levelup_announce = null
         # FIX (pausa attiva al cambio scena): se si esce dal MainGame mentre
         # è in pausa (ESC dal menu gestito sotto, transizioni), il tree va
         # ripristinato sennò la scena successiva parte congelata.
@@ -958,6 +963,13 @@ func _exit_tree() -> void:
 var _bonus_card: CanvasLayer = null
 const BonusCardOverlayClass = preload("res://scripts/ui/BonusCardOverlay.gd")
 
+# TASK 99 (LEVEL UP): annuncio fulmine + "LEVEL UP!" in corsa (non in
+# pausa: il gioco continua ~1.7s, poi la modale abilita' prende il
+# controllo). Una celebrazione alla volta: se un unico premio salta più
+# soglie, pending_levelup_fx accumula e le celebrazioni fanno la fila.
+var _levelup_announce: CanvasLayer = null
+const LevelUpAnnounceClass = preload("res://scripts/ui/LevelUpAnnounce.gd")
+
 func _physics_process(_delta: float) -> void:
         # TASK 23: continue per-player aperto — gioco CONGELATO (mirror della
         # pausa: nessun update, nessun input di gameplay; l'overlay gira in
@@ -974,6 +986,10 @@ func _physics_process(_delta: float) -> void:
         # Clamp delta to avoid huge jumps on lag spikes (mirrors 60 FPS assumption)
         delta_ms = min(delta_ms, 50.0)
 
+        # TASK 99 (LEVEL UP): celebra i level up maturati e non ancora
+        # annunciati (fulmine + scritta, gioco NON fermo). Sta DOPO gli
+        # early-return: durante continue/card/pausa il pending attende.
+        _check_levelup_celebrations()
         _handle_input()
         _update_playing(delta_ms)
         _update_hud()
@@ -3724,6 +3740,47 @@ func _on_bonus_card_closed() -> void:
                 get_tree().paused = false
 
 
+# ============================================================================
+# TASK 99 (LEVEL UP) — celebrazione del level up
+# ============================================================================
+## Se un player ha level up maturati e non ancora annunciati, fa partire
+## UNA celebrazione (fulmine bianco-oro sul player + scritta "LEVEL UP!"
+## al centro). P1 ha la precedenza su P2; il pending di P2 resta in coda
+## e parte appena la celebrazione corrente finisce. La modale delle
+## abilità (Fase 2) si aprirà alla fine dell'annuncio.
+func _check_levelup_celebrations() -> void:
+        if _levelup_announce != null or _bonus_card != null:
+                return
+        var p: CharacterBody2D = null
+        if player != null and is_instance_valid(player) \
+                        and player.pending_levelup_fx > 0:
+                p = player
+        elif GameManager != null and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2) \
+                        and player2.visible and player2.pending_levelup_fx > 0:
+                p = player2
+        if p == null:
+                return
+        var gained: int = p.consume_pending_levelup_fx()
+        if gained <= 0:
+                return
+        var ann: CanvasLayer = LevelUpAnnounceClass.new()
+        ann.setup(int(p.player_num), int(p.level), gained, p.position, self)
+        ann.announcement_done.connect(_on_levelup_announcement_done)
+        _levelup_announce = ann
+        add_child(ann)
+
+
+## Fine dell'annuncio: libera il layer. La modale abilità si aggancia
+## qui nella Fase 2 (il gioco andrà in pausa e si aprirà LevelUpOverlay).
+func _on_levelup_announcement_done(_player_num: int) -> void:
+        if _levelup_announce != null:
+                _levelup_announce.queue_free()
+                _levelup_announce = null
+        # FASE 2 (modale abilità): il gate del fuoco si riarmo qui quando
+        # la modale si aprirà in pausa (pattern _on_bonus_card_closed).
+
+
 # TASK 75 — stato FISICO attuale del fuoco P1 (tastiera + joystick), mirror
 # di BonusCardOverlay._owner_fire_held: usato solo per sbloccare il gate.
 func _p1_fire_raw() -> bool:
@@ -4441,6 +4498,10 @@ func _build_session_snapshot() -> Dictionary:
                 "next_life_threshold": player.next_life_threshold,
                 "weapon": player.current_weapon.duplicate(),
                 "boots": player.permanent_speed_boost,
+                # TASK 99 (LEVEL UP): la continue conserva la progressione.
+                "level": player.level,
+                "skill_points": player.skill_points,
+                "pending_levelup_fx": player.pending_levelup_fx,
         }
         snap["p1"] = p1_snap
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -4449,6 +4510,10 @@ func _build_session_snapshot() -> Dictionary:
                         "next_life_threshold": player2.next_life_threshold,
                         "weapon": player2.current_weapon.duplicate(),
                         "boots": player2.permanent_speed_boost,
+                        # TASK 99 (LEVEL UP): idem P2.
+                        "level": player2.level,
+                        "skill_points": player2.skill_points,
+                        "pending_levelup_fx": player2.pending_levelup_fx,
                 }
         return snap
 
@@ -4624,6 +4689,11 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 if not w1.is_empty():
                         player.current_weapon = w1.duplicate()
                 player.permanent_speed_boost = bool(p1_snap.get("boots", false))
+                # TASK 99 (LEVEL UP): il continue conserva livello e punti
+                # abilità insieme al punteggio (reset() li ha azzerati).
+                player.level = int(p1_snap.get("level", 1))
+                player.skill_points = int(p1_snap.get("skill_points", 0))
+                player.pending_levelup_fx = int(p1_snap.get("pending_levelup_fx", 0))
         var p2_snap: Dictionary = snap.get("p2", {})
         if not p2_snap.is_empty() and GameManager and GameManager.num_players == 2:
                 player2.visible = true
@@ -4633,6 +4703,10 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 if not w2.is_empty():
                         player2.current_weapon = w2.duplicate()
                 player2.permanent_speed_boost = bool(p2_snap.get("boots", false))
+                # TASK 99 (LEVEL UP): idem P2.
+                player2.level = int(p2_snap.get("level", 1))
+                player2.skill_points = int(p2_snap.get("skill_points", 0))
+                player2.pending_levelup_fx = int(p2_snap.get("pending_levelup_fx", 0))
         # --- HUD: aggiorna subito con lo stato ripristinato ---
         _update_hud_snapshot()
         print("[Continue] Sessione maze ripristinata: livello ", current_level,
@@ -4655,6 +4729,9 @@ func _update_hud_snapshot() -> void:
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # TASK 99 (LEVEL UP): livello/punti anche al restore.
+                "level": player.level,
+                "skill_points": player.skill_points,
                 # RELIC (Task 21): stato armatura reliquia in HUD.
                 "armor_name": C.get_armor_short_name(player.armor_relic),
                 "armor_color": player.armor_relic.get("color", Color.WHITE),
@@ -4673,6 +4750,9 @@ func _update_hud_snapshot() -> void:
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        # TASK 99 (LEVEL UP): livello/punti anche al restore (P2).
+                        "level": player2.level,
+                        "skill_points": player2.skill_points,
                         # RELIC (Task 21): stato armatura reliquia in HUD (P2).
                         "armor_name": C.get_armor_short_name(player2.armor_relic),
                         "armor_color": player2.armor_relic.get("color", Color.WHITE),
@@ -6418,6 +6498,9 @@ func _update_hud() -> void:
                 # FIX (stamina salti): barra verde sotto quella della vita.
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # TASK 99 (LEVEL UP): livello e punti da spendere in HUD.
+                "level": player.level,
+                "skill_points": player.skill_points,
                 # RELIC (Task 21): stato armatura reliquia in HUD.
                 "armor_name": C.get_armor_short_name(player.armor_relic),
                 "armor_color": player.armor_relic.get("color", Color.WHITE),
@@ -6438,6 +6521,9 @@ func _update_hud() -> void:
                         # FIX (stamina salti): barra verde sotto quella della vita (P2).
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        # TASK 99 (LEVEL UP): livello e punti da spendere (P2).
+                        "level": player2.level,
+                        "skill_points": player2.skill_points,
                         # RELIC (Task 21): stato armatura reliquia in HUD (P2).
                         "armor_name": C.get_armor_short_name(player2.armor_relic),
                         "armor_color": player2.armor_relic.get("color", Color.WHITE),

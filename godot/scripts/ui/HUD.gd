@@ -95,6 +95,8 @@ var _p1: Dictionary = {
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
+        # TASK 99 (LEVEL UP): livello e punti abilità da spendere.
+        "level": 1, "skill_points": 0,
         # RELIC (Task 21): stato armatura reliquia (nessuna = stringa vuota).
         "armor_name": "", "armor_color": Color.WHITE,
         "armor_charges": 0, "armor_max": 0,
@@ -106,6 +108,8 @@ var _p2: Dictionary = {
         "weapon_ammo": 15, "weapon_max": 15,
         # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
+        # TASK 99 (LEVEL UP): livello e punti abilità (P2).
+        "level": 1, "skill_points": 0,
         # RELIC (Task 21): stato armatura reliquia (per P2).
         "armor_name": "", "armor_color": Color.WHITE,
         "armor_charges": 0, "armor_max": 0,
@@ -385,6 +389,9 @@ func _draw_1p() -> void:
         # TRES — TASK 44: localizzata ("Tesori rimasti:" in IT)
         _draw_label(I18n.t("hud.treasures"), 700, 10)
         _draw_label_int(_remaining_treasures, 700, 30, color_score)
+        # TASK 99 (LEVEL UP): livello (dorato) sotto lo score; se ci sono
+        # punti abilità da spendere, badge lampeggiante a fianco.
+        _draw_level_status(_p1, 10, 58)
 
 
 # --- 2-player layout (mirror UI::render two-player) ------------------------
@@ -410,6 +417,8 @@ func _draw_2p() -> void:
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
         # RELIC (Task 21): stato ARMATURA di P1 (tra arma e tesori: x=330).
         _draw_armor_status(_p1, 330, 10)
+        # TASK 99 (LEVEL UP): livello sotto lo score di P1.
+        _draw_level_status(_p1, 10, 58)
 
         # === TREASURES (center) — centrata su schermo 1920px. x=800: il
         # testo (~170px, fino a ~970) NON collide con la barra "last hit
@@ -434,6 +443,23 @@ func _draw_2p() -> void:
         # RELIC (Task 21): stato ARMATURA di P2 (riga bassa libera sotto
         # vite/energia: x=1640, i rombi restano dentro la barra di 80px).
         _draw_armor_status(_p2, 1640, 52)
+        # TASK 99 (LEVEL UP): livello sotto lo score di P2 (speculare a P1).
+        _draw_level_status(_p2, 1560, 58)
+
+
+# ----------------------------------------------------------------------------
+# TASK 99 (LEVEL UP): riga "LV n" dorata + badge "PUNTI +n" lampeggiante
+# quando ci sono punti abilità non ancora spesi (richiama il player alla
+# modale). Il badge pulsa a ~4 Hz in oro chiaro, stile warning soft.
+# ----------------------------------------------------------------------------
+func _draw_level_status(snap: Dictionary, x: float, y: float) -> void:
+        var lv: int = int(snap.get("level", 1))
+        var pts: int = int(snap.get("skill_points", 0))
+        _draw_label_colored(I18n.t("hud.level") % lv, x, y, Color(1.0, 0.84, 0.25))
+        if pts > 0:
+                var blink: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.012)
+                _draw_label_colored(I18n.t("hud.skill_points") % pts,
+                                x + 58.0, y, Color(1.0, 0.92, 0.45, blink))
 
 
 # ----------------------------------------------------------------------------

@@ -1101,6 +1101,46 @@ const TREASURE_CELL_POINTS: int = 150
 const CHALICE_PICKUP_POINTS: int = 300
 const EXTRA_LIFE_EVERY_POINTS: int = 50000
 
+# ============================================================================
+# TASK 99 (LEVEL UP) — il punteggio È esperienza
+# ============================================================================
+# Curva: soglia cumulata di punteggio per RAGGIUNGERE il livello n
+# (n >= 2) = 1.000 x n^1.75, arrotondata a 50 punti (identica alla
+# tabella del report Task 98, scaricata dall'utente). Esami della curva:
+#   * L2  =   3.350 (entro il primo labirinto)
+#   * L10 =  56.250 (metà run)
+#   * L20 = 189.150 (tetto pratico: sotto il massimo cumulabile ~201k)
+#   * L21 = 206.050 (fuori dalla portata di una run perfetta: il sistema
+#                     si auto-limita dove finisce l'economia del gioco,
+#                     senza cap artificiali)
+# Ogni soglia superata = +1 punto abilità BANCABILE (se alla modale non
+# si sceglie nulla e si preme OK, il punto resta e si somma al prossimo
+# level up). Il livello si azzera a nuova partita e sopravvive alle
+# continue (insieme al punteggio), come le reliquie.
+const LEVELUP_MAX_LEVEL: int = 20
+const LEVELUP_THRESHOLD_BASE: float = 1000.0
+const LEVELUP_THRESHOLD_EXP: float = 1.75
+const LEVELUP_THRESHOLD_STEP: float = 50.0
+
+
+## Soglia cumulata di punteggio per raggiungere il livello `level`
+## (2..21). Ritorna 0 per level <= 1 (si nasce a livello 1).
+static func levelup_threshold(level: int) -> int:
+        if level <= 1:
+                return 0
+        var raw: float = LEVELUP_THRESHOLD_BASE \
+                        * pow(float(level), LEVELUP_THRESHOLD_EXP)
+        return int(round(raw / LEVELUP_THRESHOLD_STEP) * LEVELUP_THRESHOLD_STEP)
+
+
+## Livello raggiunto con il punteggio `score` (1..LEVELUP_MAX_LEVEL).
+## Usato dai test e dai controlli di coerenza.
+static func levelup_level_for_score(score: int) -> int:
+        var lv: int = 1
+        while lv < LEVELUP_MAX_LEVEL and score >= levelup_threshold(lv + 1):
+                lv += 1
+        return lv
+
 ## Distanza minima (Chebyshev, in celle) dallo spawn del player (1,1).
 const HAZARD_MIN_SPAWN_DIST: int = 3
 

@@ -250,6 +250,11 @@ static func make_player_carry(p: Node) -> Dictionary:
                 "lives": int(p.lives),
                 "next_life_threshold": int(p.next_life_threshold),
                 "permanent_speed_boost": bool(p.permanent_speed_boost),
+                # TASK 99 (LEVEL UP): la progressione attraversa le scene
+                # come punteggio e vite (maze -> boss room -> maze).
+                "level": int(p.get("level")),
+                "skill_points": int(p.get("skill_points")),
+                "pending_levelup_fx": int(p.get("pending_levelup_fx")),
         }
         # Arma reliquia (le armi base NON si portano: comportamento storico
         # invariato — la boss room dà già la sua arma potenziata d'ingresso).
@@ -288,6 +293,13 @@ func _apply_carry(p: Node, snap: Dictionary) -> void:
         p.lives = int(snap.get("lives", 3))
         p.next_life_threshold = int(snap.get("next_life_threshold", 100000))
         p.permanent_speed_boost = bool(snap.get("permanent_speed_boost", false))
+        # TASK 99 (LEVEL UP): ripristina la progressione nella scena appena
+        # caricata (il player e' gia' passato da reset() = livello 1 pulito;
+        # anche un level up maturato ma NON ancora annunciato sopravvive:
+        # la celebrazione parte appena il controller riparte).
+        p.level = int(snap.get("level", 1))
+        p.skill_points = int(snap.get("skill_points", 0))
+        p.pending_levelup_fx = int(snap.get("pending_levelup_fx", 0))
         # RELIC (Task 21): ripristina arma reliquia e armatura nella scena
         # appena caricata (il player e' gia' passato da reset() = pulito).
         var rw: Dictionary = snap.get("relic_weapon", {})

@@ -187,6 +187,27 @@ var anim_time: int = 0  # accumulated for idle/walk anim (NEVER reset)
 var next_life_threshold: int = 50000  # TASK 97: extra life ogni 50k (era 100k)
 
 # ===========================================================================
+# TASK 99 (LEVEL UP): il punteggio È esperienza. Ogni soglia della curva
+# 1.000 x n^1,75 superata fa salire di livello e accredita 1 PUNTO
+# ABILITÀ bancabile (spendibile nella modale che si apre in pausa).
+#   * level                = livello corrente (1..20)
+#   * skill_points         = punti abilità NON ancora spesi (bancabili:
+#                            se alla modale si preme OK senza scegliere,
+#                            restano e si sommano al prossimo level up)
+#   * pending_levelup_fx   = level up maturati ma NON ancora annunciati:
+#                            il controller li consuma uno alla volta per
+#                            fare partire fulmine + scritta "LEVEL UP!"
+#                            (così un singolo botto di punti che salta più
+#                            soglie produce UNA celebrazione, non una raffica)
+# Semantica di reset (uguale a punteggio/reliquie): azzerato da reset()
+# (nuova partita), conservato da reset_position() (respawn/cambio livello),
+# trasportato tra scene dal carry e salvato/ripristinato dalle continue.
+# ===========================================================================
+var level: int = 1
+var skill_points: int = 0
+var pending_levelup_fx: int = 0
+
+# ===========================================================================
 # TASK 82 — LAMPO DI VOLATA (muzzle flash): feedback visivo dello sparo.
 # Quando un'arma spara, per ~160 ms all'estremita' dell'arma appare un
 # piccolo effetto GRAFICO DEDICATO per arma/elemento (fuoco per pistol/
@@ -663,6 +684,12 @@ func reset() -> void:
         energy = max_energy
         score = 0
         next_life_threshold = C.EXTRA_LIFE_EVERY_POINTS
+        # TASK 99 (LEVEL UP): nuova partita = progressione azzerata (le
+        # continue invece conservano livello/punti: vengono ripristinati
+        # dal session snapshot dopo questo reset).
+        level = 1
+        skill_points = 0
+        pending_levelup_fx = 0
         current_weapon = _make_weapon(WeaponType.PISTOL)
         projectiles.clear()
         picked_weapon_this_frame = false
@@ -1778,11 +1805,40 @@ func add_score(points: int) -> void:
         if score >= next_life_threshold:
                 lives += 1
                 next_life_threshold += C.EXTRA_LIFE_EVERY_POINTS
+        # TASK 99 (LEVEL UP): XP = punteggio. Ogni soglia superata = +1
+        # punto abilità. Il while copre il salto di più soglie in un solo
+        # colpo (es. premio del boss): il livello arriva subito a quello
+        # definitivo ma la CELEBRAZIONE è una sola (pending_levelup_fx
+        # accumula e il controller ne consuma una per volta).
+        while level < C.LEVELUP_MAX_LEVEL \
+                        and score >= C.levelup_threshold(level + 1):
+                level += 1
+                skill_points += 1
+                pending_levelup_fx += 1
 
 
 # add_life(): bonus life (reward after defeating a boss).
 func add_life() -> void:
         lives += 1
+
+
+# ===========================================================================
+# TASK 99 (LEVEL UP): accessor del motore XP.
+# ===========================================================================
+func get_level() -> int:
+        return level
+
+
+func get_skill_points() -> int:
+        return skill_points
+
+
+## Ritorna (e azzera) il numero di level up maturati e NON ancora annunciati:
+# il controller lo chiama quando fa partire la celebrazione.
+func consume_pending_levelup_fx() -> int:
+        var gained: int = pending_levelup_fx
+        pending_levelup_fx = 0
+        return gained
 
 
 # ===========================================================================

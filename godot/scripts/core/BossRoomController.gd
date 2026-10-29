@@ -91,6 +91,13 @@ var died_in_boss: bool = false
 var _bonus_screen: CanvasLayer = null
 var _bonus_active: bool = false
 
+# TASK 99 (LEVEL UP): annuncio fulmine + "LEVEL UP!" anche in boss room
+# (i punti del boss possono far scattare una soglia). Non parte durante
+# la sequenza di morte/bonus: il pending sopravvive al carry verso il
+# labirinto successivo.
+var _levelup_announce: CanvasLayer = null
+const LevelUpAnnounceClass = preload("res://scripts/ui/LevelUpAnnounce.gd")
+
 # TASK 86 — sequenza di animazione di morte del boss (null = non in corsa).
 var _death_seq: Node2D = null
 var _death_seq_started: bool = false
@@ -176,6 +183,10 @@ func _ready() -> void:
                 var p1_snap_b: Dictionary = snap.get("p1", {})
                 if not p1_snap_b.is_empty():
                         player.score = int(p1_snap_b.get("score", 0))
+                        # TASK 99 (LEVEL UP): conserva livello/punti/pending.
+                        player.level = int(p1_snap_b.get("level", 1))
+                        player.skill_points = int(p1_snap_b.get("skill_points", 0))
+                        player.pending_levelup_fx = int(p1_snap_b.get("pending_levelup_fx", 0))
                         var w1_b: Dictionary = p1_snap_b.get("weapon", {})
                         if not w1_b.is_empty():
                                 player.current_weapon = w1_b.duplicate()
@@ -191,6 +202,10 @@ func _ready() -> void:
                 if not p2_snap_b.is_empty() and GameManager.num_players == 2:
                         player2.visible = true
                         player2.score = int(p2_snap_b.get("score", 0))
+                        # TASK 99 (LEVEL UP): idem P2.
+                        player2.level = int(p2_snap_b.get("level", 1))
+                        player2.skill_points = int(p2_snap_b.get("skill_points", 0))
+                        player2.pending_levelup_fx = int(p2_snap_b.get("pending_levelup_fx", 0))
                         var w2_b: Dictionary = p2_snap_b.get("weapon", {})
                         if not w2_b.is_empty():
                                 player2.current_weapon = w2_b.duplicate()
@@ -279,6 +294,41 @@ func _physics_process(_delta: float) -> void:
         _handle_input(delta_ms)
         _update_boss(delta_ms)
         _update_hud()
+        # TASK 99 (LEVEL UP): celebra i level up maturati durante il fight
+        # (fulmine + scritta, gioco NON fermo; stessa regola del labirinto).
+        _check_levelup_celebrations()
+
+
+# ============================================================================
+# TASK 99 (LEVEL UP) — celebrazione del level up (mirror MainGameController)
+# ============================================================================
+func _check_levelup_celebrations() -> void:
+        if _levelup_announce != null or _bonus_screen != null or _bonus_active:
+                return
+        var p: CharacterBody2D = null
+        if player != null and is_instance_valid(player) \
+                        and player.pending_levelup_fx > 0:
+                p = player
+        elif GameManager != null and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2) \
+                        and player2.visible and player2.pending_levelup_fx > 0:
+                p = player2
+        if p == null:
+                return
+        var gained: int = p.consume_pending_levelup_fx()
+        if gained <= 0:
+                return
+        var ann: CanvasLayer = LevelUpAnnounceClass.new()
+        ann.setup(int(p.player_num), int(p.level), gained, p.position, self)
+        ann.announcement_done.connect(_on_levelup_announcement_done)
+        _levelup_announce = ann
+        add_child(ann)
+
+
+func _on_levelup_announcement_done(_player_num: int) -> void:
+        if _levelup_announce != null:
+                _levelup_announce.queue_free()
+                _levelup_announce = null
 
 
 # ============================================================================
@@ -1274,10 +1324,18 @@ func _check_boss_death() -> void:
                                         "p1": {
                                                 "score": player.score,
                                                 "weapon": player.current_weapon.duplicate(),
+                                                # TASK 99: la continue in boss
+                                                # room conserva la progressione.
+                                                "level": player.level,
+                                                "skill_points": player.skill_points,
+                                                "pending_levelup_fx": player.pending_levelup_fx,
                                         },
                                         "p2": {
                                                 "score": player2.score,
                                                 "weapon": player2.current_weapon.duplicate(),
+                                                "level": player2.level,
+                                                "skill_points": player2.skill_points,
+                                                "pending_levelup_fx": player2.pending_levelup_fx,
                                         } if (GameManager.num_players == 2 and player2.visible) else {},
                                 }
                                 if GameManager.continues_left > 0:
@@ -2463,6 +2521,9 @@ func _update_hud() -> void:
                 # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # TASK 99 (LEVEL UP): livello e punti da spendere in HUD.
+                "level": player.level,
+                "skill_points": player.skill_points,
                 # RELIC (Task 21): stato armatura reliquia in HUD.
                 "armor_name": C.get_armor_short_name(player.armor_relic),
                 "armor_color": player.armor_relic.get("color", Color.WHITE),
@@ -2485,6 +2546,9 @@ func _update_hud() -> void:
                         # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        # TASK 99 (LEVEL UP): livello e punti da spendere (P2).
+                        "level": player2.level,
+                        "skill_points": player2.skill_points,
                         # RELIC (Task 21): stato armatura reliquia in HUD (P2).
                         "armor_name": C.get_armor_short_name(player2.armor_relic),
                         "armor_color": player2.armor_relic.get("color", Color.WHITE),
