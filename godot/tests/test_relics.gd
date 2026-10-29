@@ -331,6 +331,12 @@ func _phaseC_player_armor() -> void:
         p.damage_timer = 0
         var lives_before: int = p.lives
         p.take_damage()
+        # TASK 87: la morte ora avvia il collasso (respawn differito alla
+        # fine dell'animazione): lo completiamo subito come fa il controller
+        # a fine animazione, cosi' i check successivi lavorano sul player
+        # respawnato (vita persa + reliquie perse sono gia' avvenute nel
+        # ramo morte sincrono).
+        p.respawn_after_soul()
         if p.lives != lives_before - 1:
                 _fail("C4: vita non persa")
         elif p.current_weapon.has("relic"):

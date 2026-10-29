@@ -22,6 +22,8 @@ const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
 # FUOCO AMICO (Task 18): effetto corpo accasciato + anima che vola verso il
 # vincitore ricaricandogli l'energia.
 const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
+# TASK 87 — animazione di morte del player (collasso a terra + gemito).
+const PlayerCollapseFx = preload("res://scripts/entities/PlayerCollapseEffect.gd")
 # TASK 23: arco di fulmine visibile per la Verga della Tempesta (catena).
 const LightningArcFx = preload("res://scripts/entities/LightningArcEffect.gd")
 
@@ -1351,6 +1353,10 @@ func _return_to_menu() -> void:
 # Main update loop (STATE_PLAYING)
 # ============================================================================
 func _update_playing(delta_ms: float) -> void:
+        # TASK 87: avvia le animazioni di morte richieste nel frame precedente
+        # (take_damage/hazard hanno congelato il player e messo
+        # collapse_requested: qui parte l'effetto di collasso col gemito).
+        _start_pending_collapses()
         # (1) Player update + treasure pickup detection
         var treasures_before: int = maze.get_remaining_treasures()
         player.update_player(maze, false, delta_ms)
@@ -3457,6 +3463,11 @@ func _check_death() -> void:
         # scene-based (snapshot + ContinuesScreen) vale SOLO in 1P.
         if GameManager and GameManager.num_players == 2:
                 return
+        # TASK 87: se il player si sta ancora accasciando (animazione di
+        # morte in corso), la transizione verso CONTINUES/LOSE aspetta la
+        # fine dell'effetto (~1.2s).
+        if _is_collapsing(player):
+                return
         var p1_dead: bool = player.lives <= 0
         var p2_dead: bool = true
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -3511,6 +3522,65 @@ func _check_death() -> void:
 # a P1", come richiesto dall'utente. La funzione resta come hook.
 func _check_2p_friendly_fire() -> void:
         return
+
+
+# ============================================================================
+# TASK 87 — ANIMAZIONE DI MORTE DEL PLAYER (collasso a terra + gemito)
+# ============================================================================
+# I tre rami morte di Player (take_damage / take_hazard_damage /
+# fall_into_chasm) chiamano begin_collapse(): congela il player (gate
+# soul_pending) e pone collapse_requested. Il controller, al frame dopo,
+# spawna PlayerCollapseEffect (corpo che ruota attorno ai piedi, polvere,
+# tremito) e suona PLAYER_SUFFER. Al `finished`: respawn se restano vite
+# (respawn_after_soul), altrimenti sblocca il player per il flusso
+# continue/game-over (morte definitiva).
+var _collapses: Array = []
+
+
+func _start_pending_collapses() -> void:
+        var any_req: bool = player.collapse_requested
+        if not any_req and _is_p2_active() and player2 != null \
+                        and is_instance_valid(player2):
+                any_req = player2.collapse_requested
+        if not any_req:
+                return
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.collapse_requested:
+                        continue
+                p.collapse_requested = false
+                var fx: Node2D = PlayerCollapseFx.new()
+                fx.setup(p)
+                add_child(fx)  # figlio del root: sopra player e nemici
+                fx.finished.connect(_on_collapse_finished.bind(p))
+                _collapses.append(fx)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.PLAYER_SUFFER)
+
+
+func _on_collapse_finished(p: CharacterBody2D) -> void:
+        for i in _collapses.size():
+                if _collapses[i] != null and is_instance_valid(_collapses[i]) \
+                                and _collapses[i].victim == p:
+                        _collapses.remove_at(i)
+                        break
+        if p == null or not is_instance_valid(p):
+                return
+        if p.lives > 0:
+                # Vite residue: respawn standard (ripristina sprite e
+                # posizione, spawn guard 3s).
+                p.respawn_after_soul()
+        else:
+                # Morte definitiva: sblocca i gate SENZA respawnare — il
+                # flusso esistente (_check_death / eliminazione 2P)
+                # subentra al frame successivo.
+                p.soul_pending = false
+
+
+func _is_collapsing(p: CharacterBody2D) -> bool:
+        for fx in _collapses:
+                if fx != null and is_instance_valid(fx) and fx.victim == p:
+                        return true
+        return false
 
 
 # ============================================================================

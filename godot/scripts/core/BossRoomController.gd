@@ -32,6 +32,8 @@ const CONTINUE_RESPAWN_INVULN_MS: int = 2500
 # FUOCO AMICO (Task 18): effetto corpo accasciato + anima che vola verso il
 # vincitore ricaricandogli l'energia (mirror MainGameController).
 const SoulTransferFx = preload("res://scripts/entities/SoulTransferEffect.gd")
+# TASK 87 — animazione di morte del player (collasso a terra + gemito).
+const PlayerCollapseFx = preload("res://scripts/entities/PlayerCollapseEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, mirror MainGameController).
 const FF_HIT_RADIUS_SQ: float = 625.0
@@ -551,6 +553,9 @@ func _on_boss_slam_landed(world_pos: Vector2, radius: float) -> void:
 # ============================================================================
 
 func _update_boss(delta_ms: float) -> void:
+        # TASK 87: avvia le animazioni di morte del player richieste nel
+        # frame precedente (collasso a terra + gemito di sofferenza).
+        _start_pending_collapses()
         # RELIC (Task 21): durante la SCHERMATA BONUS il fight è congelato —
         # il boss è morto, i player stanno scegliendo. Si aggiorna solo la
         # HUD (vita bonus già applicata, scelte visibili a schermo).
@@ -1149,11 +1154,68 @@ func _check_softlock() -> void:
                 _spawn_boss_room_weapons()
 
 
+# ============================================================================
+# TASK 87 — ANIMAZIONE DI MORTE DEL PLAYER (collasso a terra + gemito)
+# ============================================================================
+# Mirror del MainGameController: Player.begin_collapse() congela il player
+# e pone collapse_requested; qui parte PlayerCollapseEffect con il gemito
+# PLAYER_SUFFER. Al `finished`: respawn (vite residue) o sblocco per il
+# flusso continue (morte definitiva).
+var _collapses: Array = []
+
+
+func _start_pending_collapses() -> void:
+        var any_req: bool = player != null and is_instance_valid(player) \
+                        and player.collapse_requested
+        if not any_req and GameManager and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2):
+                any_req = player2.collapse_requested
+        if not any_req:
+                return
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.collapse_requested:
+                        continue
+                p.collapse_requested = false
+                var fx: Node2D = PlayerCollapseFx.new()
+                fx.setup(p)
+                add_child(fx)  # figlio del root: sopra player e boss
+                fx.finished.connect(_on_collapse_finished.bind(p))
+                _collapses.append(fx)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.PLAYER_SUFFER)
+
+
+func _on_collapse_finished(p: CharacterBody2D) -> void:
+        for i in _collapses.size():
+                if _collapses[i] != null and is_instance_valid(_collapses[i]) \
+                                and _collapses[i].victim == p:
+                        _collapses.remove_at(i)
+                        break
+        if p == null or not is_instance_valid(p):
+                return
+        if p.lives > 0:
+                p.respawn_after_soul()
+        else:
+                p.soul_pending = false
+
+
+func _is_collapsing(p: CharacterBody2D) -> bool:
+        for fx in _collapses:
+                if fx != null and is_instance_valid(fx) and fx.victim == p:
+                        return true
+        return false
+
+
 func _check_boss_death() -> void:
         # TASK 23: in 2P la morte/gestione continue è del flusso per-player
         # (_check_player2_elimination + ContinuesOverlay). Questo ramo
         # scene-based (snapshot + ContinuesScreen) vale SOLO in 1P.
         if not (GameManager and GameManager.num_players == 2):
+                # TASK 87: il player si sta ancora accasciando — la
+                # transizione verso CONTINUES/LOSE aspetta la fine
+                # dell'animazione di morte (~1.2s).
+                if _is_collapsing(player):
+                        return
                 # Player death -> continues (1P, flusso scene-based storico)
                 var p1_dead_1p: bool = player.lives <= 0
                 if p1_dead_1p:

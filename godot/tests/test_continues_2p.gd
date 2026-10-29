@@ -65,6 +65,11 @@ func _physics_process(delta: float) -> void:
                         # MORTE reale che apre la schermata continue.
                         p2.spawn_guard_ms = 0
                         p2.take_damage()  # ultima energia -> lives 0
+                        # TASK 87: la morte avvia il collasso (animazione
+                        # ~1.2s): a fine animazione il controller sblocca il
+                        # player SENZA respawnare (morte definitiva). Lo
+                        # simuliamo subito per testare l'eliminazione.
+                        p2.soul_pending = false
                         # Il check gira a fine frame: forziamolo subito.
                         main._check_player_elimination()
                         if main._continue_pending_player != 2:
@@ -107,6 +112,8 @@ func _physics_process(delta: float) -> void:
                         p2.invincible_timer = 0
                         p2.spawn_guard_ms = 0  # TASK 38: guardia post-continue a zero
                         p2.take_damage()
+                        # TASK 87: collasso completato subito (v. fase B).
+                        p2.soul_pending = false
                         main._check_player_elimination()
                         if main._continue_pending_player != 2:
                                 _fail("D: seconda schermata continue non apparsa per P2")
@@ -130,6 +137,8 @@ func _physics_process(delta: float) -> void:
                         p1.invincible_timer = 0
                         p1.spawn_guard_ms = 0  # TASK 38: guardia di nascita a zero
                         p1.take_damage()
+                        # TASK 87: collasso completato subito (v. fase B).
+                        p1.soul_pending = false
                         main._check_player_elimination()
                         # P1 eliminato subito (0 crediti) e game over.
                         if p1.visible:

@@ -135,12 +135,17 @@ enum SoundType {
         #   crepitio di espansione con ping di cristalli che crescono e
         #   tonfo freddo della solidificazione (~0.55s).
         FREEZE_RAY,
-        FREEZE_HIT
+        FREEZE_HIT,
+        # TASK 87 — MORTE DEL PLAYER: gemito di sofferenza mentre il corpo
+        #   si accascia al pavimento (due onde: urletto discendente +
+        #   gemito grave morente con respiro, ~0.85s).
+        PLAYER_SUFFER
 }
 # NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
 # dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
-# 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 + 1 Task 50b = 56 (0..55).
-const SOUND_TYPE_COUNT: int = 56
+# 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 + 1 Task 50b +
+# 1 Task 87 = 57 (0..56).
+const SOUND_TYPE_COUNT: int = 57
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -715,6 +720,7 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.BURST_POISON:    s = _sfx_burst_poison()
                 SoundType.FREEZE_RAY:      s = _sfx_freeze_ray()
                 SoundType.FREEZE_HIT:      s = _sfx_freeze_hit()
+                SoundType.PLAYER_SUFFER:   s = _sfx_player_suffer()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -813,6 +819,40 @@ func _sfx_lose_life() -> PackedFloat32Array:
                 var env: float = exp(-t * 4.0)
                 var v: float = pulse_wave(t * freq, 0.5)
                 s.append(2500.0 / 32767.0 * v * env)
+        return s
+
+
+# --- TASK 87: gemito di sofferenza del player (~0.85s) -----------------------
+# Il player finisce l'energia e si accascia: prima un urletto discendente
+# (185->110 Hz, sawtooth con vibrato ~5.5 Hz), poi un gemito grave che
+# si spegne (95->65 Hz, pulse largo con wobble) con un soffio di respiro
+# (rumore) di sottofondo. Timbro "umano sofferente" retro-arcade.
+func _sfx_player_suffer() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        var n: int = int(SR * 0.85)
+        var cry_s: float = 0.28          # durata fase 1 (urletto)
+        for i in n:
+                var t: float = float(i) / SR
+                var v: float = 0.0
+                var env: float = 0.0
+                if t < cry_s:
+                        # fase 1: urletto discendente con vibrato
+                        var k: float = t / cry_s
+                        var freq: float = 185.0 - 75.0 * k
+                        var vib: float = 1.0 + 0.035 * sin(TAU * 5.5 * t)
+                        v = sawtooth_wave(t * freq * vib) * 0.6 \
+                                        + pulse_wave(t * freq * vib * 0.5, 0.5) * 0.4
+                        env = 0.55 + 0.45 * k
+                else:
+                        # fase 2: gemito grave morente con wobble + respiro
+                        var k2: float = (t - cry_s) / (0.85 - cry_s)
+                        var freq2: float = 95.0 - 30.0 * k2
+                        var wob: float = 1.0 + 0.05 * sin(TAU * 3.5 * t)
+                        v = pulse_wave(t * freq2 * wob, 0.62) * 0.7 \
+                                        + sawtooth_wave(t * freq2 * wob * 2.0) * 0.3
+                        env = exp(-(t - cry_s) * 3.0) * 0.8
+                        v += noise_gen() * 0.12
+                s.append(2400.0 / 32767.0 * _soft_clip(v * env * 1.2))
         return s
 
 

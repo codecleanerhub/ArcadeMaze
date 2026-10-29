@@ -246,6 +246,10 @@ var _stamina_click_cd_ms: float = 0.0        # cooldown residuo del suono di cli
 # viene assorbita (respawn_after_soul).
 # ===========================================================================
 var soul_pending: bool = false
+# TASK 87 — morte normale: il corpo si sta accasciando (PlayerCollapseEffect
+# disegna la caduta). `collapse_requested` dice al controller di avviare
+# l'effetto (sempre false per il fuoco amico, che ha SoulTransferEffect).
+var collapse_requested: bool = false
 # Visibilità degli sprite prima della morte (ripristinata al respawn).
 var _pre_soul_sprite_visible: bool = true
 var _pre_soul_weapon_visible: bool = true
@@ -1607,7 +1611,10 @@ func take_damage() -> void:
                 # armatura (decisione utente) PRIMA del respawn.
                 lose_relics_on_death()
                 energy = max_energy
-                reset_position()  # respawn
+                # TASK 87: animazione di morte — il corpo si accascia al
+                # pavimento con un gemito di sofferenza; il respawn avviene
+                # alla fine dell'effetto (controller -> respawn_after_soul).
+                begin_collapse()
 
 
 # take_hazard_damage(dmg): TASK 30 — danno AMBIENTALE del labirinto
@@ -1647,7 +1654,8 @@ func take_hazard_damage(dmg: int, unblockable: bool = false) -> void:
                 lives -= 1
                 lose_relics_on_death()
                 energy = max_energy
-                reset_position()
+                # TASK 87: collasso a terra con gemito (v. take_damage).
+                begin_collapse()
 
 
 # fall_into_chasm(): TASK 30 — il player e' caduto nella voragine aperta:
@@ -1663,12 +1671,37 @@ func fall_into_chasm() -> void:
         damage_timer = 0
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
-        reset_position()
+        # TASK 87: gemito di sofferenza anche nella caduta: il corpo si
+        # accascia sul bordo della voragine e sfuma dentro il buco.
+        begin_collapse()
 
 
 # ===========================================================================
 # FUOCO AMICO (Task 18) — morte per colpo del compagno + rinascita
 # ===========================================================================
+
+# begin_collapse(): TASK 87 — morte normale (energia finita): congela il
+# player come il fuoco amico (kill_by_friendly_fire) MA senza anima: il
+# controller avvia PlayerCollapseEffect (il corpo si accascia al pavimento
+# con gemito di sofferenza) e al `finished` chiama respawn_after_soul()
+# (vite residue) o sblocca il player per il flusso continue (morte finale).
+# Riusa volutamente i gate di soul_pending: niente input, niente danni,
+# niente rendering del player, non e' un bersaglio (boss/lanterne/FF).
+func begin_collapse() -> void:
+        soul_pending = true
+        collapse_requested = true
+        set_direction(0, 0)
+        dx = 0
+        dy = 0
+        projectiles.clear()
+        if sprite != null:
+                _pre_soul_sprite_visible = sprite.visible
+                sprite.visible = false
+        if weapon_sprite != null:
+                _pre_soul_weapon_visible = weapon_sprite.visible
+                weapon_sprite.visible = false
+        _end_ghost_mode_now()
+
 
 # kill_by_friendly_fire(): il colpo fatale arriva dal PROIETTILE del
 # compagno (MainGameController._check_friendly_fire_projectiles quando

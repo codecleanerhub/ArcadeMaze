@@ -141,7 +141,11 @@ func _run_all() -> void:
         p.energy = 1
         p.damage_timer = 0
         var lives_before: int = p.lives
-        p.take_damage()  # colpo fatale -> respawn
+        p.take_damage()  # colpo fatale -> collasso (TASK 87)
+        # TASK 87: il respawn e' differito alla fine dell'animazione di
+        # collasso (~1.2s in gioco): lo completiamo subito come fa il
+        # controller a fine animazione.
+        p.respawn_after_soul()
         if p.lives != lives_before - 1:
                 _fail("E: morte non avvenuta (vite %d)" % p.lives)
         elif p.spawn_guard_ms != 3000:

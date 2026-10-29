@@ -446,6 +446,10 @@ func _phaseE_chasm() -> void:
                                 % [lives_before, p.lives])
         else:
                 _ok("E: caduta in voragine = -1 vita + respawn")
+        # TASK 87: la morte avvia il collasso (respawn differito): lo
+        # completiamo subito come fa il controller a fine animazione,
+        # altrimenti il player resta congelato per le fasi successive.
+        p.respawn_after_soul()
         # --- Il salto protegge ---
         p.set_position_abs(_cell_center(cell.x, cell.y).x, _cell_center(cell.x, cell.y).y)
         p.jump_timer = 10
