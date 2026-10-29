@@ -16,7 +16,7 @@
 
 ---
 
-**Arcade Maze Fantasy** is a fantasy/horror arcade maze action game: explore haunted procedural mazes, collect treasures and magic relics, survive the ghost onslaught and duel 17 unique bosses. Born as a C++/SFML prototype, it has been fully ported to **Godot 4.7.2 / GDScript** with real-time synthesized audio and zero external files.
+**Arcade Maze Fantasy** is a fantasy/horror arcade maze action game: explore haunted procedural mazes, collect treasures and magic relics, survive the ghost onslaught and duel 17 unique bosses. Born as a C++/SFML prototype, it has been fully ported to **Godot 4.7.2 / GDScript** with real-time synthesized audio, a fully localized IT/EN interface and zero audio files in the project.
 
 ## Table of Contents
 
@@ -35,22 +35,25 @@
 - **68 story levels** organized in 17 cycles: 3 maze levels + 1 boss room each.
 - **Procedural mazes** (30×15 cells) generated every run, with arcade-style wrap-around edge tunnels.
 - **17 unique bosses**, each with its own room, attack pattern and themed projectiles; **51 mini-boss types** and **44 enemy types**.
-- **Relic system**: 18 relics collected in post-boss bonus screens — 6 melee weapons, 6 ranged weapons, 6 armors with special effects (projectile reflection, thorns, regeneration, damaging auras…).
+- **Maze hazards**: **sheet ghosts** (white, red, green) cross the walls and respawn all level long in waves that thicken as you progress — they drain 33% of your energy on touch and can be dodged by jumping; **zombie cells** hide arms reaching out of the wall gratings: unavoidable damage, wait for the retraction or pay the touch.
+- **Relic system**: 18 relics collected in post-boss bonus screens — 6 melee weapons, 6 ranged weapons, 6 armors with special effects (projectile reflection, thorns, regeneration, damaging auras…) — plus **elemental weapons per archetype** (flame, frost, arcane) with a dedicated muzzle flash per weapon and element.
+- **Dungeon atmosphere**: torches casting warm flickering light pools on the floor, a lantern following the hero, generated gothic props (altars, coffins, gargoyles, cobwebs…), dark per-level palettes.
 - **Local 2-player co-op**: friendly fire enabled, soul transfer between players and separate continue credits.
-- **100% procedural audio**: 35+ sound effects and 10 music tracks synthesized at runtime, with no audio files in the project — including a public-domain verist opera intermezzo transcribed note by note.
-- **Pixel-art graphics** with high-definition sprite sets (256px frames) and procedural boss limb animation via mesh deformation.
-- **Classic arcade systems**: persistent top-10 Hall of Fame, countdown continues, attract demo mode after 30 s of menu inactivity, "Hurry Up!" with an immortal chaser.
+- **100% procedural audio**: 56 sound effects and 10 music tracks synthesized at runtime, with no audio files in the project — including a public-domain verist opera intermezzo transcribed note by note. Synthesis runs in a background thread: startup in ~2.5 seconds.
+- **AI pixel-art graphics** (PixelLab pipeline) with high-definition sprite sets (256px frames), per-sheet facing metadata for consistent marching direction, procedural boss limb animation via mesh deformation and a medieval-gold gothic interface (Goth And Gothic font).
+- **Full IT/EN localization**: menus, HUD, overlays and per-language logos, selectable from `OPTIONS → LANGUAGE` and persisted in the configuration.
+- **Classic arcade systems**: persistent top-10 Hall of Fame, countdown continues, attract demo mode with BFS pathfinding AI after 30 s of menu inactivity, "Hurry Up!" with an immortal chaser.
 - **Full joystick support** with in-menu button remapping.
 
 ## Gameplay
 
 The game loop alternates **maze exploration** and **boss duels**:
 
-1. **In the maze** collect the 8 treasures to open the exit door; find weapons, ammo and 9 collectibles per level (immortality chalice, ghost potion that walks through walls, lightning scepter, speed boots, medkit, ally statues…). At 50% of enemies cleared, a portal opens respawning enemies and a mini-boss.
-2. **In the boss room** combat is free-form pixel movement: dodge the boss's themed projectiles, use the weapons dropping on the ground (they regenerate while the boss lives) and the bouncing mine that removes 30% of the boss's health.
+1. **In the maze** collect the 8 treasures to open the exit door; find weapons, ammo and 9 collectibles per level (immortality chalice, ghost potion that walks through walls, lightning scepter, speed boots, medkit, ally statues…). Watch out for sheet ghosts and zombie cells: they cross and invade the corridors. At 50% of enemies cleared, a portal opens respawning enemies and a mini-boss.
+2. **In the boss room** combat is free-form pixel movement: dodge the boss's themed projectiles, use the weapons dropping on the ground (they regenerate while the boss lives), the dedicated siege cannon and the bouncing mine that removes 30% of the boss's health.
 3. **After each boss** (except the final level) pick a relic in the forge bonus screen: one per family, with a rotation designed to collect them all over a full playthrough.
 
-Depth mechanics: stamina limiting jumps to 2 in a row, progressive enemy respawn in advanced levels, temporary chalice invincibility, ghost mode from the potion, enemies targeting the nearest living player in 2P.
+Depth mechanics: stamina limiting jumps to 2 in a row, progressive enemy respawn in advanced levels, temporary chalice invincibility, ghost mode from the potion, enemies targeting the nearest living player in 2P, ghost waves growing denser as levels climb.
 
 ## Controls
 
@@ -80,7 +83,7 @@ godot --path godot
 godot --headless --quit --path godot
 ```
 
-For executable exports use the Godot 4.7.2 export templates (GL Compatibility renderer: compatible with older hardware and WebGL).
+For executable exports use the Godot 4.7.2 export templates (GL Compatibility renderer: compatible with older hardware and WebGL). Cross-platform build procedures (Windows, Linux, macOS) are documented in [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
 
 ## Project Structure
 
@@ -88,17 +91,19 @@ For executable exports use the Godot 4.7.2 export templates (GL Compatibility re
 godot/                       # Godot project (open this one)
 ├── project.godot            # autoloads, input map, window settings
 ├── scripts/
-│   ├── core/                # MainGameController, Player, Maze, BFS, GameConstants…
+│   ├── core/                # MainGameController, Player, Maze, BFS,
+│   │                        #   GameConstants, I18nManager, DemoController…
 │   ├── bosses/              # Boss, MiniBoss
 │   ├── enemies/             # Enemy, EnemySpawner (progressive respawn)
-│   ├── entities/            # GhostReaper, KnightAlly, effects (soul, lightning)
+│   ├── entities/            # GhostReaper, KnightAlly, MazeGhosts,
+│   │                        #   ZombieCells, effects (soul, lightning)
 │   ├── items/               # Weapon, Projectile, Collectibles, Hammer
 │   ├── audio/               # AudioManager (full procedural synthesis)
 │   └── ui/                  # HUD, menus, screens, BonusScreen, ContinuesOverlay
 ├── scenes/                  # 13 .tscn scenes
 ├── shaders/                 # 11 shaders (enhancement, armor outfits, boss deform…)
-├── assets/                  # sprites (SD + XHD), backgrounds, fonts
-└── tests/                   # headless runtime tests + screenshot harnesses
+├── assets/                  # sprites (SD + XHD + env), backgrounds, fonts
+└── tests/                   # 42 headless runtime tests + 69 screenshot harnesses
 src/                         # Legacy C++/SFML prototype (reference only)
 scripts/                     # Python asset generators (sprites)
 tools/bestiary/              # Bestiary generators
@@ -107,17 +112,19 @@ docs/                        # Repository banner and materials
 
 ## Technical Architecture
 
-- **Autoloads** (8, load order): `BootManager`, `GameManager`, `SpriteManager`, `ConfigManager`, `AudioManager`, `EffectsManager`, `EnvironmentArt`, `CharacterArt`.
-- **MainGameController** drives the maze loop: input, pickups, portal, "Hurry Up!", friendly fire, relic sweeps, progressive respawn and per-player continues.
-- **BossRoomController** drives the duel: homing projectiles, weapon regeneration, anti-softlock, post-boss bonus phase with the fight frozen.
-- **Player** is dual-mode: grid-locked movement in the maze, free movement in the boss room; full relic state, jump stamina, ghost mode.
-- **AudioManager**: 2333 lines of pure GDScript synthesis — oscillators, noise, circular-tap reverbs for seamless loops, voice pool with debounce.
-- **DeformableSprite**: 2D mesh with per-boss-type limb animation profiles and shader-based canvas enhancement.
-- Constants and balancing are centralized in **GameConstants.gd** (alias `C`), with static rollback flags for every graphics feature.
+- **Autoloads** (10, load order): `LoadingScreen`, `BootManager`, `GameManager`, `SpriteManager`, `ConfigManager`, `I18n`, `AudioManager`, `EffectsManager`, `EnvironmentArt`, `CharacterArt`.
+- **MainGameController** drives the maze loop: input, pickups, portal, "Hurry Up!", friendly fire, relic sweeps, progressive respawn, per-player continues and the two maze hazards (`MazeGhosts`, `ZombieCells`).
+- **BossRoomController** drives the duel: homing projectiles, weapon regeneration, siege cannon, anti-softlock, post-boss bonus phase with the fight frozen.
+- **Player** is dual-mode: grid-locked movement in the maze, free movement in the boss room; full relic and elemental weapon state, jump stamina, ghost mode, facing consistent with the marching direction and per-weapon muzzle flash.
+- **I18nManager** (`I18n` autoload): IT/EN localization with dictionaries, a language-change signal and per-language logos.
+- **AudioManager**: 3182 lines of pure GDScript synthesis — oscillators, noise, circular-tap reverbs for seamless loops, voice pool with debounce; synthesis happens in a prioritized background thread (menu → SFX → music) for fast startup.
+- **Maze** procedural rendering (per-level palettes, calibrated wall luminance, torches and lanterns) and `DeformableSprite`: 2D mesh with per-boss-type limb animation profiles and shader-based canvas enhancement.
+- Constants and balancing are centralized in **GameConstants.gd** (alias `C`), with static rollback flags for every graphics feature (lanterns, ghosts, zombie cells, XHD…).
+- **Performance**: cached effect materials and textures, no per-frame GPU→CPU readback, a cap on simultaneous FX, lazily loaded sprites.
 
 ## Quality and Testing
 
-The project ships a **headless runtime test suite** that runs without a window:
+The project ships a **headless runtime test suite of 42 tests** plus **69 screenshot harnesses** for visual QA, running without a window:
 
 ```bash
 # Example: run one test
@@ -127,14 +134,14 @@ godot --headless --path godot res://tests/test_stamina_weapons.tscn
 xvfb-run godot --path godot res://tests/shot_showcase.tscn
 ```
 
-The suite covers: stamina and weapons, 2P tunnels, 2P boss room, HUD, relics, friendly fire, continues, progressive respawn, audio, pause and XHD graphics. Every gameplay change goes through dedicated tests before commit.
+The suite covers: stamina and weapons, 2P tunnels, 2P boss room, HUD, relics, elemental weapons, friendly fire, continues, progressive respawn, localization, ghost waves and zombie cells, sprite facing, audio, pause and XHD graphics. Every gameplay change goes through dedicated tests before commit; visual verification combines full-resolution screenshots, VLM QA and numeric pixel checks.
 
 ## Development Branches
 
 | Branch | Content |
 |---|---|
 | `main` | Original C++/SFML prototype |
-| `engine/godot-engine` | **The current game** — full Godot 4.7.2 port (active branch) |
+| `engine/godot-engine` | **The current game** — full Godot 4.7.2 port (active branch; flows into `main` via [PR #9](https://github.com/codecleanerhub/ArcadeMaze/pull/9)) |
 | `gameplay`, `linux`, `multi_plat`, `feature/*` | Historical C++ prototype branches |
 
 The C++ prototype in `src/` stays in the repository as the canonical behavior reference: the GDScript logic replicates its algorithms and balancing (BFS, maze generation, boss patterns).
