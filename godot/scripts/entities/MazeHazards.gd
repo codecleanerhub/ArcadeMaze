@@ -652,9 +652,11 @@ func _make_blade_sprite() -> Sprite2D:
         return s
 
 
-## Frame di rotazione della lama: sheet pixel-art 256x64 (4 frame 64x64,
-## PixelLab TASK 88) caricato via Image.load (pattern SpriteManager). Se
-## l'asset manca: ruota procedurale disegnata su Image (fallback).
+## Frame di rotazione della lama: sheet pixel-art 256x64 (4 frame 64x64)
+## caricato via Image.load (pattern SpriteManager). TASK 94: si preferisce
+## la LAMA AFFILATA a 4 bracci (shuriken, sheet PixelLab nuovo — feedback
+## utente "sembrano dischi") e si tiene la ruota-disco del Task 88 come
+## secondo fallback; se mancano entrambi: ruota procedurale su Image.
 func _blade_frame(i: int) -> Texture2D:
         if _blade_frames.is_empty():
                 _load_blade_frames()
@@ -665,12 +667,17 @@ func _blade_frame(i: int) -> Texture2D:
 
 func _load_blade_frames() -> void:
         var sheet: Texture2D = null
-        var path := "res://assets/sprites/hazards/blade_wheel_sheet.png"
-        var abs_path: String = ProjectSettings.globalize_path(path)
-        if FileAccess.file_exists(abs_path):
-                var img := Image.new()
-                if img.load(abs_path) == OK:
-                        sheet = ImageTexture.create_from_image(img)
+        for path in [
+                        "res://assets/sprites/hazards/blade_sharp_sheet.png",
+                        "res://assets/sprites/hazards/blade_wheel_sheet.png",
+                ]:
+                if sheet != null:
+                        break
+                var abs_path: String = ProjectSettings.globalize_path(path)
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                sheet = ImageTexture.create_from_image(img)
         if sheet == null:
                 sheet = _make_blade_fallback_tex()
         if sheet == null:
@@ -1403,9 +1410,19 @@ func _update_chasm(h: Dictionary, delta_ms: float, players: Array, _maze: Node) 
                                         EffectsManager.screen_shake(2.0, 0.35)
                 ChasmState.CRACK:
                         h["timer_ms"] -= delta_ms
-                        # lampeggio d'allerta della crepa
+                        # lampeggio d'allerta della crepa. TASK 94: il tile e'
+                        # ricolorato in palette pavimento (prima era blu e
+                        # spiccava da solo): il blink ora oscilla anche su un
+                        # TINT CALDO (bagliore di calore dal basso) cosi' il
+                        # telegrafo resta leggibile come pericolo senza essere
+                        # un blocco estraneo al labirinto.
                         if h["sprite"] != null:
-                                h["sprite"].modulate.a = 0.75 + 0.25 * sin(_time * 18.0)
+                                var blink: float = 0.5 + 0.5 * sin(_time * 18.0)
+                                h["sprite"].modulate = Color(
+                                                1.0,
+                                                0.72 + 0.28 * blink,
+                                                0.45 + 0.35 * blink,
+                                                0.72 + 0.28 * blink)
                         if h["timer_ms"] <= 0.0:
                                 _open_chasm(h, _maze)
                 ChasmState.OPEN:

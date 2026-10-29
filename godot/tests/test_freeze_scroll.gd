@@ -129,6 +129,34 @@ func _find_corridor() -> Array:
         return best_cells
 
 
+## Corsia rettilinea di celle EMPTY piu' lunga del labirinto (orizzontale
+## e verticale, scavo completo). TASK 94: fallback quando lo spawn del
+## player cade in una tasca corta — il player viene teletrasportato su
+## un'estremita' della corsia prima di ricalcolare il corridoio.
+func _find_longest_run() -> Array:
+        var best: Array = []
+        for d in [Vector2i(1, 0), Vector2i(0, 1)]:
+                var r0: int = 1 if d.y != 0 else 0
+                var c0: int = 1 if d.x != 0 else 0
+                for r in range(r0, C.MAZE_ROWS):
+                        for c in range(c0, C.MAZE_COLS):
+                                if main.maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                        continue
+                                var cells: Array = []
+                                var cc: int = c
+                                var rr: int = r
+                                while cc >= 0 and cc < C.MAZE_COLS \
+                                                and rr >= 0 and rr < C.MAZE_ROWS \
+                                                and main.maze.get_cell_type(cc, rr) \
+                                                == C.CellType.EMPTY:
+                                        cells.append(Vector2i(cc, rr))
+                                        cc += d.x
+                                        rr += d.y
+                                if cells.size() > best.size():
+                                        best = cells
+        return best
+
+
 ## Teleporta `count` nemici vivi sulle prime `count` celle del corridoio.
 ## Tutti gli ALTRI nemici vivi vengono spostati in una cella LONTANA
 ## (> 9.5 celle dal player: fuori gittata del beam) cosi' il test e'
@@ -305,6 +333,17 @@ func _phaseC_pickup_equip() -> void:
 # ===========================================================================
 func _phaseD_freeze_ray() -> void:
         corridor_cells = _find_corridor()
+        if corridor_cells.size() < 2:
+                # TASK 94 (indurimento flake): la cella di spawn del player
+                # puo' capitare in una tasca con un solo vicino libero (maze
+                # RNG per-run, ~1 run su 4): D falliva e F cascava (il colpo
+                # del mid-boss saltato lasciava 1 carica residua). Teletrasporta
+                # il player su un'estremita' della corsia rettilinea EMPTY
+                # piu' lunga del labirinto e ricalcola il corridoio da li'.
+                var run: Array = _find_longest_run()
+                if run.size() >= 3:
+                        main.player.position = _cell_center(run[0].x, run[0].y)
+                        corridor_cells = _find_corridor()
         if corridor_cells.size() < 2:
                 _fail("D: corridoio troppo corto per il test (%d celle)"
                                 % corridor_cells.size())

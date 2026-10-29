@@ -75,6 +75,16 @@ func _place_enemy(idx: int, c: int, r: int) -> void:
         var e = test_enemies[idx]
         e.position = _cell_center(c, r)
         e.health = e.max_health
+        # TASK 94 (indurimento flake): se il nemico e' MORTO in una fase
+        # precedente (dying_timer > 0 — es. GHOST da 1 HP ucciso dalla Lama
+        # del Vampiro in D3) il suo take_damage ignora TUTTI i colpi
+        # successivi: con gioco in pausa il timer di morte non scende mai e
+        # le fasi E/F fallivano a raffica (~12% dei run: test_enemies[0]
+        # GHOST per RNG per-run). Il nemico di test dev'essere sempre VIVO
+        # quando viene (ri)piazzato: reset anche dello stato di
+        # morte/congelamento, non solo della salute.
+        e.dying_timer = 0
+        e.frozen = false
 
 
 func _physics_process(delta: float) -> void:

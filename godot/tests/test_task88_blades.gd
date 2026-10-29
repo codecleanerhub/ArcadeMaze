@@ -84,7 +84,7 @@ func _test_asset() -> void:
                         hz.queue_free()
                         return
         hz.queue_free()
-        _ok("B: sheet blade_wheel (4 frame 64x64, PixelLab) caricato")
+        _ok("B: sheet lama (4 frame 64x64, PixelLab — sharp dal Task 94) caricato")
 
 
 # --- C+D: generazione su piu' livelli + invarianti ---

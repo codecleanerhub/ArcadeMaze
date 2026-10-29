@@ -955,15 +955,19 @@ func _fx_frame(id: String, idx: int) -> AtlasTexture:
         var p: String = "res://assets/sprites/env/bossdeath_%s_sheet.png" % id
         # Pattern SpriteManager: Image.load() diretto (bypass import system,
         # funziona anche senza cache .godot/imported).
+        # TASK 94: frame size AUTODETETTO (larghezza/4): sheet a 64px/frame
+        # (vortex, bat, crow...) e a 128px/frame (portal, ring) convivono.
         var abs_p: String = ProjectSettings.globalize_path(p)
         if FileAccess.file_exists(abs_p):
                 var img := Image.new()
                 if img.load(abs_p) == OK:
                         var tex := ImageTexture.create_from_image(img)
-                        if tex != null:
+                        if tex != null and tex.get_width() >= 4:
+                                var fw: float = float(tex.get_width()) / 4.0
                                 var at := AtlasTexture.new()
                                 at.atlas = tex
-                                at.region = Rect2(float(idx % 4) * 64.0, 0.0, 64.0, 64.0)
+                                at.region = Rect2(float(idx % 4) * fw, 0.0,
+                                                fw, float(tex.get_height()))
                                 out = at
         _fx_tex[key] = out
         return out
@@ -1013,6 +1017,12 @@ func _draw_ground(t: float) -> void:
 
 
 # --- hell: crepa → voragine di fiamme + vortice → chiusura ---
+# TASK 94: il corpo centrale della voragine è il PORTALE pixel-art
+# (PixelLab, sheet 128px/frame con 4 STADI DI APERTURA progressiva:
+# crepa → fenditura → fossa → pozzo aperto): prima era disegnato con
+# ellissi procedurali piatte. Il frame avanza con l'apertura (0→3 in
+# 450ms), poi resta sul pozzo aperto con pulsazione; il vortice PixelLab
+# ruota sopra e le fiamme perimetrali restano procedurali come accento.
 func _draw_hell_ground(t: float) -> void:
         if t < 700.0:
                 var k: float = t / 700.0
@@ -1036,14 +1046,28 @@ func _draw_hell_ground(t: float) -> void:
                 _ellipse(pit_center, rx * 1.50, ry * 1.50, Color(1.0, 0.35, 0.08, 0.10))
                 _ellipse(pit_center, rx * 1.25, ry * 1.25, Color(1.0, 0.40, 0.10, 0.16))
                 _ellipse(pit_center, rx * 1.08, ry * 1.08, Color(1.0, 0.50, 0.12, 0.22))
-                # voragine nera + anello bruciato
-                _ellipse(pit_center, rx, ry, Color(0.02, 0.01, 0.01, 0.97))
-                _ellipse(pit_center, rx * 0.92, ry * 0.92, Color(0.25, 0.05, 0.02, 0.90))
-                # lava interna pulsante
-                var pulse: float = 0.5 + 0.5 * sin(t * 0.012)
-                _ellipse(pit_center, rx * (0.35 + 0.10 * pulse),
-                                ry * (0.35 + 0.10 * pulse),
-                                Color(1.0, 0.30 + 0.25 * pulse, 0.05, 0.55 + 0.30 * pulse))
+                # PORTALE pixel-art: stadio di apertura mentre k cresce, poi
+                # pozzo aperto con pulsazione di respiro della lava.
+                var pt: AtlasTexture = _fx_frame("portal",
+                                mini(3, int(k * 3.99)))
+                if pt != null:
+                        var pulse: float = 1.0 + 0.035 * sin(t * 0.011)
+                        var psize: float = rx * 2.35 * pulse
+                        draw_texture_rect(pt,
+                                        Rect2(pit_center.x - psize * 0.5,
+                                                        pit_center.y - psize * 0.48,
+                                                        psize, psize * 0.96),
+                                        false, Color(1.0, 1.0, 1.0, 0.97))
+                else:
+                        # fallback procedurale (pre-Task 94)
+                        _ellipse(pit_center, rx, ry, Color(0.02, 0.01, 0.01, 0.97))
+                        _ellipse(pit_center, rx * 0.92, ry * 0.92,
+                                        Color(0.25, 0.05, 0.02, 0.90))
+                        var lp: float = 0.5 + 0.5 * sin(t * 0.012)
+                        _ellipse(pit_center, rx * (0.35 + 0.10 * lp),
+                                        ry * (0.35 + 0.10 * lp),
+                                        Color(1.0, 0.30 + 0.25 * lp, 0.05,
+                                                        0.55 + 0.30 * lp))
                 # vortice: 3 braccia a spirale che ruotano (risucchio)
                 var rot: float = -t * 0.0038
                 for arm in 3:
@@ -1084,8 +1108,20 @@ func _draw_hell_ground(t: float) -> void:
                 var ry: float = rx * 0.42
                 _ellipse(pit_center, rx * 1.4, ry * 1.4,
                                 Color(1.0, 0.40, 0.10, 0.16 * (1.0 - k)))
-                # vortice pixel-art che si restringe e svanisce insieme
-                # alla voragine (nessuno stacco brusco a t=2300)
+                # portale + vortice pixel-art che si restringono e svaniscono
+                # insieme (nessuno stacco brusco a t=2300)
+                var pt2: AtlasTexture = _fx_frame("portal", 3)
+                if pt2 != null and k < 1.0 and rx > 4.0:
+                        var psize2: float = rx * 2.35
+                        draw_texture_rect(pt2,
+                                        Rect2(pit_center.x - psize2 * 0.5,
+                                                        pit_center.y - psize2 * 0.48,
+                                                        psize2, psize2 * 0.96),
+                                        false, Color(1.0, 1.0, 1.0, 0.97 * (1.0 - k)))
+                elif rx > 1.0 and k < 1.0:
+                        _ellipse(pit_center, rx, ry, Color(0.03, 0.01, 0.01, 0.95))
+                        _ellipse(pit_center, rx * 0.5, ry * 0.5,
+                                        Color(1.0, 0.35, 0.06, 0.50 * (1.0 - k)))
                 var vt2: AtlasTexture = _fx_frame("vortex", int(t * 0.012) % 4)
                 if vt2 != null and k < 1.0 and rx > 4.0:
                         var vsize2: float = rx * 2.7
@@ -1095,10 +1131,6 @@ func _draw_hell_ground(t: float) -> void:
                                                         vsize2, vsize2 * 0.96),
                                         false, Color(1.0, 1.0, 1.0, 0.88 * (1.0 - k)))
                         draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-                if rx > 1.0:
-                        _ellipse(pit_center, rx, ry, Color(0.03, 0.01, 0.01, 0.95))
-                        _ellipse(pit_center, rx * 0.5, ry * 0.5,
-                                        Color(1.0, 0.35, 0.06, 0.50 * (1.0 - k)))
                 # anello di braci residue
                 for i in 10:
                         var a: float = float(i) / 10.0 * TAU
@@ -1157,10 +1189,30 @@ func _draw_pool_ground(t: float, col: Color, rim: Color) -> void:
 
 
 # --- rune: cerchio magico rotante (soul, arcane, spectral, bat, crows, mimic) ---
+# TASK 94: cerchio runico pixel-art (PixelLab, sheet 128px/frame, 4 frame
+# rotanti) tintato col colore della famiglia: prima erano solo archi e
+# tacche procedurali. L'asset è stato keyato per luminanza (la pietra scura
+# di contorno rimossa): il modulate colora SOLO il glow. Fallback
+# procedurale se l'asset manca.
 func _draw_rune_ground(t: float, col: Color) -> void:
         var k: float = minf(1.0, t / 500.0)
         var fade: float = 1.0 - clampf((t - 1800.0) / 800.0, 0.0, 1.0)
         if fade <= 0.0:
+                return
+        var rt: AtlasTexture = _fx_frame("ring", int(t * 0.006) % 4)
+        if rt != null:
+                # tint schiarito (mezzo verso bianco): il glow resta luminoso
+                # anche con tinte scure (bat rosso cupo, crows viola scuro).
+                var tint_l: Color = Color(col.r, col.g, col.b).lightened(0.35)
+                var pulse: float = 0.92 + 0.08 * sin(t * 0.010)
+                var rsize: float = boss_size * 1.35 * k * pulse
+                draw_set_transform(pit_center, t * 0.0016, Vector2.ONE)
+                draw_texture_rect(rt,
+                                Rect2(-rsize * 0.5, -rsize * 0.46,
+                                                rsize, rsize * 0.92),
+                                false, Color(tint_l.r, tint_l.g, tint_l.b,
+                                                0.92 * fade))
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
                 return
         var rr: float = boss_size * 0.50 * k
         _arc(pit_center, rr, rr * 0.42, 0.0, TAU, 2.0,
