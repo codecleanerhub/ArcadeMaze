@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/blade_wheel/base.png",
+  "anim_job_id": "055ecce5-0fdd-41c2-9e21-3447d735fc4b",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/hazards/blade_wheel_sheet.png"
+}

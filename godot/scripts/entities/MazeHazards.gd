@@ -48,7 +48,7 @@ class_name MazeHazards
 
 const C = preload("res://scripts/core/GameConstants.gd")
 
-enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL }
+enum HazardType { QUICKSAND, TRAP, CHASM, ROCK_WALL, BARREL, BLADE }
 
 # Stati per tipo:
 # QUICKSAND: nessuno stato (sempre attiva).
@@ -101,6 +101,14 @@ var scroll_chasm_list: Array[Dictionary] = []
 var scroll_chasm_waves_left: int = 0
 var scroll_chasm_owner: CharacterBody2D = null
 
+# --- TASK 88: lame-ruota -----------------------------------------------------
+## Corsie occupate dalle lame (righe per axis "h", colonne per "v"):
+## esposte per le esclusioni dei placement successivi (lance: mai sulla
+## stessa filetto di una lama) e per i test.
+var blade_rows: Array[int] = []
+var blade_cols: Array[int] = []
+var _blade_frames: Array = []
+
 var _rng := RandomNumberGenerator.new()
 var _time := 0.0
 var _tex_cache: Dictionary = {}
@@ -131,7 +139,8 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
         clear(maze)
         var count: int = C.hazard_count_for_level(level)
         var barrels: int = C.barrel_count_for_level(level)
-        if count <= 0 and barrels <= 0:
+        var blades: int = C.blade_count_for_level(level)
+        if count <= 0 and barrels <= 0 and blades <= 0:
                 _init_quake(level)
                 return
         _rng.seed = hash("hazards_v1_%d" % level)
@@ -139,6 +148,32 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
         var floor_cells := _collect_floor_cells(maze)
         var wall_cells := _collect_wall_cells(maze)
         var used: Array[Vector2i] = []
+
+        # TASK 88: LAME-RUOTA — piazzate PER PRIME: il corridoio con la lama
+        # reclama tutte le sue celle (entrano in `used`): gli hazard statici
+        # restano a distanza di sicurezza e il player mantiene spazio di
+        # manovra per saltarle. Le corsie occupate sono esposte in
+        # blade_rows/blade_cols (le lance dei task successivi non finiscono
+        # mai sugli stessi filetti).
+        blade_rows.clear()
+        blade_cols.clear()
+        if blades > 0:
+                var runs: Array[Dictionary] = _collect_blade_runs(maze)
+                var lanes: Array[int] = []
+                for _i in blades:
+                        var run: Dictionary = _pop_blade_run(runs, used, lanes)
+                        if run.is_empty():
+                                break
+                        _spawn_blade(run)
+                        lanes.append(run["lane"])
+                        if run["axis"] == "h":
+                                blade_rows.append(run["lane"])
+                                for cc in range(run["c0"], run["c1"] + 1):
+                                        used.append(Vector2i(cc, run["lane"]))
+                        else:
+                                blade_cols.append(run["lane"])
+                                for rr in range(run["c0"], run["c1"] + 1):
+                                        used.append(Vector2i(run["lane"], rr))
 
         for t in [HazardType.QUICKSAND, HazardType.TRAP, HazardType.CHASM]:
                 for _i in count:
@@ -181,10 +216,12 @@ func clear(maze: Node) -> void:
         for h in hazard_list:
                 if is_instance_valid(h.get("sprite")):
                         h["sprite"].queue_free()
-                for key in ["slab_a", "slab_b"]:
+                for key in ["slab_a", "slab_b", "trail_a", "trail_b"]:
                         if is_instance_valid(h.get(key)):
                                 h[key].queue_free()
         hazard_list.clear()
+        blade_rows.clear()
+        blade_cols.clear()
         # TASK 31: via anche massi/macerie e stato terremoto.
         for b in boulder_list:
                 if is_instance_valid(b.get("sprite")):
@@ -202,6 +239,8 @@ func clear(maze: Node) -> void:
 ## diventa attiva, o muro interno rotto dal Mjolnir).
 func clear_at(cell: Vector2i, maze: Node) -> void:
         for i in range(hazard_list.size() - 1, -1, -1):
+                if hazard_list[i]["type"] == HazardType.BLADE:
+                        continue  # TASK 88: la lama e' mobile, non legata a una cella
                 if hazard_list[i]["cell"] == cell:
                         var h: Dictionary = hazard_list[i]
                         if is_instance_valid(h.get("sprite")):
@@ -438,6 +477,291 @@ func _apply_wall_offsets(h: Dictionary) -> void:
 
 
 # ===========================================================================
+# TASK 88 — LAME-RUOTA (blade wheels)
+# ===========================================================================
+# Ruote-lama che pattinano sul pavimento: partono DA UN MURO del corridoio,
+# viaggiano fino al muro opposto e rimbalzano avanti-indietro per tutto il
+# livello. Tocco = 50% dell'energia max (il salto scavalca: pattern
+# take_hazard_damage blockable). Grafica pixel-art (sheet 4 frame di
+# rotazione, PixelLab) + scia di scorrimento a 2 afterimage + scintille al
+# rimbalzo sul muro.
+
+## Corridoi muro-muro (orizzontali e verticali) di celle EMPTY consecutive,
+## lunghi almeno BLADE_MIN_RUN_CELLS, lontani da tunnel/spawn/item.
+func _collect_blade_runs(maze: Node) -> Array[Dictionary]:
+        var runs: Array[Dictionary] = []
+        # corridoi orizzontali (lane = riga)
+        for r in range(1, C.MAZE_ROWS - 1):
+                var c := 1
+                while c < C.MAZE_COLS - 1:
+                        if maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                c += 1
+                                continue
+                        var c0 := c
+                        while c < C.MAZE_COLS - 1 \
+                                        and maze.get_cell_type(c, r) == C.CellType.EMPTY:
+                                c += 1
+                        var c1 := c - 1
+                        if maze.is_wall(c0 - 1, r) and maze.is_wall(c1 + 1, r) \
+                                        and (c1 - c0 + 1) >= C.BLADE_MIN_RUN_CELLS \
+                                        and _blade_run_clean(maze, r, c0, c1, "h"):
+                                runs.append({"axis": "h", "lane": r, "c0": c0, "c1": c1})
+        # corridoi verticali (lane = colonna)
+        for c in range(1, C.MAZE_COLS - 1):
+                var r := 1
+                while r < C.MAZE_ROWS - 1:
+                        if maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                r += 1
+                                continue
+                        var r0 := r
+                        while r < C.MAZE_ROWS - 1 \
+                                        and maze.get_cell_type(c, r) == C.CellType.EMPTY:
+                                r += 1
+                        var r1 := r - 1
+                        if maze.is_wall(c, r0 - 1) and maze.is_wall(c, r1 + 1) \
+                                        and (r1 - r0 + 1) >= C.BLADE_MIN_RUN_CELLS \
+                                        and _blade_run_clean(maze, c, r0, r1, "v"):
+                                runs.append({"axis": "v", "lane": c, "c0": r0, "c1": r1})
+        return runs
+
+
+## Un corridoio e' "pulito" se nessuna delle sue celle e' vicina ai tunnel,
+## vicino allo spawn del player (1,1) o occupata da un collectible a terra.
+func _blade_run_clean(maze: Node, lane: int, i0: int, i1: int, axis: String) -> bool:
+        for i in range(i0, i1 + 1):
+                var c: int = i if axis == "h" else lane
+                var r: int = lane if axis == "h" else i
+                if _near_tunnel(c, r):
+                        return false
+                if max(absi(c - 1), absi(r - 1)) < C.HAZARD_MIN_SPAWN_DIST:
+                        return false
+                if controller != null and not controller._collectible_cell_free(c, r):
+                        return false
+        return true
+
+
+## Estrae un corridoio casuale (seed del livello) a distanza di corsia
+## BLADE_MIN_LANE_GAP dalle lame gia' piazzate e senza celle occupate.
+func _pop_blade_run(runs: Array[Dictionary], used: Array[Vector2i],
+                lanes: Array[int]) -> Dictionary:
+        var order: Array[int] = []
+        for i in runs.size():
+                order.append(i)
+        for i in order.size():
+                var j: int = _rng.randi_range(i, order.size() - 1)
+                var tmp: int = order[i]
+                order[i] = order[j]
+                order[j] = tmp
+        for idx in order:
+                var run: Dictionary = runs[idx]
+                var ok := true
+                for l in lanes:
+                        if absi(run["lane"] - l) < C.BLADE_MIN_LANE_GAP:
+                                ok = false
+                                break
+                if ok:
+                        for i in range(run["c0"], run["c1"] + 1):
+                                var rc: Vector2i = Vector2i(i, run["lane"]) \
+                                                if run["axis"] == "h" \
+                                                else Vector2i(run["lane"], i)
+                                for u in used:
+                                        if rc == u:
+                                                ok = false
+                                                break
+                                if not ok:
+                                        break
+                if ok:
+                        return run
+        return {}
+
+
+func _spawn_blade(run: Dictionary) -> void:
+        var axis: String = run["axis"]
+        var lane: int = run["lane"]
+        var lo_cell: int = run["c0"]
+        var hi_cell: int = run["c1"]
+        var pos: Vector2
+        var lo: float
+        var hi: float
+        if axis == "h":
+                pos = Vector2(0.0, float(lane) * C.TILE_SIZE
+                                + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
+                lo = float(lo_cell) * C.TILE_SIZE + 32.0
+                hi = float(hi_cell + 1) * C.TILE_SIZE - 32.0
+        else:
+                pos = Vector2(float(lane) * C.TILE_SIZE + C.TILE_SIZE / 2.0, 0.0)
+                lo = float(lo_cell) * C.TILE_SIZE + C.UI_HEIGHT + 32.0
+                hi = float(hi_cell + 1) * C.TILE_SIZE + C.UI_HEIGHT - 32.0
+        # parte DA UN MURO (lato casuale) e viaggia verso l'opposto
+        var from_lo: bool = _rng.randf() < 0.5
+        var dir: float = 1.0 if from_lo else -1.0
+        if axis == "h":
+                pos.x = lo if from_lo else hi
+        else:
+                pos.y = lo if from_lo else hi
+        var sprite := _make_blade_sprite()
+        sprite.position = pos
+        var trail_a := _make_blade_sprite()
+        trail_a.modulate = Color(1.0, 0.86, 0.74, 0.38)
+        var trail_b := _make_blade_sprite()
+        trail_b.modulate = Color(1.0, 0.78, 0.64, 0.20)
+        hazard_list.append({
+                "type": HazardType.BLADE,
+                "cell": Vector2i(lane if axis == "v" else lo_cell,
+                                lo_cell if axis == "v" else lane),
+                "axis": axis, "lane": lane, "c0": lo_cell, "c1": hi_cell,
+                "pos": pos, "dir": dir, "lo": lo, "hi": hi,
+                "sprite": sprite, "trail_a": trail_a, "trail_b": trail_b,
+                "spin0": float(_rng.randi_range(0, 3)),
+        })
+
+
+func _make_blade_sprite() -> Sprite2D:
+        var s := Sprite2D.new()
+        s.texture = _blade_frame(0)
+        s.scale = Vector2(56.0 / 64.0, 56.0 / 64.0)
+        s.z_index = 0
+        add_child(s)
+        return s
+
+
+## Frame di rotazione della lama: sheet pixel-art 256x64 (4 frame 64x64,
+## PixelLab TASK 88) caricato via Image.load (pattern SpriteManager). Se
+## l'asset manca: ruota procedurale disegnata su Image (fallback).
+func _blade_frame(i: int) -> Texture2D:
+        if _blade_frames.is_empty():
+                _load_blade_frames()
+        if _blade_frames.is_empty():
+                return null
+        return _blade_frames[i % _blade_frames.size()]
+
+
+func _load_blade_frames() -> void:
+        var sheet: Texture2D = null
+        var path := "res://assets/sprites/hazards/blade_wheel_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        sheet = ImageTexture.create_from_image(img)
+        if sheet == null:
+                sheet = _make_blade_fallback_tex()
+        if sheet == null:
+                return
+        var fw: float = float(sheet.get_width()) / 4.0
+        var fh: float = float(sheet.get_height())
+        for i in 4:
+                var at := AtlasTexture.new()
+                at.atlas = sheet
+                at.region = Rect2(fw * float(i), 0.0, fw, fh)
+                _blade_frames.append(at)
+
+
+func _make_blade_fallback_tex() -> Texture2D:
+        var img := Image.create(256, 64, false, Image.FORMAT_RGBA8)
+        img.fill(Color(0.0, 0.0, 0.0, 0.0))
+        for f in 4:
+                var cx: float = 32.0 + float(f) * 64.0
+                var rot: float = float(f) * TAU / 4.0
+                # denti (12) sul bordo, ruotati di un quarto di giro per frame
+                for k in 12:
+                        var a: float = float(k) * TAU / 12.0 + rot
+                        for rr in range(23, 30):
+                                img.set_pixel(int(cx + cos(a) * float(rr)),
+                                                int(32.0 + sin(a) * float(rr)),
+                                                Color(0.80, 0.78, 0.74, 1.0))
+                # disco in acciaio con bordo piu' chiaro
+                for x in range(-23, 24):
+                        for y in range(-23, 24):
+                                var d: float = sqrt(float(x * x + y * y))
+                                if d <= 23.0:
+                                        var col := Color(0.55, 0.53, 0.50, 1.0)
+                                        if d > 20.0:
+                                                col = Color(0.63, 0.61, 0.57, 1.0)
+                                        if d <= 7.0:
+                                                col = Color(0.36, 0.35, 0.34, 1.0)
+                                        img.set_pixel(int(cx) + x, int(32.0) + y, col)
+                # mozzo scuro
+                for x in range(-3, 4):
+                        for y in range(-3, 4):
+                                if x * x + y * y <= 9:
+                                        img.set_pixel(int(cx) + x, int(32.0) + y,
+                                                        Color(0.18, 0.17, 0.16, 1.0))
+        return ImageTexture.create_from_image(img)
+
+
+## Update della lama: pattinaggio muro-muro con rimbalzo (scintille +
+## grind al contatto), frame di rotazione, scia di scorrimento (2
+## afterimage dietro la direzione del moto) e collisione coi player
+## grounded (il salto scavalca: take_hazard_damage blockable, 50%).
+func _update_blade(h: Dictionary, delta_ms: float, players: Array) -> void:
+        var dt: float = delta_ms / 1000.0
+        var pos: Vector2 = h["pos"]
+        var dir: float = h["dir"]
+        var along: float = pos.x if h["axis"] == "h" else pos.y
+        along += dir * C.BLADE_SPEED_PX_S * dt
+        if along < h["lo"]:
+                along = h["lo"] + (h["lo"] - along)
+                dir = 1.0
+                _blade_wall_hit(h)
+        elif along > h["hi"]:
+                along = h["hi"] - (along - h["hi"])
+                dir = -1.0
+                _blade_wall_hit(h)
+        h["dir"] = dir
+        if h["axis"] == "h":
+                pos.x = along
+        else:
+                pos.y = along
+        h["pos"] = pos
+        # rotazione (frame dello sheet) + posizione sprite e scia
+        var fi: int = int(_time * C.BLADE_SPIN_FPS + float(h["spin0"])) % 4
+        var tex: Texture2D = _blade_frame(fi)
+        if tex == null:
+                return
+        var s: Sprite2D = h["sprite"]
+        if s != null and is_instance_valid(s):
+                s.texture = tex
+                s.position = pos
+        var back: Vector2 = Vector2(-dir, 0.0) if h["axis"] == "h" \
+                        else Vector2(0.0, -dir)
+        var ta: Sprite2D = h.get("trail_a", null)
+        if ta != null and is_instance_valid(ta):
+                ta.texture = tex
+                ta.position = pos + back * 15.0
+        var tb: Sprite2D = h.get("trail_b", null)
+        if tb != null and is_instance_valid(tb):
+                tb.texture = tex
+                tb.position = pos + back * 28.0
+        # collisione: player grounded sulla corsia, entro il raggio di contatto
+        # (distanza perpendicolare = corsia; distanza lungo il moto = contatto)
+        for p in players:
+                if not _player_grounded(p):
+                        continue
+                var d_perp: float = absf(p.position.y - pos.y) if h["axis"] == "h" \
+                                else absf(p.position.x - pos.x)
+                var d_along: float = absf(p.position.x - pos.x) if h["axis"] == "h" \
+                                else absf(p.position.y - pos.y)
+                if d_perp > 28.0:
+                        continue
+                if d_along > C.BLADE_TOUCH_PX:
+                        continue
+                p.take_hazard_damage(maxi(1, int(
+                                float(p.max_energy) * C.BLADE_DAMAGE_PCT)))
+
+
+## Rimbalzo sul muro: grind metallico + scintille (pattern sparks del
+## player: nodo aggiunto al parent del controller).
+func _blade_wall_hit(h: Dictionary) -> void:
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_GRIND)
+        if EffectsManager:
+                var sparks: Node2D = EffectsManager.spawn_sparks(h["pos"], 5)
+                if sparks != null and get_parent() != null:
+                        get_parent().add_child(sparks)
+
+
+# ===========================================================================
 # UPDATE
 # ===========================================================================
 
@@ -463,6 +787,8 @@ func update_hazards(delta_ms: float, maze: Node) -> void:
                                 _update_rock_wall(h, delta_ms, maze)
                         HazardType.BARREL:
                                 _update_barrel(h, delta_ms, players)
+                        HazardType.BLADE:
+                                _update_blade(h, delta_ms, players)
 
         # Mjolnir: se la cella muro non e' piu' WALL (spezzata), il muro di
         # roccia si sgretola e despawna.

@@ -1091,6 +1091,57 @@ static func hazard_count_for_level(level: int) -> int:
 
 
 # ============================================================================
+# TASK 88 — LAME-RUOTA (blade wheels)
+# ============================================================================
+# Ruote-lama circolari che pattinano sul pavimento dei corridoi: partono
+# DA UN MURO e viaggiano fino al muro opposto del corridoio, avanti e
+# indietro in loop per tutta la durata del livello. Il player che le
+# tocca perde il 50% dell'energia; puo' SALTARLE per non subire danno.
+## Flag di rollback: false = nessuna lama generata e i check no-op.
+static var BLADES_ENABLED: bool = true
+
+## Primo livello con le lame (dal 10 in poi, specifica utente).
+const BLADE_GRACE_LEVEL: int = 10
+
+## +1 lama ogni 12 livelli dal grace level (L10:1, L22:2, L34:3, L46:4,
+## L58:5): crescita progressiva che sparge il massimo sul resto della
+## campagna (68 livelli).
+const BLADE_GROWTH_EVERY: int = 12
+
+## Massimo lame simultanee sul labirinto (specifica utente: "fino a
+## raggiungere massimo 5 lame").
+const BLADE_MAX_PER_LEVEL: int = 5
+
+## Lunghezza minima del corridoio muro-muro (in celle) per ospitare una
+## lama: sotto questa lunghezza non c'e' spazio di manovra per schivarla.
+const BLADE_MIN_RUN_CELLS: int = 4
+
+## Distanza minima (in righe/colonne) tra due corridoi con lame: due lame
+## in file adiacenti sarebbero invalicabili senza salto doppio.
+const BLADE_MIN_LANE_GAP: int = 2
+
+## Velocita' di pattinaggio (px/s): minacciosa ma superabile con il salto.
+const BLADE_SPEED_PX_S: float = 150.0
+
+## Raggio di contatto player-lama in px (centro-centro).
+const BLADE_TOUCH_PX: float = 34.0
+
+## Danno al tocco in frazione dell'energia max (50%, specifica utente).
+const BLADE_DAMAGE_PCT: float = 0.5
+
+## Ciclo frame dello sheet pixel-art (4 frame di rotazione).
+const BLADE_SPIN_FPS: float = 14.0
+
+## Numero di lame per livello (0 sotto il grace level, poi 1 + 1 ogni 12
+## livelli, cap 5).
+static func blade_count_for_level(level: int) -> int:
+        if not BLADES_ENABLED or level < BLADE_GRACE_LEVEL:
+                return 0
+        var n: int = 1 + int((level - BLADE_GRACE_LEVEL) / BLADE_GROWTH_EVERY)
+        return mini(n, BLADE_MAX_PER_LEVEL)
+
+
+# ============================================================================
 # TASK 31 — BARILI ESPLOSIVI + TERREMOTO CON ROCCE DAL SOFFITTO
 # ============================================================================
 # Due eventi ambientali supplementari (approvati dall'utente insieme agli
