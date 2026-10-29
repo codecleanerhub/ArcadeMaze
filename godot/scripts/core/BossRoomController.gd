@@ -39,6 +39,12 @@ const FF_HIT_RADIUS_SQ: float = 625.0
 # CanvasLayer layer 30 (sopra HUD 10 e pausa 20), pattern PauseOverlay.
 const BonusScreenClass = preload("res://scripts/ui/BonusScreen.gd")
 
+# TASK 86 — animazione di morte del boss per-tipo (voragine di fiamme +
+# vortice, sgretolamento in sassolini, pipistrello + lampo, ecc.) mostrata
+# PRIMA delle card delle reliquie. Nodo self-drawing, guida la trasformazione
+# del nodo Boss e disegna effetti ambientali + particelle.
+const BossDeathSequenceClass = preload("res://scripts/entities/BossDeathSequences.gd")
+
 # TASK 39 — L'ARENA DEL BOSS: meccaniche esclusive della stanza.
 #   * BossArenaPillar: 4 pilastri-condotto a tema dell'elemento debole del
 #     boss; si frantumano in 3 colpi, bloccano i proiettili del boss e al
@@ -82,6 +88,10 @@ var died_in_boss: bool = false
 # alla chiusura la transizione di livello prosegue normalmente.
 var _bonus_screen: CanvasLayer = null
 var _bonus_active: bool = false
+
+# TASK 86 — sequenza di animazione di morte del boss (null = non in corsa).
+var _death_seq: Node2D = null
+var _death_seq_started: bool = false
 
 # FIX (pausa P): overlay PAUSE sopra tutto (CanvasLayer layer 20 > HUD 10).
 var _pause_canvas: CanvasLayer = null
@@ -254,6 +264,15 @@ func _physics_process(_delta: float) -> void:
                 return
         var delta_ms: float = _delta * 1000.0
         delta_ms = min(delta_ms, 50.0)
+
+        # TASK 86: sequenza di morte del boss in corsa → fight congelato
+        # (nessun input/movimento): si anima solo la sequenza, che guida la
+        # trasformazione del nodo Boss (sink/shrink/spin/hide). Al `finished`
+        # il flusso riprende (effetti finali + reliquie / vittoria).
+        if _death_seq != null:
+                _death_seq.update(delta_ms)
+                _update_hud()
+                return
 
         _handle_input(delta_ms)
         _update_boss(delta_ms)
@@ -1210,49 +1229,87 @@ func _check_boss_death() -> void:
                 # RELIC (Task 21): fase bonus già attiva/chiusa → mai ri-trigger.
                 if _bonus_active or _bonus_screen != null:
                         return
-                if AudioManager:
-                        AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
-                # Effetti Godot-native: screen shake forte + esplosione multipla
-                if EffectsManager:
-                        EffectsManager.screen_shake(15.0, 0.8)
-                        for i in 3:
-                                var p := EffectsManager.spawn_blast_smoke(
+                # TASK 86 — animazione di morte per-tipo del boss: PRIMA che
+                # appaiano le card delle reliquie il boss viene 'inghiottito'
+                # dal suolo (voragine di fiamme + vortice), sgretolato in
+                # sassolini, trasformato in pipistrello ecc. (~2.4-2.8s). Il
+                # fight resta congelato finché la sequenza emette `finished`.
+                if not _death_seq_started:
+                        _start_boss_death_sequence()
+                        if _death_seq == null:
+                                # Fallback (boss invalido): flusso originale
+                                # senza animazione.
+                                _finish_boss_death(false)
+                return
+
+
+# ============================================================================
+# TASK 86 — ANIMAZIONE DI MORTE DEL BOSS (per-tipo)
+# ============================================================================
+func _start_boss_death_sequence() -> void:
+        _death_seq_started = true
+        if boss == null or not is_instance_valid(boss):
+                return
+        var seq: Node2D = BossDeathSequenceClass.new()
+        seq.finished.connect(_on_boss_death_seq_finished)
+        add_child(seq)  # sibling del Boss (z_index 50: sopra il boss)
+        seq.begin(boss)
+        _death_seq = seq
+
+
+func _on_boss_death_seq_finished() -> void:
+        if _death_seq != null and is_instance_valid(_death_seq):
+                _death_seq.queue_free()
+        _death_seq = null
+        _finish_boss_death(true)
+
+
+func _finish_boss_death(with_sequence: bool) -> void:
+        # Corpo originale del ramo morte del boss: eseguito DOPO l'animazione
+        # di morte (Task 86), o subito in fallback senza animazione.
+        if AudioManager and not with_sequence:
+                AudioManager.play_sound(AudioManager.SoundType.BOSS_DEATH)
+        # Effetti Godot-native: screen shake forte + esplosione multipla
+        # (solo fallback: la sequenza ha gia' shake/suoni per famiglia).
+        if EffectsManager and not with_sequence:
+                EffectsManager.screen_shake(15.0, 0.8)
+                for i in 3:
+                        var p := EffectsManager.spawn_blast_smoke(
                                         boss.pos + Vector2(randf() * 60 - 30, randf() * 60 - 30),
                                         Color(0.6, 0.45, 0.3), 12)
-                                _add_capped_fx(p)
-                player.add_life()
-                # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
-                # nessun proiettile vagante durante la schermata bonus).
-                _clear_boss_arena()
-                if GameManager:
-                        # FIX (Hall of Fame): se questa è la vittoria finale
-                        # (story completa), registra il punteggio prima di
-                        # passare alla WinScreen.
-                        if GameManager.game_mode == C.GameMode.STORY and \
-                           current_level + 1 > C.STORY_LEVELS_COUNT:
-                                # FIX (Hall of Fame 2P): vittoria finale con
-                                # punteggi SINGOLI per player + somma.
-                                var total_score_w: int = player.score
-                                if GameManager.num_players == 2 and player2.visible:
-                                        total_score_w += player2.score
-                                GameManager.final_score = total_score_w
-                                GameManager.final_score_p1 = player.score
-                                GameManager.final_score_p2 = player2.score if \
-                                                (GameManager.num_players == 2 and player2.visible) else 0
-                                GameManager.final_level = current_level
-                                # Vittoria finale: NESSUNA schermata bonus (una
-                                # reliquia non servirebbe più oltre la fine della
-                                # campagna) — transizione diretta alla WinScreen.
-                                GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
-                                GameManager.current_level = current_level + 1
-                                GameManager.go_to_win()
-                        else:
-                                # RELIC (Task 21): c'è un livello successivo →
-                                # SCHERMATA BONUS. Il fight si congela e i player
-                                # scelgono la reliquia; la transizione di livello
-                                # avviene alla chiusura (_on_bonus_completed).
-                                _start_bonus_phase()
-                return
+                        _add_capped_fx(p)
+        player.add_life()
+        # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
+        # nessun proiettile vagante durante la schermata bonus).
+        _clear_boss_arena()
+        if GameManager:
+                # FIX (Hall of Fame): se questa è la vittoria finale
+                # (story completa), registra il punteggio prima di
+                # passare alla WinScreen.
+                if GameManager.game_mode == C.GameMode.STORY and \
+                   current_level + 1 > C.STORY_LEVELS_COUNT:
+                        # FIX (Hall of Fame 2P): vittoria finale con
+                        # punteggi SINGOLI per player + somma.
+                        var total_score_w: int = player.score
+                        if GameManager.num_players == 2 and player2.visible:
+                                total_score_w += player2.score
+                        GameManager.final_score = total_score_w
+                        GameManager.final_score_p1 = player.score
+                        GameManager.final_score_p2 = player2.score if \
+                                        (GameManager.num_players == 2 and player2.visible) else 0
+                        GameManager.final_level = current_level
+                        # Vittoria finale: NESSUNA schermata bonus (una
+                        # reliquia non servirebbe più oltre la fine della
+                        # campagna) — transizione diretta alla WinScreen.
+                        GameManager.boss_defeated.emit(GameManager.get_boss_index(current_level))
+                        GameManager.current_level = current_level + 1
+                        GameManager.go_to_win()
+                else:
+                        # RELIC (Task 21): c'è un livello successivo →
+                        # SCHERMATA BONUS. Il fight si congela e i player
+                        # scelgono la reliquia; la transizione di livello
+                        # avviene alla chiusura (_on_bonus_completed).
+                        _start_bonus_phase()
 
 
 # ============================================================================
@@ -1421,9 +1478,19 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         if boss:
                 boss.queue_free()
         # Create boss via the Boss node's script
+        # TASK 86: reset dello stato della sequenza di morte (run precedente).
+        _death_seq = null
+        _death_seq_started = false
         if boss_node:
                 boss_node.setup(current_level, C.WINDOW_WIDTH, C.WINDOW_HEIGHT)
                 boss = boss_node
+                # TASK 86: reset delle trasformazioni dell'animazione di morte
+                # (la sequenza lascia scale/rotation/modulate/visible sul nodo
+                # Boss, che viene riusato tra i livelli).
+                boss_node.scale = Vector2.ONE
+                boss_node.rotation = 0.0
+                boss_node.modulate = Color.WHITE
+                boss_node.visible = true
         # TASK 51 — FASE 2: hook dei segnali del boss (annuncio, buche, salto).
         # Guard is_connected: start_boss_fight puo' essere richiamato sullo
         # stesso nodo (continue senza snapshot).
