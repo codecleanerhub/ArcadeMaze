@@ -230,11 +230,17 @@ def regen(entity_id: str, spec: dict) -> bool:
     godot_sheet = GODOT_SPRITES / f"{entity_id}_sheet.png"
     legacy_sheet = SPRITES_DIR / f"{entity_id}_sheet.png"
 
-    # confronto: conserva il vecchio sheet nello staging
+    # confronto: conserva il vecchio sheet E IL VECCHIO META nello staging
+    # (il meta contiene campi custom oltre allo standard: facesLeft!)
     if godot_sheet.exists():
         old_copy = out_dir / "OLD_sheet.png"
         if not old_copy.exists():
             shutil.copy(godot_sheet, old_copy)
+    old_meta_g = GODOT_SPRITES / f"{entity_id}_meta.json"
+    if old_meta_g.exists():
+        old_meta_copy = out_dir / "OLD_meta.json"
+        if not old_meta_copy.exists():
+            shutil.copy(old_meta_g, old_meta_copy)
 
     # 1) base PixelLab (color anchor = frame 0 dello sheet attuale)
     base_raw = out_dir / "base_raw.png"
@@ -276,6 +282,34 @@ def regen(entity_id: str, spec: dict) -> bool:
     # 3) sheet walk deterministico (scrive nel mirror legacy)
     compose_spritesheet_deterministic(base_frame, legacy_sheet)
     write_meta(entity_id)
+
+    # 3b) FIX (regressione test_task51_facing): write_meta riscrive il meta
+    # SENZA i campi custom del bestiario (facesLeft = sprite disegnato che
+    # guarda a sinistra, usato dal flip di Enemy). Ripristina i campi
+    # extra del vecchio meta sopra quello nuovo standard.
+    old_meta_copy = out_dir / "OLD_meta.json"
+    if old_meta_copy.exists():
+        import json
+        try:
+            old_m: dict = json.loads(old_meta_copy.read_text(encoding="utf-8"))
+        except Exception:
+            old_m = {}
+        for meta_path in [GODOT_SPRITES / f"{entity_id}_meta.json",
+                        SPRITES_DIR / f"{entity_id}_meta.json"]:
+            if meta_path.exists():
+                try:
+                    new_m: dict = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                changed = False
+                for k, v in old_m.items():
+                    if k not in new_m and k != "animations":
+                        new_m[k] = v
+                        changed = True
+                if changed:
+                    meta_path.write_text(
+                        json.dumps(new_m, indent=2) + "\n", encoding="utf-8")
+                    print(f"  meta: ripristinati campi custom {[k for k in old_m if k not in new_m and k != 'animations']}" if changed else "")
 
     # 4) copia su godot (il gioco carica da qui)
     shutil.copy(legacy_sheet, godot_sheet)
