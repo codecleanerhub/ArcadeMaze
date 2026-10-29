@@ -38,10 +38,12 @@ extends Control
 signal back_to_menu_requested()
 
 # --- Colors (mirror the SFML palette in drawCredits) ----------------------
-@export var color_section:  Color = Color(1.000, 0.843, 0.392)   # 255,215,100
+# TASK 78 — palette ORO MEDIEVALE: le sezioni dei credits in oro caldo
+# (coerente col nuovo logo del titolo in font Goth And Gothic).
+@export var color_section:  Color = Color(0.941, 0.780, 0.373)   # oro caldo
 @export var color_role:     Color = Color(0.706, 0.706, 0.706)   # 180,180,180
 @export var color_name:     Color = Color(0.961, 0.922, 0.784)    # 245,235,200
-@export var color_thank:    Color = Color(1.000, 0.843, 0.392)
+@export var color_thank:    Color = Color(0.941, 0.780, 0.373)   # oro caldo
 @export var color_publisher: Color = Color(0.784, 0.784, 0.784)
 @export var color_hint:     Color = Color(0.588, 0.588, 0.588)
 @export var color_bg:       Color = Color(0.020, 0.020, 0.039)    # 5,5,10
@@ -282,6 +284,10 @@ func _draw() -> void:
         var font := get_theme_default_font()
         if font == null:
                 font = ThemeDB.fallback_font
+        # TASK 78: font medievale Goth And Gothic per i TITOLI DI SEZIONE
+        # (e "Thank you"); ruoli e nomi restano col font leggibile di default.
+        var gf: FontFile = GameConstants.gothic_font()
+        var section_font: Font = gf if gf != null else font
         var cx: float = size.x / 2.0
 
         if not _finished:
@@ -295,8 +301,9 @@ func _draw() -> void:
                                 if role.is_empty() and name.is_empty():
                                         pass  # blank line
                                 elif name.is_empty():
-                                        # Section header (e.g. "PROGRAMMING")
-                                        _draw_outlined_string(font, Vector2(cx, y), role,
+                                        # Section header (e.g. "PROGRAMMING") — TASK 78:
+                                        # font medievale Goth And Gothic in oro.
+                                        _draw_outlined_string(section_font, Vector2(cx, y), role,
                                         28, color_section, true)
                                 else:
                                         # Role + name pair
@@ -310,7 +317,7 @@ func _draw() -> void:
                 var pulse: float = (sin(_end_timer_ms * 0.003) + 1.0) * 0.5
                 var alpha: float = 100.0 + pulse * 155.0
                 var thank_col: Color = Color(color_thank.r, color_thank.g, color_thank.b, alpha / 255.0)
-                _draw_outlined_string(font, Vector2(cx, size.y / 2.0 - 20.0),
+                _draw_outlined_string(section_font, Vector2(cx, size.y / 2.0 - 20.0),
                         I18n.t("cr.thank_you"), 40, thank_col, true)
                 _draw_plain_string(font, Vector2(cx, size.y / 2.0 + 60.0),
                         "Marled Software", 24, color_publisher, true)

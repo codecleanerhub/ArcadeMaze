@@ -28,6 +28,13 @@ class Sheet:
         var columns: int = 4
         var rows: int = 1
         var animations: Dictionary = {}   # anim_name -> { "row": int, "frames": int, "frameDuration": int }
+        ## TASK 51 (richiesta utente "nemici girati al contrario"): alcuni
+        ## sheet PixelLab sono disegnati guardando a SINISTRA. Il flag
+        ## (opzionale, da `<id>_meta.json` -> "facesLeft": true) inverte la
+        ## convenzione del flip: lo sprite viene specchiato quando guarda a
+        ## DESTRA invece che a sinistra, cosi' il lato del muso coincide
+        ## sempre con la direzione di marcia reale.
+        var faces_left: bool = false
 
         func is_loaded() -> bool:
                 return texture != null
@@ -61,9 +68,18 @@ class Sheet:
 
 ## ---- Public API ----
 
-## Autoload lifecycle: load all sprites on startup.
+## Autoload lifecycle — TASK 76 (avvio lento): NESSUN preload di massa.
+## I 236 PNG (SD+HD, ~35MB) venivano tutti decodificati al boot prima del
+## primo frame. Ora gli sheet si caricano ON-DEMAND al primo get_sheet()
+## (i nemici caricano gia' i propri SD inline; boss/effetti/collectibles
+## pagano ~2-3ms al primo accesso, coperti dall'overlay Loading...).
 func _ready() -> void:
-        load_all()
+        _lazy = true
+        loaded.emit()
+
+
+var _lazy: bool = false
+var _tried_ids: Dictionary = {}  # id -> true (evita retry infiniti su id mancanti)
 
 
 ## Load all `<id>_sheet.png` sprites found under the sprites folder.
@@ -81,6 +97,7 @@ func load_all(base_path: String = "res://assets/sprites/") -> void:
         while file_name != "":
                 if not dir.current_is_dir() and file_name.ends_with("_sheet.png"):
                         var id := file_name.substr(0, file_name.length() - "_sheet.png".length())
+                        _tried_ids[id] = true
                         _load_sheet(base_path, id)
                 file_name = dir.get_next()
         dir.list_dir_end()
@@ -88,9 +105,17 @@ func load_all(base_path: String = "res://assets/sprites/") -> void:
 
 
 ## Retrieve a cached Sheet by id (e.g. "boss_021" or "miniboss_05").
+## TASK 76: caricamento LAZY — al primo accesso lo sheet viene caricato da
+## disco (HD se esiste, altrimenti SD) e messo in cache. Un id senza file
+## viene ricordato come "provato" per non ritentare a ogni chiamata.
 func get_sheet(id: String) -> Sheet:
         if _sheets.has(id):
                 return _sheets[id]
+        if _lazy and not _tried_ids.has(id):
+                _tried_ids[id] = true
+                _load_sheet("res://assets/sprites/", id)
+                if _sheets.has(id):
+                        return _sheets[id]
         return null
 
 
@@ -179,6 +204,7 @@ func _load_sheet(base_path: String, id: String) -> void:
                         sheet.frame_h = int(meta.get("frameHeight", 64))
                         sheet.columns = int(meta.get("columns", 4))
                         sheet.rows = int(meta.get("rows", 1))
+                        sheet.faces_left = bool(meta.get("facesLeft", false))
                         var anims: Dictionary = meta.get("animations", {})
                         for anim_name in anims:
                                 var info = anims[anim_name]
@@ -217,8 +243,39 @@ func _load_sheet(base_path: String, id: String) -> void:
                 sheet.animations["walk"] = {"row": 1, "frames": 4, "frameDuration": 120}
                 sheet.animations["attack"] = {"row": 2, "frames": 4, "frameDuration": 90}
                 sheet.animations["death"] = {"row": 3, "frames": 4, "frameDuration": 120}
+                # TASK 51: il flag facesLeft vive nel meta JSON dell'id ed e'
+                # valido anche per la versione HD (stessa arte sorgente).
+                var hd_meta: Variant = _load_json(meta_path)
+                if hd_meta != null and not hd_meta.is_empty():
+                        sheet.faces_left = bool(hd_meta.get("facesLeft", false))
 
         _sheets[id] = sheet
+
+
+## TASK 51: true se lo sheet dell'id e' disegnato guardando a SINISTRA
+## (meta "facesLeft": true). Cache dei soli flag, letti dal meta JSON;
+## usato anche da Enemy/MiniBoss quando costruiscono sheet SD inline.
+var _faces_left_cache: Dictionary = {}
+
+
+func meta_faces_left(id: String) -> bool:
+        if _faces_left_cache.has(id):
+                return _faces_left_cache[id]
+        var s: Sheet = _sheets.get(id)
+        if s != null:
+                _faces_left_cache[id] = s.faces_left
+                return s.faces_left
+        var meta: Variant = _load_json(base_sprites_path() + id + "_meta.json")
+        var flag := false
+        if meta != null and not meta.is_empty():
+                flag = bool(meta.get("facesLeft", false))
+        _faces_left_cache[id] = flag
+        return flag
+
+
+## Percorso base degli sprite SD (sottomani per i test).
+func base_sprites_path() -> String:
+        return "res://assets/sprites/"
 
 
 func _load_json(path: String) -> Variant:

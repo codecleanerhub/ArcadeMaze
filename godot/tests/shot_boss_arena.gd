@@ -1,18 +1,16 @@
-## shot_boss_arena.gd — TASK 39: screenshot dell'ARENA DEL BOSS.
+## shot_boss_arena.gd — TASK 39/50: screenshot dell'ARENA DEL BOSS.
 ##
 ## Catture (in /home/z/my-project/download/):
-##   1. boss_arena_overview        — arena completa: pilastri a tema, barili,
-##                                    cannone, boss (TASK 41: hint debolezza
-##                                    RIMOSSO dall'HUD; TASK 43: architetture
-##                                    gotiche Bloodborne 68x184)
-##   2. boss_arena_pillar_cracked  — pilastro a 2 colpi (crepe visibili)
-##   3. boss_arena_collapse        — crollo con frammenti in volo
-##   3b. boss_arena_rubble         — TASK 43: cumulo di macerie fermo
+##   1. boss_arena_overview        — TASK 50: labirinto di muri-rovina
+##                                    PixelLab + barili, cannone, boss
+##   2. boss_arena_pillar_cracked  — muro-rovina a 2 colpi (crepe visibili)
+##   3. boss_arena_collapse        — crollo con schegge di pietra in volo
+##   3b. boss_arena_rubble         — cumulo di macerie fermo
 ##                                    (test che NON risorgono al rinnovo)
 ##   4. boss_arena_explosion       — detonazione FUOCO sul boss con testo
 ##                                    "DEBOLEZZA!" (moltiplicatore x2.5)
 ##   5. boss_arena_siege           — player con cannone equipaggiato + pickup
-##                                    + crop ravvicinati (pilastro/barile/canna)
+##                                    + crop ravvicinati
 ##
 ## Ambiente: boss LICH lvl 4 (debolezza FUOCO), sparo del boss disattivato
 ## per stati deterministici.
@@ -25,9 +23,11 @@ var boss_room: Node2D = null
 var stage: int = 0
 var t: float = 0.0
 var fire_barrel: Node2D = null
+var test_ruin: Node2D = null
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         GameManager.current_level = 4
         boss_room = BossRoomScene.instantiate()
         get_tree().root.add_child.call_deferred(boss_room)
@@ -71,37 +71,48 @@ func _physics_process(delta: float) -> void:
                                 stage = 1
                                 t = 0.0
                 1:
-                        # overview: tutto appena spawnato
+                        # overview: tutto appena spawnato (TASK 50: rovine)
                         if t > 0.6:
                                 _capture("boss_arena_overview")
-                                # 2 colpi al pilastro 0 -> crepe visibili
-                                boss_room._arena_pillars[0].take_hit()
-                                boss_room._arena_pillars[0].take_hit()
+                                if boss_room._arena_ruins.size() > 0:
+                                        test_ruin = boss_room._arena_ruins[0]
+                                        # 2 colpi -> crepe visibili
+                                        test_ruin.take_hit()
+                                        test_ruin.take_hit()
+                                        # crop centrato sul muro di test
+                                        var rr: Rect2 = test_ruin.get_rect()
+                                        _crop_capture("boss_arena_pillar_cracked",
+                                                        Rect2i(int(rr.position.x) - 40,
+                                                        int(rr.position.y) - 60,
+                                                        int(rr.size.x) + 80,
+                                                        int(rr.size.y) + 120))
                                 stage = 2
                                 t = 0.0
                 2:
                         if t > 0.45:
                                 _capture("boss_arena_pillar_cracked")
-                                _crop_capture("boss_arena_pillar_cracked",
-                                        Rect2i(315, 275, 230, 330))
                                 # colpo finale -> crollo
-                                boss_room._arena_pillars[0].take_hit()
+                                if test_ruin != null and is_instance_valid(test_ruin):
+                                        test_ruin.take_hit()
                                 stage = 3
                                 t = 0.0
                 3:
-                        # frammenti in volo (~300ms dal crollo)
+                        # schegge in volo (~300ms dal crollo)
                         if t > 0.32:
                                 _capture("boss_arena_collapse")
-                                _crop_capture("boss_arena_collapse",
-                                        Rect2i(265, 225, 330, 440))
+                                if test_ruin != null and is_instance_valid(test_ruin):
+                                        var rc: Rect2 = test_ruin.get_rect()
+                                        _crop_capture("boss_arena_collapse",
+                                                        Rect2i(int(rc.position.x) - 90,
+                                                        int(rc.position.y) - 130,
+                                                        int(rc.size.x) + 180,
+                                                        int(rc.size.y) + 260))
                                 stage = 4
                                 t = 0.0
                 4:
-                        # TASK 43: macerie ferme (il crollo dura 430ms)
-                        if t > 1.2:
+                        # TASK 43: macerie ferme (le schegge volano ~2.1s)
+                        if t > 1.6:
                                 _capture("boss_arena_rubble")
-                                _crop_capture("boss_arena_rubble",
-                                        Rect2i(315, 275, 230, 330))
                                 stage = 5
                                 t = 0.0
                 5:

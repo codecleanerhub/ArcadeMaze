@@ -47,12 +47,15 @@ const BonusScreenClass = preload("res://scripts/ui/BonusScreen.gd")
 #     di fuoco; l'elemento debole del boss infligge il 250% del danno
 #   * BossSiegeCannon: pickup del Cannone d'Assedio (arma SIEGE, 4 colpi)
 const BossArenaPillarClass = preload("res://scripts/entities/BossArenaPillar.gd")
+const BossArenaRuinClass = preload("res://scripts/entities/BossArenaRuin.gd")
 const ElementalBarrelClass = preload("res://scripts/entities/ElementalBarrel.gd")
 const BossSiegeCannonClass = preload("res://scripts/entities/BossSiegeCannon.gd")
 
 # Props dell'arena (figli di boss_room_weapons_node: disegnati sopra il
 # pavimento, sotto player/boss, e liberati con la scena).
-var _arena_pillars: Array = []          # [BossArenaPillar]
+var _arena_pillars: Array = []          # [BossArenaPillar] (LEGACY TASK 39)
+var _arena_ruins: Array = []            # [BossArenaRuin] (TASK 50: muri-labirinto)
+var _arena_ruin_seed: int = 0           # seed layout (per-boss, per-run)
 var _arena_barrels: Array = []          # [ElementalBarrel]
 var _arena_siege: Node2D = null         # BossSiegeCannon (pickup a terra)
 var _arena_renewal_ms: float = 0.0      # timer rigenerazione arena
@@ -88,6 +91,15 @@ var _pause_overlay: Control = null
 #     Spawns once at fight start; bounces between walls and, on impact with
 #     the boss, deals 30% of boss.max_health. ---
 var mine_item: Collectibles = null
+
+# TASK 51 — FASE 2 DEL BOSS: stato lato controller.
+#   * _phase2_flash_ms: flash bianco/rosa a pieno schermo all'ingresso in
+#     fase 2 (si scarica in _draw);
+#   * boss_pits: buche aperte dal boss (PIT_SPAWNER): telegrafo crepa ->
+#     voragine aperta BOSS_PHASE2_PIT_OPEN_MS -> richiude. Danno ai player
+#     GROUNDED dentro il raggio (una volta per buca per player).
+var _phase2_flash_ms: float = 0.0
+var boss_pits: Array[Dictionary] = []
 
 const FRAME_MS: float = 1000.0 / 60.0
 
@@ -129,6 +141,10 @@ func _ready() -> void:
                 GameManager.restore_player_carry(player, player2)
         # Setup boss fight
         start_boss_fight(died_in_boss)
+        # TASK 79d: precarica lo sfondo per-tipo FUORI dalla draw callback
+        # (prima veniva caricato al primo _draw: decode JPG + upload GPU
+        # dentro il callback di disegno = hitch sul primo frame della stanza).
+        _load_boss_bg()
         # FIX (continue = sessione ESATTA nella boss room — richiesta utente):
         # se siamo qui da un CONTINUE, ripristina lo scontro COM'E'ERA alla
         # morte: HP del boss salvati nello snapshot (NON ricomincia da capo),
@@ -411,6 +427,110 @@ func _handle_input(delta_ms: float = 16.0) -> void:
 # ============================================================================
 # Boss fight update loop (STATE_BOSS)
 # ============================================================================
+
+# ============================================================================
+# TASK 51 — FASE 2 DEL BOSS: handler dei segnali del Boss.
+# ============================================================================
+
+# _on_boss_phase2_entered(boss): annuncio drammatico del potenziamento —
+# flash a pieno schermo, rombo profondo + risata tenebrosa, UNA scossa
+# singola (one-shot: non e' la vibrazione ricorrente dei muri rimossa su
+# richiesta utente) e polvere attorno al boss.
+func _on_boss_phase2_entered(b: Node2D) -> void:
+        _phase2_flash_ms = 700.0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+                AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+        if EffectsManager:
+                EffectsManager.screen_shake(5.0, 0.5)
+                if EffectsManager.has_method("spawn_blast_smoke"):
+                        var dust := EffectsManager.spawn_blast_smoke(
+                                        b.pos, Color(0.5, 0.1, 0.15), 12)
+                        if dust != null:
+                                _add_capped_fx(dust)
+        queue_redraw()
+
+
+# _on_boss_spawn_pit(world_pos, tint): il boss apre una buca — fase crepa
+# telegrafica gestita in _update_boss_pits.
+func _on_boss_spawn_pit(world_pos: Vector2, tint: Color) -> void:
+        boss_pits.append({
+                "pos": world_pos,
+                "tint": tint,
+                "state": 0,  # 0 = crepa (telegrafo), 1 = aperta
+                "timer": float(C.BOSS_PHASE2_PIT_TELEGRAPH_MS),
+                "hit_p1": false,
+                "hit_p2": false,
+        })
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+
+
+# _update_boss_pits(delta_ms): ciclo di vita delle buche + danni.
+func _update_boss_pits(delta_ms: float) -> void:
+        if boss_pits.is_empty():
+                return
+        for i in range(boss_pits.size() - 1, -1, -1):
+                var pit: Dictionary = boss_pits[i]
+                pit["timer"] = float(pit["timer"]) - delta_ms
+                match int(pit["state"]):
+                        0:
+                                if float(pit["timer"]) <= 0.0:
+                                        pit["state"] = 1
+                                        pit["timer"] = float(C.BOSS_PHASE2_PIT_OPEN_MS)
+                                        if AudioManager:
+                                                AudioManager.play_sound(
+                                                                AudioManager.SoundType.HAZARD_COLLAPSE)
+                        1:
+                                # danno: player GROUNDED dentro il raggio, una
+                                # volta per buca per player (niente drain).
+                                if not pit["hit_p1"] and player.visible \
+                                                and not player.is_invulnerable() \
+                                                and not player.is_jumping():
+                                        if player.get_pixel_pos().distance_to(
+                                                        pit["pos"]) <= C.BOSS_PHASE2_PIT_RADIUS:
+                                                player.take_damage()
+                                                pit["hit_p1"] = true
+                                if not pit["hit_p2"] and GameManager \
+                                                and GameManager.num_players == 2 \
+                                                and player2.visible \
+                                                and not player2.is_invulnerable() \
+                                                and not player2.is_jumping():
+                                        if player2.get_pixel_pos().distance_to(
+                                                        pit["pos"]) <= C.BOSS_PHASE2_PIT_RADIUS:
+                                                player2.take_damage()
+                                                pit["hit_p2"] = true
+                                if float(pit["timer"]) <= 0.0:
+                                        boss_pits.remove_at(i)
+                                        continue
+                # disegno animato (crepa pulsante / voragine)
+                queue_redraw()
+
+
+# _on_boss_slam_landed(world_pos, radius): onda d'urto del salto — i player
+# GROUNDED nel raggio subiscono un colpo (chi si e' spostato durante
+# l'ombra si salva), polvere + scossa singola + tonfo.
+func _on_boss_slam_landed(world_pos: Vector2, radius: float) -> void:
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_THUD)
+        if EffectsManager:
+                EffectsManager.screen_shake(6.0, 0.4)
+                var dust := EffectsManager.spawn_explosion(
+                                world_pos, Color(0.45, 0.40, 0.33), 22, 0.7)
+                _add_capped_fx(dust)
+        for p in [player, player2]:
+                if p == null or not p.visible:
+                        continue
+                if p.is_invulnerable() or p.is_jumping() or p.is_ghost():
+                        continue
+                if p.get_pixel_pos().distance_to(world_pos) <= radius:
+                        p.take_damage()
+
+
+# ============================================================================
+# TASK 39/50 — L'ARENA DEL BOSS (pilastri, muri in rovina, barili, cannone)
+# ============================================================================
+
 func _update_boss(delta_ms: float) -> void:
         # RELIC (Task 21): durante la SCHERMATA BONUS il fight è congelato —
         # il boss è morto, i player stanno scegliendo. Si aggiorna solo la
@@ -460,7 +580,21 @@ func _update_boss(delta_ms: float) -> void:
                         if proj is Projectile:
                                 proj.position = proj.pos
                                 proj.visible = true
+                                # TASK 51 (fix latente): bounds REALI della
+                                # stanza 1920x1080 — il default 1024 cullava i
+                                # colpi nella meta' destra dello schermo.
+                                proj.bounds = Rect2(0.0, C.UI_HEIGHT,
+                                                float(C.WINDOW_WIDTH),
+                                                float(C.WINDOW_HEIGHT) - C.UI_HEIGHT)
                                 boss_projectiles_node.add_child(proj)
+
+        # TASK 51 — FASE 2: update delle buche del boss (telegrafo/apertura/
+        # scadenza + danno ai player grounded dentro il raggio).
+        _update_boss_pits(delta_ms)
+        # TASK 51: scarica il timer del flash d'ingresso fase 2.
+        if _phase2_flash_ms > 0.0:
+                _phase2_flash_ms = maxf(0.0, _phase2_flash_ms - delta_ms)
+                queue_redraw()
 
         # (3) Advance boss projectiles
         _advance_boss_projectiles(delta_ms)
@@ -622,7 +756,7 @@ func _on_continue_chosen(pnum: int, yes: bool) -> void:
                         EffectsManager.screen_shake(4.0, 0.2)
                         var burst := EffectsManager.spawn_pickup_burst(
                                         p.get_pixel_pos(), Color(0.4, 0.9, 1.0))
-                        boss_projectiles_node.add_child(burst)
+                        _add_capped_fx(burst)
                 if AudioManager and GameManager and GameManager.music_enabled:
                         AudioManager.play_level_music(current_level, true)
                 print("[Continue] boss room: PLAYER ", pnum, " riprende (boss HP ",
@@ -646,7 +780,7 @@ func _eliminate_player(p: CharacterBody2D) -> void:
         if EffectsManager:
                 var burst := EffectsManager.spawn_explosion(p.get_pixel_pos(),
                         Color(0.55, 0.65, 1.0), 18, 0.7)
-                boss_projectiles_node.add_child(burst)
+                _add_capped_fx(burst)
         if hud:
                 var snap_d: Dictionary = {
                         "score": p.score,
@@ -704,7 +838,7 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                 # proiettili: senza questo filtro venivano avanzati,
                 # "bloccati" dai pilastri (colpendoli OGNI FRAME) e potevano
                 # colpire il player come proiettili fantasma.
-                if proj is GPUParticles2D:
+                if proj is GPUParticles2D or proj.is_in_group("fx_effect"):
                         continue
                 if not proj.visible:
                         to_remove.append(proj)
@@ -722,31 +856,59 @@ func _advance_boss_projectiles(_delta_ms: float) -> void:
                                 var to_player: Vector2 = (homing_target.get_pixel_pos() - proj.position).normalized()
                                 vel = vel.lerp(to_player * vel.length(), 0.08)
                                 proj.dir = vel
+                        # TASK 79d: ridisegna SOLO le munizioni con animazione
+                        # interna (variante 5 fase-2 = aura pulsante + corona
+                        # rotante; homing = scia in dissolvenza): prima il loro
+                        # _draw restava CONGELATO allo stato di spawn (nobody
+                        # chiamava queue_redraw). Costo trascurabile: sono ~3-6
+                        # nodi per volta, e solo in fase 2.
+                        if proj.variant == 5 or proj.homing_timer_ms > 0:
+                                proj.queue_redraw()
                 else:
                         vel = proj.get_meta("velocity", Vector2.ZERO)
                 proj.position += vel
-                # TASK 39: i PILASTRI in piedi BLOCCANO i proiettili del boss
-                # (copertura fisica) e subiscono 1 danno ciascuno: la
-                # copertura si consuma durante lo scontro.
-                var blocked_by_pillar: bool = false
-                for pillar in _arena_pillars:
-                        if pillar == null or not is_instance_valid(pillar):
-                                continue
-                        if not pillar.is_standing():
-                                continue
-                        if proj.position.distance_squared_to(pillar.position) \
-                                        < C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS:
-                                blocked_by_pillar = true
-                                pillar.take_hit()  # la copertura si consuma
-                                if AudioManager:
-                                        AudioManager.play_sound(
-                                                        AudioManager.SoundType.PILLAR_CRACK)
-                                if EffectsManager:
-                                        var block_fx: Node2D = EffectsManager.spawn_sparks(
-                                                        proj.position, 8)
-                                        boss_projectiles_node.add_child(block_fx)
-                                break
-                if blocked_by_pillar:
+                # TASK 39/50: LE ARCHITETTURE in piedi BLOCCANO i proiettili
+                # del boss (copertura fisica) e subiscono 1 danno ciascuna:
+                # la copertura si consuma durante lo scontro. Dal TASK 50 le
+                # architetture sono i MURO-LABIRINTO in rovina (AABB); il
+                # ramo pilastri resta per il rollback (flag in GameConstants).
+                var blocked_by_arena: bool = false
+                if C.BOSS_ARENA_RUINS_ENABLED:
+                        for ruin in _arena_ruins:
+                                if ruin == null or not is_instance_valid(ruin):
+                                        continue
+                                if not ruin.is_standing():
+                                        continue
+                                if ruin.blocks_point(proj.position, 7.0):
+                                        blocked_by_arena = true
+                                        ruin.take_hit()  # la copertura si consuma
+                                        if AudioManager:
+                                                AudioManager.play_sound(
+                                                                AudioManager.SoundType.PILLAR_CRACK)
+                                        if EffectsManager:
+                                                var block_fx: Node2D = EffectsManager.spawn_sparks(
+                                                                proj.position, 8)
+                                                _add_capped_fx(block_fx)
+                                        break
+                else:
+                        for pillar in _arena_pillars:
+                                if pillar == null or not is_instance_valid(pillar):
+                                        continue
+                                if not pillar.is_standing():
+                                        continue
+                                if proj.position.distance_squared_to(pillar.position) \
+                                                < C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS:
+                                        blocked_by_arena = true
+                                        pillar.take_hit()  # la copertura si consuma
+                                        if AudioManager:
+                                                AudioManager.play_sound(
+                                                                AudioManager.SoundType.PILLAR_CRACK)
+                                        if EffectsManager:
+                                                var block_fx2: Node2D = EffectsManager.spawn_sparks(
+                                                                proj.position, 8)
+                                                _add_capped_fx(block_fx2)
+                                        break
+                if blocked_by_arena:
                         proj.visible = false
                         to_remove.append(proj)
                         continue
@@ -776,13 +938,13 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                                                 * C.BOSS_ARENA_SIEGE_PCT)))
                                 if EffectsManager:
                                         EffectsManager.screen_shake(6.0, 0.25)
-                                        var siege_fx := EffectsManager.spawn_explosion(
-                                                        proj_pos, Color(1.0, 0.72, 0.25), 26, 0.7)
-                                        boss_projectiles_node.add_child(siege_fx)
+                                        var siege_fx := EffectsManager.spawn_blast_smoke(
+                                                        proj_pos)
+                                        _add_capped_fx(siege_fx)
                                         var smoke_fx := EffectsManager.spawn_explosion(
                                                         proj_pos + Vector2(0.0, -12.0),
                                                         Color(0.25, 0.23, 0.21), 12, 1.0)
-                                        boss_projectiles_node.add_child(smoke_fx)
+                                        _add_capped_fx(smoke_fx)
                                 if AudioManager:
                                         AudioManager.play_sound(
                                                         AudioManager.SoundType.ENEMY_EXPLODE)
@@ -790,9 +952,9 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
                         # RELIC (Task 21): la bomba esplode al contatto col boss.
                         if proj.has("lob_px"):
                                 if EffectsManager:
-                                        var boom := EffectsManager.spawn_explosion(
-                                                        proj_pos, Color(1.0, 0.6, 0.15), 24, 0.6)
-                                        boss_projectiles_node.add_child(boom)
+                                        var boom := EffectsManager.spawn_blast_smoke(
+                                                        proj_pos, Color(1.0, 0.55, 0.18), 12)
+                                        _add_capped_fx(boom)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                         proj["active"] = false
@@ -804,6 +966,8 @@ func _check_player_projectiles_vs_boss(p: CharacterBody2D) -> void:
 func _check_boss_projectiles_vs_player(p: CharacterBody2D) -> void:
         for proj in boss_projectiles_node.get_children():
                 if not proj is Node2D or not proj.visible:
+                        continue
+                if proj.is_in_group("fx_effect"):
                         continue
                 if proj.position.distance_squared_to(p.get_pixel_pos()) < 600.0:
                         # RELIC (Task 21) — SCAGLIE DEL DRAGO: il proiettile del
@@ -914,7 +1078,7 @@ func _on_soul_delivered(winner: CharacterBody2D, victim: CharacterBody2D) -> voi
                         EffectsManager.screen_shake(3.0, 0.15)
                         var burst := EffectsManager.spawn_pickup_burst(
                                         winner.get_pixel_pos(), Color(0.85, 0.95, 1.0))
-                        boss_projectiles_node.add_child(burst)
+                        _add_capped_fx(burst)
         if is_instance_valid(victim):
                 victim.respawn_after_soul()
 
@@ -1012,11 +1176,20 @@ func _check_boss_death() -> void:
                                                 "state": int(pillar.state),
                                                 "hp": int(pillar.hp),
                                         })
+                                # TASK 50: snapshot dei muri-rovina (il SEED
+                                # ricrea lo stesso labirinto al restore)
+                                var ruins_snap: Array = []
+                                for ruin in _arena_ruins:
+                                        if ruin == null or not is_instance_valid(ruin):
+                                                continue
+                                        ruins_snap.append(ruin.snapshot())
                                 GameManager.session_snapshot = {
                                         "kind": "boss",
                                         "level": current_level,
                                         "boss_health": int(boss.health) if (boss != null and is_instance_valid(boss)) else 0,
                                         "arena_pillars": pillars_snap,
+                                        "arena_ruins": ruins_snap,
+                                        "arena_ruin_seed": int(_arena_ruin_seed),
                                         "p1": {
                                                 "score": player.score,
                                                 "weapon": player.current_weapon.duplicate(),
@@ -1043,10 +1216,10 @@ func _check_boss_death() -> void:
                 if EffectsManager:
                         EffectsManager.screen_shake(15.0, 0.8)
                         for i in 3:
-                                var p := EffectsManager.spawn_explosion(
+                                var p := EffectsManager.spawn_blast_smoke(
                                         boss.pos + Vector2(randf() * 60 - 30, randf() * 60 - 30),
-                                        Color(1.0, 0.5, 0.1), 40, 1.2)
-                                boss_projectiles_node.add_child(p)
+                                        Color(0.6, 0.45, 0.3), 12)
+                                _add_capped_fx(p)
                 player.add_life()
                 # TASK 39: il boss e' morto — libera l'arena (barili inclusi:
                 # nessun proiettile vagante durante la schermata bonus).
@@ -1143,9 +1316,16 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                 if EffectsManager:
                         var hit_fx := EffectsManager.spawn_sparks(boss.pos, 14)
-                        boss_projectiles_node.add_child(hit_fx)
-        # TASK 39: il fendente reliquia FRANTUMA anche i pilastri adiacenti
-        # (una spada spacca la pietra meglio di una pallottola).
+                        _add_capped_fx(hit_fx)
+        # TASK 39: il fendente reliquia FRANTUMA anche le architetture
+        # adiacenti (una spada spacca la pietra meglio di una pallottola).
+        if C.BOSS_ARENA_RUINS_ENABLED:
+                for ruin in _arena_ruins:
+                        if ruin == null or not is_instance_valid(ruin) or not ruin.is_standing():
+                                continue
+                        if ruin.blocks_point(p.get_pixel_pos()
+                                        + aim * 44.0, 26.0):
+                                _damage_ruin(ruin, p.get_pixel_pos())
         for pillar in _arena_pillars:
                 if pillar == null or not is_instance_valid(pillar) or not pillar.is_standing():
                         continue
@@ -1189,7 +1369,7 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                 if EffectsManager:
                         var boom := EffectsManager.spawn_explosion(blast_pos,
                                         Color(1.0, 0.6, 0.15), 30, 0.8)
-                        boss_projectiles_node.add_child(boom)
+                        _add_capped_fx(boom)
                         EffectsManager.screen_shake(8.0, 0.3)
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
@@ -1213,7 +1393,7 @@ func _tick_fire_armor(p: CharacterBody2D, delta_ms: float) -> void:
         if EffectsManager:
                 var ring := EffectsManager.spawn_explosion(p.get_pixel_pos(),
                                 Color(1.0, 0.45, 0.2), 12, 0.4)
-                boss_projectiles_node.add_child(ring)
+                _add_capped_fx(ring)
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
 
@@ -1244,6 +1424,19 @@ func start_boss_fight(keep_boss_state: bool = false) -> void:
         if boss_node:
                 boss_node.setup(current_level, C.WINDOW_WIDTH, C.WINDOW_HEIGHT)
                 boss = boss_node
+        # TASK 51 — FASE 2: hook dei segnali del boss (annuncio, buche, salto).
+        # Guard is_connected: start_boss_fight puo' essere richiamato sullo
+        # stesso nodo (continue senza snapshot).
+        if boss != null:
+                if not boss.phase2_entered.is_connected(_on_boss_phase2_entered):
+                        boss.phase2_entered.connect(_on_boss_phase2_entered)
+                if not boss.spawn_pit.is_connected(_on_boss_spawn_pit):
+                        boss.spawn_pit.connect(_on_boss_spawn_pit)
+                if not boss.slam_landed.is_connected(_on_boss_slam_landed):
+                        boss.slam_landed.connect(_on_boss_slam_landed)
+        # TASK 51: reset dello stato fase-2 del controller (buche/flash).
+        boss_pits.clear()
+        _phase2_flash_ms = 0.0
         # Reset player positions
         player.reset_position()
         player.position = Vector2(C.WINDOW_WIDTH / 2.0, C.WINDOW_HEIGHT - 100.0)
@@ -1364,6 +1557,15 @@ func _update_boss_room_mine(delta_ms: float) -> void:
         else:
                 # Bounce physics: rotate + move + bounce off room walls
                 # (mirrors C++ r2754-2760).
+                # TASK 50 (mina a ricerca, coerente col labirinto): nella boss
+                # room la mina ora INSEGUE il boss invece di vagare a caso
+                # rimbalzando finché non esplode: steering continuo verso il
+                # boss, i rimbalzi sui bordi restano solo come rete di sicurezza.
+                if boss != null and not boss.is_dead():
+                        var to_boss: Vector2 = boss.pos - mine_item.pos
+                        if to_boss.length() > 1.0:
+                                var m_speed: float = clampf(mine_item.velocity.length(), 4.5, 6.0)
+                                mine_item.velocity = to_boss.normalized() * m_speed
                 mine_item.rotation_deg += 0.08 * float(delta_ms) * 0.06
                 mine_item.pos += mine_item.velocity
                 mine_item.position = mine_item.pos
@@ -1402,9 +1604,9 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                                 if EffectsManager:
-                                        var p := EffectsManager.spawn_explosion(mine_item.pos,
-                                                Color(1.0, 0.78, 0.2), 20, 0.5)
-                                        boss_projectiles_node.add_child(p)
+                                        # TASK 50: nube di fumo morbida, non pallini
+                                        var p := EffectsManager.spawn_blast_smoke(mine_item.pos)
+                                        _add_capped_fx(p)
                                 mine_item.active = false
                                 mine_item.bouncing = false
                                 mine_item.queue_free()
@@ -1429,9 +1631,9 @@ func _update_boss_room_mine(delta_ms: float) -> void:
                                                 if AudioManager:
                                                         AudioManager.play_sound(AudioManager.SoundType.BOSS_HIT)
                                 if EffectsManager:
-                                        var p := EffectsManager.spawn_explosion(mine_item.pos,
-                                                Color(1.0, 0.78, 0.2), 20, 0.5)
-                                        boss_projectiles_node.add_child(p)
+                                        # TASK 50: nube di fumo morbida, non pallini
+                                        var p := EffectsManager.spawn_blast_smoke(mine_item.pos)
+                                        _add_capped_fx(p)
                                 if AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
                                 mine_item.active = false
@@ -1449,18 +1651,26 @@ func _update_boss_room_mine(delta_ms: float) -> void:
 func _spawn_boss_arena() -> void:
         var weak_el: int = C.get_boss_weakness(boss.boss_type) if boss != null \
                         else C.ElementKind.FIRE
-        # --- Pilastri: 4 posizioni fisse simmetriche (non bloccano gli spawn) ---
-        var pillar_spots: Array = [
-                Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
-                Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
-        ]
-        for i in range(mini(C.BOSS_ARENA_PILLAR_COUNT, pillar_spots.size())):
-                var pillar: Node2D = BossArenaPillarClass.new()
-                boss_room_weapons_node.add_child(pillar)
-                if pillar.has_method("setup"):
-                        pillar.setup(pillar_spots[i], weak_el, i,
-                                        boss_room_weapons_node)
-                _arena_pillars.append(pillar)
+        # --- TASK 50: MURO-LABIRINTO IN ROVINA (sostituisce i 4 pilastri,
+        # vedi richiesta utente: "elementi troppi e piccoli... pezzi di
+        # muraglia di labirinto spezzato, procedurali, diversi ogni
+        # partita e ogni boss"). Rollback: BOSS_ARENA_RUINS_ENABLED=false
+        # riporta i pilastri simmetrici del TASK 39. ---
+        if C.BOSS_ARENA_RUINS_ENABLED:
+                _generate_arena_ruins()
+        else:
+                # --- LEGACY: 4 pilastri a posizioni fisse simmetriche ---
+                var pillar_spots: Array = [
+                        Vector2(430.0, 430.0), Vector2(1490.0, 430.0),
+                        Vector2(430.0, 800.0), Vector2(1490.0, 800.0),
+                ]
+                for i in range(mini(C.BOSS_ARENA_PILLAR_COUNT, pillar_spots.size())):
+                        var pillar: Node2D = BossArenaPillarClass.new()
+                        boss_room_weapons_node.add_child(pillar)
+                        if pillar.has_method("setup"):
+                                pillar.setup(pillar_spots[i], weak_el, i,
+                                                boss_room_weapons_node)
+                        _arena_pillars.append(pillar)
         # --- Barili: 3 posizioni scelte da un pool (prima = elemento debole) ---
         var barrel_spots: Array = [
                 Vector2(270.0, 320.0), Vector2(1650.0, 320.0),
@@ -1485,6 +1695,160 @@ func _spawn_boss_arena() -> void:
         # --- Cannone d'assedio: uno a terra tra il centro e lo spawn player ---
         _spawn_arena_siege(Vector2(C.WINDOW_WIDTH * 0.5, 850.0))
         _arena_renewal_ms = 0.0
+
+
+# ---------------------------------------------------------------------------
+# TASK 50 — GENERAZIONE PROCEDURALE DEL LABIRINTO IN ROVINA
+# ---------------------------------------------------------------------------
+# Segmenti di muraglia (2-4 celle) piazzati su una griglia di ancore con
+# vincoli: zone di rispetto (spawn boss/player, barili, cannone), corridoi
+# minimi tra i muri (il player ci passa in mezzo), niente sovrapposizioni.
+# Il seed dipende dal TEMPO + tipo di boss + livello: layout DIVERSO ad ogni
+# partita e ad ogni boss, ma DETERMINISTICO per lo snapshot/restore.
+func _generate_arena_ruins(forced_seed: int = -1) -> void:
+        # seed: tempo corrente ^ boss ^ livello (per-partita, per-boss)
+        if forced_seed >= 0:
+                _arena_ruin_seed = forced_seed
+        else:
+                var boss_id: int = boss.boss_type if boss != null else 0
+                var lvl: int = GameManager.current_level if GameManager \
+                                and "current_level" in GameManager else 0
+                _arena_ruin_seed = (Time.get_ticks_msec() & 0x7fffffff) \
+                                ^ (boss_id * 2654435761) ^ (lvl * 40503)
+        var rng := RandomNumberGenerator.new()
+        rng.seed = _arena_ruin_seed
+        # pulisci eventuali rovine precedenti
+        for ruin in _arena_ruins:
+                if ruin != null and is_instance_valid(ruin):
+                        ruin.queue_free()
+        _arena_ruins.clear()
+        # --- zone di rispetto (keep-out) ---
+        # NB: si usa la posizione di SPAWN canonica del boss (centro-alto),
+        # NON boss.pos corrente: il layout deve dipendere SOLO dal seed per
+        # essere identico al restore dallo snapshot (boss.pos nel frattempo
+        # e' cambiato e romperebbe il determinismo).
+        var keep_out: Array = []
+        keep_out.append([Vector2(C.WINDOW_WIDTH * 0.5, 420.0), 230.0])   # spawn boss
+        keep_out.append([Vector2(C.WINDOW_WIDTH * 0.5, 880.0), 170.0])   # spawn player
+        for spot in [Vector2(270.0, 320.0), Vector2(1650.0, 320.0),
+                        Vector2(270.0, 920.0), Vector2(1650.0, 920.0),
+                        Vector2(960.0, 580.0)]:
+                keep_out.append([spot, 90.0])                   # barili
+        keep_out.append([Vector2(C.WINDOW_WIDTH * 0.5, 850.0), 120.0])  # cannone
+        # --- piazzamento ---
+        var placed: Array = []   # Rect2 (ingombro + corridoio) dei segmenti
+        var target: int = rng.randi_range(C.BOSS_ARENA_RUIN_MIN, C.BOSS_ARENA_RUIN_MAX)
+        var attempts: int = 0
+        while _arena_ruins.size() < target and attempts < 220:
+                attempts += 1
+                var axis: String = "h" if rng.randf() < 0.62 else "v"
+                var length_cells: int
+                var roll: float = rng.randf()
+                if roll < 0.30:
+                        length_cells = 2
+                elif roll < 0.72:
+                        length_cells = 3
+                else:
+                        length_cells = 4
+                length_cells = mini(length_cells, C.BOSS_ARENA_RUIN_MAX_LEN)
+                var len_px: float = length_cells * C.TILE_SIZE
+                # centro candidato su griglia di mezze celle
+                var half_w: float = len_px * 0.5 if axis == "h" else C.TILE_SIZE * 0.5
+                var half_h: float = C.TILE_SIZE * 0.5 if axis == "h" else len_px * 0.5
+                var cx: float = 180.0 + rng.randf() * (C.WINDOW_WIDTH - 360.0)
+                var cy: float = C.UI_HEIGHT + 150.0 \
+                                + rng.randf() * (C.WINDOW_HEIGHT - C.UI_HEIGHT - 330.0)
+                cx = roundf(cx / 32.0) * 32.0
+                cy = roundf(cy / 32.0) * 32.0
+                var rect := Rect2(cx - half_w, cy - half_h, half_w * 2.0, half_h * 2.0)
+                # corridoio minimo attorno (il gap tra muri lascia passare il player)
+                var corridor := rect.grow(C.BOSS_ARENA_RUIN_PASS_GAP * 0.5)
+                var ok: bool = true
+                # bounds arena
+                if rect.position.x < 110.0 or rect.end.x > C.WINDOW_WIDTH - 110.0:
+                        ok = false
+                if rect.position.y < C.UI_HEIGHT + 110.0 \
+                                or rect.end.y > C.WINDOW_HEIGHT - 90.0:
+                        ok = false
+                # keep-out (centro del segmento lontano dalle zone protette)
+                if ok:
+                        for ko in keep_out:
+                                var kpos: Vector2 = ko[0]
+                                var krad: float = ko[1]
+                                var nearest := Rect2(rect.position - Vector2(krad, krad),
+                                                rect.size + Vector2(krad * 2.0, krad * 2.0))
+                                if nearest.has_point(kpos):
+                                        ok = false
+                                        break
+                # sovrapposizione con altri segmenti (con corridoio)
+                if ok:
+                        for other in placed:
+                                if other.intersects(corridor):
+                                        ok = false
+                                        break
+                if not ok:
+                        continue
+                placed.append(rect)
+                var ruin: Node2D = BossArenaRuinClass.new()
+                boss_room_weapons_node.add_child(ruin)
+                if ruin.has_method("setup"):
+                        ruin.setup(Vector2(cx, cy), axis, length_cells,
+                                        rng.randf() * 100.0, _arena_ruins.size(),
+                                        boss_room_weapons_node)
+                _arena_ruins.append(ruin)
+        # distribuzione di cortesia: se una meta' arena e' rimasta vuota,
+        # sposta un segmento lì (copertura bilanciata sinistra/destra)
+        _balance_arena_ruins(placed)
+        if _arena_ruins.is_empty():
+                push_warning("[TASK50] nessun muro-rovina piazzato (seed="
+                                + str(_arena_ruin_seed) + ")")
+
+
+## Garantisce almeno 2 segmenti per meta' arena (sinistra/destra): se tutto
+## e' finito da un lato, sposta i piu' esterni nell'altra meta'.
+func _balance_arena_ruins(placed: Array) -> void:
+        if _arena_ruins.size() < 2:
+                return
+        var mid_x: float = C.WINDOW_WIDTH * 0.5
+        var left_count: int = 0
+        for r in placed:
+                if r.get_center().x < mid_x:
+                        left_count += 1
+        var min_side: int = 2
+        if left_count >= min_side and _arena_ruins.size() - left_count >= min_side:
+                return
+        # sposta finche' entrambi i lati non hanno min_side segmenti
+        var side_needed: int
+        if left_count < min_side:
+                side_needed = 0  # serve a sinistra
+        else:
+                side_needed = 1  # serve a destra
+        var moved: int = 0
+        for i in range(_arena_ruins.size()):
+                if moved >= min_side:
+                        break
+                var ruin: Node2D = _arena_ruins[i]
+                if ruin == null or not is_instance_valid(ruin):
+                        continue
+                var on_side: int = 1 if ruin.origin.x >= mid_x else 0
+                if on_side == side_needed:
+                        continue
+                # sposta il segmento nella meta' opposta (specchiato)
+                var new_x: float = C.WINDOW_WIDTH - ruin.origin.x
+                # verifica che lo slot specchiato non collida con altri
+                var r: Rect2 = ruin.get_rect()
+                var mirrored := Rect2(new_x - r.size.x * 0.5, r.position.y,
+                                r.size.x, r.size.y).grow(C.BOSS_ARENA_RUIN_PASS_GAP * 0.5)
+                var blocked: bool = false
+                for other in placed:
+                        if other != r and other.intersects(mirrored):
+                                blocked = true
+                                break
+                if blocked:
+                        continue
+                ruin.origin = Vector2(new_x, ruin.origin.y)
+                ruin.position = ruin.origin
+                moved += 1
 
 
 # Spawna il pickup del cannone (usato anche dal rinnovo dell'arena).
@@ -1528,6 +1892,29 @@ func _clear_arena_consumables() -> void:
 # frammenti: il crollo era gia' avvenuto), quelli in piedi recuperano le
 # crepe deterministiche derivate dagli HP residui.
 func _restore_arena_pillars_from_snapshot(snap: Dictionary) -> void:
+        # TASK 50: prima i muri-rovina (rigenera lo STESSO labirinto dal seed
+        # salvato, poi riapplica gli stati: in piedi con HP residui o macerie
+        # senza animazione — il crollo era gia' avvenuto).
+        var ruins_states: Array = snap.get("arena_ruins", [])
+        if not ruins_states.is_empty():
+                var saved_seed: int = int(snap.get("arena_ruin_seed", -1))
+                if saved_seed >= 0:
+                        _generate_arena_ruins(saved_seed)
+                for entry in ruins_states:
+                        var ridx: int = int(entry.get("idx", -1))
+                        var rst: int = int(entry.get("state", 0))
+                        var rhp: int = int(entry.get("hp", C.BOSS_ARENA_RUIN_HP))
+                        for ruin in _arena_ruins:
+                                if ruin == null or not is_instance_valid(ruin):
+                                        continue
+                                if ruin.ruin_index != ridx:
+                                        continue
+                                if rst != int(BossArenaRuinClass.RuinState.STANDING):
+                                        ruin.restore_from_snapshot(true)
+                                else:
+                                        ruin.restore_from_snapshot(false, rhp)
+                                break
+                return
         var states: Array = snap.get("arena_pillars", [])
         if states.is_empty():
                 return
@@ -1556,6 +1943,10 @@ func _clear_boss_arena() -> void:
                 if pillar != null and is_instance_valid(pillar):
                         pillar.queue_free()
         _arena_pillars.clear()
+        for ruin in _arena_ruins:
+                if ruin != null and is_instance_valid(ruin):
+                        ruin.queue_free()
+        _arena_ruins.clear()
         for barrel in _arena_barrels:
                 if barrel != null and is_instance_valid(barrel):
                         barrel.queue_free()
@@ -1613,7 +2004,7 @@ func _update_boss_arena(delta_ms: float) -> void:
                                         var burst: Node2D = EffectsManager.spawn_pickup_burst(
                                                         _arena_siege.position,
                                                         Color(1.0, 0.80, 0.30))
-                                        boss_projectiles_node.add_child(burst)
+                                        _add_capped_fx(burst)
                                 _arena_siege.queue_free()
                                 _arena_siege = null
                                 break
@@ -1631,11 +2022,15 @@ func _update_boss_arena(delta_ms: float) -> void:
                                 if EffectsManager:
                                         var frag_fx: Node2D = EffectsManager.spawn_sparks(
                                                         node.position, 10)
-                                        boss_projectiles_node.add_child(frag_fx)
+                                        _add_capped_fx(frag_fx)
                                 if node.has_method("consume_on_boss"):
                                         node.consume_on_boss()
-        # --- il boss RIMBALZA sui pilastri in piedi (ostacoli fisici) ---
-        if boss != null and is_instance_valid(boss) and not boss.is_dead():
+        # --- il boss RIMBALZA sui pilastri in piedi (ostacoli fisici).
+        # TASK 50: solo nel ramo LEGACY — i muri-rovina sono BASI e spezzati:
+        # il boss (creatura gigante) li CALPESTA passando sopra, cosi' non
+        # puo' mai incastellarsi nel labirinto in rovina. ---
+        if not C.BOSS_ARENA_RUINS_ENABLED \
+                        and boss != null and is_instance_valid(boss) and not boss.is_dead():
                 for pillar in _arena_pillars:
                         if pillar == null or not is_instance_valid(pillar) \
                                         or not pillar.is_standing():
@@ -1712,6 +2107,11 @@ func _prune_arena_refs() -> void:
                 if pillar != null and is_instance_valid(pillar):
                         keep_pillars.append(pillar)
         _arena_pillars = keep_pillars
+        var keep_ruins: Array = []
+        for ruin in _arena_ruins:
+                if ruin != null and is_instance_valid(ruin):
+                        keep_ruins.append(ruin)
+        _arena_ruins = keep_ruins
         var keep_barrels: Array = []
         for barrel in _arena_barrels:
                 if barrel != null and is_instance_valid(barrel):
@@ -1745,6 +2145,25 @@ func _try_throw_carried_barrel(p: CharacterBody2D) -> bool:
 # Proiettili del player vs pilastri in piedi: il colpo si FRANTUMA sul
 # pilastro (consumato) e gli infligge 1 danno.
 func _check_player_projectiles_vs_pillars(p: CharacterBody2D) -> void:
+        # TASK 50: unifica il check sui due tipi di architettura (rovine
+        # AABB / pilastri legacy a raggio): il colpo si FRANTUMA (consumato)
+        # e infligge 1 danno alla copertura.
+        if C.BOSS_ARENA_RUINS_ENABLED:
+                if _arena_ruins.is_empty():
+                        return
+                for proj in p.projectiles:
+                        if not proj.get("active", false):
+                                continue
+                        var proj_pos_r: Vector2 = proj.get("pos", Vector2.ZERO)
+                        for ruin in _arena_ruins:
+                                if ruin == null or not is_instance_valid(ruin) \
+                                                or not ruin.is_standing():
+                                        continue
+                                if ruin.blocks_point(proj_pos_r, 5.0):
+                                        proj["active"] = false
+                                        _damage_ruin(ruin, proj_pos_r)
+                                        break
+                return
         if _arena_pillars.is_empty():
                 return
         var r_sq: float = C.BOSS_ARENA_PILLAR_RADIUS * C.BOSS_ARENA_PILLAR_RADIUS
@@ -1762,6 +2181,19 @@ func _check_player_projectiles_vs_pillars(p: CharacterBody2D) -> void:
                                 break
 
 
+## Danno a un muro-rovina + feedback comune (crack, scintille, micro-shake).
+func _damage_ruin(ruin: Node2D, from_pos: Vector2) -> void:
+        if ruin == null or not is_instance_valid(ruin) or not ruin.is_standing():
+                return
+        ruin.take_hit()
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.PILLAR_CRACK)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.5, 0.12)
+                var sparks: Node2D = EffectsManager.spawn_sparks(from_pos, 10)
+                _add_capped_fx(sparks)
+
+
 # Danno a un pilastro + feedback comune (crack, scintille, micro-shake).
 func _damage_pillar(pillar: Node2D, from_pos: Vector2) -> void:
         if pillar == null or not is_instance_valid(pillar) or not pillar.is_standing():
@@ -1772,7 +2204,7 @@ func _damage_pillar(pillar: Node2D, from_pos: Vector2) -> void:
         if EffectsManager:
                 EffectsManager.screen_shake(2.5, 0.12)
                 var sparks: Node2D = EffectsManager.spawn_sparks(from_pos, 10)
-                boss_projectiles_node.add_child(sparks)
+                _add_capped_fx(sparks)
 
 
 # Detonazione di un barile elementale: danno %HP al boss (x2.5 se elemento
@@ -1797,12 +2229,12 @@ func _on_barrel_exploded(pos: Vector2, element: int) -> void:
                                                 AudioManager.SoundType.BURST_POISON)
         if EffectsManager:
                 EffectsManager.screen_shake(8.0, 0.4)
-                # particelle elementali (colore tema) + fumo
-                var burst: Node2D = EffectsManager.spawn_explosion(pos, col, 30, 0.9)
-                boss_projectiles_node.add_child(burst)
-                var smoke: Node2D = EffectsManager.spawn_explosion(
-                                pos + Vector2(0.0, -14.0), Color(0.24, 0.22, 0.20), 14, 1.1)
-                boss_projectiles_node.add_child(smoke)
+                # TASK 50 (pallini arancioni — bug utente): RIMOSSA la nube di
+                # particelle tonde spawn_explosion(col): il barile ha GIA' la
+                # sua deflagrazione completa (_draw_explosion di ElementalBarrel:
+                # core incandescente, doppia onda d'urto, 12 spine, fumo e
+                # detriti disegnati). Le palline tonde sovrapposte risultavano
+                # "puntini arancioni" fluttuanti sopra l'esplosione vera.
         # --- danno al boss (raggio blast + meta' raggio del boss) ---
         if boss != null and is_instance_valid(boss) and not boss.is_dead():
                 var hit_r: float = C.BOSS_ARENA_BARREL_BLAST_RADIUS + boss.size * 0.5
@@ -1929,6 +2361,33 @@ func _process(delta: float) -> void:
         _boss_bg_time += delta
         queue_redraw()
 
+
+# TASK 79d (performance, richiesta utente "troppi oggetti su schermo che si
+# muovono"): CAP sugli FX COSMETICI simultanei nella boss room. In fase 2 le
+# scintille spawano di continuo (ogni proiettile bloccato dalle rovine,
+# fendenti, frammenti) e OGNI FX e' un contenitore Node2D + GPUParticles2D
+# con buffer particellari propri: su GPU/driver deboli la creazione/distruzione
+# continua provoca micro-stutter. Oltre il cap il nuovo FX cosmetico viene
+# semplicemente scartato (i danni e il gameplay NON passano di qui: sono
+# applicati prima, questi sono solo effetti visivi). Sotto il cap: identico
+# a prima. I PROIETTILI veri non passano da qui.
+const MAX_CONCURRENT_FX: int = 10
+
+
+func _add_capped_fx(fx: Node) -> void:
+        if fx == null:
+                return
+        var alive: int = 0
+        for ch in boss_projectiles_node.get_children():
+                if ch.is_in_group("fx_effect") or ch is GPUParticles2D:
+                        alive += 1
+                        if alive >= MAX_CONCURRENT_FX:
+                                break
+        if alive >= MAX_CONCURRENT_FX:
+                fx.queue_free()
+                return
+        boss_projectiles_node.add_child(fx)
+
 func _load_boss_bg() -> void:
         if _boss_bg_loaded:
                 return
@@ -1967,7 +2426,10 @@ func _draw() -> void:
         # ogni tipo di boss (golem=caverna, lich=necropoli, demon=inferno,
         # dragon=tana drago, vampire=castello gotico). Se non disponibile,
         # usa il background cripta procedurale.
-        _load_boss_bg()
+        # TASK 79d: il caricamento non avviene piu' QUI (era dentro _draw al
+        # PRIMO frame della stanza: decode JPG + upload GPU dentro la draw
+        # callback = hitch percepibile all'ingresso). Ora e' precaricato in
+        # _ready via start_boss_fight -> _load_boss_bg().
         var vp_size: Vector2 = get_viewport_rect().size
         if _boss_bg_texture != null:
                 # Cover-fit della texture
@@ -1989,10 +2451,48 @@ func _draw() -> void:
         # la zona HUD completamente libera e nitida.
         draw_rect(Rect2(0, C.UI_HEIGHT, vp_size.x, vp_size.y - C.UI_HEIGHT),
                 Color(0, 0, 0, 0.25), true)
-        # FIX (decorazioni procedurali fatte male): rimosse le decorazioni
-        # (colonne, teschi, bare) disegnate proceduralmente che apparivano
-        # male e mal distribuite. Lo sfondo PNG AI è sufficiente.
-        # _render_boss_room_decorations()
+        # TASK 50: ARCHITETTURE BLOODBORNE — riabilitato il render delle
+        # decorazioni DOPO l'overlay scuro (i props PixelLab 256x256 a
+        # dimensioni per-tipo fino a 170px incorniciano l'arena e risaltano
+        # sull'ambiente; posizioni viewport-relative, zona di gioco libera).
+        _render_boss_room_decorations()
+        # TASK 51 — FASE 2: BUCHE DEL BOSS (sotto player/boss/proiettili).
+        #   * crepa (stato 0): cerchio frastagliato pulsante nel colore d'aura
+        #     del boss — telegrafo "sta per aprirsi una voragine qui";
+        #   * aperta (stato 1): voragine scura con bordo luminoso e fondo
+        #     screziato, leggero battito di scala.
+        for pit in boss_pits:
+                var pp: Vector2 = pit["pos"]
+                var ptint: Color = pit["tint"]
+                if int(pit["state"]) == 0:
+                        var pulse: float = 0.55 + 0.45 * sin(_boss_bg_time * 16.0)
+                        draw_circle(pp, C.BOSS_PHASE2_PIT_RADIUS * 0.55,
+                                        Color(ptint.r, ptint.g, ptint.b, 0.30 * pulse))
+                        for k in range(6):
+                                var a := float(k) * (TAU / 6.0) + 0.35
+                                var rr := C.BOSS_PHASE2_PIT_RADIUS * (0.55 + 0.35 * pulse)
+                                draw_line(pp + Vector2(cos(a), sin(a)) * 6.0,
+                                                pp + Vector2(cos(a), sin(a)) * rr,
+                                                Color(ptint.r, ptint.g, ptint.b, 0.55 * pulse), 2.0)
+                else:
+                        var breathe: float = 1.0 + 0.04 * sin(_boss_bg_time * 6.0)
+                        var pr := C.BOSS_PHASE2_PIT_RADIUS * breathe
+                        draw_circle(pp, pr, Color(0.02, 0.01, 0.04, 0.92))
+                        draw_circle(pp, pr * 0.72, Color(0.0, 0.0, 0.0, 0.95))
+                        draw_arc(pp, pr, 0.0, TAU, 26,
+                                        Color(ptint.r, ptint.g, ptint.b, 0.55), 3.0, true)
+                        for k in range(8):
+                                var a2 := float(k) * (TAU / 8.0)
+                                draw_circle(pp + Vector2(cos(a2), sin(a2)) * pr * 0.8,
+                                                2.5, Color(ptint.r, ptint.g, ptint.b, 0.30))
+        # TASK 51 — FASE 2: flash d'ingresso (bianco -> rosa in dissolvenza,
+        # 700ms): lettura immediata del potenziamento.
+        if _phase2_flash_ms > 0.0:
+                var k: float = _phase2_flash_ms / 700.0
+                var flash_col := Color(1.0, 1.0, 1.0, 0.55 * k) \
+                                if k > 0.5 else Color(1.0, 0.45, 0.55, 0.55 * k)
+                draw_rect(Rect2(0, C.UI_HEIGHT, vp_size.x, vp_size.y - C.UI_HEIGHT),
+                                flash_col, true)
         # FIX (nome boss in alto): disegna il nome del boss stilizzato
         # in alto al centro (mirror C++ Game.cpp drawBossBanner).
         if boss != null:
@@ -2022,8 +2522,15 @@ func _draw() -> void:
                                 Color(0, 0, 0, 0.8), true)
                         draw_rect(Rect2(bar_x, bar_y, bar_w, bar_h),
                                 Color(0.3, 0.1, 0.1), true)
+                        # TASK 51 — FASE 2: la barra HP del boss pulsa di rosso
+                        # acceso quando e' entrato in fase 2 (segnale immediato
+                        # del cambio di regime, insieme ad aura e dimensione).
+                        var hp_col := Color(0.8, 0.15, 0.1)
+                        if int(boss.get("phase")) == 2:
+                                var pk: float = 0.5 + 0.5 * sin(_boss_bg_time * 10.0)
+                                hp_col = Color(0.95, 0.10 + 0.25 * pk, 0.15 + 0.35 * pk)
                         draw_rect(Rect2(bar_x, bar_y, bar_w * hp_ratio, bar_h),
-                                Color(0.8, 0.15, 0.1), true)
+                                hp_col, true)
                         # TASK 41 — hint DEBOLEZZA ELEMENTALE RIMOSSO su richiesta
                         # utente: la debolezza non deve essere riportata in HUD.
                         # Il player la scopre per tentativi lanciando i barili
@@ -2038,8 +2545,10 @@ func _draw() -> void:
                         if w_tex:
                                 # Aura glow dietro
                                 draw_circle(pos, 22.0, Color(1.0, 0.85, 0.2, 0.15))
+                                # TASK 50: texture normalizzate al 75% del canvas
+                                # -> draw 56px = contenuto ~42px, coerente col maze
                                 draw_texture_rect(w_tex,
-                                        Rect2(pos.x - 24, pos.y - 24, 48, 48), false)
+                                        Rect2(pos.x - 28, pos.y - 28, 56, 56), false)
                                 continue
                 # Fallback: Simple weapon icon (colored circle)
                 var col: Color = Color.WHITE
@@ -2048,52 +2557,43 @@ func _draw() -> void:
                 draw_circle(pos, 16.0, Color(0.2, 0.2, 0.2, 0.8))
                 draw_circle(pos, 12.0, col)
 
-        # FIX (boss non sparano): i proiettili del boss venivano avanzati ma
-        # mai disegnati. Aggiungiamo il disegno di tutti i proiettili figli
-        # di boss_projectiles_node. Ogni proiettile ha un colore diverso
-        # in base al BossProjKind (vedi Projectile.gd).
-        for proj in boss_projectiles_node.get_children():
-                if not proj is Node2D:
-                        continue
-                var ppos: Vector2 = proj.position
-                # Colore in base al tipo di proiettile
-                var bp_kind: int = 0
-                if proj is Projectile:
-                        bp_kind = proj.bp_kind
-                elif proj.has_meta("bp_kind"):
-                        bp_kind = int(proj.get_meta("bp_kind"))
-                var proj_col: Color = Color(1.0, 0.4, 0.1)  # default rosso/arancio
-                match bp_kind:
-                        1: proj_col = Color(0.6, 0.4, 0.2)  # BOULDER (marrone)
-                        2: proj_col = Color(0.2, 1.0, 0.3)   # NECRO_BOLT (verde)
-                        3: proj_col = Color(1.0, 0.3, 0.1)   # FIREBALL (rosso fuoco)
-                        4: proj_col = Color(0.8, 0.8, 0.8)   # WEBSHOT (bianco)
-                        5: proj_col = Color(0.8, 0.3, 0.5)   # FLESH_CHUNK (rosa)
-                        6: proj_col = Color(0.2, 0.6, 1.0)   # INK_SPRAY (blu)
-                        7: proj_col = Color(1.0, 0.5, 0.1)   # DRAGON_BREATH (arancio)
-                        8: proj_col = Color(0.5, 0.5, 1.0)   # GHOST_BOLT (azzurro)
-                        9: proj_col = Color(0.9, 0.1, 0.2)  # BLOOD_BOLT (rosso sangue)
-                        10: proj_col = Color(1.0, 1.0, 0.2) # EYE_RAY (giallo)
-                        11: proj_col = Color(0.4, 0.2, 0.1) # GHOUL_CLAW (marrone scuro)
-                        12: proj_col = Color(0.6, 0.6, 1.0) # SPECTRAL_FANG (blu pallido)
-                        13: proj_col = Color(0.8, 0.2, 0.8)  # CULT_ORB (viola)
-                        14: proj_col = Color(0.5, 0.8, 0.2)  # MIMIC_GOO (verde slime)
-                        15: proj_col = Color(0.6, 0.5, 0.3)  # RAT_SWARM (marrone)
-                        16: proj_col = Color(0.9, 0.3, 0.9) # WITCH_HEX (magenta)
-                        17: proj_col = Color(0.7, 0.7, 0.9)  # TWILIGHT_BLADE (argento)
-                # Glow esterno
-                draw_circle(ppos, 8.0, Color(proj_col.r, proj_col.g, proj_col.b, 0.3))
-                # Nucleo
-                draw_circle(ppos, 4.0, proj_col)
-                # Highlight
-                draw_circle(ppos - Vector2(1, 1), 1.5,
-                        Color(proj_col.r + 0.3, proj_col.g + 0.3, proj_col.b + 0.3))
+        # TASK 79d (performance — doppio draw dei proiettili RIMOSSO):
+        # questo loop disegnava a mano OGNI proiettile OGNI frame (3 cerchi
+        # ciascuno) DENTRO il _draw del controller, ma ogni Projectile e' gia'
+        # un Node2D figlio di boss_projectiles_node con un suo _draw TEMATICO
+        # (forme per BossProjKind, aura fase-2, scia homing): i proiettili
+        # venivano disegnati DUE VOLTE (strato tematico + 3 cerchi glow sopra).
+        # Ora li disegna SOLO il loro nodo: -3 draw_circle per proiettile per
+        # frame dal GDScript del controller e niente look "doppio".
+        # Verifica A/B: screenshot shot_boss79d prima/dopo (VLM) — proiettili
+        # tematici ben visibili. Rollback: git revert di questo hunk.
 
 
-# Disegna decorazioni ambiente: bare, colonne, ruderi, teschi sul pavimento.
-# Posizionate in modo deterministico (non casuale ogni frame).
+# Disegna decorazioni ambiente: ARCHITETTURE BLOODBORNE (TASK 50).
+# 10 props PixelLab 256x256 ispirati a Yharnam (colonne ricche, archi
+# rotti, statue, candelieri, altare, obelischi, doccioni, inferriate,
+# candelabri, sarcofaghi) disegnati a dimensioni per-tipo (fino a 170px:
+# il Task 48 li relegava a 64px e il vecchio codice procedurale usava
+# coordinate 1024 su viewport 1920 — per questo apparivano "semplici
+# pilastri" mal distribuiti e il render era stato commentato).
+# Posizioni FRAZIONI del viewport: identiche su ogni risoluzione, simmetriche,
+# zona centrale di gioco libera. Solo layer visivo: niente collisioni.
 var _decorations_spawned: bool = false
-var _boss_room_decorations: Array = []  # [{type, pos}]
+var _boss_room_decorations: Array = []  # [{type, pos, size}]
+
+# TASK 50 — dimensione di rendering per tipo (px su schermo 1920x1080).
+const DECOR_SIZES := {
+        "column_ornate": 170.0,
+        "arch": 150.0,
+        "statue": 140.0,
+        "chandelier": 120.0,
+        "altar": 130.0,
+        "obelisk": 150.0,
+        "gargoyle": 110.0,
+        "gate": 120.0,
+        "candelabra": 100.0,
+        "sarcophagus": 120.0,
+}
 
 func _render_boss_room_decorations() -> void:
         if not EnvironmentArt:
@@ -2106,32 +2606,65 @@ func _render_boss_room_decorations() -> void:
         for dec in _boss_room_decorations:
                 var tex: Texture2D = null
                 match dec.type:
-                        "coffin": tex = EnvironmentArt.get_coffin_texture()
-                        "column": tex = EnvironmentArt.get_column_texture()
-                        "rubble": tex = EnvironmentArt.get_rubble_texture()
-                        "skull": tex = EnvironmentArt.get_skull_texture()
+                        "column_ornate": tex = EnvironmentArt.get_column_ornate_texture()
+                        "arch": tex = EnvironmentArt.get_arch_texture()
+                        "statue": tex = EnvironmentArt.get_statue_texture()
+                        "chandelier": tex = EnvironmentArt.get_chandelier_texture()
+                        "altar": tex = EnvironmentArt.get_altar_texture()
+                        "obelisk": tex = EnvironmentArt.get_obelisk_texture()
+                        "gargoyle": tex = EnvironmentArt.get_gargoyle_texture()
+                        "gate": tex = EnvironmentArt.get_gate_texture()
+                        "candelabra": tex = EnvironmentArt.get_candelabra_texture()
+                        "sarcophagus": tex = EnvironmentArt.get_sarcophagus_texture()
                 if tex:
-                        var s: float = 64.0  # dimensione decorazione
+                        var s: float = dec.size
                         draw_texture_rect(tex,
                                 Rect2(dec.pos.x - s / 2, dec.pos.y - s / 2, s, s), false)
 
 
 func _spawn_boss_room_decorations() -> void:
         _boss_room_decorations.clear()
-        # Posiziona decorazioni in punti fissi (non sopra l'arena centrale)
-        # Bare negli angoli
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(80, 150)})
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(944, 150)})
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(80, 850)})
-        _boss_room_decorations.append({"type": "coffin", "pos": Vector2(944, 850)})
-        # Colonne ai lati (4 per lato)
-        for i in range(4):
-                var y: float = 200.0 + float(i) * 180.0
-                _boss_room_decorations.append({"type": "column", "pos": Vector2(50, y)})
-                _boss_room_decorations.append({"type": "column", "pos": Vector2(974, y)})
-        # Ruderi sparsi
-        for pos in [Vector2(250, 300), Vector2(780, 280), Vector2(300, 800), Vector2(750, 820)]:
-                _boss_room_decorations.append({"type": "rubble", "pos": pos})
-        # Teschi sul pavimento (piccoli, decorativi)
-        for pos in [Vector2(200, 500), Vector2(824, 500), Vector2(400, 250), Vector2(624, 750)]:
-                _boss_room_decorations.append({"type": "skull", "pos": pos})
+        var vp: Vector2 = get_viewport_rect().size
+        # Frazioni (fx, fy) del viewport -> identiche su ogni risoluzione.
+        # TASK 51 (P10, richiesta utente): RIMOSSI archi (finestre gotiche
+        # in alto) e inferriate (in basso) — segnalati come elementi da
+        # togliere. Gli elementi restanti sono stati RIDISTRIBUITI:
+        #   * i doccioni prendono il posto degli archi in alto (piu'
+        #     esterni, incorniciano il nome del boss senza finestre);
+        #   * gli obelischi scendono negli angoli bassi (dove c'erano le
+        #     inferriate) chiudendo la composizione;
+        #   * due candelabri riempiono la fascia bassa dove stavano gli
+        #     obelischi, mantenendo la simmetria a speccio.
+        # Zona centrale di gioco libera (x 0.31-0.69, y 0.28-0.83).
+        var layout := [
+                # --- lati: colonne cattedrali DOMINANTI (le piu' grandi) ---
+                ["column_ornate", 0.050, 0.520],
+                ["column_ornate", 0.950, 0.520],
+                # --- fascia alta: candelieri appesi + doccioni esterni
+                # che fiancheggiano il nome del boss + altare centrale ---
+                ["chandelier", 0.292, 0.140],
+                ["chandelier", 0.708, 0.140],
+                ["gargoyle", 0.175, 0.195],
+                ["gargoyle", 0.825, 0.195],
+                ["altar", 0.500, 0.225],
+                # --- cintura mediana: candelabri + statue in preghiera ---
+                ["candelabra", 0.156, 0.575],
+                ["candelabra", 0.844, 0.575],
+                ["statue", 0.110, 0.805],
+                ["statue", 0.890, 0.805],
+                # --- fascia bassa: candelabri + obelischi d'angolo +
+                # sarcofaghi centrali (niente piu' inferriate) ---
+                ["candelabra", 0.290, 0.900],
+                ["candelabra", 0.710, 0.900],
+                ["obelisk", 0.068, 0.905],
+                ["obelisk", 0.932, 0.905],
+                ["sarcophagus", 0.406, 0.925],
+                ["sarcophagus", 0.594, 0.925],
+        ]
+        for entry in layout:
+                _boss_room_decorations.append({
+                        "type": entry[0],
+                        "pos": Vector2(float(entry[1]) * vp.x,
+                                        float(entry[2]) * vp.y),
+                        "size": DECOR_SIZES.get(entry[0], 100.0),
+                })

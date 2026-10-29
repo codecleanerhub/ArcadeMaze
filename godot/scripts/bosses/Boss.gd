@@ -43,6 +43,21 @@ const BOSS_TYPE_COUNT := 17
 const MAZE_LEVELS_PER_BOSS := 3
 const TOTAL_LEVELS_PER_BOSS := MAZE_LEVELS_PER_BOSS + 1  # 4
 
+# TASK 49b — sync per-boss: frame di RILASCIO dell'attacco (riga 1 dello
+# sheet, 6 frame @ 11 FPS) auditato su TUTTI i 17 boss (VLM + analisi pixel
+# degli effetti: veleno/fiamma/raggio per frame). Default = frame 3
+# (C.BOSS_ATTACK_WINDUP_MS = 280ms, 15/17 boss). Override per i boss che
+# rilasciano su un altro frame (ms = frame * 90.9 + 8, stesso scarto del
+# default 3 -> 280):
+#   - DRAGO ANTICO (boss_035): la fiamma eruppe dalle fauci a F4
+#     (getto 1892px in F4 vs 8px nei frame 0-3) -> 372ms = F4;
+#   - BEHOLDER (boss_037): il raggio centrale spara a F2 (estensione
+#     massima a F2, gia' in decadimento da F3) -> 190ms = F2.
+const ATTACK_WINDUP_OVERRIDES := {
+        Type.BOSS_DRAGON: 372,
+        Type.BOSS_BEHOLDER: 190,
+}
+
 const WINDOW_WIDTH := 1920
 const WINDOW_HEIGHT := 1080
 const UI_HEIGHT := 80
@@ -70,6 +85,10 @@ var shoot_timer_ms: int = 0
 var attacking_timer_ms: int = 0
 var anim_time: float = 0.0
 
+# TASK 49 — sparo differito: >0 = attacco in "wind-up", il colpo parte
+# quando il contatore raggiunge 0 (frame di rilascio dell'animazione).
+var pending_shot_ms: int = 0
+
 # DeformableSprite node (lazy-init on first render).
 var deform_sprite: DeformableSprite = null
 var deform_loaded: bool = false
@@ -79,6 +98,13 @@ var sprite_id: String = ""
 
 # TASK 22 — frame size della sorgente (64 SD legacy / 256 XHD).
 var _frame_px: int = 64
+
+# TASK 46 — animazione a FRAME REALI dello sheet: colonne (frame per riga)
+# e righe (0 = camminata/idle, 1 = attacco quando presente) rilevate dalla
+# dimensione della texture caricata. 1 colonna = sheet statico (boss senza
+# ciclo): il cycling resta semplicemente inattivo.
+var _frame_cols: int = 1
+var _frame_rows: int = 1
 
 # TASK 22 — mappa tipo boss -> profilo animazione arti (DeformableSprite).
 # LP_* vedi DeformableSprite.LimbProfile. LP_NONE = solo respirazione/idle
@@ -107,6 +133,77 @@ static func get_limb_profile(t: int) -> int:
 # Signals emitted to the Game.
 signal shoot(projectile: Projectile)
 signal died(boss: Boss)
+
+# TASK 51 — FASE 2 DEL BOSS (richiesta utente): al 50% di energia il boss
+# entra in fase 2 e POTENZIA lo scontro.
+signal phase2_entered(boss: Boss)          # annuncio visivo/sonoro (flash+rombo)
+signal spawn_pit(world_pos: Vector2, tint: Color)  # buca telegrafata a terra
+signal slam_landed(world_pos: Vector2, radius: float)  # onda d'urto del salto
+
+# --- TASK 51: attacco speciale di fase 2 per tipo ---
+enum Phase2Special { NONE, HOMING_VOLLEY, SKY_STRIKE, PIT_SPAWNER, JUMP_SLAM }
+
+# Assegnazione per tipo (scelte tematiche sull'aspetto del boss):
+#  * JUMP_SLAM — bruti fisici: si scagliano sul player e lo schiacciano
+#    (il player vede l'ombra crescere e deve spostarsi in tempo).
+#  * SKY_STRIKE — incantatori/alati: magia o fulmini che PIOMBANO DALL'ALTO
+#    sulla posizione del player (colonne verticali da scansare).
+#  * PIT_SPAWNER — tessitori/rifugiati: APRONO BUCHE A CASO sul pavimento
+#    (crepa telegrafica poi voragine che danneggia chi vi resta sopra).
+#  * HOMING_VOLLEY — predatori eterei: raffica di proiettili POTENZIATI a
+#    INSEGUIMENTO (variante 5: aura pulsante + corona rotante + scia).
+static func get_phase2_special(t: int) -> int:
+        match t:
+                Type.BOSS_GOLEM:           return Phase2Special.JUMP_SLAM
+                Type.BOSS_LICH:            return Phase2Special.SKY_STRIKE
+                Type.BOSS_DEMON:           return Phase2Special.SKY_STRIKE
+                Type.BOSS_SPIDER:          return Phase2Special.PIT_SPAWNER
+                Type.BOSS_ABOMINATION:     return Phase2Special.JUMP_SLAM
+                Type.BOSS_KRAKEN:          return Phase2Special.PIT_SPAWNER
+                Type.BOSS_DRAGON:          return Phase2Special.SKY_STRIKE
+                Type.BOSS_WRAITH_LORD:     return Phase2Special.SKY_STRIKE
+                Type.BOSS_VAMPIRE:         return Phase2Special.HOMING_VOLLEY
+                Type.BOSS_BEHOLDER:        return Phase2Special.SKY_STRIKE
+                Type.BOSS_GHOUL_LORD:      return Phase2Special.JUMP_SLAM
+                Type.BOSS_SPECTRAL_ALPHA:  return Phase2Special.HOMING_VOLLEY
+                Type.BOSS_CULT_HERALD:     return Phase2Special.SKY_STRIKE
+                Type.BOSS_COLOSSAL_MIMIC:  return Phase2Special.PIT_SPAWNER
+                Type.BOSS_RAT_KING:        return Phase2Special.PIT_SPAWNER
+                Type.BOSS_SUPREME_WITCH:   return Phase2Special.SKY_STRIKE
+                Type.BOSS_TWILIGHT_KNIGHT: return Phase2Special.JUMP_SLAM
+        return Phase2Special.NONE
+
+# Colore dell'aura di fase 2 (famiglia visiva del boss).
+static func get_phase2_aura_color(t: int) -> Color:
+        match t:
+                Type.BOSS_GOLEM:           return Color(1.00, 0.45, 0.15)
+                Type.BOSS_LICH:            return Color(0.20, 1.00, 0.30)
+                Type.BOSS_DEMON:           return Color(1.00, 0.25, 0.10)
+                Type.BOSS_SPIDER:          return Color(0.65, 0.30, 0.95)
+                Type.BOSS_ABOMINATION:     return Color(0.90, 0.25, 0.55)
+                Type.BOSS_KRAKEN:          return Color(0.15, 0.55, 0.75)
+                Type.BOSS_DRAGON:          return Color(1.00, 0.55, 0.10)
+                Type.BOSS_WRAITH_LORD:     return Color(0.35, 0.95, 1.00)
+                Type.BOSS_VAMPIRE:         return Color(0.95, 0.10, 0.20)
+                Type.BOSS_BEHOLDER:        return Color(1.00, 0.85, 0.25)
+                Type.BOSS_GHOUL_LORD:      return Color(0.85, 0.75, 0.30)
+                Type.BOSS_SPECTRAL_ALPHA:  return Color(0.55, 1.00, 0.80)
+                Type.BOSS_CULT_HERALD:     return Color(0.70, 0.25, 0.95)
+                Type.BOSS_COLOSSAL_MIMIC:  return Color(0.85, 0.75, 0.15)
+                Type.BOSS_RAT_KING:        return Color(0.55, 0.55, 0.25)
+                Type.BOSS_SUPREME_WITCH:   return Color(0.95, 0.30, 0.95)
+                Type.BOSS_TWILIGHT_KNIGHT: return Color(0.35, 0.35, 0.95)
+        return Color(1.0, 0.3, 0.3)
+
+# Fase corrente (1 = normale, 2 = potenziata al 50% di energia).
+var phase: int = 1
+# Timer (ms) dell'attacco speciale di fase 2.
+var special_timer_ms: int = 0
+# Stato del salto schiacciante (Phase2Special.JUMP_SLAM).
+var _slam_state: int = 0   # 0=none 1=telegraph 2=leap 3=recover
+var _slam_timer_ms: float = 0.0
+var _slam_from: Vector2 = Vector2.ZERO
+var _slam_to: Vector2 = Vector2.ZERO
 
 
 # ============================================================
@@ -248,11 +345,39 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                 projectiles_out: Array) -> void:
         anim_time += float(delta_ms) * 0.001
 
+        # TASK 51 — FASE 2 (richiesta utente): al 50% di energia il boss
+        # POTENZIA lo scontro. Il check vive qui (non solo in take_damage)
+        # cosi' copre anche il restore da continue e i setup di test.
+        if C.BOSS_PHASE2_ENABLED and phase == 1 and health > 0 \
+                        and float(health) <= float(max_health) * C.BOSS_PHASE2_TRIGGER_RATIO:
+                _enter_phase2()
+
+        # TASK 51 — salto schiacciante: telegrafo (ombra) -> arco di volo ->
+        # atterraggio (onda d'urto via segnale) -> recupero. Mentre la
+        # macchina a stati e' attiva il boss NON spara e NON rimbalza.
+        if _update_slam(delta_ms):
+                position = pos
+                if phase == 2 or _slam_state != 0:
+                        queue_redraw()
+                return
+
         # Decrement attackingTimer (FIX: usa delta_ms reale, non fisso 16).
         if attacking_timer_ms > delta_ms:
                 attacking_timer_ms -= delta_ms
         else:
                 attacking_timer_ms = 0
+
+        # TASK 49 — SYNC posa/proiettile/suono: lo sparo parte quando la posa
+        # d'attacco raggiunge il frame di RILASCIO dell'animazione (per-boss:
+        # vedi ATTACK_WINDUP_OVERRIDES; default frame 3 @ 11 FPS ~ 280ms
+        # dall'inizio del timer), non al frame 0. La mira resta fresca (usa
+        # la posizione del player al momento del lancio).
+        if pending_shot_ms > 0:
+                if pending_shot_ms > delta_ms:
+                        pending_shot_ms -= delta_ms
+                else:
+                        pending_shot_ms = 0
+                        _shoot_pattern(player_x, player_y, projectiles_out)
 
         # Diagonal movement.
         pos.x += float(dx) * float(speed)
@@ -269,10 +394,29 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
         var base_cd := 2500 - boss_level * 100
         if base_cd < 1000:
                 base_cd = 1000
+        # TASK 51: in fase 2 il fuoco base e' piu' fitto (-18% cooldown).
+        if phase == 2:
+                base_cd = int(float(base_cd) * 0.82)
         if shoot_timer_ms > base_cd:
                 shoot_timer_ms = 0
                 attacking_timer_ms = 500
-                _shoot_pattern(player_x, player_y, projectiles_out)
+                if C.BOSS_ATTACK_SYNC_ENABLED:
+                        # TASK 49: prima il wind-up (posa), poi il colpo.
+                        # TASK 49b: wind-up per-boss (frame di rilascio auditato).
+                        pending_shot_ms = _attack_windup_ms()
+                else:
+                        _shoot_pattern(player_x, player_y, projectiles_out)
+
+        # TASK 51 — attacco SPECIALE di fase 2 (per tipo: pioggia dall'alto,
+        # buche sul pavimento, salto schiacciante, raffica a inseguimento).
+        if phase == 2:
+                special_timer_ms += delta_ms
+                if special_timer_ms >= C.BOSS_PHASE2_SPECIAL_CD_MS:
+                        special_timer_ms = 0
+                        _run_phase2_special(player_x, player_y, projectiles_out)
+                # l'aura e l'ombra del salto vivono nel _draw del nodo:
+                # ridisegna mentre e' attiva una delle due.
+                queue_redraw()
 
         # Update the deformable sprite.
         if deform_loaded and deform_sprite != null:
@@ -317,14 +461,172 @@ func update_step(player_x: float, player_y: float, delta_ms: int,
                         draw_x += sin(anim_time * 0.8) * 4.0
                         draw_y += sin(anim_time * 1.6) * 7.0
                 deform_sprite.position = Vector2(draw_x, draw_y) - pos  # local offset
+                # TASK 46 — cycling dei frame reali dello sheet. I rate
+                # replicano i frameDuration legacy dei meta (idle 180ms,
+                # walk 120ms, attack 90ms -> 5.5 / 8.3 / 11 FPS): il nuovo
+                # Golem PixelLab (6 frame) e i cicli legacy 4-frame degli
+                # altri boss si animano con la stessa tempizzazione originale.
+                if C.BOSS_FRAME_ANIM_ENABLED and _frame_cols > 1:
+                        var frow := 0
+                        var fidx := 0
+                        if mode == DeformableSprite.AnimMode.ATTACK:
+                                if _frame_rows > 1:
+                                        frow = 1  # riga attacco dedicata
+                                # riproduzione one-shot nel timer d'attacco
+                                # (500 ms): 11 FPS -> ~5 frame e mezzo.
+                                var elapsed_ms := 500 - attacking_timer_ms
+                                fidx = int(float(elapsed_ms) * 0.011)
+                                if fidx >= _frame_cols:
+                                        fidx = _frame_cols - 1
+                        elif mode == DeformableSprite.AnimMode.WALK:
+                                # TASK 48 — riga walk dedicata (riga 2) per gli
+                                # sheet PixelLab v2 a 3 righe (idle/attack/walk);
+                                # sheet a 1-2 righe: walk sulla riga idle (0),
+                                # comportamento legacy invariato.
+                                if _frame_rows > 2:
+                                        frow = 2
+                                fidx = int(anim_time * 8.3) % _frame_cols
+                        else:  # IDLE
+                                fidx = int(anim_time * 5.5) % _frame_cols
+                        deform_sprite.set_sheet_frame(fidx, frow)
                 deform_sprite.update(anim_time, mode, scale_val, false)
 
         position = pos
 
 
 # ============================================================
+# TASK 51 — FASE 2 DEL BOSS (richiesta utente)
+# ============================================================
+
+# _enter_phase2(): potenziamento al 50% di energia. Oltre al nuovo attacco
+# speciale per tipo, il boss cambia ASPETTO per segnalare l'aumento di
+# potenza: dimensione +12%, aura pulsante del colore della famiglia (vedi
+# _draw) e tinta dello sprite spostata verso lo stesso colore.
+func _enter_phase2() -> void:
+        phase = 2
+        size *= C.BOSS_PHASE2_SIZE_BONUS
+        # primo speciale quasi subito: il player capisce subito che il boss
+        # e' cambiato (annuncio + nuova minaccia nella stessa finestra).
+        special_timer_ms = maxi(0, C.BOSS_PHASE2_SPECIAL_CD_MS - 1300)
+        # i boss che NON usano il salto si muovono un po' piu' veloci
+        # (pressione di marcia); i saltatori hanno gia' il balzo.
+        if get_phase2_special(boss_type) != Phase2Special.JUMP_SLAM and speed < 3:
+                speed += 1
+        # tinta dello sprite: scivola verso il colore d'aura (leggera).
+        if deform_sprite != null:
+                var ac := get_phase2_aura_color(boss_type)
+                deform_sprite.modulate = Color(
+                                1.0 + (ac.r - 0.5) * 0.20,
+                                1.0 + (ac.g - 0.5) * 0.20,
+                                1.0 + (ac.b - 0.5) * 0.20)
+        phase2_entered.emit(self)
+        queue_redraw()
+
+
+# _update_slam(delta_ms): macchina a stati del salto schiacciante.
+# Ritorna true mentre e' attivo (il chiamante salta movimento/spari normali).
+func _update_slam(delta_ms: int) -> bool:
+        if _slam_state == 0:
+                return false
+        _slam_timer_ms -= float(delta_ms)
+        match _slam_state:
+                1:  # TELEGRAPH: accovacciato, l'ombra sul bersaglio cresce.
+                        if _slam_timer_ms <= 0.0:
+                                _slam_state = 2
+                                _slam_timer_ms = float(C.BOSS_PHASE2_SLAM_LEAP_MS)
+                2:  # LEAP: arco parabolico verso il bersaglio (locked al
+                    # telegrafo: il player che si sposta si salva).
+                        var total := float(C.BOSS_PHASE2_SLAM_LEAP_MS)
+                        var t := 1.0 - clampf(_slam_timer_ms / total, 0.0, 1.0)
+                        pos = _slam_from.lerp(_slam_to, t)
+                        pos.y -= sin(t * PI) * 170.0
+                        if _slam_timer_ms <= 0.0:
+                                pos = _slam_to
+                                _slam_state = 3
+                                _slam_timer_ms = float(C.BOSS_PHASE2_SLAM_RECOVER_MS)
+                                # onda d'urto: il controller applica danni/VFX
+                                slam_landed.emit(_slam_to, C.BOSS_PHASE2_SLAM_RADIUS)
+                3:  # RECOVER: fermo sul punto d'atterraggio (finestra di
+                    # contrattacco), poi torna al movimento diagonale.
+                        if _slam_timer_ms <= 0.0:
+                                _slam_state = 0
+                                dy = 1 if pos.y < float(WINDOW_HEIGHT) * 0.5 else -1
+        return true
+
+
+# _run_phase2_special(player_x, player_y, out): attacco speciale per tipo.
+func _run_phase2_special(player_x: float, player_y: float, out: Array) -> void:
+        match get_phase2_special(boss_type):
+                Phase2Special.JUMP_SLAM:
+                        _slam_state = 1
+                        _slam_timer_ms = float(C.BOSS_PHASE2_SLAM_TELEGRAPH_MS)
+                        _slam_from = pos
+                        # bersaglio LOCKED alla posizione attuale del player:
+                        # l'ombra cresce e chi si sposta in tempo non subisce
+                        # danno (richiesta utente).
+                        _slam_to = Vector2(
+                                        clampf(player_x, size * 0.5,
+                                                        float(WINDOW_WIDTH) - size * 0.5),
+                                        clampf(player_y, UI_HEIGHT + size * 0.5,
+                                                        float(WINDOW_HEIGHT) - size * 0.5))
+                        if AudioManager:
+                                AudioManager.play_sound(
+                                                AudioManager.SoundType.HAZARD_GRIND)
+                Phase2Special.SKY_STRIKE:
+                        # magia/fulmine che PIOMBA DALL'ALTO sulla posizione
+                        # del player: colonne verticali potenziate (variante 5).
+                        if C.BOSS_SHOOT_SFX_ENABLED and AudioManager != null:
+                                AudioManager.play_boss_shoot(_primary_projectile_kind())
+                        var n := 3 if boss_type == Type.BOSS_DRAGON else 2
+                        for i in range(n):
+                                var ox := (float(i) - float(n - 1) * 0.5) * 95.0
+                                var drop := Vector2(
+                                                clampf(player_x + ox, 40.0,
+                                                                float(WINDOW_WIDTH) - 40.0),
+                                                UI_HEIGHT + 6.0)
+                                out.append(Projectile.make_boss(drop, PI / 2.0,
+                                                8.5, 2, _primary_projectile_kind(), 5))
+                Phase2Special.PIT_SPAWNER:
+                        # BUCHE A CASO attorno al player: crepa telegrafica
+                        # (900ms) poi voragine aperta 5s che danneggia chi vi
+                        # resta sopra. Il controller gestisce il ciclo.
+                        var tint := get_phase2_aura_color(boss_type)
+                        var count := 3 if boss_type == Type.BOSS_SPIDER else 2
+                        for _i in range(count):
+                                var spread := Vector2(
+                                                randf_range(-150.0, 150.0),
+                                                randf_range(-100.0, 100.0))
+                                var pp := Vector2(player_x, player_y) + spread
+                                pp.x = clampf(pp.x, 60.0, float(WINDOW_WIDTH) - 60.0)
+                                pp.y = clampf(pp.y, UI_HEIGHT + 60.0,
+                                                float(WINDOW_HEIGHT) - 60.0)
+                                spawn_pit.emit(pp, tint)
+                Phase2Special.HOMING_VOLLEY:
+                        # raffica di proiettili POTENZIATI a inseguimento:
+                        # 3 lame/saette che curvano dietro il player.
+                        if C.BOSS_SHOOT_SFX_ENABLED and AudioManager != null:
+                                AudioManager.play_boss_shoot(_primary_projectile_kind())
+                        var base := atan2(player_y - pos.y, player_x - pos.x)
+                        for i in range(3):
+                                out.append(Projectile.make_boss(pos,
+                                                base + (float(i) - 1.0) * 0.5, 3.2, 2,
+                                                _primary_projectile_kind(), 5, 3200))
+                _:
+                        pass
+
+
+# ============================================================
 # Shooting patterns (per type)
 # ============================================================
+
+## TASK 49b — wind-up (ms) di QUESTO boss: default 280ms (frame 3 @ 11 FPS,
+## valido per 15/17 boss), override ATTACK_WINDUP_OVERRIDES per i boss il cui
+## frame di rilascio auditato e' diverso (Drago=F4, Beholder=F2).
+func _attack_windup_ms() -> int:
+        if ATTACK_WINDUP_OVERRIDES.has(boss_type):
+                return int(ATTACK_WINDUP_OVERRIDES[boss_type])
+        return C.BOSS_ATTACK_WINDUP_MS
+
 
 ## TASK 26 — tipo di "munizione" primario del boss (BossProjKind): usato
 ## per lo SFX di sparo COERENTE col proiettile (masso=tonfo, ragnatela=
@@ -509,11 +811,50 @@ func _shoot_pattern(player_x: float, player_y: float, out: Array) -> void:
                         out.append(Projectile.make_boss(pos, base_angle + 0.3, 6.0, 1,
                                 Projectile.BossProjKind.BP_TWILIGHT_BLADE, 1))
 
+        # TASK 51 — FASE 2: oltre allo schema nativo, OGNI boss aggiunge un
+        # proiettile POTENZIATO a inseguimento (variante 5: aura pulsante +
+        # corona rotante + scia) del suo tipo di munizione. Chi ha gia' il
+        # fuoco a inseguimento (Wraith/Vampire/Strega) lo riceve piu' lungo.
+        if phase == 2:
+                var homing_ms := 2600
+                match boss_type:
+                        Type.BOSS_WRAITH_LORD, Type.BOSS_VAMPIRE, Type.BOSS_SUPREME_WITCH:
+                                homing_ms = 3800
+                out.append(Projectile.make_boss(pos, base_angle, 3.4, 2,
+                                _primary_projectile_kind(), 5, homing_ms))
+
 
 # ============================================================
 # Rendering
 # ============================================================
 func _draw() -> void:
+        # TASK 51 — AURA DI FASE 2: si disegna nel _draw del NODO Boss (il
+        # figlio DeformableSprite disegna DOPO il parent, quindi l'aura finisce
+        # DIETRO lo sprite). Doppio alone pulsante + arco rotante nel colore
+        # della famiglia: cambiamento grafico che segnala l'aumento di potenza.
+        if phase == 2:
+                var ac := get_phase2_aura_color(boss_type)
+                var t := anim_time
+                var aura_r := size * (0.74 + 0.05 * sin(t * 5.0))
+                draw_circle(Vector2.ZERO, aura_r, Color(ac.r, ac.g, ac.b, 0.10))
+                draw_circle(Vector2.ZERO, aura_r * 0.84, Color(ac.r, ac.g, ac.b, 0.10))
+                draw_arc(Vector2.ZERO, size * 0.66, t * 1.6, t * 1.6 + PI * 1.35,
+                                30, Color(ac.r, ac.g, ac.b, 0.38), 5.0, true)
+        # TASK 51 — OMBRA DEL SALTO SCHIACCIANTE: sul punto bersaglio (locale
+        # = bersaglio - pos) cresce un'ellisse scura bordata di rosso durante
+        # il telegrafo, e resta durante il volo: e' il segnale "spostati!".
+        if _slam_state == 1 or _slam_state == 2:
+                var local := _slam_to - pos
+                var grow := 1.0
+                if _slam_state == 1:
+                        grow = 1.0 - clampf(_slam_timer_ms
+                                        / float(C.BOSS_PHASE2_SLAM_TELEGRAPH_MS), 0.0, 1.0)
+                var rr := C.BOSS_PHASE2_SLAM_RADIUS * (0.35 + 0.65 * grow)
+                draw_circle(local, rr * 0.9, Color(0.0, 0.0, 0.0, 0.20 + 0.16 * grow))
+                draw_arc(local, rr, 0.0, TAU, 26,
+                                Color(1.0, 0.25, 0.10, 0.45 + 0.40 * sin(anim_time * 18.0)),
+                                3.0, true)
+
         # Lazy-load the DeformableSprite's texture.
         if not deform_loaded and sprite_id != "" and deform_sprite != null:
                 # TASK 22 — priorità XHD 4x (256px/frame, palette identica):
@@ -541,6 +882,18 @@ func _draw() -> void:
                         loaded = deform_sprite.load_subrect(path, 0, 0, 64, 64)
                         if loaded:
                                 deform_sprite.set_grid_size(8, 8)
+                # TASK 46 — rilevamento frame reali dello sheet caricato:
+                # colonne = larghezza/frame, righe = altezza/frame. Golem
+                # PixelLab = 6x1 (XHD 1536x256 / SD 384x64); boss legacy =
+                # 4x1; 1x1 = sprite statico (cycling inattivo).
+                if loaded and deform_sprite != null and deform_sprite.texture != null:
+                        var tw := float(deform_sprite.texture.get_width())
+                        var th := float(deform_sprite.texture.get_height())
+                        _frame_cols = max(1, int(tw / float(_frame_px)))
+                        _frame_rows = max(1, int(th / float(_frame_px)))
+                else:
+                        _frame_cols = 1
+                        _frame_rows = 1
                 deform_loaded = loaded
                 # TASK 22: applica subito il profilo arti (update_step lo
                 # rinnova ogni frame; qui copre il primo frame di vita).

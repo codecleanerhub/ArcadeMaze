@@ -1,0 +1,6 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/ice_arrow/base.png",
+  "pivot": "thin-waiver: QA coverage 8% fallita su arma sottile (falso positivo), integrata via integrate_task61_thin.py con cov_min 4.0 + verifica VLM",
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/relics/ice_arrow.png"
+}

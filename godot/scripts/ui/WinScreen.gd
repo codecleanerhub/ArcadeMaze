@@ -35,6 +35,18 @@ var _display_timer: float = 0.0
 var _hof_queue: Array = []  # [{"label": "PLAYER 1", "score": int}, ...]
 var _hof_level: int = 1
 
+# TASK 76 (richiesta utente: "nella schermata di fine gioco, nello sfondo
+# deve essere rappresentato il personaggio o i personaggi usati per
+# giocare"): sprite dei PG usati in partita (XHD 256px/frame se presente,
+# fallback SD 64px), animati col ciclo di camminata mentre i fuochi
+# d'artificio esplodono attorno. 1P = un eroe al centro; 2P = i due affiancati.
+const CHAR_SHEET_BASES: Array[String] = [
+        "player1", "player2", "char_mage", "char_orc", "char_elf",
+        "char_knight", "char_golem", "char_dragon", "char_vampire",
+]
+var _char_textures: Array[Texture2D] = []  # uno per PG usato (1 o 2)
+var _char_anim_time: float = 0.0
+
 
 func _ready() -> void:
         set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -50,10 +62,12 @@ func _ready() -> void:
                 AudioManager.stop_music()
                 if AudioManager.music_enabled:
                         AudioManager.play_epic_music(7)  # victory track
+        _load_played_characters()
 
 
 func _process(delta: float) -> void:
         _time += delta
+        _char_anim_time += delta
         # Spawn fireworks periodically
         if randf() < delta * 2.0:  # ~2 per second
                 _spawn_firework()
@@ -227,6 +241,65 @@ func _finish() -> void:
                 GameManager.go_to_credits()
 
 
+# TASK 76 — carica gli sheet dei personaggi USATI in partita (P1 e, in 2P,
+# P2), con la stessa priorita XHD della ruota di selezione.
+func _load_played_characters() -> void:
+        _char_textures.clear()
+        if GameManager == null:
+                return
+        var idxs: Array[int] = [GameManager.player1_character]
+        if GameManager.num_players == 2:
+                idxs.append(GameManager.player2_character)
+        for ci in idxs:
+                var base: String = CHAR_SHEET_BASES[ci % CHAR_SHEET_BASES.size()]
+                var tex: Texture2D = null
+                var xhd_path: String = "res://assets/sprites/xhd/%s_xhd_sheet.png" % base
+                var xhd_abs: String = ProjectSettings.globalize_path(xhd_path)
+                if FileAccess.file_exists(xhd_abs):
+                        var img := Image.new()
+                        if img.load(xhd_abs) == OK:
+                                tex = ImageTexture.create_from_image(img)
+                if tex == null:
+                        var sd_path: String = "res://assets/sprites/%s_sheet.png" % base
+                        var sd_abs: String = ProjectSettings.globalize_path(sd_path)
+                        if FileAccess.file_exists(sd_abs):
+                                var img2 := Image.new()
+                                if img2.load(sd_abs) == OK:
+                                        tex = ImageTexture.create_from_image(img2)
+                if tex != null:
+                        _char_textures.append(tex)
+
+
+# TASK 76 — disegna i PG usati: ciclo di camminata (4 frame ~8fps) su un
+# gradino luminoso caldo, con alone rosato da "trionfo".
+func _draw_played_characters() -> void:
+        if _char_textures.is_empty():
+                return
+        var n: int = _char_textures.size()
+        var spacing: float = 300.0
+        var cx: float = size.x * 0.5
+        var base_y: float = size.y * 0.80
+        var glow_pulse: float = 0.55 + 0.20 * sin(_time * 2.2)
+        for k in n:
+                var tex: Texture2D = _char_textures[k]
+                var px: float = cx + (float(k) - float(n - 1) * 0.5) * spacing
+                # alone caldo sotto il personaggio
+                draw_circle(Vector2(px, base_y - 8.0), 120.0,
+                                Color(1.0, 0.72, 0.28, 0.10 * glow_pulse))
+                draw_circle(Vector2(px, base_y - 8.0), 70.0,
+                                Color(1.0, 0.62, 0.22, 0.16 * glow_pulse))
+                # frame del ciclo di camminata (4 frame, ~8 fps)
+                var fpx: int = 256 if tex.get_width() >= 1024 else 64
+                var frame: int = int(_char_anim_time * 8.0) % 4
+                var at := AtlasTexture.new()
+                at.atlas = tex
+                at.region = Rect2(frame * fpx, 0, fpx, fpx)
+                var char_h: float = 300.0 if n == 1 else 260.0
+                var char_w: float = char_h
+                draw_texture_rect(at, Rect2(px - char_w * 0.5,
+                                base_y - char_h, char_w, char_h), false)
+
+
 func _draw() -> void:
         # Background
         if _bg_texture:
@@ -238,6 +311,15 @@ func _draw() -> void:
                 draw_texture_rect(_bg_texture, Rect2(draw_pos, draw_size), false)
         else:
                 draw_rect(Rect2(0, 0, size.x, size.y), Color(0.02, 0.04, 0.08, 1.0), true)
+
+        # TASK 76: leggero velo scuro in basso per staccare i personaggi
+        # dall'immagine di sfondo.
+        var veil_h: float = size.y * 0.55
+        draw_rect(Rect2(0, size.y - veil_h, size.x, veil_h),
+                        Color(0.01, 0.01, 0.03, 0.35), true)
+
+        # Personaggi usati in partita (camminata trionfale)
+        _draw_played_characters()
 
         # Fireworks
         for fw in _fireworks:

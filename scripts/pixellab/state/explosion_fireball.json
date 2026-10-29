@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/explosion_fireball/base.png",
+  "anim_job_id": "efd6ee7f-0caf-4465-87a4-a112c6b50eff",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/effect_explosion_sheet.png"
+}

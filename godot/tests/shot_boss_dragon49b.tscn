@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/shot_boss_sync49b.gd" id="1"]
+
+[node name="ShotBossDragon49b" type="Node"]
+script = ExtResource("1")
+boss_level = 24
+prefix = "boss_dragon49b"
+windup_ms = 150.0
+mid_ms = 300.0
+release_ms = 400.0
+release_col = 4

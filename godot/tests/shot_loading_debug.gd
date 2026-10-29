@@ -27,18 +27,26 @@ func _physics_process(delta: float) -> void:
                         if t > 0.02:
                                 stage = 2
                                 busy = true
-                                _snap_at(1.10, "dbg_loading_110")
+                                # TASK 51 P6: fasi del ciclo PixelLab (2.4s):
+                                # 0.30 = formazione, 1.35 = allungata,
+                                # 2.05 = ritratto, 0.90 = cascata mista
+                                _snap_at(0.30, "dbg_loading_form")
                 2:
                         if t > 0.3:
                                 stage = 3
                                 busy = true
-                                _snap_at(1.69, "dbg_loading_169")
+                                _snap_at(1.35, "dbg_loading_elong")
                 3:
                         if t > 0.3:
                                 stage = 4
                                 busy = true
-                                _snap_at(2.30, "dbg_loading_230")
+                                _snap_at(2.05, "dbg_loading_retract")
                 4:
+                        if t > 0.3:
+                                stage = 5
+                                busy = true
+                                _snap_at(0.90, "dbg_loading_cascade")
+                5:
                         if t > 0.3:
                                 LoadingScreen.hide_loading()
                                 get_tree().quit(0)

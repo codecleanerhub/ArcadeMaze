@@ -191,6 +191,30 @@ func _draw() -> void:
                         2: col = Color(0.2, 0.4, 1.0)
                         3: col = Color(1.0, 1.0, 0.2)
                         4: col = Color(1.0, 0.2, 1.0)
+        # TASK 51 — FASE 2 DEL BOSS: variante 5 = munizione POTENZIATA
+        # (5 perche' le varianti 0-4 sono usate dai raggi oculari del Beholder).
+        # Aura pulsante + corona rotante + scia eterea: si riconosce a
+        # colpo d'occhio anche quando riusa il tipo di proiettile del boss.
+        if variant == 5:
+                var t := float(age_ms) * 0.001
+                var glow_r := radius * (2.6 + 0.5 * sin(t * 14.0))
+                draw_circle(Vector2.ZERO, glow_r,
+                                Color(col.r, col.g, col.b, 0.22 + 0.10 * sin(t * 9.0)))
+                var ring_r := radius * 2.1
+                for i in range(4):
+                        var a := t * 7.0 + i * (PI / 2.0)
+                        draw_circle(Vector2(cos(a), sin(a)) * ring_r,
+                                        radius * 0.28,
+                                        Color(col.r, col.g, col.b, 0.85))
+                radius *= 1.25
+        # TASK 51 — scia dei proiettili a INSEGUIMENTO (omaggio visivo al
+        # movimento curvo: tre fantasmi in dissolvenza dietro la traiettoria).
+        if homing_timer_ms > 0 and dir.length() > 0.001:
+                var back := -dir.normalized()
+                for i in range(3):
+                        draw_circle(back * (10.0 + 10.0 * float(i)),
+                                        radius * (0.55 - 0.15 * float(i)),
+                                        Color(col.r, col.g, col.b, 0.30 - 0.09 * float(i)))
 
         # TASK 22 — FORME tematiche per boss (flag di rollback:
         # GameConstants.BOSS_PROJ_THEMED_ENABLED = false -> disegno legacy
@@ -351,10 +375,88 @@ func _rock_pts(r: float, n: int, rot: float, wob: float) -> PackedVector2Array:
         return pts
 
 
+# ----------------------------------------------------------------------------
+# TASK 60b — PNG-first per i proiettili boss DI PUNTA (audit 59, parere 59b).
+# assets/sprites/projectiles/: 2 sheet animati a 4 frame (fireball DEMONE +
+# dragon_breath DRAGO — il flicker e' parte dell'identita' della fiamma e
+# i sheet saranno riusati dal set armi del Drago nel Task 61) + 4 statici
+# (necro_bolt LICH, boulder GOLEM, ghost_bolt WRAITH_LORD, cult_orb
+# CULT_HERALD). Gli altri tipi (piccoli/blob/direzionali: eye ray, webshot,
+# claw, fang, goo, swarm, hex...) RESTANO procedurali di proposito.
+# Rollback = cancellare i PNG: il disegno tematico procedurale riprende.
+# ----------------------------------------------------------------------------
+
+const _PNG_SHEETS: Dictionary = {
+        BossProjKind.BP_FIREBALL: ["res://assets/sprites/projectiles/proj_fireball_sheet.png", 4],
+        BossProjKind.BP_DRAGON_BREATH: ["res://assets/sprites/projectiles/proj_dragon_breath_sheet.png", 4],
+        BossProjKind.BP_NECRO_BOLT: ["res://assets/sprites/projectiles/proj_necro_bolt.png", 1],
+        BossProjKind.BP_BOULDER: ["res://assets/sprites/projectiles/proj_boulder.png", 1],
+        BossProjKind.BP_GHOST_BOLT: ["res://assets/sprites/projectiles/proj_ghost_bolt.png", 1],
+        BossProjKind.BP_CULT_ORB: ["res://assets/sprites/projectiles/proj_cult_orb.png", 1],
+}
+
+static var _png_cache: Dictionary = {}
+
+
+static func _load_png_sheet(kind: int) -> Dictionary:
+        ## Cache statica per kind: {} se il PNG non esiste (fallback procedurale).
+        if _png_cache.has(kind):
+                return _png_cache[kind]
+        var entry: Dictionary = {}
+        var spec: Array = _PNG_SHEETS.get(kind, [])
+        if not spec.is_empty():
+                var abs_path := ProjectSettings.globalize_path(str(spec[0]))
+                if FileAccess.file_exists(abs_path):
+                        var img := Image.new()
+                        if img.load(abs_path) == OK:
+                                entry = {"tex": ImageTexture.create_from_image(img),
+                                                "frames": int(spec[1])}
+        _png_cache[kind] = entry
+        return entry
+
+
+func _draw_png_first(col: Color, radius: float) -> bool:
+        ## True = sprite PixelLab disegnato (il chiamante deve saltare il
+        ## disegno tematico procedurale). False = nessun PNG, fallback.
+        var sh := _load_png_sheet(bp_kind)
+        if sh.is_empty():
+                return false
+        var tex: Texture2D = sh["tex"]
+        var frames: int = sh["frames"]
+        var fw: float = float(tex.get_width()) / float(frames)
+        var fh: float = float(tex.get_height())
+        # Variante 1 della fireball DEMONE = bomba piu' grande: stesso
+        # moltiplicatore 1.4 del disegno procedurale (sc = 1.4).
+        var scale_r: float = radius
+        if bp_kind == BossProjKind.BP_FIREBALL and variant == 1:
+                scale_r *= 1.4
+        # Lato visivo ~3.6x il raggio di collisione: il nucleo copre il
+        # cerchio d'impatto, fiamma/glow sbordano (standard arcade; il
+        # raggio di collisione resta quello di _RADII, invariato).
+        var vis := scale_r * 3.6
+        var s := vis / fh
+        var w := fw * s
+        var h := fh * s
+        var f: int = 0
+        if frames > 1:
+                f = int(age_ms / 100) % frames   # flicker 10 fps
+        # Glow pulsante dietro lo sprite (coerente col look esistente).
+        var pulse := 0.14 + 0.05 * sin(float(age_ms) * 0.02)
+        draw_circle(Vector2.ZERO, vis * 0.58,
+                        Color(col.r, col.g, col.b, pulse))
+        draw_texture_rect_region(tex, Rect2(-w * 0.5, -h * 0.5, w, h),
+                        Rect2(float(f) * fw, 0.0, fw, fh))
+        return true
+
+
 func _draw_themed(col: Color, radius: float) -> void:
         var t := _t()
         var ang := _dir_angle()
         var r := radius
+
+        # TASK 60b — PNG-first per i tipi di punta (vedi _PNG_SHEETS).
+        if _draw_png_first(col, radius):
+                return
 
         match bp_kind:
                 BossProjKind.BP_BOULDER:

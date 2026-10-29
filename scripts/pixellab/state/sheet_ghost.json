@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/sheet_ghost/base.png",
+  "anim_job_id": "ffd5d62b-8a01-4616-b2d8-732beae6b99a",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/ghost_sheet_white.png"
+}

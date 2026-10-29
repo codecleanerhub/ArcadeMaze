@@ -1,0 +1,5 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/urn_marble/base.png",
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/urn_marble.png"
+}

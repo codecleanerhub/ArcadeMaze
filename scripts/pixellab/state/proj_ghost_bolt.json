@@ -1,0 +1,5 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/proj_ghost_bolt/base.png",
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/projectiles/proj_ghost_bolt.png"
+}

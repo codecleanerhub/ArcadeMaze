@@ -1,0 +1,17 @@
+[remap]
+
+importer="font_data_bmfont"
+type="FontFile"
+uid="uid://bl7sdbu4kpv72"
+path="res://.godot/imported/arcadia_gothic_stone_32.fnt-a8e2c272fe37b4c478d45f1a3bc44bd8.fontdata"
+
+[deps]
+
+source_file="res://assets/fonts/arcadia_gothic_stone_32.fnt"
+dest_files=["res://.godot/imported/arcadia_gothic_stone_32.fnt-a8e2c272fe37b4c478d45f1a3bc44bd8.fontdata"]
+
+[params]
+
+fallbacks=[]
+compress=true
+scaling_mode=2

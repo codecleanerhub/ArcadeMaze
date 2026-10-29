@@ -29,6 +29,7 @@ var bgs: Array = []
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         for r in ROOMS:
                 var img := Image.new()
                 var abs_p: String = ProjectSettings.globalize_path(r.bg)

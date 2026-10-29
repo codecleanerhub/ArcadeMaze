@@ -9,8 +9,9 @@
 #   * Background:   bg_menu.jpg (cover-fit to the window)
 #                   bg_options.png shown when _in_options == true (Options
 #                   submenu with ancient bronze gears / Tomb Raider style)
-#   * Title:        "ARCADE MAZE"  (gold + dark gold shadow)
-#                   becomes "OPTIONS" while the Options submenu is open.
+#   * Title:        "ARCADE MAZE FANTASY" (TASK 78: logo ORO medievale, font
+#                   Goth And Gothic; becomes "OPTIONS" while the Options
+#                   submenu is open.
 #   * Ornament:     gold horizontal line + diamond (between title and items)
 #   * Scroll panel: dark parchment-style rounded rectangle (items list)
 #       Main menu (7 items, selected highlighted in yellow + animated flame):
@@ -55,15 +56,18 @@ signal credits_requested()
 signal configure_joystick_requested(player: int)
 
 # --- Exposed theme colors (match the SFML palette) -------------------------
-@export var color_title_gold:    Color = Color(1.000, 0.843, 0.000)   # 255,215,0
-@export var color_title_shadow:  Color = Color(0.706, 0.471, 0.157)   # 180,120,40
-@export var color_item_normal:   Color = Color(0.706, 0.706, 0.706)   # 180,180,180
-@export var color_item_selected: Color = Color(1.000, 1.000, 0.000)   # Yellow
-@export var color_footer_by:     Color = Color(1.000, 0.843, 0.392)   # 255,215,100
-@export var color_footer_name:   Color = Color(0.961, 0.922, 0.784)   # 245,235,200
+# TASK 78 — palette ORO MEDIEVALE (richiesta utente: dal sangue all'oro
+# medievale, font Goth And Gothic): selezionato = oro acceso con ombra
+# bruno cupa, normale = osso invecchiato, bordi pannello = bronzo invecchiato.
+@export var color_title_gold:    Color = Color(0.941, 0.780, 0.373)   # 240,199,95 oro caldo
+@export var color_title_shadow:  Color = Color(0.180, 0.110, 0.020)   # 46,28,5 bruno cupo
+@export var color_item_normal:   Color = Color(0.860, 0.810, 0.700)   # osso invecchiato
+@export var color_item_selected: Color = Color(1.000, 0.870, 0.420)   # 255,222,107 oro vivo
+@export var color_footer_by:     Color = Color(0.850, 0.680, 0.350)   # ambra calda
+@export var color_footer_name:   Color = Color(0.961, 0.922, 0.784)   # 245,235,200 avorio
 @export var color_hint:          Color = Color(0.588, 0.588, 0.588)   # 150,150,150
-@export var color_parchment_bg:  Color = Color(0.078, 0.047, 0.031, 0.784)
-@export var color_parchment_border: Color = Color(0.549, 0.392, 0.196)
+@export var color_parchment_bg:  Color = Color(0.055, 0.038, 0.016, 0.820) # pergamena bruno scuro
+@export var color_parchment_border: Color = Color(0.615, 0.443, 0.180) # 157,113,46 bronzo invecchiato
 
 # --- Internal state (mirrors Game::xxx fields) ----------------------------
 var _menu_item_index: int = 0
@@ -103,6 +107,8 @@ const DEMO_INACTIVITY_SECONDS: float = 30.0
 # Child nodes (built in _ready).
 var _bg: TextureRect
 var _options_bg: TextureRect  # Themed background shown when _in_options == true
+var _options_logo_en: Texture2D = null
+var _options_logo_it: Texture2D = null
 var _title_label: Label
 var _footer_by: Label
 var _footer_name: Label
@@ -304,6 +310,11 @@ func _process(delta: float) -> void:
                         lbl.modulate = Color(1.0, 1.0, 1.0, 1.0)
         # Pulse the title (very subtle gold shimmer).
         if _title_label:
+                # TASK 51 (P5): il titolo testuale resta solo nel sottomenu
+                # OPTIONS; nel menu principale c'e' il LOGO oro.
+                # TASK 79b: logo PER LINGUA (OPTIONS/IMPOSTAZIONI): la label
+                # testuale compare solo se il PNG della lingua attiva manca.
+                _title_label.visible = _in_options and _current_options_logo() == null
                 _title_label.modulate = Color(
                         1.0, 1.0, 1.0, 0.92 + 0.08 * sin(_menu_time * 2.0))
         # Hint text gentle fade.
@@ -339,8 +350,12 @@ func _recenter_menu_panel() -> void:
 
 func _draw() -> void:
         # Ornament line + central diamond (gold).
-        var orn_y: float = 220.0
-        var orn_gold: Color = Color(0.784, 0.627, 0.196)
+        # TASK 51 (P5): con il logo sangue (menu principale) l'ornamento
+        # scende sotto le gocce animate; in OPTIONS torna al posto storico.
+        var logo_mode: bool = _gothic_node != null and not _in_options
+        var orn_y: float = 262.0 if logo_mode else 220.0
+        # TASK 78: ornamento in bronzo invecchiato (palette oro medievale).
+        var orn_gold: Color = Color(0.615, 0.443, 0.180)
         # Center diamond
         var cx: float = size.x / 2.0
         var pts := PackedVector2Array([
@@ -453,6 +468,14 @@ func _build_ui() -> void:
         _options_bg.visible = false
         add_child(_options_bg)
 
+        # TASK 79b: header oro del sottomenu OPTIONS in DUE lingue
+        # ("OPTIONS" / "IMPOSTAZIONI" — gold, font Goth And Gothic).
+        # _current_options_logo() sceglie in base a I18n.language; se manca
+        # il PNG della lingua attiva, fallback sull'altro; se mancano tutti
+        # resta il titolo testuale oro (label non nascosta).
+        _options_logo_en = _load_menu_png("res://assets/ui/header_options.png")
+        _options_logo_it = _load_menu_png("res://assets/ui/header_options_it.png")
+
         # Dark overlay over the background, below the panel
         var dark := ColorRect.new()
         dark.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -466,7 +489,7 @@ func _build_ui() -> void:
         # always centered, regardless of how Godot interprets PRESET_FULL_RECT.
         _title_label = Label.new()
         _title_label.name = "Title"
-        _title_label.text = "ARCADE MAZE"
+        _title_label.text = "ARCADE MAZE FANTASY"
         _title_label.anchor_left = 0.5
         _title_label.anchor_top = 0.0
         _title_label.anchor_right = 0.5
@@ -479,6 +502,11 @@ func _build_ui() -> void:
         _title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         _title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         _title_label.add_theme_font_size_override("font_size", 48)
+        # TASK 78: font medievale Goth And Gothic sul titolo testuale
+        # (fallback quando manca il logo PNG: nel sottomenu OPTIONS senza PNG).
+        var _gf: FontFile = GameConstants.gothic_font()
+        if _gf != null:
+                _title_label.add_theme_font_override("font", _gf)
         _title_label.add_theme_color_override("font_color", color_title_gold)
         _title_label.add_theme_color_override("font_shadow_color", color_title_shadow)
         _title_label.add_theme_constant_override("shadow_offset_x", -3)
@@ -543,7 +571,11 @@ func _build_ui() -> void:
                 var lbl := Label.new()
                 lbl.text = txt
                 lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-                lbl.add_theme_font_size_override("font_size", 24)
+                # TASK 78: voci menu in font medievale Goth And Gothic
+                # (28px: le maiuscole blackletter restano leggibili a quest'area).
+                lbl.add_theme_font_size_override("font_size", 28)
+                if _gf != null:
+                        lbl.add_theme_font_override("font", _gf)
                 lbl.add_theme_color_override("font_color", color_item_normal)
                 lbl.add_theme_color_override("font_shadow_color", Color.BLACK)
                 lbl.add_theme_constant_override("shadow_offset_x", 1)
@@ -634,6 +666,10 @@ func _build_ui() -> void:
         # disegna sopra sfondo e pannello (vedi draw_selection_flame).
         _flame_node = _make_flame_node()
         add_child(_flame_node)
+        # TASK 51 (P5): nodo gotico (logo sangue + gocce animate + pipistrelli)
+        # DOPO la fiamma: la schermata principale deve essere d'impatto.
+        _gothic_node = _make_gothic_node()
+        add_child(_gothic_node)
 
 
 # ----------------------------------------------------------------------------
@@ -651,6 +687,175 @@ func _make_flame_node() -> Node2D:
         fn.owner_menu = self
         fn.name = "SelectionFlame"
         return fn
+
+
+# ----------------------------------------------------------------------------
+# TASK 51 (P5) — SCHERMATA INIZIALE GOTICA: logo "ARCADE MAZE FANTASY"
+# TASK 78: logo ORO MEDIEVALE (font Goth And Gothic scelta dall'utente,
+# trattamento oro = gradiente per-lettera + bevel + bordo bronzo) + STORMO
+# DI PIPISTRELLI (character menu-bat, volo a 6 frame). TASK 76: le GOCCE
+# ANIMATE sotto il titolo sono state RIMOSSE su richiesta utente: restano
+# logo, alone pulsante ambrato e pipistrelli. Nodo dedicato
+# aggiunto per ULTIMO (dopo la fiamma): disegna sopra sfondo e pannello.
+# ----------------------------------------------------------------------------
+var _gothic_node: Node2D = null
+
+
+class GothicDrawer extends Node2D:
+        var owner_menu: CanvasItem = null
+        var logo: Texture2D = null
+        var bats: Array[Texture2D] = []
+        var t: float = 0.0
+        # stormo: [speed, y, scala, fase, dir]
+        const BAT_PARAMS := [
+                [88.0, 88.0, 0.44, 0.0, 1.0],
+                [58.0, 208.0, 0.30, 1.3, -1.0],
+                [108.0, 148.0, 0.52, 2.1, 1.0],
+                [46.0, 286.0, 0.26, 0.7, -1.0],
+                [72.0, 56.0, 0.36, 3.4, 1.0],
+                [98.0, 244.0, 0.40, 1.8, -1.0],
+        ]
+
+        func _process(delta: float) -> void:
+                t += delta
+                queue_redraw()
+
+        func _draw() -> void:
+                if owner_menu == null:
+                        return
+                var in_options: bool = bool(owner_menu.get("_in_options"))
+                var vp: Vector2 = owner_menu.size
+                if in_options:
+                        # TASK 79b: logo ORO del sottomenu OPTIONS PER LINGUA
+                        # (EN "OPTIONS" / IT "IMPOSTAZIONI"): recuperato dal
+                        # menu a ogni frame così lo switch LANGUAGE nel
+                        # sottomenu cambia subito l'header senza ricaricare.
+                        # (call() dinamica: owner_menu è tipizzato CanvasItem,
+                        # come il get("_in_options") qui sopra.)
+                        var options_logo: Texture2D = owner_menu.call("_current_options_logo")
+                        if options_logo == null:
+                                return
+                        # TASK 78: il nuovo header e' piu' largo che alto
+                        # (aspect ~4.5:1 EN / ~7.4:1 IT): dimensione dall'ALTEZZA
+                        # con cap di larghezza, come per il titolo. TASK 79b: cap
+                        # alzato a 40% per la versione IT (12 glifi vs 7).
+                        var oh: float = minf(150.0, vp.y * 0.14)
+                        var ow: float = oh * float(options_logo.get_width()) / maxf(options_logo.get_height(), 1.0)
+                        if ow > vp.x * 0.40:
+                                ow = vp.x * 0.40
+                                oh = ow * float(options_logo.get_height()) / maxf(options_logo.get_width(), 1.0)
+                        var ox: float = vp.x * 0.5 - ow * 0.5
+                        var oy: float = 95.0 - oh * 0.5
+                        var oglow: float = 0.10 + 0.05 * sin(t * 1.7)
+                        draw_circle(Vector2(vp.x * 0.5, 95.0), maxf(ow, oh) * 0.62,
+                                        Color(0.55, 0.38, 0.10, oglow))
+                        draw_texture_rect(options_logo, Rect2(ox, oy, ow, oh), false,
+                                        Color(1, 1, 1, 0.93 + 0.07 * sin(t * 1.9)))
+                        return
+                if logo == null:
+                        return
+                if vp.x < 2.0 or vp.y < 2.0:
+                        return
+                # --- LOGO oro medievale (ARCADE MAZE FANTASY, TASK 78: font
+                # Goth And Gothic + trattamento oro; il nuovo logo e' molto
+                # piu' largo che alto, aspect ~11.6:1) ---
+                # Dimensione dall'ALTEZZA (~118px, come il vecchio logo sangue)
+                # con cap di larghezza per non invadere lo schermo.
+                var lh: float = minf(118.0, vp.y * 0.16)
+                var lw: float = lh * float(logo.get_width()) / maxf(logo.get_height(), 1.0)
+                if lw > vp.x * 0.86:
+                        lw = vp.x * 0.86
+                        lh = lw * float(logo.get_height()) / maxf(logo.get_width(), 1.0)
+                var lx: float = vp.x * 0.5 - lw * 0.5
+                var ly: float = 30.0
+                # alone AMBRATO dietro il logo (pulsazione lenta)
+                var glow_a: float = 0.10 + 0.05 * sin(t * 1.7)
+                draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
+                                maxf(lw, lh) * 0.62, Color(0.55, 0.38, 0.10, glow_a))
+                draw_circle(Vector2(vp.x * 0.5, ly + lh * 0.5),
+                                maxf(lw, lh) * 0.42, Color(0.68, 0.48, 0.13, glow_a * 1.4))
+                # logo con shimmer sottile (mai blink: deve restare leggibile)
+                draw_texture_rect(logo, Rect2(lx, ly, lw, lh), false,
+                                Color(1.0, 1.0, 1.0, 0.93 + 0.07 * sin(t * 1.9)))
+                # --- STORMO DI PIPISTRELLI ---
+                if bats.size() >= 6:
+                        _draw_bat_flock(vp)
+
+        ## Stormo: 6 pipistrelli con velocita'/quota/scala/fase/direzione
+        ## deterministiche. Attraversano lo schermo in banda alta (sopra il
+        ## pannello menu), avvolti quando escono.
+        func _draw_bat_flock(vp: Vector2) -> void:
+                for bp in BAT_PARAMS:
+                        var speed: float = bp[0]
+                        var by0: float = bp[1]
+                        var scale: float = bp[2]
+                        var phase: float = bp[3]
+                        var dir: float = bp[4]
+                        # posizione orizzontale ciclica (wrapping)
+                        var span: float = vp.x + 320.0
+                        var x: float = fposmod(t * speed + phase * 137.0, span) - 160.0
+                        # bob verticale organico
+                        var by: float = by0 + sin(t * 1.7 + phase * 2.3) * 14.0 \
+                                        + sin(t * 3.1 + phase) * 5.0
+                        # frame di volo (battito ~10 fps, sfasato per bat)
+                        var f: int = int((t * 10.0 + phase * 4.0)) % 6
+                        var bw: float = 256.0 * scale
+                        var bh: float = 256.0 * scale
+                        if dir < 0.0:
+                                # specchia attorno al centro (pivot mirror)
+                                draw_set_transform(Vector2(x, by), 0.0,
+                                                Vector2(-1.0, 1.0))
+                                draw_texture_rect(bats[f],
+                                                Rect2(-bw * 0.5, -bh * 0.5, bw, bh),
+                                                false, Color(0.82, 0.78, 0.9, 0.92))
+                                draw_set_transform(Vector2.ZERO)
+                        else:
+                                draw_texture_rect(bats[f],
+                                                Rect2(x - bw * 0.5, by - bh * 0.5, bw, bh),
+                                                false, Color(0.82, 0.78, 0.9, 0.92))
+
+
+func _make_gothic_node() -> Node2D:
+        var gn := GothicDrawer.new()
+        gn.owner_menu = self
+        gn.name = "GothicTitle"
+        # TASK 78: logo oro medievale (font Goth And Gothic)
+        gn.logo = _load_menu_png("res://assets/ui/title_logo.png")
+        # TASK 79b: niente più options_logo fisso qui — il GothicDrawer lo
+        # chiede a owner_menu._current_options_logo() a ogni frame (per lingua).
+        # pipistrelli del menu
+        for i in 6:
+                var bt: Texture2D = _load_menu_png(
+                                "res://assets/ui/bat_fly_%d.png" % i)
+                if bt != null:
+                        gn.bats.append(bt)
+        return gn
+
+
+## Caricamento PNG diretto (pattern Collectibles: Image.load, niente .import)
+func _load_menu_png(path: String) -> Texture2D:
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img: Image = Image.new()
+        if img.load(abs_path) != OK:
+                return null
+        return ImageTexture.create_from_image(img)
+
+
+## TASK 79b — header del sottomenu OPTIONS nella lingua ATTIVA.
+## Ritorna il PNG "IMPOSTAZIONI" in italiano, "OPTIONS" in inglese; se il PNG
+## della lingua attiva manca, fallback sull'altro; null se mancano entrambi
+## (in tal caso resta visibile il titolo testuale oro).
+func _current_options_logo() -> Texture2D:
+        var want_it: bool = I18n != null and I18n.is_italian()
+        if want_it:
+                if _options_logo_it != null:
+                        return _options_logo_it
+                return _options_logo_en
+        if _options_logo_en != null:
+                return _options_logo_en
+        return _options_logo_it
 
 
 # Builds a gold-outlined stylebox for highlighting the selected character slot.
@@ -764,7 +969,7 @@ func _update_items_text() -> void:
                 _item_labels[i].visible = false
         # Restore main-menu title + background.
         if _title_label:
-                _title_label.text = "ARCADE MAZE"
+                _title_label.text = "ARCADE MAZE FANTASY"
         if _options_bg:
                 _options_bg.visible = false
         if _bg:

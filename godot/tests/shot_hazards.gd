@@ -16,6 +16,7 @@ const OUT_DIR: String = "/home/z/my-project/download"
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         GameManager.num_players = 1
         GameManager.reset_run()
         main = MainGameScene.instantiate()

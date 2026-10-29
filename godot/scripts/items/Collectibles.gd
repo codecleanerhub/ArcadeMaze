@@ -16,8 +16,10 @@
 extends Node2D
 class_name Collectibles
 
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # Treasure kinds (mirror C++ enum TreasureType).
-enum TreasureType { TRES_CROWN, TRES_GOLD, TRES_CHEST, TRES_GEM, TRES_CUP }
+enum TreasureType { TRES_CROWN, TRES_GOLD, TRES_CHEST, TRES_GEM, TRES_RUBY }
 
 # All treasure kinds (5) give the same score on collection.
 const TREASURE_COUNT := 5
@@ -31,7 +33,6 @@ enum Kind {
         SPEED_BOOTS,     # Permanent speed boost (P1 or P2 owner).
         TREASURE,        # One of the 5 treasures (crown/gold/chest/gem/cup).
         EXIT_DOOR,       # Appears once all treasures are collected.
-        MAGIC_PORTAL,    # Spawns at 50% enemies killed; respawns enemies.
         MEDIKIT,         # FIX (nuova meccanica): rigenera 1 punto vita del player (1 per livello).
         KNIGHT_STATUE,   # FIX (nuova meccanica): evoca cavaliere alleato che combatte per il player.
         DYNAMITE,        # FIX (nuova meccanica): candelotto di dinamite con miccia (1 per livello).
@@ -53,6 +54,14 @@ enum Kind {
                          # i nemici che vi cadono sopra vengono uccisi, il player e'
                          # immune. 3 ontate da 4s con riposizionamento (12s totali).
                          # Stesse meccaniche di apparizione della pergamena terremoto.
+        FREEZE_SCROLL,    # TASK 50 (pergamena del GHIACCIO): alla raccolta il
+                         # player la EQUIPAGGIA — il tasto di fuoco spara un
+                         # RAGGIO CONGELANTE (2 colpi). I nemici colpiti dal
+                         # beam vengono congelati per tutto il livello: conta
+                         # come uccisione one-shot ma lo sprite resta sul
+                         # labirinto, fermo, dentro un blocco di ghiaccio
+                         # trasparente che lascia vedere il mostro. Stesse
+                         # meccaniche di apparizione delle altre pergamene.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -85,11 +94,29 @@ var pulse: float = 0.0
 var bob_offset: float = 0.0
 var rotation_deg: float = 0.0
 
+# --- TASK 64 (alleato alternato per livello) ---
+# Variante estetica della statuetta KNIGHT_STATUE: "unicorn" (livelli
+# dispari, comportamento storico) o "knight" (livelli pari). Decisa da
+# MainGameController alla creazione/restore in base alla parita' del
+# livello, cosi' l'icona a terra e' sempre coerente con l'alleato che
+# verra' evocato (item_unicorn_statue.png / item_knight_statue.png,
+# entrambi PixelLab v2).
+var statue_variant: String = "unicorn"
+
+func _knight_statue_png() -> String:
+        return "res://assets/sprites/collectibles/item_knight_statue.png" \
+                        if statue_variant == "knight" \
+                        else "res://assets/sprites/collectibles/item_unicorn_statue.png"
+
 # --- MINE-specific ---
 var bouncing: bool = false
 var velocity: Vector2 = Vector2.ZERO
 var bounce_timer_ms: int = 0
 var homing_ms: int = 0  # FIX (bomba homing): timer per BFS homing verso nemico più vicino
+# TASK 50 (mina si incastra nei muri): path-following continuo — percorso
+# BFS completo (waypoint in celle) + indice del waypoint inseguito.
+var path_cells: Array = []
+var path_idx: int = 0
 var in_boss_room: bool = false
 
 # --- SCEPTER-specific ---
@@ -104,11 +131,11 @@ var owner_id: int = 0  # 0 = free (1P), 1 = P1, 2 = P2
 var door_anim_timer_ms: int = 0
 var door_glow_pulse: float = 0.0
 
-# --- MAGIC_PORTAL-specific ---
-var portal_phase: int = 0       # 0=open, 1=spawn, 2=close, 3=idle
-var portal_phase_timer_ms: int = 0
-var portal_enemies_to_spawn: int = 0
-var portal_spawn_timer_ms: int = 0
+# NOTE (TASK 69, pulizia codice morto): rimosso il port C++ del portale
+# magico (Kind.MAGIC_PORTAL + make_magic_portal + _update_portal +
+# _draw_magic_portal + vars portal_*): mai istanziato in gioco — il portale
+# REALE è gestito interamente da MainGameController (magic_portal: Dictionary
+# + _draw_portal_into via Maze.portal_draw_callback, Task 68).
 
 # ----- Signals -----
 # Emitted when an item is collected by the player. `player_id` is 1 or 2.
@@ -142,9 +169,6 @@ func _apply_kind_defaults() -> void:
                 Kind.EXIT_DOOR:
                         door_anim_timer_ms = 0
                         door_glow_pulse = 0.0
-                Kind.MAGIC_PORTAL:
-                        portal_phase = 0
-                        portal_phase_timer_ms = 0
                 Kind.MEDIKIT:
                         pulse = 0.0
                         bob_offset = 0.0
@@ -171,6 +195,11 @@ func _apply_kind_defaults() -> void:
                 Kind.CHASM_SCROLL:
                         pulse = 0.0
                         bob_offset = 0.0
+                Kind.FREEZE_SCROLL:
+                        pulse = 0.0
+                        bob_offset = 0.0
+                        # NB: come le altre pergamene, scroll_lifetime_ms e'
+                        # impostato dal controller PRIMA dell'add_child.
 
 
 # =========================================================
@@ -199,8 +228,6 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                         pass
                 Kind.EXIT_DOOR:
                         _update_door(delta_ms)
-                Kind.MAGIC_PORTAL:
-                        _update_portal(delta_ms)
                 Kind.MEDIKIT:
                         pass  # only anim
                 Kind.KNIGHT_STATUE:
@@ -212,6 +239,8 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                 Kind.QUAKE_SCROLL:
                         _update_scroll_lifetime(delta_ms)
                 Kind.CHASM_SCROLL:
+                        _update_scroll_lifetime(delta_ms)
+                Kind.FREEZE_SCROLL:
                         _update_scroll_lifetime(delta_ms)
 
         # FIX (calice non raccoglibile): RIMOSSA la self-collision a 16px.
@@ -269,36 +298,6 @@ func _update_door(delta_ms: int) -> void:
         if door_anim_timer_ms > 0:
                 door_anim_timer_ms = maxi(0, door_anim_timer_ms - delta_ms)
         door_glow_pulse = (sin(anim_time * 3.0) + 1.0) * 0.5
-
-
-func _update_portal(delta_ms: int) -> void:
-        if portal_phase_timer_ms > delta_ms:
-                portal_phase_timer_ms -= delta_ms
-        else:
-                match portal_phase:
-                        0:  # opening
-                                portal_phase = 1
-                                portal_phase_timer_ms = 4000
-                        1:  # spawning
-                                if portal_enemies_to_spawn > 0:
-                                        portal_enemies_to_spawn -= 1
-                                        portal_spawn_timer_ms = 4000
-                                        portal_phase_timer_ms = 4000
-                                else:
-                                        portal_phase = 2
-                                        portal_phase_timer_ms = 1000
-                        2:  # closing
-                                portal_phase = 3
-                                portal_phase_timer_ms = 0
-                                active = false
-                        3:
-                                active = false
-        if portal_phase == 1 and portal_enemies_to_spawn > 0:
-                if portal_spawn_timer_ms > delta_ms:
-                        portal_spawn_timer_ms -= delta_ms
-                else:
-                        portal_enemies_to_spawn -= 1
-                        portal_spawn_timer_ms = 4000
 
 
 # =========================================================
@@ -367,7 +366,6 @@ func _draw() -> void:
                 Kind.SPEED_BOOTS:  _draw_speed_boots()
                 Kind.TREASURE:     _draw_treasure()
                 Kind.EXIT_DOOR:    _draw_exit_door()
-                Kind.MAGIC_PORTAL: _draw_magic_portal()
                 Kind.MEDIKIT:      _draw_medikit()
                 Kind.KNIGHT_STATUE: _draw_knight_statue()
                 Kind.DYNAMITE:     _draw_dynamite()
@@ -379,6 +377,9 @@ func _draw() -> void:
                 Kind.CHASM_SCROLL: _draw_parchment(
                                 "res://assets/sprites/parchment/chasm_scroll.png",
                                 Color(0.7, 0.45, 1.0))
+                Kind.FREEZE_SCROLL: _draw_parchment(
+                                "res://assets/sprites/parchment/freeze_scroll.png",
+                                Color(0.35, 0.8, 1.0))
 
 
 func _draw_mine() -> void:
@@ -618,8 +619,16 @@ static func _load_png_cached(path: String) -> Texture2D:
 
 func _draw_treasure() -> void:
         var y_off := -bob_offset
+        # TASK 81c: le GEMME (zaffiro blu + rubino rosso) si rimpiccioliscono
+        # del 30% ("Rimpiccioliamo le gemme (rubino rosso, blue) del 30%"):
+        # anche il glow si stringe in proporzione.
+        var is_gem: bool = treasure_type == TreasureType.TRES_GEM \
+                        or treasure_type == TreasureType.TRES_RUBY
+        var glow_r: float = 10.0
+        if is_gem:
+                glow_r *= C.TREASURE_GEM_SHRINK
         # Glow dorato ridotto
-        draw_circle(Vector2.ZERO, 10.0, Color(1.0, 0.85, 0.3, 0.10))
+        draw_circle(Vector2.ZERO, glow_r, Color(1.0, 0.85, 0.3, 0.10))
         # Carica la texture PNG dedicata per questo tipo di tesoro (cached)
         var tex_path: String = ""
         match treasure_type:
@@ -627,7 +636,7 @@ func _draw_treasure() -> void:
                 TreasureType.TRES_GOLD: tex_path = "res://assets/sprites/treasures/treasure_gold.png"
                 TreasureType.TRES_CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
                 TreasureType.TRES_GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
-                TreasureType.TRES_CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
+                TreasureType.TRES_RUBY: tex_path = "res://assets/sprites/treasures/treasure_ruby.png"
         if not tex_path.is_empty():
                 var tex: Texture2D = _load_png_cached(tex_path)
                 if tex != null:
@@ -636,7 +645,11 @@ func _draw_treasure() -> void:
                         # maze (73.6px netti su cella 64): il collectible è la
                         # versione da raccogliere a schermo, il maze disegna il
                         # tesoro "padre". Contenuto visivo ~43px su cella 64.
+                        # TASK 81c: GEM/RUBY -30% (48 -> 33.6px), coerente col
+                        # tesoro "padre" del maze (73.6 -> 51.5px).
                         var size: float = 48.0
+                        if is_gem:
+                                size *= C.TREASURE_GEM_SHRINK
                         var draw_rect := Rect2(-size / 2.0, -size / 2.0 + y_off, size, size)
                         draw_texture_rect(tex, draw_rect, false)
                         return
@@ -684,6 +697,11 @@ func _draw_treasure() -> void:
                         # Lucchetto
                         draw_rect(Rect2(-2.0, 1.0 + y_off2, 4.0, 5.0), gold)
                 TreasureType.TRES_GEM:
+                        # TASK 81c: fallback procedurale scalato del 30% attorno
+                        # al centro gemma (draw_set_transform: pos = c*(1-s)).
+                        var sc_g: float = C.TREASURE_GEM_SHRINK
+                        draw_set_transform(Vector2(0.0, y_off2) * (1.0 - sc_g), 0.0,
+                                        Vector2(sc_g, sc_g))
                         # Gemma blu sfaccettata (diamante)
                         var gem := Color(0.3, 0.8, 1.0)
                         var gem_dark := Color(0.15, 0.5, 0.8)
@@ -699,23 +717,37 @@ func _draw_treasure() -> void:
                         draw_line(Vector2(-8.0, 0.0 + y_off2), Vector2(8.0, 0.0 + y_off2), gem_dark, 1.0)
                         # Highlight
                         draw_circle(Vector2(-3.0, -3.0 + y_off2), 2.0, gem_light)
-                TreasureType.TRES_CUP:
-                        # Calice d'oro con base
-                        var gold := Color(1.0, 0.85, 0.2)
-                        var gold_dark := Color(0.8, 0.65, 0.1)
-                        # Coppa
+                        draw_set_transform(Vector2.ZERO, 0.0)
+                TreasureType.TRES_RUBY:
+                        # TASK 81c: fallback procedurale scalato del 30% attorno
+                        # al centro gemma (draw_set_transform: pos = c*(1-s)).
+                        var sc_r: float = C.TREASURE_GEM_SHRINK
+                        draw_set_transform(Vector2(0.0, y_off2) * (1.0 - sc_r), 0.0,
+                                        Vector2(sc_r, sc_r))
+                        # TASK 65c: rubino (prima calice d'oro) — silhouette
+                        # a punta con facet, coerente col PNG PixelLab
+                        var ruby := Color(0.85, 0.1, 0.2)
+                        var ruby_dark := Color(0.5, 0.03, 0.1)
+                        var ruby_light := Color(1.0, 0.5, 0.55)
+                        # Corpo gemma: corona larga + padiglione a punta
                         draw_colored_polygon(PackedVector2Array([
-                                Vector2(-8.0, -8.0 + y_off2),
-                                Vector2(8.0, -8.0 + y_off2),
-                                Vector2(6.0, 0.0 + y_off2),
-                                Vector2(-6.0, 0.0 + y_off2)
-                        ]), gold)
-                        # Stelo
-                        draw_rect(Rect2(-2.0, 0.0 + y_off2, 4.0, 6.0), gold_dark)
-                        # Base
-                        draw_rect(Rect2(-6.0, 6.0 + y_off2, 12.0, 4.0), gold)
-                        # Bordo coppa
-                        draw_rect(Rect2(-8.0, -10.0 + y_off2, 16.0, 3.0), gold_dark)
+                                Vector2(-9.0, -6.0 + y_off2),
+                                Vector2(9.0, -6.0 + y_off2),
+                                Vector2(0.0, 10.0 + y_off2)
+                        ]), ruby)
+                        # Tavola superiore (corona)
+                        draw_colored_polygon(PackedVector2Array([
+                                Vector2(-5.0, -9.0 + y_off2),
+                                Vector2(5.0, -9.0 + y_off2),
+                                Vector2(9.0, -6.0 + y_off2),
+                                Vector2(-9.0, -6.0 + y_off2)
+                        ]), ruby_dark)
+                        # Facette interne
+                        draw_line(Vector2(-9.0, -6.0 + y_off2), Vector2(0.0, 10.0 + y_off2), ruby_dark, 1.0)
+                        draw_line(Vector2(9.0, -6.0 + y_off2), Vector2(0.0, 10.0 + y_off2), ruby_dark, 1.0)
+                        # Highlight
+                        draw_circle(Vector2(-3.0, -5.0 + y_off2), 2.0, ruby_light)
+                        draw_set_transform(Vector2.ZERO, 0.0)
 
 
 func _draw_exit_door() -> void:
@@ -825,71 +857,6 @@ func _draw_exit_door() -> void:
                                 Color(0.392, 0.275, 0.078), false, 0.4)
 
 
-func _draw_magic_portal() -> void:
-        # Port 1:1 di Game::drawMagicPortal (C++ righe 5353-5432).
-        # Portale magico che respawna i nemici. Strati:
-        #   1. 3 aure pulsanti (viola-blu, grande -> piccola, da 55 a 22 px)
-        #   2. 4 anelli concentrici rotanti (16, 24, 32, 40 px di raggio;
-        #      colori 240, 200, 160, 120 alpha da interno a esterno)
-        #   3. 12 particelle spirale rotanti (raggio variabile con sin)
-        #   4. Centro nero profondo (viola scuro, r=12)
-        #   5. Bagliore centrale phase-dependent (3 fasi: open/spawn/close)
-        # (px, py) e' il centro del portale. Usa rotation_deg per la rotazione.
-        var px := 0.0
-        var py := 0.0
-        var rot: float = deg_to_rad(rotation_deg)
-        var portal_pulse: float = 1.0 + sin(anim_time * 4.0) * 0.2
-        # --- 3 aure pulsanti (viola-blu, grande -> piccola) ---
-        var aura_r: float = 55.0 * portal_pulse
-        draw_circle(Vector2(px, py), aura_r, Color(120.0 / 255.0, 60.0 / 255.0, 220.0 / 255.0, 40.0 / 255.0))
-        draw_circle(Vector2(px, py), aura_r * 0.65,
-                Color(160.0 / 255.0, 80.0 / 255.0, 240.0 / 255.0, 60.0 / 255.0))
-        draw_circle(Vector2(px, py), aura_r * 0.4,
-                Color(200.0 / 255.0, 100.0 / 255.0, 255.0 / 255.0, 80.0 / 255.0))
-        # --- 4 anelli concentrici rotanti (16, 24, 32, 40 px di raggio) ---
-        # Colori 240->120 alpha da interno a esterno; spessore 3->1.5.
-        var ring_colors: Array[Color] = [
-                Color(220.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0, 240.0 / 255.0),
-                Color(180.0 / 255.0, 90.0 / 255.0, 240.0 / 255.0, 200.0 / 255.0),
-                Color(140.0 / 255.0, 70.0 / 255.0, 210.0 / 255.0, 160.0 / 255.0),
-                Color(100.0 / 255.0, 50.0 / 255.0, 180.0 / 255.0, 120.0 / 255.0),
-        ]
-        var ring_widths: Array[float] = [3.0, 2.5, 2.0, 1.5]
-        for ring in range(4):
-                var ring_r: float = (16.0 + float(ring) * 8.0) * portal_pulse
-                # Godot draw_circle non ha outline; uso draw_arc per gli anelli.
-                draw_arc(Vector2(px, py), ring_r, 0.0, TAU, 48,
-                        ring_colors[ring], ring_widths[ring])
-        # --- 12 particelle spirale rotanti ---
-        for i in range(12):
-                var a: float = rot * 2.0 + float(i) * PI / 6.0
-                var r: float = 14.0 + sin(rot + float(i)) * 8.0
-                var sx_p: float = px + cos(a) * r
-                var sy_p: float = py + sin(a) * r
-                var spark_size: float = 2.5 + sin(rot * 3.0 + float(i)) * 1.0
-                draw_circle(Vector2(sx_p, sy_p), spark_size,
-                        Color(230.0 / 255.0, 160.0 / 255.0, 255.0 / 255.0, 220.0 / 255.0))
-        # --- Centro del portale (nero/viola profondo, r=12) ---
-        draw_circle(Vector2(px, py), 12.0, Color(15.0 / 255.0, 5.0 / 255.0, 25.0 / 255.0, 220.0 / 255.0))
-        # --- Bagliore centrale phase-dependent (3 fasi) ---
-        if portal_phase == 0:
-                # Apertura: bagliore crescente.
-                var open_t: float = 1.0 - float(portal_phase_timer_ms) / 1000.0
-                var glow_r: float = 6.0 + open_t * 12.0
-                draw_circle(Vector2(px, py), glow_r,
-                        Color(200.0 / 255.0, 100.0 / 255.0, 255.0 / 255.0, 180.0 * open_t / 255.0))
-        elif portal_phase == 1:
-                # Spawn: bagliore intenso costante.
-                draw_circle(Vector2(px, py), 10.0,
-                        Color(255.0 / 255.0, 150.0 / 255.0, 255.0 / 255.0, 180.0 / 255.0))
-        elif portal_phase == 2:
-                # Chiusura: bagliore decrescente.
-                var close_t: float = float(portal_phase_timer_ms) / 800.0
-                var glow_r: float = 4.0 + close_t * 6.0
-                draw_circle(Vector2(px, py), glow_r,
-                        Color(150.0 / 255.0, 80.0 / 255.0, 200.0 / 255.0, 120.0 * close_t / 255.0))
-
-
 # =========================================================
 # Static helpers
 # =========================================================
@@ -947,18 +914,6 @@ static func make_exit_door(at: Vector2) -> Collectibles:
         return c
 
 
-## Factory: create a magic portal at pos.
-static func make_magic_portal(at: Vector2, enemies_count: int) -> Collectibles:
-        var c := Collectibles.new()
-        c.kind = Kind.MAGIC_PORTAL
-        c.pos = at
-        c.portal_enemies_to_spawn = enemies_count
-        c.portal_phase = 0
-        c.portal_phase_timer_ms = 1000  # 1s open animation
-        c.portal_spawn_timer_ms = 0
-        return c
-
-
 ## Factory: create a medikit at pos.
 static func make_medikit(at: Vector2) -> Collectibles:
         var c := Collectibles.new()
@@ -998,14 +953,33 @@ static func make_potion(at: Vector2) -> Collectibles:
 
 # FIX (nuova meccanica): disegna il medikit (scatola bianca con croce rossa).
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
+# FIX (medikit "sopra un muro" — segnalazione utente, Task 62): il
+# PIAZZAMENTO e' corretto (test test_medikit_reach: 48 seed x livello, il
+# medikit nasce sempre su cella CellType.EMPTY e BFS-reraggiungibile dallo
+# spawn), ma lo sprite PNG grigio-scuro disegnato a 64px (cella PIENA) si
+# fondeva con la roccia dei muri nelle palette scure: a colpo d'occhio
+# sembrava incastonato IN un muro. Tre misure di leggibilita':
+#   1) size 64 -> 48px (come tesori/pergamene): margine di pavimento visibile
+#      attorno alla scatola -> l'oggetto si legge "appoggiato", non "incassato";
+#   2) ombra ellittica a terra sotto la scatola: ancora l'item alla cella;
+#   3) doppio alone: bianco caldo ampio (schiarisce il pavimento attorno e
+#      stacca dal buio dei muri) + rosso pulsante interno (identita' medikit).
 func _draw_medikit() -> void:
         var y_off := -bob_offset
         var tex := _load_png_cached("res://assets/sprites/collectibles/item_medikit.png")
         if tex != null:
-                # Glow bianco/rosso pulsante
-                var glow_alpha: float = 0.15 + pulse * 0.10
-                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.3, 0.3, glow_alpha))
-                var size: float = 64.0
+                var size: float = 48.0
+                # (2) ombra ellittica a terra (pattern del martello)
+                draw_set_transform(Vector2(1.5, 14.0), 0.0, Vector2(1.0, 0.42))
+                draw_circle(Vector2.ZERO, 15.0, Color(0.0, 0.0, 0.0, 0.32))
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                # (3a) alone bianco caldo che rischiara il pavimento attorno
+                var glow_w: float = 0.26 + pulse * 0.10
+                draw_circle(Vector2.ZERO, 25.0, Color(1.0, 0.95, 0.88, glow_w))
+                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.92, 0.86, glow_w * 0.85))
+                # (3b) alone rosso pulsante interno
+                var glow_alpha: float = 0.18 + pulse * 0.12
+                draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.25, 0.25, glow_alpha))
                 draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
                 return
         # Fallback procedurale: scatola bianca + croce rossa
@@ -1025,7 +999,8 @@ func _draw_medikit() -> void:
 # Carica il PNG AI dedicato; fallback procedurale se non disponibile.
 func _draw_knight_statue() -> void:
         var y_off := -bob_offset
-        var tex := _load_png_cached("res://assets/sprites/collectibles/item_unicorn_statue.png")
+        # TASK 64: icona coerente con la variante dell'alleato del livello
+        var tex := _load_png_cached(_knight_statue_png())
         if tex != null:
                 # Aura mistica blu/ciano pulsante
                 var glow_alpha: float = 0.20 + pulse * 0.15
@@ -1063,7 +1038,8 @@ func _draw_knight_statue() -> void:
 # Il player può così vedere dove apparirà la statua.
 func _draw_knight_statue_ghost() -> void:
         var y_off := -bob_offset
-        var tex := _load_png_cached("res://assets/sprites/collectibles/item_unicorn_statue.png")
+        # TASK 64: il ghost della statua segue la stessa variante del livello
+        var tex := _load_png_cached(_knight_statue_png())
         if tex != null:
                 # Aura mistica pulsante
                 var glow_alpha: float = 0.15 + pulse * 0.15

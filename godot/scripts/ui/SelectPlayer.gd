@@ -9,6 +9,9 @@ extends Control
 #
 # La ruota e' un'ellisse (cerchio compresso verticalmente) con:
 #   * 8 personaggi disposti attorno al perimetro
+#   * TASK 76: base = anello di pietra PixelLab (wheel_stone.png, nicchie
+#     e rune dorate) schiacciato in prospettiva; fallback ellissi
+#     procedurali se la texture manca
 #   * Raggi dal centro al bordo
 #   * Perno centrale metallico
 #   * Ombre e prospettiva (depth-based scale + alpha)
@@ -53,6 +56,8 @@ var anim_time: float = 0.0
 
 # Cached character textures (loaded once)
 var _char_textures: Array = []
+# TASK 76: texture anello di pietra PixelLab (null = fallback procedurale)
+var _wheel_texture: Texture2D = null
 # AI-generated background texture (loaded once)
 var _bg_texture: Texture2D = null
 
@@ -90,6 +95,14 @@ func _ready() -> void:
                                 if img.load(abs_path) == OK:
                                         tex = ImageTexture.create_from_image(img)
                 _char_textures.append(tex)
+        # TASK 76: anello di pietra PixelLab per la ruota (vista dall'alto,
+        # nicchie e rune dorate); fallback alle ellissi procedurali.
+        var wheel_abs: String = ProjectSettings.globalize_path(
+                        "res://assets/ui/wheel_stone.png")
+        if FileAccess.file_exists(wheel_abs):
+                var wheel_img := Image.new()
+                if wheel_img.load(wheel_abs) == OK:
+                        _wheel_texture = ImageTexture.create_from_image(wheel_img)
         # Preload the AI-generated crypt/ruderi background.
         # FIX (regressione): usa Image.load() per bypassare import.
         var bg_path := "res://assets/backgrounds/bg_select_player.png"
@@ -227,10 +240,10 @@ func _draw() -> void:
         # Dark overlay so the wheel and text stand out against the busy art
         draw_rect(Rect2(0, 0, vp_size.x, vp_size.y), Color(0, 0, 0, 0.35), true)
 
-        # --- Titolo ---
+        # --- Titolo (TASK 78: palette ORO MEDIEVALE, font Goth And Gothic) ---
         var title: String = I18n.t("select.title") % player_num
-        _draw_text_centered(title, cx - 4, 96, 48, Color(0.706, 0.471, 0.157))  # shadow
-        _draw_text_centered(title, cx, 100, 48, Color(1.0, 0.843, 0.0))  # gold
+        _draw_text_centered(title, cx - 4, 96, 48, Color(0.18, 0.11, 0.02))     # shadow bruno cupo
+        _draw_text_centered(title, cx, 100, 48, Color(0.941, 0.78, 0.373))     # oro caldo
 
         # --- Hint ---
         var player_color: Color = Color(1.0, 0.843, 0.0) if player_num == 1 else Color(0.471, 0.706, 1.0)
@@ -250,13 +263,30 @@ func _draw() -> void:
         draw_circle(Vector2(cx, cy + wheel_radius_y * 0.85),
                 wheel_radius_x * 1.15, Color(0, 0, 0, 0.43))
 
-        # --- 2. Base ellisse ---
-        _draw_ellipse(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_DARK)
-        _draw_ellipse_outline(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_MID, 6.0)
-
-        # --- 3. Anello interno ---
+        # --- 2/3. BASE RUOTA (TASK 76: anello di pietra PixelLab con
+        # nicchie e rune dorate, schiacciato in prospettiva; fallback alle
+        # vecchie ellissi procedurali se la texture manca) ---
         var inner_radius: float = wheel_radius_x - 28.0
-        _draw_ellipse(cx, cy, inner_radius, inner_radius * perspective_ratio, COL_ROCK_MID)
+        if _wheel_texture != null:
+                # disegna l'anello nello spazio locale con squash verticale
+                # (prospettiva): texture quadrata ~482px scalata al diametro
+                # della ruota (leggero sforo del 6% per coprire il bordo).
+                var ring_r: float = wheel_radius_x * 1.06
+                draw_set_transform(Vector2(cx, cy), 0.0,
+                                Vector2(1.0, perspective_ratio))
+                draw_texture_rect(_wheel_texture,
+                                Rect2(-ring_r, -ring_r, ring_r * 2.0, ring_r * 2.0),
+                                false, Color(1, 1, 1, 0.97))
+                draw_set_transform(Vector2.ZERO)
+                # leggero velo scuro sull'anello per far leggere i personaggi
+                draw_set_transform(Vector2(cx, cy), 0.0,
+                                Vector2(1.0, perspective_ratio))
+                draw_circle(Vector2.ZERO, ring_r, Color(0, 0, 0, 0.10))
+                draw_set_transform(Vector2.ZERO)
+        else:
+                _draw_ellipse(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_DARK)
+                _draw_ellipse_outline(cx, cy, wheel_radius_x, wheel_radius_y, COL_ROCK_MID, 6.0)
+                _draw_ellipse(cx, cy, inner_radius, inner_radius * perspective_ratio, COL_ROCK_MID)
 
         # --- 4. Angolo ruota ---
         var angle_per_char: float = TAU / CHARACTER_COUNT
@@ -320,8 +350,8 @@ func _draw() -> void:
                         # Fallback: colored circle
                         var col: Color = Color(0.7, 0.5, 0.3, p.alpha)
                         draw_circle(Vector2(p.x, p.y - 20), 20 * p.scale, col)
-                        # Name
-                        _draw_text_centered(CHARACTER_NAMES[i], p.x, p.y - 50 * p.scale, 14 * p.scale,
+                        # Name (TASK 79b: localizzato via CHARACTER_NAME_KEYS)
+                        _draw_text_centered(_char_name(i), p.x, p.y - 50 * p.scale, 14 * p.scale,
                                 Color(1, 1, 1, p.alpha))
 
                 # Glow on selected character (front)
@@ -335,16 +365,37 @@ func _draw() -> void:
                         draw_circle(Vector2(p.x, p.y - 20),
                                 5.0 * p.scale, Color(1.0, 0.84, 0.0, 0.35 * glow))
 
-        # --- 8. Nome personaggio selezionato (in basso) ---
-        _draw_text_centered(CHARACTER_NAMES[wheel_index], cx, vp_size.y - 60, 32,
-                Color(1.0, 0.843, 0.0))
+        # --- 8. Nome personaggio selezionato (in basso, palette oro TASK 78) ---
+        # TASK 79b: localizzato (CHARACTER_NAME_KEYS -> I18n "char.*").
+        _draw_text_centered(_char_name(wheel_index), cx, vp_size.y - 60, 32,
+                Color(1.0, 0.87, 0.42))
+
+
+## TASK 79b — nome personaggio localizzato (fallback inglese se I18n assente).
+func _char_name(idx: int) -> String:
+        if I18n and idx >= 0 and idx < CHARACTER_NAME_KEYS.size():
+                return I18n.t(CHARACTER_NAME_KEYS[idx])
+        if idx >= 0 and idx < CHARACTER_NAMES.size():
+                return CHARACTER_NAMES[idx]
+        return "?"
 
 
 # Draw text centered at (x, y) with given size and color.
+# TASK 79 (port dal merge): centramento MISURATO su get_string_size con
+# width -1 — il vecchio box fisso di 400px mandava a capo il titolo a 48px
+# ("SELECT P" / "LAYER 1"). Vale anche per la Goth And Gothic, il cui
+# advance blackletter e' piu' largo del font di default.
 func _draw_text_centered(text: String, x: float, y: float, font_size: int, col: Color) -> void:
-        var font := get_theme_default_font()
-        draw_string(font, Vector2(x - 200, y + font_size), text,
-                HORIZONTAL_ALIGNMENT_CENTER, 400, font_size, col)
+        var font: Font = get_theme_default_font()
+        # TASK 78: font medievale Goth And Gothic se disponibile (fallback
+        # al font di tema se la font manca).
+        var gf: FontFile = GameConstants.gothic_font()
+        if gf != null:
+                font = gf
+        var w: float = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+                        font_size).x
+        draw_string(font, Vector2(x - w * 0.5, y + font_size), text,
+                HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, col)
 
 
 # Draw filled ellipse (circle scaled vertically).

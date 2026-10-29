@@ -1,0 +1,19 @@
+{
+ "id": "8cb5892e-ed57-4e45-94be-53374d9182b9",
+ "name": "arcade-char_golem-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A towering, monolithic stone golem with a rugged, blocky physique, featuring deep fissures filled with ethereal, pulsing cerulean light. The golem wears heavy, battle-worn steel plate armor over its rocky torso, including ornate riveted pauldrons and an intricately engraved breastplate. A tattered, vivid crimson tabard with worn gold-stitched trim hangs across the chest, partially obscuring the glowing runic cracks beneath. The character stands in a wide, grounded stance with thick, short legs encased in matching steel greaves. High-contrast shading defines the jagged rock textures and metallic surface sheen, with sharp, medium-weight outlines providing structural clarity. The aesthetic emphasizes a gothic, heroic presence with subtle, cool-toned rim lighting highlighting the edges of the stone and metal.",
+ "created_at": "2026-10-22T19:29:51.432414+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "37f0a62c-f734-49fb-b24b-54f356711881",
+   "animation_type": "custom-The massive stone warrior shif"
+  }
+ ]
+}

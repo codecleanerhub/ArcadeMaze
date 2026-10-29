@@ -124,6 +124,9 @@ var _move_waypoint: Vector2 = Vector2.INF
 var sprite_id: String = ""
 var sprite_loaded: bool = false
 var sprite_sheet = null  # SpriteManager.Sheet
+## TASK 51: true se lo sheet e' disegnato guardando a SINISTRA (meta
+## "facesLeft") — vedi _load_sprite/_draw_with_sprite.
+var _faces_left_native: bool = false
 
 # --- DeformableSprite (replaces 4-frame cycle that produced the
 #     "disjointed gif" effect with HD sheets) ---
@@ -184,6 +187,11 @@ func _load_sprite() -> void:
                         SpriteManager.load_all()
                         sprite_sheet = SpriteManager.get_sheet(sprite_id)
         sprite_loaded = sprite_sheet != null and sprite_sheet.is_loaded()
+        # TASK 51 (facing utente "miniboss girati al contrario"): il flag
+        # facesLeft del meta JSON vive sullo Sheet; il flip in
+        # _draw_with_sprite lo XOR-a con last_dx per allineare il muso alla
+        # direzione di marcia reale.
+        _faces_left_native = sprite_sheet != null and sprite_sheet.faces_left
         if not sprite_loaded:
                 print("[MiniBoss] WARNING: sprite not loaded for type=%d id=%s" % [mb_type, sprite_id])
         else:
@@ -240,6 +248,9 @@ func _load_sd_sheet(sprite_id: String) -> Object:
         sheet.animations["walk"] = {"row": 0, "frames": 4, "frameDuration": 100}
         sheet.animations["attack"] = {"row": 0, "frames": 4, "frameDuration": 90}
         sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        # TASK 51: facing nativo dal meta JSON (sheet costruito inline).
+        if SpriteManager:
+                sheet.faces_left = SpriteManager.meta_faces_left(sprite_id)
         return sheet
 
 
@@ -816,7 +827,10 @@ func _draw_with_sprite() -> void:
                 scale_val = 1.0
         var bob_y := sin(anim_time * 3.0) * 1.0
         # FIX (scatto visivo da fermo): flip basato su last_dx, non dx.
-        var flipped := last_dx < 0
+        # TASK 51 (facing utente): XOR col facing nativo dello sheet — gli
+        # sprite disegnati verso SINISTRA si specchiano quando marciano a
+        # DESTRA (muso sempre coerente col movimento).
+        var flipped := (last_dx < 0) != _faces_left_native
 
         # --- FIX (gif-animata-scollegata): prefer DeformableSprite ---
         # When loaded, delegate rendering to the deform sprite (mesh deformation

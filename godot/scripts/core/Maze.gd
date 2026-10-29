@@ -74,12 +74,30 @@ var wall_color: Color = Color(0.29, 0.27, 0.25, 1.0)
 ## rendering la disegna come pavimento (le due lastre di roccia che
 ## scorrono sono la parete visibile). Popolato/ripulito dal MazeHazards.
 var dynamic_walls: Dictionary = {}
-## Floor color for the current palette.
+## Floor color for the current palette (TASK 80: ripristinato il valore
+## scuro originale — la visibilita' ora arriva dalle lanterne, vedi
+## _draw_lantern_floor_pools).
 var bg_color: Color = Color(0.11, 0.09, 0.07, 1.0)
 
 # 8 color palettes that cycle per level (1:1 from Maze.cpp).
 #  Index 0 = grey cavern, 1 = blue dungeon, 2 = purple crypt, 3 = red rock,
 #  4 = bone ossuary, 5 = green swamp, 6 = red hell, 7 = teal abyss.
+#  TASK 80 (feedback utente: "i muri non devono essere cosi' chiari... siamo
+#  in un dungeon quindi ha senso avere toni piu' scuri mentre il pavimento
+#  l'hai reso troppo chiaro — potresti usare effetti di luce delle lanterne
+#  per rendere piu' chiaro il pavimento?"): ROLLBACK COMPLETO del TASK 79d —
+#  i bg tornano ai valori ORIGINALI scuri (~0.06-0.14, sotto i muri: e' un
+#  dungeon). La visibilita' del player scuro (elf) e dei nemici scuri non
+#  arriva piu' dal pavimento chiaro uniforme ma dalle LANTERNE:
+#    - pozza di luce calda bakeata sul pavimento per OGNI torcia
+#      (_draw_lantern_floor_pools, flicker sincrono con la fiamma);
+#    - alone caldo SOPRA i muri vicino alle torce (_draw_lantern_wall_halos);
+#    - lanterna dell'eroe: pozza che segue i player vivi
+#      (player_light_positions, aggiornata dal MainGameController);
+#    - 6 PointLight2D ridistribuite su tutta la mappa (raggio 80->140).
+#  Rollback delle lanterne: GameConstants.LANTERN_LIGHT_ENABLED = false.
+#  Rollback pavimento/muri: git revert del TASK 79d / TASK 78 (vedi worklog).
+#  Il gradiente radiale centrale (+24/255 al centro) resta invariato.
 const _PALETTES: Array = [
         {"wall": Color(0.294, 0.275, 0.255), "bg": Color(0.110, 0.086, 0.071)},  # 0 grey cavern
         {"wall": Color(0.216, 0.275, 0.353), "bg": Color(0.071, 0.086, 0.137)},  # 1 blue dungeon
@@ -117,6 +135,47 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         if _rock_texture_cache.has(pal_idx):
                 return _rock_texture_cache[pal_idx]
         const TEX_SIZE: int = 128
+        var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+        # --- TASK 57: texture roccia PixelLab (luminanza) + tint palette ---
+        # La texture PNG (grayscale normalizzata full-range) fornisce la
+        # LUMINANZA per pixel; il colore resta quello della palette livello.
+        # TASK 80 (rollback TASK 78): ripristinata la mappa ORIGINALE
+        # 0.25x-1.45x (stessa del noise procedurale). Rollback:
+        # GameConstants.WALL_ROCK_PIXELLAB_ENABLED = false.
+        # NB: usa la STESSA var img dichiarata sopra (lezione 12.18: mai
+        # ridichiarare var omonima nello stesso scope — parse error runtime).
+        if C.WALL_ROCK_PIXELLAB_ENABLED:
+                var rock: Image = _load_pixellab_rock()
+                if rock != null:
+                        for y in range(TEX_SIZE):
+                                for x in range(TEX_SIZE):
+                                        var c57: Color = rock.get_pixel(x, y)
+                                        var lum57: float = c57.r * 0.299 + c57.g * 0.587 + c57.b * 0.114
+                                        # TASK 80 (feedback utente: "i muri del
+                                        # labirinto non devono essere cosi' chiari,
+                                        # ripristina il colore dei muri, siamo in un
+                                        # dungeon quindi ha senso avere toni piu'
+                                        # scuri"): ROLLBACK della curva compressa
+                                        # del TASK 78 (t = 0.75 + lum*0.55, range
+                                        # 0.75-1.30) e RIPRISTINO della mappa
+                                        # ORIGINALE del Task 57:
+                                        # t = 0.25 + lum*1.20 (range 0.25-1.45).
+                                        # I contorni scuri dei massi PixelLab
+                                        # (lum 0.05-0.30) tornano zone scure
+                                        # t 0.31-0.61 = toni dungeon; le crepe
+                                        # profonde si leggono di nuovo e i muri
+                                        # stanno SOPRA il pavimento come nel C++.
+                                        # La luce delle lanterne (TASK 80) riprende
+                                        # i muri vicino alle torce con l'alone
+                                        # caldo (_draw_lantern_wall_halos).
+                                        var t57: float = 0.25 + lum57 * 1.20
+                                        img.set_pixel(x, y, Color(
+                                                clampf(base_color.r * t57, 0.0, 1.0),
+                                                clampf(base_color.g * t57, 0.0, 1.0),
+                                                clampf(base_color.b * t57, 0.0, 1.0), 1.0))
+                        var tex57 := ImageTexture.create_from_image(img)
+                        _rock_texture_cache[pal_idx] = tex57
+                        return tex57
         var noise_fine := FastNoiseLite.new()
         noise_fine.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
         noise_fine.frequency = 0.18
@@ -140,7 +199,7 @@ static func _generate_rock_texture(pal_idx: int, base_color: Color) -> ImageText
         noise_fracture.fractal_type = FastNoiseLite.FRACTAL_RIDGED
         noise_fracture.fractal_octaves = 3
         noise_fracture.seed = 3000 + pal_idx * 31
-        var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+        # (img e' gia' dichiarata in testa alla funzione — TASK 57)
         # FIX (muri ancora più rocciosi/porosi): aumentato ancora il contrasto
         # e aggiunto più variazione. La composizione ora dà più peso al rumore
         # fine (granaglia) e fracture (crepacci) per un effetto più "grezzo"
@@ -213,20 +272,66 @@ func _process(delta: float) -> void:
         queue_redraw()
 
 
+## TASK 72 (portale SOPRA i muri, richiesta utente "non puoi usare uno
+## z-index?"): callback opzionale che il controller registra per
+## disegnare il portale magico ALLA FINE della passata del Maze (DOPO i
+## muri e le decorazioni) — il vortice sta sopra ogni muro e non puo'
+## MAI essere tagliato/coperto dalla roccia. E' sicuro perche' dal TASK 70
+## il vortice (62px al massimo) entra interamente nella sua cella 64px:
+## disegnarlo sopra i muri non fa sovrapporre nulla, toglie solo ogni
+## possibilita' che un muro lo copra. Storia: Task 68 lo mise SOTTO i muri
+## (allora lo sprite 84px sbordava sulle rocce), Task 70 lo rientro' nella
+## cella — ora il z-order e' definitivamente sopra.
+## La callback riceve il CanvasItem del Maze (self) come contesto di draw.
+var portal_draw_callback: Callable = Callable()
+
+
 func _draw() -> void:
         # Always redraw - the C++ Maze::render also draws every frame because
         # torches animate. For static mazes you can gate this on needs_redraw.
         _render_floor_gradient()
+        # TASK 80 (luci lanterne): POZZE DI LUCE sul pavimento, subito dopo il
+        # gradiente e PRIMA delle celle: muri/tesori/armi disegnati dopo
+        # restano nitidi SOPRA la luce; le entita' (nodi separati) pure. E'
+        # qui che il dungeon scuro diventa leggibile: ogni torcia e la
+        # lanterna dell'eroe gettano luce calda sul pavimento.
+        _draw_lantern_floor_pools()
+        # Disegno a passate: prima TUTTE le celle non-muro (pavimento,
+        # tesori, armi — nessuna sborda dalla propria cella), poi i muri
+        # veri e propri, poi le decorazioni. Il portale va PER ULTIMO
+        # (TASK 72: z-index sopra i muri, vedi portal_draw_callback).
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
-                        _render_cell(c, r)
+                        if _get_cell_type(c, r) != C.CellType.WALL:
+                                _render_cell(c, r)
+        # Le celle WALL dei muri di roccia MOBILI (Task 30) si disegnano come
+        # pavimento (le lastre visibili sono nel MazeHazards) — passata 1.
+        for c in range(C.MAZE_COLS):
+                for r in range(C.MAZE_ROWS):
+                        if _get_cell_type(c, r) == C.CellType.WALL \
+                                        and dynamic_walls.has("%d,%d" % [c, r]):
+                                _render_cell(c, r)
+        for c in range(C.MAZE_COLS):
+                for r in range(C.MAZE_ROWS):
+                        if _get_cell_type(c, r) == C.CellType.WALL \
+                                        and not dynamic_walls.has("%d,%d" % [c, r]):
+                                _render_cell(c, r)
         # Decora alcune celle WALL con teschi, ragnatele, crepe
         # (vantaggio Godot: texture procedurali ad alta risoluzione)
+        # TASK 80: PRIMA delle decorazioni, l'ALONE CALDO dei muri vicino
+        # alle torce (la luce "bagna" la roccia; le fiamme restano sopra).
+        _draw_lantern_wall_halos()
         _render_wall_decorations()
         # FIX (meccanica tunnel "Pac-Man"): deformazione a SEMILUNA del
         # muro di bordo sulle 4 aperture (richiesta utente: niente grafica
         # di grotta, solo la deformazione del muro stesso).
         _draw_tunnel_halfmoons()
+        # TASK 72: portale magico PER ULTIMO, sopra muri e decorazioni —
+        # mai piu' tagliato da un muro disegnato sopra (feedback utente
+        # "il portale sta ancora sotto il muro perche' il muro e' disegnato
+        # sopra... non puoi usare uno z-index?").
+        if portal_draw_callback.is_valid():
+                portal_draw_callback.call(self)
 
 
 # Variabili per le luci delle torce (create una volta in generate)
@@ -235,6 +340,95 @@ var _torch_lights: Array = []
 var _torch_positions: Array = []
 # Tempo accumulato per le animazioni (flicker torce). In secondi.
 var _anim_time: float = 0.0
+
+# ============================================================================
+# TASK 80 — LANTERNE: il dungeon torna scuro, la luce e' delle lanterne
+# ============================================================================
+## Posizioni (pixel, spazio MainGame = spazio Maze) dei player VIVI.
+## Il MainGameController le aggiorna ogni frame in _update_playing: il Maze
+## disegna sotto ciascun player una pozza di luce calda ("lanterna dell'eroe")
+## cosi' il player scuro (elf) e i nemici scuri vicini restano leggibili per
+## CONTRASTO senza schiarire il pavimento di tutto il dungeon.
+var player_light_positions: Array = []
+
+## TUTTE le posizioni torcia del livello (pixel, alla fiamma). Diversamente
+## dalle PointLight2D (capped a 6 per performance) le POZZE BAKEATE sul
+## pavimento coprono OGNI torcia: costo = 2 draw_texture_rect a torcia nella
+## passata _draw() che il Maze gia' rifà ogni frame per il flicker.
+var _all_torch_positions: Array = []
+
+## Texture radiale bianca (alpha falloff quadratico, core pieno) condivisa
+## da tutte le pozze/alone: il colore caldo passa via modulate al draw.
+static var _lantern_pool_tex: Texture2D = null
+
+
+## Texture pozza di luce 256x256: bianca con alpha 1 al centro che cade a 0
+## al bordo (quadratica, leggero boost del core). Cache static UNICA per
+## tutte le lanterne del gioco (un solo upload GPU a vita).
+static func _get_lantern_pool_texture() -> Texture2D:
+        if _lantern_pool_tex != null:
+                return _lantern_pool_tex
+        const POOL_SIZE: int = 256
+        var img := Image.create(POOL_SIZE, POOL_SIZE, false, Image.FORMAT_RGBA8)
+        var center := Vector2(POOL_SIZE / 2.0, POOL_SIZE / 2.0)
+        var max_d: float = POOL_SIZE / 2.0
+        for y in range(POOL_SIZE):
+                for x in range(POOL_SIZE):
+                        var d: float = Vector2(x, y).distance_to(center) / max_d
+                        var a: float = clampf(1.0 - d, 0.0, 1.0)
+                        a = clampf(a * a * 1.25, 0.0, 1.0)
+                        img.set_pixel(x, y, Color(1.0, 1.0, 1.0, a))
+        _lantern_pool_tex = ImageTexture.create_from_image(img)
+        return _lantern_pool_tex
+
+
+## Disegna una pozza di luce (texture radiale) centrata in `center`, raggio
+## `radius`, colore caldo `tint` con intensita' `alpha`. Mix blending: il
+## pavimento sotto vira verso il caldo e si SCHIARISCE al centro.
+func _draw_light_pool(tex: Texture2D, center: Vector2, radius: float,
+                tint: Color, alpha: float) -> void:
+        var col := Color(tint.r, tint.g, tint.b, clampf(alpha, 0.0, 1.0))
+        var rect := Rect2(center.x - radius, center.y - radius,
+                radius * 2.0, radius * 2.0)
+        draw_texture_rect(tex, rect, false, col, false)
+
+
+## TASK 80: pozze di luce sul PAVIMENTO (passata tra gradiente e celle, cosi'
+## muri/sprite disegnati dopo restano nitidi sopra la luce):
+##   - una pozza calda per OGNI torcia (~150px, flicker sincrono con la
+##     fiamma: stessa famiglia sin() del _draw_torch);
+##   - una pozza per ogni player vivo ("lanterna dell'eroe", ~130px): il
+##     buio del dungeon resta, ma attorno all'eroe c'e' sempre luce.
+func _draw_lantern_floor_pools() -> void:
+        if not C.LANTERN_LIGHT_ENABLED:
+                return
+        var tex: Texture2D = _get_lantern_pool_texture()
+        if tex == null:
+                return
+        for i in range(_all_torch_positions.size()):
+                var pos: Vector2 = _all_torch_positions[i]
+                var fl: float = 0.90 + 0.10 * sin(_anim_time * 17.0 + pos.x * 0.37)
+                _draw_light_pool(tex, pos, 150.0, Color(1.0, 0.72, 0.40), 0.55 * fl)
+        for i in range(player_light_positions.size()):
+                var pos: Vector2 = player_light_positions[i]
+                var fl: float = 0.94 + 0.06 * sin(_anim_time * 21.0 + pos.y * 0.21)
+                _draw_light_pool(tex, pos, 130.0, Color(1.0, 0.82, 0.55), 0.50 * fl)
+
+
+## TASK 80: alone caldo SOPRA i muri vicino alle torce (passata dopo i muri,
+## prima delle decorazioni: la fiamma resta sopra tutto). Effetto "la luce
+## della torcia bagna la roccia": mix sottile (alpha ~0.17) che riprende i
+## toni caldi sui muri scuri restaurati, coordinato col flicker della pozza.
+func _draw_lantern_wall_halos() -> void:
+        if not C.LANTERN_LIGHT_ENABLED:
+                return
+        var tex: Texture2D = _get_lantern_pool_texture()
+        if tex == null:
+                return
+        for i in range(_all_torch_positions.size()):
+                var pos: Vector2 = _all_torch_positions[i]
+                var fl: float = 0.90 + 0.10 * sin(_anim_time * 17.0 + pos.x * 0.37)
+                _draw_light_pool(tex, pos, 95.0, Color(1.0, 0.74, 0.44), 0.17 * fl)
 
 
 # ============================================================================
@@ -350,6 +544,20 @@ func _draw_torch(x: float, y_base: float, t: float) -> void:
         # --- Aura luminosa calda (2 cerchi semitrasparenti) ---
         draw_circle(Vector2(x, y_base - 34.0), 22.0, Color(1.0, 0.71, 0.24, 0.14))
         draw_circle(Vector2(x, y_base - 26.0), 14.0, Color(1.0, 0.78, 0.31, 0.22))
+        # --- TASK 54: sprite animato PixelLab (env/torch_sheet.png 4 frame) ---
+        # Rollback: GameConstants.TORCH_SPRITE_ENABLED = false -> procedurale.
+        if C.TORCH_SPRITE_ENABLED:
+                var sheet: Texture2D = _get_torch_sheet()
+                if sheet != null:
+                        var frame_idx: int = int(t * 8.0 + x * 0.37) % 4
+                        # frame 64x64, disegnato ~54px col fondo base a y_base+6
+                        var s: float = 0.85
+                        var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
+                        var w: float = 64.0 * s
+                        var dst := Rect2(x - w * 0.5, y_base + 6.0 - w, w, w)
+                        draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
+                        return
+        # --- Fallback procedurale (bastone + cestello + fiamma 3 strati) ---
         # --- Bastone della torcia (legno scuro 4x12) ---
         draw_rect(Rect2(x - 2.0, y_base - 4.0, 4.0, 12.0), Color(0.235, 0.118, 0.039), true)
         draw_rect(Rect2(x - 2.0, y_base - 4.0, 4.0, 12.0), Color(0.078, 0.039, 0.0), false, 0.8)
@@ -382,6 +590,44 @@ func _draw_torch(x: float, y_base: float, t: float) -> void:
         draw_circle(Vector2(x - 2.0, y_base - 19.0), 2.0, Color(1.0, 0.941, 0.706, 0.980))
 
 
+# Cache statica dello sheet torcia PixelLab (TASK 54). Null se il PNG
+# non esiste o il caricamento fallisce -> fallback procedurale.
+static var _torch_sheet_cache: Texture2D = null
+static var _torch_sheet_tried: bool = false
+
+static func _get_torch_sheet() -> Texture2D:
+        if _torch_sheet_tried:
+                return _torch_sheet_cache
+        _torch_sheet_tried = true
+        var path := "res://assets/sprites/env/torch_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        _torch_sheet_cache = ImageTexture.create_from_image(img)
+        return _torch_sheet_cache
+
+
+# TASK 57: texture roccia PixelLab per i muri (grayscale normalizzata
+# full-range, 128x128, opaca). Null se manca -> noise procedurale.
+static var _rock_pixellab_cache: Image = null
+static var _rock_pixellab_tried: bool = false
+
+static func _load_pixellab_rock() -> Image:
+        if _rock_pixellab_tried:
+                return _rock_pixellab_cache
+        _rock_pixellab_tried = true
+        var path := "res://assets/sprites/env/rock_texture.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        if img.get_size() != Vector2i(128, 128):
+                                img.resize(128, 128, Image.INTERPOLATE_NEAREST)
+                        _rock_pixellab_cache = img
+        return _rock_pixellab_cache
+
+
 # Disegna un'urna decorativa in (cx, cy). Port 1:1 di drawUrn in Maze.cpp
 # (righe 1079-1173). 3 varianti colore determinate da `variant` (0..1):
 #   - < 0.33: pietra grigia (decoro dorato)
@@ -391,6 +637,29 @@ func _draw_torch(x: float, y_base: float, t: float) -> void:
 # bocca + bordo (cornicetta), highlight verticale, decoro centrale + simbolo
 # rombo. Le urne sono puramente decorative (non bloccano ne' sono raccoglibili).
 func _draw_urn(cx: float, cy: float, variant: float) -> void:
+        # TASK 60a — urne PixelLab PNG-first (env/urn_{stone,bronze,marble}.png,
+        # 128x128, stesse 3 palette procedurali del C++). Se il PNG manca
+        # (rollback) si ricade sul disegno procedurale 1:1 col C++ qui sotto.
+        if EnvironmentArt:
+                var idx: int = 0
+                if variant >= 0.33 and variant < 0.66:
+                        idx = 1
+                elif variant >= 0.66:
+                        idx = 2
+                var tex: Texture2D = EnvironmentArt.get_urn_texture(idx)
+                if tex:
+                        var h: float = 34.0
+                        var w: float = h * float(tex.get_width()) / float(tex.get_height())
+                        # Ombra a terra (stesso stile del fallback e del C++).
+                        draw_circle(Vector2(cx, cy + 13.0), 11.0,
+                                        Color(0.0, 0.0, 0.0, 0.45))
+                        # Base dell'urna ancorata a cy+14 (coerente col vecchio
+                        # appoggio del C++ che poggiava a cy+9 con l'ombra).
+                        draw_texture_rect(tex,
+                                        Rect2(cx - w * 0.5, cy + 14.0 - h, w, h),
+                                        false)
+                        return
+        # ---- fallback procedurale (1:1 con drawUrn C++) ----
         # Palette in base alla variante (1:1 con drawUrn C++).
         var urn_col: Color
         var urn_dark: Color
@@ -461,6 +730,12 @@ func _draw_urn(cx: float, cy: float, variant: float) -> void:
 
 # Crea le PointLight2D per le torce una volta sola (chiamato da generate).
 # Le luci sono figli del Maze node e seguono le posizioni delle torce.
+# TASK 80: raccoglie TUTTE le torce del livello in _all_torch_positions
+# (servono alle pozze bakeate di _draw_lantern_floor_pools: una per torcia)
+# e distribuisce le 6 PointLight2D uniformemente sulla mappa invece di
+# prendere le prime 6 in ordine di scansione (che si accatastavano in alto
+# a sinistra). Raggio 80 -> 140: sui muri scuri restaurati la luce reale
+# si vede e riprende la roccia attorno alla fiamma.
 func _spawn_torch_lights() -> void:
         # Rimuovi le luci precedenti
         for light in _torch_lights:
@@ -468,17 +743,14 @@ func _spawn_torch_lights() -> void:
                         light.queue_free()
         _torch_lights.clear()
         _torch_positions.clear()
-        if not EffectsManager:
-                return
-        # FIX (performance): limita a massimo 6 PointLight2D per livello.
-        # Prima creava ~44 luci (5% di 880 celle WALL) → lag estremo su
-        # GPU entry-level. 6 luci danno atmosfera sufficiente senza lag.
-        var max_lights: int = 6
-        var light_count: int = 0
+        _all_torch_positions.clear()
+        # 1) Raccogli TUTTE le posizioni torcia del livello (hash [14,19),
+        #    stessa condizione del disegno della torcia in
+        #    _render_wall_decorations, escluse le lastre mobili Task 30).
+        #    La posizione e' alla FIAMMA: centro cella, top cella (la fiamma
+        #    _draw_torch vive a y_base-24 = top cella).
         for c in range(C.MAZE_COLS):
                 for r in range(C.MAZE_ROWS):
-                        if light_count >= max_lights:
-                                break
                         if not is_wall(c, r):
                                 continue
                         # TASK 30: niente torce sulle lastre di roccia mobili.
@@ -488,25 +760,44 @@ func _spawn_torch_lights() -> void:
                         var hash_val: int = abs(h) % 100
                         if hash_val >= 14 and hash_val < 19 and c > 1 and c < C.MAZE_COLS - 2:
                                 var px: float = c * C.TILE_SIZE + C.TILE_SIZE * 0.5
-                                var py: float = r * C.TILE_SIZE + C.UI_HEIGHT - C.TILE_SIZE * 0.1
-                                var light: PointLight2D = EffectsManager.create_light(
-                                        Vector2(px, py),
-                                        Color(1.0, 0.7, 0.3, 1.0),
-                                        1.2,  # energy
-                                        80.0  # radius
-                                )
-                                add_child(light)
-                                _torch_lights.append(light)
-                                _torch_positions.append(Vector2(px, py))
-                                light_count += 1
-                if light_count >= max_lights:
-                        break
+                                var py: float = r * C.TILE_SIZE + C.UI_HEIGHT
+                                _all_torch_positions.append(Vector2(px, py))
+        if not EffectsManager:
+                return
+        # 2) FIX (performance, invariato): massimo 6 PointLight2D per livello.
+        #    Prima creava ~44 luci (5% di 880 celle WALL) → lag estremo su
+        #    GPU entry-level. 6 luci + le pozze bakeate di TASK 80 (zero costo
+        #    GPU: 2 draw_texture_rect a torcia nella passata esistente)
+        #    danno atmosfera e visibilità senza lag.
+        var max_lights: int = 6
+        var n_torches: int = _all_torch_positions.size()
+        if n_torches == 0:
+                return
+        for i in range(mini(max_lights, n_torches)):
+                # Distribuzione uniforme sull'ordine di scansione (c-major:
+                # sinistra->destra, alto->basso) = le 6 luci coprono tutta
+                # la mappa invece di ammassarsi nelle prime celle.
+                var idx: int = int(float(i) * float(n_torches) / float(mini(max_lights, n_torches)))
+                idx = mini(idx, n_torches - 1)
+                var pos: Vector2 = _all_torch_positions[idx]
+                var light: PointLight2D = EffectsManager.create_light(
+                                pos,
+                                Color(1.0, 0.7, 0.3, 1.0),
+                                1.2,  # energy
+                                140.0  # radius (TASK 80: 80 -> 140)
+                        )
+                add_child(light)
+                _torch_lights.append(light)
+                _torch_positions.append(pos)
 
 
 # ============================================================================
 # GENERATION  (port of Maze::generate)
 # ============================================================================
 ## Regenerate the maze for `lvl`. Mirrors Maze::generate(level) line-by-line.
+var affinity_char_types: Array = []  ## TASK 61: archetipi dei player; selettore pool armi nel labirinto
+
+
 func generate(lvl: int = 1) -> void:
         level = lvl
         _init_grid()
@@ -600,7 +891,7 @@ func generate(lvl: int = 1) -> void:
                         var cc: int = cell.x
                         var rr: int = cell.y
                         _set_cell_type(cc, rr, C.CellType.TREASURE)
-                        _set_cell_treasure(cc, rr, randi() % 5)  # TRES_CROWN..TRES_CUP
+                        _set_cell_treasure(cc, rr, randi() % 5)  # TRES_CROWN..TRES_RUBY
                         placed_items.append(cell)
                         placed_treasures.append(cell)
                         treasures_placed += 1
@@ -618,7 +909,10 @@ func generate(lvl: int = 1) -> void:
                         continue
                 if _is_far_enough(cell, placed_items, _MIN_DIST_WEAPON):
                         _set_cell_type(cell.x, cell.y, C.CellType.WEAPON)
-                        _set_cell_weapon(cell.x, cell.y, C.make_random_weapon())
+                        # TASK 61 — le armi nel labirinto seguono l'affinita'
+                        # degli archetipi dei player (umani -> armi da fuoco,
+                        # non-umani -> elementali del proprio pool).
+                        _set_cell_weapon(cell.x, cell.y, C.make_random_weapon(affinity_char_types))
                         placed_items.append(cell)
                         weapons_placed += 1
 
@@ -1014,18 +1308,23 @@ func _render_cell(c: int, r: int) -> void:
 
 
 ## Draws a WALL cell as a rocky procedural texture, mirroring the C++
-## "rocky dungeon" effect: 3 strati di rumore FastNoiseLite (Simplex Smooth
-## fine + Cellular macro-blocchi + Perlin Ridged per venature) tinteggiati
-## con wall_color del livello. Aggiunge highlight in alto-sinistra e ombra
-## in basso-destra per effetto 3D, outline scuro per continuita' tra muri
-## adiacenti, crepe sottili (~10%) e muschio raro (~3%) come da C++ righe
-## 422-445. La texture e' cached static per palette (8 max, mai rigenerata
-## per lo stesso livello).
+## "rocky dungeon" effect: texture rocciosa tinteggiata con wall_color del
+## livello. TASK 75 (feedback utente: "il muro aveva in precedenza, quando
+## aveva 'gli angoli', il pattern dello screen — ripristinare quello stile
+## SENZA usare gli angoli"): RIPRISTINATA la texture roccia PixelLab del
+## Task 57 (massi organici irregolari con contorni scuri — quella dello
+## screen) e RIMOSSI i bevel per-cellula del Task 73 (highlight NW + ombra
+## SE + outline perimetrale su ogni cella): la superficie del muro e'
+## puramente il pattern organico della texture, senza griglia di giunzioni
+## e senza angoli. Crepe sottili (~10%) e muschio raro (~3%) invariati
+## (port 1:1 del C++). La texture e' cached static per palette (8 max, mai
+## rigenerata per lo stesso livello). Rollback texture uniforme Task 72:
+## git show 6af8724:godot/assets/sprites/env/rock_texture.png.
 func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> void:
         # FIX (muri rocciosi procedurali): sostituisce le 5 draw_rect sovrapposte
         # (sintomo "rettangoli sfumati") con una draw_texture_rect_region che
         # blitta una porzione 64x64 della texture cached 128x128. La porzione
-        # è selezionata deterministicamente per cella -> niente tiling visibile.
+        # e' selezionata deterministicamente per cella -> niente tiling visibile.
         if _rock_tex != null:
                 var h: int = abs((c * 73856093) ^ (r * 19349663) ^ (level * 83492791))
                 var ox: float = float((h % 3) * 32)
@@ -1035,14 +1334,10 @@ func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> voi
                 draw_texture_rect_region(_rock_tex, dst_rect, src_rect, Color.WHITE, false, false)
         else:
                 draw_rect(Rect2(px, py, size, size), wall_color, true)
-        # --- Highlight in alto-sinistra (luce proveniente da nord-ovest) ---
-        draw_rect(Rect2(px, py, size, 2.0), Color(1.0, 1.0, 1.0, 0.10), true)
-        draw_rect(Rect2(px, py, 2.0, size), Color(1.0, 1.0, 1.0, 0.08), true)
-        # --- Ombra in basso-destra (profondita') ---
-        draw_rect(Rect2(px, py + size - 2.0, size, 2.0), Color(0.0, 0.0, 0.0, 0.30), true)
-        draw_rect(Rect2(px + size - 2.0, py, 2.0, size), Color(0.0, 0.0, 0.0, 0.25), true)
-        # --- Outline scuro perimetrale (mantiene continuita' tra muri adiacenti) ---
-        draw_rect(Rect2(px, py, size, size), Color(0.04, 0.04, 0.04), false, 1.0)
+        # TASK 75: NESSUN bevel/outline per-cellula (highlight NW, ombra SE e
+        # bordo del blocco rimossi): il muro mostra SOLO il pattern organico
+        # della texture Task 57 — le celle adiacenti si fondono in una massa
+        # di roccia continua come nello screen di riferimento dell'utente.
         # --- Crepa rara (~10% delle celle muro, cellHash > 0.90) ---
         # Sottile rettangolo 1.2x6 ruotato nero semi-trasparente, 1:1 con C++.
         if _cell_hash(c + 99, r + 17) > 0.90:
@@ -1117,7 +1412,7 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 C.TreasureType.GOLD: tex_path = "res://assets/sprites/treasures/treasure_gold.png"
                 C.TreasureType.CHEST: tex_path = "res://assets/sprites/treasures/treasure_chest.png"
                 C.TreasureType.GEM: tex_path = "res://assets/sprites/treasures/treasure_gem.png"
-                C.TreasureType.CUP: tex_path = "res://assets/sprites/treasures/treasure_cup.png"
+                C.TreasureType.RUBY: tex_path = "res://assets/sprites/treasures/treasure_ruby.png"
         if not tex_path.is_empty():
                 var tex: Texture2D = null
                 if _maze_treasure_cache.has(tex_path):
@@ -1136,7 +1431,13 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                         # il tesoro resta ben visibile ma la gerarchia diventa
                         # player (83) > miniboss (82) > nemici (78) > tesori
                         # (73.6). Contenuto reale PNG ~68px, dentro la cella.
+                        # TASK 81c: le GEMME (zaffiro blu + rubino rosso) si
+                        # rimpiccioliscono del 30% (73.6 -> 51.5px): da "più
+                        # grandi dei nemici" a oggetto minore nel corridoio.
                         var draw_size: float = size * 1.15
+                        if tres_type == C.TreasureType.GEM \
+                                        or tres_type == C.TreasureType.RUBY:
+                                draw_size *= C.TREASURE_GEM_SHRINK
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
@@ -1146,6 +1447,10 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 var tex: Texture2D = EnvironmentArt.get_treasure_texture(tres_type)
                 if tex:
                         var draw_size: float = size * 1.15  # FIX: era 0.8, poi 1.3, ora 1.15 (73.6px)
+                        # TASK 81c: gemme -30% (stessa regola del PNG).
+                        if tres_type == C.TreasureType.GEM \
+                                        or tres_type == C.TreasureType.RUBY:
+                                draw_size *= C.TREASURE_GEM_SHRINK
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)
@@ -1159,10 +1464,14 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
                 C.TreasureType.GOLD: gem_color = Color(1.0, 0.84, 0.0)
                 C.TreasureType.CHEST: gem_color = Color(0.55, 0.30, 0.15)
                 C.TreasureType.GEM: gem_color = C.PALETTE[C.PAL_CYAN]
-                C.TreasureType.CUP: gem_color = C.PALETTE[C.PAL_GOLD]
+                C.TreasureType.RUBY: gem_color = C.PALETTE[C.PAL_RED]
         var cx: float = px + size * 0.5
         var cy: float = py + size * 0.45
         var gs: float = size * 0.18
+        # TASK 81c: gemme -30% anche nel fallback poligonale.
+        if tres_type == C.TreasureType.GEM \
+                        or tres_type == C.TreasureType.RUBY:
+                gs *= C.TREASURE_GEM_SHRINK
         var points := PackedVector2Array([
                 Vector2(cx, cy - gs), Vector2(cx + gs, cy),
                 Vector2(cx, cy + gs), Vector2(cx - gs, cy),
@@ -1173,18 +1482,18 @@ func _render_treasure_cell(px: float, py: float, size: float, tres_type: int) ->
 
 func _render_weapon_cell(px: float, py: float, size: float, weapon: Dictionary) -> void:
         # Usa le texture procedurali dettagliate da EnvironmentArt
-        # (pistola/fucile/razzo/laser) invece di semplici quadrati
+        # (pistola/fucile/razzo/laser) invece di semplici quadrati.
+        # TASK 50 (armi troppo grandi): le texture sono ora NORMALIZZATE al
+        # 75% del canvas da EnvironmentArt._normalize_weapon_content, quindi
+        # basta un draw uniforme a dimensione cella: ogni arma occupa ~48px
+        # visivi (0.75 tile), come martello/shotgun dello screenshot utente.
+        # Il vecchio multiplier 1.6x della pistola e' stato RIMOSSO: era il
+        # motivo per cui pistola e razzo sembravano pezzi esterni giganti.
         var wpn_type: int = weapon.get("type", C.WeaponType.PISTOL)
         if EnvironmentArt:
                 var tex: Texture2D = EnvironmentArt.get_weapon_pickup_texture(wpn_type)
                 if tex:
-                        # FIX (pistola più piccola): la pistola PNG ha più spazio vuoto
-                        # rispetto a shotgun/rocket/laser. Per uniformare le dimensioni
-                        # visive, usiamo un draw_size maggiore per la pistola.
-                        var size_mult: float = 1.2
-                        if wpn_type == C.WeaponType.PISTOL:
-                                size_mult = 1.6  # pistola più grande per uniformità
-                        var draw_size: float = size * size_mult
+                        var draw_size: float = size * 1.0
                         draw_texture_rect(tex,
                                 Rect2(px + (size - draw_size) / 2.0, py + (size - draw_size) / 2.0,
                                         draw_size, draw_size), false)

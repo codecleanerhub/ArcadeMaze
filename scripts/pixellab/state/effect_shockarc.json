@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/effect_shockarc/base.png",
+  "anim_job_id": "66df8342-78f8-482f-84ac-025a0d557024",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/effect_shockarc_sheet.png"
+}

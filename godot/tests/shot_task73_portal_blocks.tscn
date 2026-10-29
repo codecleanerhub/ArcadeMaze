@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cq73portalblocks"]
+
+[ext_resource type="Script" path="res://tests/shot_task73_portal_blocks.gd" id="1"]
+
+[node name="ShotTask73" type="Node"]
+script = ExtResource("1")

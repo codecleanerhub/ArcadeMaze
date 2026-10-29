@@ -1,0 +1,19 @@
+{
+ "id": "58289db5-96b2-4325-9361-e1358be9122b",
+ "name": "arcade-blood-drop-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "side",
+ "prompt": "A sentient, viscous blood drop creature suspended in a vertical teardrop silhouette, defined by a deep, saturated crimson palette with high-contrast shading to emphasize a wet, gelatinous texture. The surface features a brilliant, sharp white specular highlight at the upper crown, transitioning into a glossy, reflective body that tapers to a narrow, pinched neck at the top. The base is rounded and heavy, suggesting a pendulous, gravity-bound weight. The rendering utilizes crisp, medium-weight outlines to maintain structural clarity while enhancing the liquid, organic form, capturing a dark fantasy aesthetic through refined color banding and polished highlights.",
+ "created_at": "2026-10-22T17:29:27.572475+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "drip-cycle",
+   "group_id": "326b0330-67ef-408f-98ab-379f897da11b",
+   "animation_type": "custom-The viscous mass slowly disten"
+  }
+ ]
+}

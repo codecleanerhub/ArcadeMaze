@@ -1,0 +1,35 @@
+{
+ "frames": [
+  {
+   "file": "drop_pl_0.png",
+   "w": 131,
+   "h": 222
+  },
+  {
+   "file": "drop_pl_1.png",
+   "w": 132,
+   "h": 211
+  },
+  {
+   "file": "drop_pl_2.png",
+   "w": 132,
+   "h": 200
+  },
+  {
+   "file": "drop_pl_3.png",
+   "w": 132,
+   "h": 194
+  },
+  {
+   "file": "drop_pl_4.png",
+   "w": 132,
+   "h": 212
+  },
+  {
+   "file": "drop_pl_5.png",
+   "w": 128,
+   "h": 224
+  }
+ ],
+ "count": 6
+}

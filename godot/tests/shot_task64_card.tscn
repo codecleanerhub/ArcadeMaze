@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://t64cardshot"]
+
+[ext_resource type="Script" path="res://tests/shot_task64_card.gd" id="1"]
+
+[node name="ShotTask64Card" type="Node"]
+script = ExtResource("1")

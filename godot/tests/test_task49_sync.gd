@@ -1,0 +1,227 @@
+## test_task49_sync.gd — TASK 49: sincronizzazione posa/proiettile/suono.
+##
+## Verifica il meccanismo di sparo differito del boss (wind-up -> rilascio):
+##   1) al trigger dello shoot timer NON parte nessun proiettile (prima il
+##      colpo usciva con la posa ancora neutra: bocca chiusa per il Mimico);
+##   2) il timer pending_shot_ms parte a BOSS_ATTACK_WINDUP_MS e la posa
+##      d'attacco (riga 1 dello sheet) e' attiva dal primo frame;
+##   3) durante il wind-up (~270ms) nessuno sparo prematuro;
+##   4) allo scadere del wind-up il colpo parte ESATTAMENTE sul frame di
+##      rilascio (frame 3 @ 11 FPS): proiettile e posa nello stesso frame —
+##      per il Mimico Colossale e' il frame con la bocca spalancata;
+##   5) il flag di rollback BOSS_ATTACK_SYNC_ENABLED e' ON di default;
+##   6) TASK 49b — wind-up PER-BOSS (audit VLM+pixel dei 17 sheet): il
+##      DRAGO ANTICO (boss_035) rilascia a F4 (372ms) e il BEHOLDER
+##      (boss_037) a F2 (190ms): il colpo deve partire ESATTAMENTE su
+##      quei frame, non sul default F3.
+##
+## Soggetto: MIMICO COLOSSALE (livello 52 -> boss index 13, sheet boss_025
+## 6x2, 3 goo stream per sparo) — lo stesso boss della segnalazione utente.
+extends Node
+
+const BossScript = preload("res://scripts/bosses/Boss.gd")
+const C = preload("res://scripts/core/GameConstants.gd")
+
+var failures: Array = []
+var checks: int = 0
+
+
+func _ok(cond: bool, msg: String) -> void:
+        checks += 1
+        if cond:
+                print("[TEST-49] OK: ", msg)
+        else:
+                failures.append(msg)
+                print("[TEST-49] FAIL: ", msg)
+
+
+func _finish() -> void:
+        if failures.is_empty():
+                print("[TEST-49] ==== TEST SYNC ATTACCO SUPERATO (", checks,
+                                " check) ====")
+                get_tree().quit(0)
+        else:
+                for f in failures:
+                        print("[TEST-49] FAIL: ", f)
+                print("[TEST-49] ==== TEST SYNC ATTACCO FALLITO (",
+                                failures.size(), "/", checks, ") ====")
+                get_tree().quit(1)
+
+
+func _ready() -> void:
+        _ok(C.BOSS_ATTACK_SYNC_ENABLED,
+                        "flag rollback BOSS_ATTACK_SYNC_ENABLED ON (default)")
+        _ok(C.BOSS_ATTACK_WINDUP_MS > 0 and C.BOSS_ATTACK_WINDUP_MS < 500,
+                        "BOSS_ATTACK_WINDUP_MS in (0,500): %d ms"
+                        % C.BOSS_ATTACK_WINDUP_MS)
+
+        var out: Array = []
+        var boss := BossScript.new()
+        add_child(boss)
+        # livello 52 -> (52/4)%17 = 13 = BOSS_COLOSSAL_MIMIC (boss_025)
+        boss.setup(52, 1920, 1080)
+        boss._draw()
+        if not boss.deform_loaded:
+                _fail_quit(boss, "boss_025 (mimic) non caricato")
+                return
+        _ok(boss.sprite_id == "boss_025",
+                        "boss del test = Mimico Colossale (%s)" % boss.sprite_id)
+
+        # ---- 1) trigger dello shoot timer: posa SI, proiettile NO ----
+        boss.shoot_timer_ms = 2000  # base_cd lvl52 = 1000 -> 2016 > 1000
+        boss.update_step(500.0, 500.0, 16, out)
+        _ok(out.is_empty(),
+                        "al trigger NESSUN proiettile immediato (wind-up prima del colpo)")
+        _ok(boss.pending_shot_ms == C.BOSS_ATTACK_WINDUP_MS,
+                        "pending_shot_ms = %d (atteso %d)"
+                        % [boss.pending_shot_ms, C.BOSS_ATTACK_WINDUP_MS])
+        _ok(boss.attacking_timer_ms == 500,
+                        "attacking_timer_ms = 500 (posa d'attacco avviata)")
+        var row0 := _sheet_row(boss)
+        var col0 := _sheet_col(boss)
+        _ok(row0 == 1, "riga sheet = 1 (attacco) dal primo frame")
+        _ok(col0 == 0, "frame di partenza = 0 (wind-up)")
+
+        # ---- 2) wind-up: nessuno sparo prematuro ----
+        # 280ms / 16ms = 17.5 -> il colpo parte al 18° update post-trigger.
+        # Nei primi 17 update pending resta > 0.
+        var premature: int = 0
+        for i in range(17):
+                boss.update_step(500.0, 500.0, 16, out)
+                if out.size() > 0:
+                        premature = i + 2  # update assoluti (1 = trigger)
+                        break
+        _ok(out.is_empty() and premature == 0,
+                        "wind-up di 17 update SENZA spari prematuri")
+        _ok(boss.pending_shot_ms == 8,
+                        "pending residuo prima del colpo = %d ms (atteso 8)"
+                        % boss.pending_shot_ms)
+
+        # ---- 3) rilascio: colpo + frame di lancio nello stesso update ----
+        boss.update_step(500.0, 500.0, 16, out)
+        _ok(out.size() == 3,
+                        "al rilascio partono 3 goo stream (avuti: %d)" % out.size())
+        var colr := _sheet_col(boss)
+        var rowr := _sheet_row(boss)
+        _ok(rowr == 1, "riga sheet = 1 durante il rilascio")
+        _ok(colr == 3,
+                        "frame di rilascio = %d (atteso 3: bocca spalancata / smash a terra @ 11 FPS)" % colr)
+        _ok(boss.pending_shot_ms == 0, "pending azzerato dopo lo sparo")
+        # 19 update totali ma il primo (trigger) SETTA il timer senza
+        # decrementarlo: decrementi effettivi = 18 -> 500 - 288 = 212.
+        _ok(boss.attacking_timer_ms == 500 - 18 * 16,
+                        "attacking_timer_ms = %d (atteso %d: follow-through resta visibile)" % [boss.attacking_timer_ms, 500 - 18 * 16])
+
+        # ---- 5) TASK 49b: DRAGO ANTICO (liv 24 -> idx 6, boss_035) F4/372ms ----
+        var outd: Array = []
+        var drag := BossScript.new()
+        add_child(drag)
+        drag.setup(24, 1920, 1080)
+        drag._draw()
+        if not drag.deform_loaded:
+                _fail_quit(drag, "boss_035 (drago) non caricato")
+                return
+        _ok(drag.sprite_id == "boss_035",
+                        "boss del test 49b/1 = Drago Antico (%s)" % drag.sprite_id)
+        drag.shoot_timer_ms = 2000
+        drag.update_step(500.0, 500.0, 16, outd)
+        _ok(outd.is_empty(), "drago: NESSUN proiettile al trigger (fireball in gola)")
+        _ok(drag.pending_shot_ms == 372,
+                        "drago: pending_shot_ms = %d (atteso 372 = F4)"
+                        % drag.pending_shot_ms)
+        # 23 update (368ms decrementati, pending 4): la fiamma NON e' ancora
+        # uscita dalle fauci (F3 = gathering in gola).
+        for i in range(23):
+                drag.update_step(500.0, 500.0, 16, outd)
+                if outd.size() > 0:
+                        break
+        _ok(outd.is_empty() and drag.pending_shot_ms == 4,
+                        "drago: 23 update SENZA spari prematuri (pending %d, atteso 4)"
+                        % drag.pending_shot_ms)
+        # 24° decremento (384ms): F4 = fiamma che eruppe dalle fauci.
+        drag.update_step(500.0, 500.0, 16, outd)
+        _ok(outd.size() == 5,
+                        "drago: 5 fiamme del respiro al rilascio (avute: %d)"
+                        % outd.size())
+        _ok(_sheet_row(drag) == 1 and _sheet_col(drag) == 4,
+                        "drago: frame di rilascio = F%d (atteso 4: fiamma dalle fauci @ 11 FPS)"
+                        % _sheet_col(drag))
+        remove_child(drag)
+        drag.queue_free()
+
+        # ---- 6) TASK 49b: BEHOLDER (liv 36 -> idx 9, boss_037) F2/190ms ----
+        var outb: Array = []
+        var beh := BossScript.new()
+        add_child(beh)
+        beh.setup(36, 1920, 1080)
+        beh._draw()
+        if not beh.deform_loaded:
+                _fail_quit(beh, "boss_037 (beholder) non caricato")
+                return
+        _ok(beh.sprite_id == "boss_037",
+                        "boss del test 49b/2 = Beholder (%s)" % beh.sprite_id)
+        beh.shoot_timer_ms = 2000
+        beh.update_step(500.0, 500.0, 16, outb)
+        _ok(outb.is_empty(), "beholder: NESSUN proiettile al trigger (occhio in carica)")
+        _ok(beh.pending_shot_ms == 190,
+                        "beholder: pending_shot_ms = %d (atteso 190 = F2)"
+                        % beh.pending_shot_ms)
+        # 11 update (176ms decrementati, pending 14): il raggio NON e' ancora
+        # partito (F1 = flare dell'occhio).
+        for i in range(11):
+                beh.update_step(500.0, 500.0, 16, outb)
+                if outb.size() > 0:
+                        break
+        _ok(outb.is_empty() and beh.pending_shot_ms == 14,
+                        "beholder: 11 update SENZA spari prematuri (pending %d, atteso 14)"
+                        % beh.pending_shot_ms)
+        # 12° decremento (192ms): F2 = raggio dall'occhio centrale.
+        beh.update_step(500.0, 500.0, 16, outb)
+        _ok(outb.size() >= 4,
+                        "beholder: 4-5 raggi oculari al rilascio (avuti: %d)"
+                        % outb.size())
+        _ok(_sheet_row(beh) == 1 and _sheet_col(beh) == 2,
+                        "beholder: frame di rilascio = F%d (atteso 2: raggio @ 11 FPS)"
+                        % _sheet_col(beh))
+        remove_child(beh)
+        beh.queue_free()
+
+        # ---- 4) rollback: flag OFF = sparo immediato (comportamento pre-49) ----
+        C.BOSS_ATTACK_SYNC_ENABLED = false
+        var out2: Array = []
+        var boss2 := BossScript.new()
+        add_child(boss2)
+        boss2.setup(52, 1920, 1080)
+        boss2._draw()
+        boss2.shoot_timer_ms = 2000
+        boss2.update_step(500.0, 500.0, 16, out2)
+        _ok(out2.size() == 3,
+                        "flag OFF: sparo immediato al trigger (rollback pre-Task-49)")
+        C.BOSS_ATTACK_SYNC_ENABLED = true
+
+        remove_child(boss)
+        boss.queue_free()
+        remove_child(boss2)
+        boss2.queue_free()
+        _finish()
+
+
+func _sheet_col(boss) -> int:
+        var sr: Rect2 = boss.deform_sprite.sub_rect
+        if sr.size.x <= 0.0:
+                return -1
+        return int(sr.position.x / sr.size.x)
+
+
+func _sheet_row(boss) -> int:
+        var sr: Rect2 = boss.deform_sprite.sub_rect
+        if sr.size.y <= 0.0:
+                return -1
+        return int(sr.position.y / sr.size.y)
+
+
+func _fail_quit(boss, msg: String) -> void:
+        _ok(false, msg)
+        remove_child(boss)
+        boss.queue_free()
+        _finish()

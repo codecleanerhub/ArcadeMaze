@@ -230,6 +230,12 @@ var last_pos: Vector2 = Vector2.ZERO
 var flee_mode: bool = false
 var prev_flee_mode: bool = false
 
+# TASK 50 (pergamena del GHIACCIO): nemico CONGELATO dal raggio
+# congelante. Conta come uccisione one-shot (health = 0) ma lo sprite
+# NON viene rimosso: resta sul labirinto, fermo, avvolto in una massa
+# di ghiaccio trasparente fino alla fine del livello.
+var frozen: bool = false
+
 ## TASK 30 (muro di roccia): true mentre il nemico e' imprigionato nella
 ## cella di un muro di roccia CHIUSO (il flag e' rinfrescato ogni frame dal
 ## MazeHazards). Il nemico resta fermo finche' il muro non si riapre; se la
@@ -241,9 +247,21 @@ var held_by_wall: bool = false
 
 # Sprite sheet loaded from SpriteManager (AI-generated sprite).
 var _sprite_sheet: Object = null  # SpriteManager.Sheet
+## TASK 51: true se lo sheet di questo nemico e' disegnato guardando a
+## SINISTRA (meta "facesLeft"): il flip in _draw_sprite_frame viene
+## invertito cosi' il muso coincide sempre con la direzione di marcia.
+var _faces_left_native: bool = false
 var _sprite_loaded: bool = false
 var _sprite_id: String = ""
 var _burn_effect_sheet: Object = null  # SpriteManager.Sheet for burning effect
+var _shock_effect_sheet: Object = null  # TASK 60c: Sheet archetti folgorati
+
+# TASK 60c — texture statica del blocco di ghiaccio PixelLab (cristallo
+# pieno; la semitrasparenza e' applicata in codice col modulate). Cache
+# statica condivisa tra tutti i nemici: caricata UNA volta, null se il
+# PNG manca (rollback = cancellare effect_iceblock.png).
+static var _ice_tex: Texture2D = null
+static var _ice_tex_checked: bool = false
 
 # --- DeformableSprite (replaces the 4-frame cycle that produced the
 #     "disjointed gif" effect with HD sheets) ---
@@ -262,6 +280,12 @@ var _accent_color: Color = Color(1.0, 0.5, 0.2, 1.0)
 # Dust puff spawn counter (every Nth frame while walking, spawn a puff).
 var _dust_frame_counter: int = 0
 const DUST_PUFF_INTERVAL: int = 6  # spawn a puff every 6 frames (~100ms @ 60fps)
+## TASK 51 (anti-sovrapposizione): fattore di velocita' individuale
+## (0.88..1.12, fisso per nemico) — desincronizza il passo dei nemici.
+var _move_jitter: float = 1.0
+## TASK 51: true quando questo nemico e' fermo al centro in "coda" dietro
+## un altro nemico nella cella che vorrebbe occupare (waypoint non lockato).
+var _overlap_wait: bool = false
 
 
 # ===========================================================================
@@ -299,7 +323,15 @@ func init(t: int, start_col: int, start_row: int) -> void:
 
         # Reset all timers (constructor initializer list in C++).
         path_update_timer = 0
-        anim_time = 0
+        # TASK 51 (desync visivo — "nemici cosi' sincroni da sovrapporsi"):
+        # fase di camminata e velocita' sfasate per nemico: due nemici che
+        # convergono sullo stesso corridoio non marciano piu' in lockstep
+        # perfetto (gli sprite non si impilano uno sull'altro).
+        anim_time = randi() % 480
+        path_update_timer = randi() % PATH_RECALC_INTERVAL_MS
+        _move_jitter = 0.88 + 0.24 * randf()
+        # TASK 51: gruppo per il mutual-exclusion delle celle tra nemici.
+        add_to_group("maze_enemies")
         shoot_cooldown = 0
         attacking_timer = 0
         dying_timer = 0
@@ -343,11 +375,21 @@ func _load_sprite() -> void:
                         print("[Enemy] WARNING: sprite not loaded for type=%d id=%s" % [type, _sprite_id])
                 else:
                         print("[Enemy] FALLBACK to SpriteManager (HD) for id=%s" % _sprite_id)
+        # TASK 51 (facing nativo): sia dal percorso SD inline sia dal fallback
+        # SpriteManager, il flag vive sullo Sheet (o nel meta JSON).
+        if _sprite_sheet != null:
+                _faces_left_native = _sprite_sheet.faces_left
+        elif SpriteManager:
+                _faces_left_native = SpriteManager.meta_faces_left(_sprite_id)
 
         # Load effect spritesheet for burning overlay
         _burn_effect_sheet = null
         if SpriteManager:
                 _burn_effect_sheet = SpriteManager.get_sheet("effect_fireaura")
+        # TASK 60c — sheet archetti elettrici (stesso pattern del fireaura)
+        _shock_effect_sheet = null
+        if SpriteManager:
+                _shock_effect_sheet = SpriteManager.get_sheet("effect_shockarc")
 
         # Apply CharacterArt enhancement shader — DISABILITATO per performance.
         # Lo shader character_enhanced è costoso su GPU entry-level (NVIDIA 940M)
@@ -423,6 +465,9 @@ func _load_sd_sheet(sprite_id: String) -> Object:
         sheet.animations["walk"] = {"row": 0, "frames": 4, "frameDuration": 100}
         sheet.animations["attack"] = {"row": 0, "frames": 4, "frameDuration": 90}
         sheet.animations["death"] = {"row": 0, "frames": 1, "frameDuration": 120}
+        # TASK 51: facing nativo dal meta JSON (sheet costruito inline).
+        if SpriteManager:
+                sheet.faces_left = SpriteManager.meta_faces_left(sprite_id)
         return sheet
 
 
@@ -434,6 +479,16 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                                   player_pixel_pos: Vector2,
                                   enemy_projectiles: Array,
                                   delta_ms: float = 16.0) -> void:
+        # TASK 76 (crash utente): nemico fuori dal scene tree (es. scena in
+        # smontaggio, respawn a meta' transizione) — niente AI, niente
+        # get_tree(). Il controller lo saltera' e il spawner lo ripulira'.
+        if not is_inside_tree():
+                return
+        # TASK 50: nemico congelato — niente AI, niente movimento, niente
+        # spari, niente animazione. Resta una statua di ghiaccio (viva solo
+        # nel rendering) fino alla fine del livello.
+        if frozen:
+                return
         # Tick animation timers using REAL delta_ms (FIX: era fisso 16ms).
         attacking_timer = _tick_ms(attacking_timer, delta_ms)
         dying_timer = _tick_ms(dying_timer, delta_ms)
@@ -459,6 +514,10 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         # RELIC (Task 21): stordimento da Mazza/Martello — nemico congelato
         # (pattern del burning: timer ticka, movimento fermo). Il danno
         # continua ad arrivargli: e' solo "stordito", non invulnerabile.
+        # TASK 51 (P3): il knockback visivo decade SEMPRE, anche sotto stun
+        # (la spinta dura 200ms, lo stun 400ms — senza questo tick la
+        # spinta rimarrebbe congelata per tutto lo stun).
+        _tick_knockback(delta_ms)
         if stun_timer_ms > 0:
                 if stun_timer_ms > int(delta_ms):
                         stun_timer_ms -= int(delta_ms)
@@ -490,7 +549,8 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
         anim_time += int(delta_ms)
 
         # FIX (compenetrazione muri + scatti): step frame-rate independent.
-        var step_size: float = float(speed) * (delta_ms / 16.6667)
+        # TASK 51: jitter individuale di velocita' (desync visivo).
+        var step_size: float = float(speed) * (delta_ms / 16.6667) * _move_jitter
 
         # --- Anti-stuck tracking (mirror C++ riga 402-415) ---
         # Se il nemico si è mosso meno di 1px dall'ultimo frame, accumula il
@@ -616,9 +676,30 @@ func update_enemy(maze: Object, player_grid_pos: Vector2i,
                 if maze.is_wall(col + dx, row + dy):
                         dx = 0
                         dy = 0
+                # TASK 51 (richiesta utente — "nemici sincroni sovrapposti"):
+                # la cella bersaglio e' occupata da un altro nemico vivo?
+                # 1) prova una direzione alternativa LIBERA che non allontani
+                #    dal player (sorpasso intelligente);
+                # 2) altrimenti attendi in coda al centro (waypoint non
+                #    lockato: dx/dy preservati, niente BFS spam, niente
+                #    overlap). Il transito riparte appena la cella si libera.
+                _overlap_wait = false
+                if dx != 0 or dy != 0:
+                        if _cell_occupied_by_enemy(col + dx, row + dy):
+                                var alt: Vector2i = _pick_free_dir(
+                                                maze, col, row, player_grid_pos)
+                                if alt != Vector2i(0, 0):
+                                        dx = alt.x
+                                        if dx != 0:
+                                                last_dx = dx
+                                        dy = alt.y
+                                else:
+                                        _overlap_wait = true
                 # Waypoint LOCKED alla decisione (vedi _move_waypoint): il
                 # centro della cella successiva, valido fino all'arrivo.
-                if dx != 0 or dy != 0:
+                if _overlap_wait:
+                        _move_waypoint = Vector2.INF
+                elif dx != 0 or dy != 0:
                         _move_waypoint = Vector2(center_x + dx * TILE_SIZE,
                                         center_y + dy * TILE_SIZE)
                 else:
@@ -778,6 +859,8 @@ func _report_grid_cell(maze: Object, col: int, row: int) -> void:
 func take_damage(dmg: int) -> void:
         if dying_timer > 0:
                 return  # already dying: ignore further damage
+        if frozen:
+                return  # TASK 50: gia' congelato (ucciso): ignora altri danni
         health -= dmg
         if health <= 0:
                 health = 0
@@ -805,8 +888,12 @@ func take_damage(dmg: int) -> void:
 ## (utile al chiamante per punteggio/HUD).
 ## RELIC (Task 21): `fury` = true con la Corazza del Furore — l'arma
 ## colpisce come se avesse 1 hit-to-kill in meno (floor 2: mai one-shot).
-func take_weapon_hit(weapon_type: int, fury: bool = false) -> int:
-        var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health, fury)
+func take_weapon_hit(weapon_type: int, fury: bool = false,
+                char_type: int = -1) -> int:
+        # TASK 61: char_type dell'archetipo che ha sparato — serve alla
+        # penalita' -50% per arma TROVATA fuori affinita' (squadre miste).
+        var dmg: int = GameConstants.weapon_damage_for(weapon_type, max_health,
+                        fury, char_type)
         take_damage(dmg)
         return dmg
 
@@ -815,7 +902,58 @@ func take_weapon_hit(weapon_type: int, fury: bool = false) -> int:
 ## Ferrata 1s / Martello del Golem 0.5s). Cumulabile al massimo a 1.5s
 ## per evitare stunlock infiniti sui nemici piu' lenti.
 func apply_stun(ms: int) -> void:
+        if frozen:
+                return  # TASK 50: il congelamento prevale sullo stordimento
         stun_timer_ms = mini(stun_timer_ms + ms, 1500)
+
+
+# ============================================================================
+# TASK 51 (P3) — KNOCKBACK VISIVO da armi reliquia a distanza
+# ============================================================================
+## Spinta visiva di ~24px in direzione opposta al player: e' un OFFSET
+## PURAMENTE GRAFICO che decade in ~200ms. La posizione logica (griglia
+## BFS, collisioni, pathing) NON cambia: il nemico "scivola" via dal colpo
+## e torna al suo posto, senza rompere il movimento grid-locked.
+const KNOCKBACK_DECAY_MS: float = 200.0
+var _knock_dir: Vector2 = Vector2.ZERO   # direzione della spinta (unit)
+var _knock_mag: float = 0.0              # intensita' iniziale (px)
+var _knock_vec: Vector2 = Vector2.ZERO   # spinta residua (px, decade a 0)
+var _knock_timer_ms: float = 0.0
+
+
+## Applica la spinta: `dir` punta DAL player verso il nemico (viene
+## normalizzata internamente). `dist_px` = intensita' in pixel.
+func apply_knockback(dir: Vector2, dist_px: float = 24.0) -> void:
+        if dir.length_squared() < 0.0001:
+                return
+        _knock_dir = dir.normalized()
+        _knock_mag = dist_px
+        _knock_timer_ms = KNOCKBACK_DECAY_MS
+        _knock_vec = _knock_dir * _knock_mag
+        queue_redraw()
+
+
+## Decadimento ASSOLUTO (deterministico): offset = mag * (t_residuo/T)^2.
+## Curva ease-out sul ritorno: il nemico schizza via di 24px e rientra
+## veloce all'inizio, con atterraggio morbido sull posizione di griglia.
+## Chiamato in update_enemy PRIMA dell'early-return dello stun (il
+## knockback dura 200ms ma lo stun 400ms: la spinta deve continuare a
+## decrescere anche mentre il nemico e' congelato).
+func _tick_knockback(delta_ms: float) -> void:
+        if _knock_timer_ms <= 0.0 and _knock_vec.length_squared() < 0.01:
+                return
+        _knock_timer_ms = maxf(0.0, _knock_timer_ms - delta_ms)
+        if _knock_timer_ms <= 0.0:
+                _knock_vec = Vector2.ZERO
+        else:
+                var k: float = _knock_timer_ms / KNOCKBACK_DECAY_MS
+                _knock_vec = _knock_dir * (_knock_mag * k * k)
+        queue_redraw()
+
+
+## Offset da sommare al rendering (usato da _draw via draw_set_transform).
+func knockback_visual_offset() -> Vector2:
+        return _knock_vec
 
 
 ## Danno del MARTELLO di Thor: 50% degli HP massimi (2 colpi per uccidere
@@ -836,14 +974,36 @@ func is_dead() -> bool:
         return health <= 0
 
 
+## TASK 50 (pergamena del GHIACCIO): il nemico e' congelato?
+func is_frozen() -> bool:
+        return frozen
+
+
+## TASK 50: CONGELAMENTO one-shot dal raggio congelante. Il nemico muore
+## (health = 0 -> is_dead() = true: contatore vivi, punti, portale) ma NON
+## gioca l'animazione di morte e NON viene rimosso: resta sul labirinto
+## come statua di ghiaccio trasparente fino alla fine del livello.
+func freeze_kill() -> void:
+        frozen = true
+        health = 0
+        dying_timer = 0
+        burning_timer = 0
+        electrified_timer = 0
+        stun_timer_ms = 0
+        flee_mode = false
+        queue_redraw()
+
+
 func is_dying() -> bool:
         return dying_timer > 0
 
 
 # is_death_anim_done(): true once HP <= 0 AND the death animation has
 # finished (dyingTimer == 0). Game uses this to finally remove the enemy.
+# TASK 50: un nemico CONGELATO non e' MAI "death anim done" — non deve
+# essere rimosso dal pool (lo sprite resta sul labirinto per sempre).
 func is_death_anim_done() -> bool:
-        return health <= 0 and dying_timer == 0
+        return health <= 0 and dying_timer == 0 and not frozen
 
 
 # ===========================================================================
@@ -858,6 +1018,8 @@ func is_death_anim_done() -> bool:
 func start_burning(frames: int = 50) -> void:
         if dying_timer > 0 or burning_timer > 0:
                 return
+        if frozen:
+                return  # TASK 50: il ghiaccio prevale sul fuoco (gia' ucciso)
         burning_timer = frames
         burn_anim_time = 0
         burned_flag = true
@@ -887,6 +1049,8 @@ func clear_burned_flag() -> void:
 # is applied by Game (the bolt itself).
 # Mirrors Enemy::startElectrified() line 545-548.
 func start_electrified(frames: int = 30) -> void:
+        if frozen:
+                return  # TASK 50: il ghiaccio prevale sull'elettricita'
         electrified_timer = frames
         electrified_anim_time = 0
         # Applica shader lightning (Godot-native, non in C++)
@@ -984,6 +1148,66 @@ func _flee_greedy(maze: Object, target: Vector2i) -> void:
         dx = best_dx
         if dx != 0: last_dx = dx
         dy = best_dy
+
+
+# ===========================================================================
+# TASK 51 — anti-sovrapposizione nemici (richiesta utente: "nemici cosi'
+# sincroni che gli sprite si sovrappongono")
+# ===========================================================================
+
+# _cell_occupied_by_enemy(c, r): true se un ALTRO nemico vivo e' fermo o
+# quasi-arrivato nella cella (c, r). Soglia 22px dal centro: un nemico che
+# sta uscendo dalla cella (gia' oltre i 22px) non blocca — il codice
+# "fila indiana" dietro di lui e' permesso, l'impilamento no.
+# TASK 76 (bug utente — crash "Cannot call method 'get_nodes_in_group'
+# on a null value" da _cell_occupied_by_enemy): un nemico fuori dal tree
+# (rimosso dalla scena ma ancora nel pool dello spawner per un frame)
+# faceva ritornare null a get_tree(). Ora il check e' null-safe: senza
+# tree la cella si considera LIBERA (il nemico che chiama sta comunque
+# per essere rimosso, vedi guardia is_inside_tree in update_enemy).
+func _cell_occupied_by_enemy(c: int, r: int) -> bool:
+        # Guardia anti-crash: se QUESTO nemico non e' nel tree non possiamo
+        # iterare il gruppo (get_tree() == null).
+        if not is_inside_tree():
+                return false
+        var center := Vector2(
+                        c * TILE_SIZE + TILE_SIZE / 2.0,
+                        r * TILE_SIZE + TILE_SIZE / 2.0 + UI_HEIGHT)
+        for other in get_tree().get_nodes_in_group("maze_enemies"):
+                if other == null or other == self:
+                        continue
+                if not other.is_inside_tree():
+                        continue
+                if not other.has_method("is_dead") or other.is_dead():
+                        continue
+                if other.dying_timer > 0:
+                        continue
+                if other.position.distance_squared_to(center) < 22.0 * 22.0:
+                        return true
+        return false
+
+
+# _pick_free_dir(maze, col, row, player_grid): direzione alternativa LIBERA
+# (non muro, non occupata da nemici) che non allontana dal player.
+# Ritorna (0, 0) se non esiste (il chiamante allora attende in coda).
+func _pick_free_dir(maze: Object, col: int, row: int,
+                player_grid: Vector2i) -> Vector2i:
+        var cur_dist: int = absi(player_grid.x - col) + absi(player_grid.y - row)
+        var best: Vector2i = Vector2i(0, 0)
+        var best_gain: int = 0  # solo mosse che avvicinano o mantengono
+        for i in range(4):
+                var nc: int = col + _DC[i]
+                var nr: int = row + _DR[i]
+                if maze.is_wall(nc, nr):
+                        continue
+                if _cell_occupied_by_enemy(nc, nr):
+                        continue
+                var gain: int = cur_dist - (absi(player_grid.x - nc)
+                                + absi(player_grid.y - nr))
+                if gain > best_gain:
+                        best_gain = gain
+                        best = Vector2i(_DC[i], _DR[i])
+        return best
 
 
 # _pick_random_open_dir(maze, col, row): pick one of the 4 cardinal
@@ -1134,10 +1358,19 @@ func get_enemy_name() -> String:
 # (circle + eyes) so the game is still playable if assets are missing.
 # ===========================================================================
 func _draw() -> void:
+        # TASK 51 (P3): offset visivo del knockback — sposta TUTTO il render
+        # del nemico senza toccare la posizione logica (pathing BFS intatto).
+        if _knock_vec.length_squared() > 0.01:
+                draw_set_transform(_knock_vec)
         # --- PRIMARY: render AI-generated sprite if loaded ---
         # _draw_sprite_frame() handles death/attack/walk/idle animations
         if _sprite_loaded and _sprite_sheet != null:
                 _draw_sprite_frame()
+                # TASK 50: massa di ghiaccio trasparente sopra lo sprite
+                # congelato (il mostro resta visibile in trasparenza).
+                if frozen:
+                        _draw_ice_block()
+                        return
                 # Overlay effects on top of the sprite
                 if is_burning():
                         # Draw fire aura spritesheet if loaded
@@ -1152,17 +1385,17 @@ func _draw() -> void:
                                 draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.5))
                                 draw_circle(Vector2.ZERO, 14.0, Color(1.0, 0.8, 0.2, 0.7))
                 if is_electrified():
-                        for i in range(4):
-                                var angle: float = i * PI / 2.0 + anim_time * 0.1
-                                var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
-                                var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
-                                draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+                        _draw_shock_overlay()
                 # FIX (barra HP rimossa): la barra HP non viene più disegnata
                 # sopra i nemici. Le info del nemico colpito vengono mostrate
                 # nell'HUD in alto (last hit enemy name + energy bar).
                 return
 
         # --- FALLBACK: procedural rendering (circle + eyes) when no sprite ---
+        # TASK 50: ghiaccio anche sul fallback procedurale.
+        if frozen:
+                _draw_ice_block()
+                return
         # If burning, draw flame overlay
         if is_burning():
                 draw_circle(Vector2.ZERO, 20.0, Color(1.0, 0.4, 0.0, 0.6))
@@ -1170,11 +1403,7 @@ func _draw() -> void:
 
         # If electrified, draw electric arcs
         if is_electrified():
-                for i in range(4):
-                        var angle: float = i * PI / 2.0 + anim_time * 0.1
-                        var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
-                        var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
-                        draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+                _draw_shock_overlay()
 
         # Draw enemy body (procedural fallback based on type)
         var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
@@ -1209,6 +1438,110 @@ func _draw() -> void:
                         Vector2(0.0, -18.0),
                 ]), excl_color)
                 draw_circle(Vector2(0.0, -14.0), 2.0, excl_color)
+
+
+# TASK 60c — overlay FOLGORATO PNG-first: sheet effect_shockarc (4 frame,
+# jitter 10 fps come il fireaura) se caricato; altrimenti archetti
+# procedurali 1:1 col C++.
+func _draw_shock_overlay() -> void:
+        if _shock_effect_sheet != null and _shock_effect_sheet.is_loaded():
+                # anim_time e' in MILLISECONDI: 10 frame/s, pari al fireaura
+                var f: int = int(anim_time * 0.01) % 4
+                var at: AtlasTexture = _shock_effect_sheet.get_frame_texture("idle", f)
+                if at != null:
+                        draw_texture_rect(at, Rect2(-26, -26, 52, 52), false)
+                        return
+        # fallback procedurale (archetti rotanti, 1:1 col C++)
+        for i in range(4):
+                var angle: float = i * PI / 2.0 + anim_time * 0.1
+                var p1: Vector2 = Vector2(cos(angle), sin(angle)) * 16.0
+                var p2: Vector2 = Vector2(cos(angle + 0.5), sin(angle + 0.5)) * 22.0
+                draw_line(p1, p2, Color(0.3, 0.7, 1.0, 0.9), 2.0)
+
+
+# TASK 60c — texture del cristallo di ghiaccio PixelLab (statica, cache
+# condivisa). Null se il PNG manca -> fallback procedurale completo.
+static func _get_ice_texture() -> Texture2D:
+        if not _ice_tex_checked:
+                _ice_tex_checked = true
+                var abs_p := ProjectSettings.globalize_path(
+                                "res://assets/sprites/effect_iceblock.png")
+                if FileAccess.file_exists(abs_p):
+                        var img := Image.new()
+                        if img.load(abs_p) == OK:
+                                _ice_tex = ImageTexture.create_from_image(img)
+        return _ice_tex
+
+
+## TASK 50 (pergamena del GHIACCIO): massa di ghiaccio trasparente che
+## avvolge il nemico congelato. Il mostro resta VISIBILE in trasparenza.
+## TASK 60c — IBRIDO PNG-first (pattern Task 57): (1) cristallo PixelLab
+## statico con modulate alpha, (2) sparkles procedurali animati + glint,
+## (3) fallback procedurale originale 7-lati se il PNG manca (determini-
+## stico, LCG seedato sul tipo, perche' _draw() non puo' usare RNG).
+func _draw_ice_block() -> void:
+        var ice_tex: Texture2D = _get_ice_texture()
+        if ice_tex != null:
+                # velo morbido che blenda lo sprite col cristallo
+                draw_circle(Vector2.ZERO, 19.0, Color(0.55, 0.8, 1.0, 0.22))
+                # cristallo con pulsazione lieve (anim_time in ms); modulate
+                # 0.45: compromesso tra "blocco di ghiaccio" leggibile e
+                # mostro che traspare (il procedurale era a alpha 0.34+veli)
+                var pulse := 1.0 + 0.03 * sin(anim_time * 0.004)
+                var sz := 52.0 * pulse
+                draw_texture_rect(ice_tex,
+                                Rect2(-sz * 0.5, -sz * 0.5, sz, sz),
+                                false, Color(1.0, 1.0, 1.0, 0.45))
+                # sparkles deterministici che twinkleano (ruotano col tipo)
+                var seedv: int = (type + 1) * 2654435761
+                for _k in 4:
+                        seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                        var sx: float = float((seedv >> 8) % 32) - 16.0
+                        seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                        var sy: float = float((seedv >> 8) % 32) - 16.0
+                        var tw: float = 0.6 + 0.4 * sin(anim_time * 0.007 + float(_k) * 1.7)
+                        draw_circle(Vector2(sx, sy), 1.6,
+                                        Color(0.95, 1.0, 1.0, 0.85 * tw))
+                # glint centrale a croce
+                draw_line(Vector2(-3.0, -3.0), Vector2(3.0, 3.0),
+                                Color(1.0, 1.0, 1.0, 0.9), 1.0)
+                draw_line(Vector2(-3.0, 3.0), Vector2(3.0, -3.0),
+                                Color(1.0, 1.0, 1.0, 0.9), 1.0)
+                return
+        # ---- fallback procedurale (originale) ----
+        # 1) velo ghiacciato morbido sopra lo sprite (il mostro traspare)
+        draw_circle(Vector2.ZERO, 19.0, Color(0.55, 0.8, 1.0, 0.22))
+        draw_circle(Vector2.ZERO, 13.0, Color(0.65, 0.88, 1.0, 0.16))
+        # 2) cristallo irregolare a 7 lati (jitter deterministico da tipo)
+        var seedv: int = (type + 1) * 2654435761
+        var pts := PackedVector2Array()
+        var n_sides: int = 7
+        for i in n_sides:
+                var ang: float = TAU * float(i) / float(n_sides) + 0.35
+                seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                var jitter: float = float((seedv >> 16) % 1000) / 1000.0
+                var rad: float = 20.0 + jitter * 6.0
+                pts.append(Vector2(cos(ang), sin(ang)) * rad)
+        draw_colored_polygon(pts, Color(0.62, 0.85, 1.0, 0.34))
+        # bordo luminoso del cristallo
+        for i in pts.size():
+                var pa: Vector2 = pts[i]
+                var pb: Vector2 = pts[(i + 1) % pts.size()]
+                draw_line(pa, pb, Color(0.85, 0.96, 1.0, 0.75), 1.5)
+        # 3) sfaccettature interne dal centro
+        for i in range(0, pts.size(), 2):
+                draw_line(Vector2.ZERO, pts[i], Color(0.8, 0.93, 1.0, 0.35), 1.0)
+        # 4) sparkle deterministici + glint centrale a croce
+        for _k in 4:
+                seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                var sx: float = float((seedv >> 8) % 32) - 16.0
+                seedv = (seedv * 1103515245 + 12345) & 0x7FFFFFFF
+                var sy: float = float((seedv >> 8) % 32) - 16.0
+                draw_circle(Vector2(sx, sy), 1.6, Color(0.95, 1.0, 1.0, 0.85))
+        draw_line(Vector2(-3.0, -3.0), Vector2(3.0, 3.0),
+                        Color(1.0, 1.0, 1.0, 0.9), 1.0)
+        draw_line(Vector2(-3.0, 3.0), Vector2(3.0, -3.0),
+                        Color(1.0, 1.0, 1.0, 0.9), 1.0)
 
 
 # Draw the current animation frame from the AI-generated sprite sheet.
@@ -1383,12 +1716,18 @@ func _draw_sprite_frame() -> void:
         # FIX (scatto visivo da fermo): flip basato su last_dx, non dx:
         # da fermo (dx==0) lo sprite mantiene l'orientamento invece di
         # "sbloccarsi" di colpo verso destra.
-        if last_dx < 0:
+        # TASK 51 (P3): il pivot del mirror e il reset ASSORBONO l'offset
+        # knockback (draw_set_transform e' assoluto, non componibile: senza
+        # questo il nemico specchiato perderebbe la spinta visiva).
+        # TASK 51 (facing utente): XOR col facing nativo dello sheet — gli
+        # sprite disegnati verso SINISTRA si specchiano quando marciano a
+        # DESTRA, cosi' il muso resta coerente col movimento.
+        if (last_dx < 0) != _faces_left_native:
                 draw_set_transform(
-                        Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0),
+                        Vector2(dest_rect.position.x + dest_rect.size.x * 0.5, 0.0) + _knock_vec,
                         0.0, Vector2(-1.0, 1.0))
                 draw_texture_rect(at, dest_rect, false)
-                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                draw_set_transform(_knock_vec, 0.0, Vector2.ONE)
         else:
                 draw_texture_rect(at, dest_rect, false)
 

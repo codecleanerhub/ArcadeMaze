@@ -92,6 +92,29 @@ static var ui_language: int = 0
 static func ui_is_italian() -> bool:
         return ui_language == 1
 
+# ============================================================================
+# 0e. TASK 78 — FONT MEDIEVALE "GOTH AND GOTHIC" (scelta dell'utente)
+# ============================================================================
+# Font blackletter x grotesk (Aaron Amar, 2021, licenza libera anche
+# commerciale — readme allegato in assets/fonts/goth_and_gothic_readme.txt).
+# Caricata RUNTIME con FontFile.load_dynamic_font (pattern Image.load delle
+# UI: niente dipendenza dall'import di Godot, funziona anche a .godot/ vuoto).
+# Cache statica: un solo FontFile per tutta la sessione.
+static var _gothic_font: FontFile = null
+
+## TASK 78 — ritorna la FontFile medievale Goth And Gothic (o null se manca).
+static func gothic_font() -> FontFile:
+        if _gothic_font == null:
+                var abs_path: String = ProjectSettings.globalize_path(
+                                "res://assets/fonts/goth_and_gothic.otf")
+                if FileAccess.file_exists(abs_path):
+                        var f := FontFile.new()
+                        if f.load_dynamic_font(abs_path) == OK:
+                                _gothic_font = f
+                        else:
+                                push_warning("GameConstants: load_dynamic_font fallita su " + abs_path)
+        return _gothic_font
+
 #   BOSS_SHOOT_SFX_ENABLED -> SFX procedurali di sparo dei boss, UNO per tipo
 #                          di "munizione" (masso=tonfo di pietra, ragnatela=
 #                          fruscio di seta, fiamma=soffio, raggio=zap...):
@@ -99,6 +122,90 @@ static func ui_is_italian() -> bool:
 #                          Boss._shoot_pattern. false = nessun suono di sparo
 #                          (comportamento pre-Task-26).
 static var BOSS_SHOOT_SFX_ENABLED: bool = true
+
+## TASK 46 — ANIMAZIONE A FRAME REALI DEI BOSS
+#   BOSS_FRAME_ANIM_ENABLED -> i boss ciclando i frame reali dello sheet
+#                          (XHD/SD) in base allo stato: IDLE 5.5 FPS, WALK
+#                          8.3 FPS, ATTACK one-shot 11 FPS sincronizzato col
+#                          timer d'attacco (rate = frameDuration legacy dei
+#                          meta). Prima il percorso DeformableSprite mostrava
+#                          SOLO il frame 0: i boss erano statue che si
+#                          muovevano solo via deformazione procedurale
+#                          della mesh. Il GOLEM (boss_031) ora usa il ciclo
+#                          walk a 6 frame rigenerato con PixelLab (256px);
+#                          gli altri 16 boss tornano ad animare i propri cicli
+#                          legacy a 4 frame. false = frame 0 statico (rollback
+#                          al comportamento pre-Task-46).
+static var BOSS_FRAME_ANIM_ENABLED: bool = true
+
+## TASK 49 — SINCRONIZZAZIONE ATTACCO (wind-up -> lancio)
+#   BOSS_ATTACK_SYNC_ENABLED -> il proiettile e il SFX di sparo partono al
+#                          frame di RILASCIO dell'animazione d'attacco invece
+#                          che al primo frame: prima il colpo usciva mentre il
+#                          boss era ancora in posa di carica (per il Mimico
+#                          Colossale la bocca era ancora chiusa!), con posa e
+#                          proiettile/suono distanziati di ~270ms. Ora la posa
+#                          di lancio, il proiettile e il suono appaiono nello
+#                          STESSO frame. Il delay di 280ms = frame 3 @ 11 FPS
+#                          (11 FPS = rate ATTACK del cycling frame): e' il
+#                          frame di rilascio verificato via VLM per Mimico
+#                          (bocca spalancata) e Golem (impatto dello smash).
+#                          false = sparo immediato al frame 0 (rollback al
+#                          comportamento pre-Task-49).
+static var BOSS_ATTACK_SYNC_ENABLED: bool = true
+
+## Delay (ms) tra l'inizio della posa d'attacco e lo sparo effettivo.
+const BOSS_ATTACK_WINDUP_MS: int = 280
+
+## TASK 51 — FASE 2 DEL BOSS (richiesta utente): quando l'energia del boss
+#   scende al 50% il combattimento entra in FASE 2: il boss POTENZIA il suo
+#   arsenale con un ATTACCO SPECIALE per tipo (proiettili dall'alto come
+#   magia/fulmine, buche a caso sul pavimento, salto schiacciante verso il
+#   player, raffica a inseguimento) oltre al fuoco che gia' possiede, e il
+#   suo aspetto cambia per segnalare l'aumento di potenza (dimensione +12%,
+#   aura pulsante colorata per famiglia, tinta dello sprite).
+#   BOSS_PHASE2_ENABLED = false = rollback al combattimento monofase.
+static var BOSS_PHASE2_ENABLED: bool = true
+
+## Soglia di attivazione (frazione di energia massima).
+const BOSS_PHASE2_TRIGGER_RATIO: float = 0.5
+
+## Crescita dimensionale del boss in fase 2 (+12%).
+const BOSS_PHASE2_SIZE_BONUS: float = 1.12
+
+## Cadenza (ms) dell'attacco speciale di fase 2.
+const BOSS_PHASE2_SPECIAL_CD_MS: int = 4600
+
+## Durata (ms) del telegrafo delle buche di fase 2 (crepa pulsante a terra
+## prima che la voragine si apra: tempo per scansarsi).
+const BOSS_PHASE2_PIT_TELEGRAPH_MS: int = 900
+
+## Durata (ms) di una buca di fase 2 rimasta aperta.
+const BOSS_PHASE2_PIT_OPEN_MS: int = 5000
+
+## Raggio (px) di danno di una buca di fase 2.
+const BOSS_PHASE2_PIT_RADIUS: float = 34.0
+
+## Telegrafo (ms) del salto schiacciante: ombra crescente sul bersaglio.
+const BOSS_PHASE2_SLAM_TELEGRAPH_MS: int = 650
+
+## Durata (ms) dell'arco di volo del salto schiacciante.
+const BOSS_PHASE2_SLAM_LEAP_MS: int = 520
+
+## Recupero (ms) del boss dopo l'atterraggio (finestra di contrattacco).
+const BOSS_PHASE2_SLAM_RECOVER_MS: int = 450
+
+## Raggio (px) dell'onda d'urto del salto schiacciante (attorno al punto
+## di atterraggio).
+const BOSS_PHASE2_SLAM_RADIUS: float = 110.0
+
+## TASK 51 — CARD BONUS (richiesta utente): alla PRIMA raccolta di un
+## bonus particolare (martello, dinamite, bastone del fulmine, pergamene,
+## stivali, pozione, mina, calice, statua...) il gioco si mette in pausa e
+## mostra una card con nome/effetto/usi/danno + demo animata in loop; si
+## chiude tenendo premuto il fuoco per 1 secondo. Memoria per-run.
+## BONUS_CARD_ENABLED = false = rollback (nessuna card).
+static var BONUS_CARD_ENABLED: bool = true
 
 ## Frame size (px) degli sheet XHD (4x del 64 originale).
 const SPRITE_XHD_FRAME_PX: int = 256
@@ -199,12 +306,15 @@ enum CellType {
 }
 
 ## Treasure sub-types (from Maze.h) - purely cosmetic, all worth 10000 points.
+## TASK 65c: CUP (trofeo) sostituito con RUBY su richiesta utente — il
+## valore enum resta 4: gli snapshot serializzano l'indice e restano
+## compatibili (i tesori sono puramente cosmetici).
 enum TreasureType {
         CROWN,
         GOLD,
         CHEST,
         GEM,
-        CUP,
+        RUBY,
 }
 
 ## Playable characters (from Player.h). Order must match the C++ enum.
@@ -669,10 +779,56 @@ static func make_weapon(type: int) -> Dictionary:
                         return {"type": WeaponType.PISTOL, "power": 1, "ammo": 20}
 
 
-## Returns a random weapon Dictionary.
-static func make_random_weapon() -> Dictionary:
-        var t: int = randi() % 4
-        return make_weapon(t)
+## TASK 61 — Arma casuale coerente con gli archetipi dei player attivi.
+## `char_types`: elenco dei CharacterType dei player della partita.
+## - Umani soli   -> armi da fuoco classiche (comportamento storico)
+## - Non-umani    -> pool elementale dell'archetipo (unione se misti)
+## - Squadra mista (umano + non-umano) -> UNIONE armi da fuoco + elementali
+## - Nessun char_type (default) -> comportamento legacy identico a prima
+static func make_random_weapon(char_types: Array = []) -> Dictionary:
+        var has_firearm: bool = false
+        var elemental_ids: Array = []
+        for ct in char_types:
+                var pool: Array = AFFINITY_POOLS.get(int(ct), [])
+                if pool.is_empty() or pool.has("@firearm"):
+                        has_firearm = true
+                else:
+                        for wid in pool:
+                                if not elemental_ids.has(wid):
+                                        elemental_ids.append(wid)
+        # Niente char o solo umani: legacy puro (4 armi da fuoco uniformi).
+        if elemental_ids.is_empty():
+                var t: int = randi() % 4
+                return make_weapon(t)
+        # Solo non-umani: pool elementale puro.
+        if not has_firearm:
+                var wid2: String = elemental_ids[randi() % elemental_ids.size()]
+                var def: Dictionary = get_elemental_by_id(wid2)
+                if def.is_empty():
+                        # id di una reliquia storica (arco/balestra/...)
+                        for rd in RELIC_RANGED:
+                                if str(rd.get("id", "")) == wid2:
+                                        def = rd
+                                        break
+                var wd: Dictionary = make_relic_weapon(def)
+                wd["ground"] = true  # TASK 61: arma TROVATA nel labirinto
+                return wd
+        # Misto: metà e metà (i due tipi convivano nel labirinto, ma le
+        # armi dell'archetipo sbagliato restano la minoranza: chi le
+        # raccoglie subisce la penalita' -50% di weapon_damage_for).
+        if randi() % 2 == 0:
+                var t2: int = randi() % 4
+                return make_weapon(t2)
+        var wid3: String = elemental_ids[randi() % elemental_ids.size()]
+        var def3: Dictionary = get_elemental_by_id(wid3)
+        if def3.is_empty():
+                for rd in RELIC_RANGED:
+                        if str(rd.get("id", "")) == wid3:
+                                def3 = rd
+                                break
+        var wd3: Dictionary = make_relic_weapon(def3)
+        wd3["ground"] = true  # TASK 61: arma TROVATA nel labirinto
+        return wd3
 
 
 ## TASK 26 — munizioni minime garantite dalla boss room (regola d'ingresso
@@ -712,13 +868,25 @@ const BOSS_ROOM_AMMO_MIN: int = 39
 # sessione riapplica i danni al continue).
 enum ElementKind { FIRE, FROST, LIGHTNING, POISON }
 
-const BOSS_ARENA_PILLAR_COUNT: int = 4        # pilastri per set
+const BOSS_ARENA_PILLAR_COUNT: int = 4        # pilastri per set (LEGACY TASK 39)
 const BOSS_ARENA_PILLAR_HP: int = 3           # colpi per abbattere un pilastro
 const BOSS_ARENA_PILLAR_FRAGMENTS: int = 5    # frammenti lanciati al crollo
 const BOSS_ARENA_PILLAR_FRAGMENT_DMG: int = 3 # danno di un frammento al boss
 # raggio fisico (rimbalzo boss / colpi) — TASK 43: architettura PIU'
 # GRANDE (pilastro 68x184, era 30 con pilastro 54x130)
 const BOSS_ARENA_PILLAR_RADIUS: float = 34.0
+# --- TASK 50: MURO-LABIRINTO IN ROVINA (sostituisce i pilastri) ---
+# L'arena del boss e' un labirinto spezzato: segmenti di muraglia PixelLab
+# (roccia porosa da cripta) generati proceduralmente DIVERSI ad ogni
+# partita e ad ogni boss. Il player si muove TRA i frammenti e si ripara
+# dai colpi del boss; i muri si rompono dopo 3 colpi e restano macerie.
+const BOSS_ARENA_RUINS_ENABLED: bool = true   # false = rollback ai 4 pilastri TASK 39
+const BOSS_ARENA_RUIN_HP: int = 3             # colpi per abbattere un segmento
+const BOSS_ARENA_RUIN_FRAGMENTS: int = 5      # schegge di pietra al crollo
+const BOSS_ARENA_RUIN_MIN: int = 10           # segmenti minimi nel labirinto
+const BOSS_ARENA_RUIN_MAX: int = 14           # segmenti massimi nel labirinto
+const BOSS_ARENA_RUIN_MAX_LEN: int = 4        # lunghezza massima in celle (64px)
+const BOSS_ARENA_RUIN_PASS_GAP: float = 96.0  # corridoio minimo tra segmenti (px)
 const BOSS_ARENA_BARREL_COUNT: int = 3        # barili per set (>= 1 dell'elemento debole)
 const BOSS_ARENA_BARREL_BASE_PCT: float = 0.10    # danno base: 10% HP max del boss
 const BOSS_ARENA_BARREL_WEAK_MULT: float = 2.5    # elemento debole: 25% HP max
@@ -1156,12 +1324,185 @@ const SCROLL_QUAKE_KILL_POINTS: int = 5000
 ## Pergamena delle voragini: numero di voragini per ondata, durata di
 ## ogni ondata, ondate totali, distanza minima tra voragini (Manhattan,
 ## in celle) e durata della dissolvenza tra le ondate.
+## TASK 51 (P2, richiesta utente): durata effetto +40% -> ogni ondata
+## dura 5600ms invece di 4000ms (3 ondate = 16.8s totali vs 12s).
 const SCROLL_CHASM_COUNT: int = 4
-const SCROLL_CHASM_WAVE_MS: int = 4000
+const SCROLL_CHASM_WAVE_MS: int = 5600
 const SCROLL_CHASM_WAVES: int = 3
 const SCROLL_CHASM_MIN_GAP: int = 5
 const SCROLL_CHASM_FADE_MS: int = 350
 const SCROLL_CHASM_KILL_POINTS: int = 5000
+
+## TASK 50 (pergamena del GHIACCIO): raccolta = il player la EQUIPAGGIA.
+## Il tasto di fuoco spara un RAGGIO CONGELANTE (2 colpi): congela i
+## nemici colpiti dal beam per TUTTO il livello — conta come uccisione
+## one-shot (punti + contatore vivi) ma lo sprite NON scompare: resta
+## sul labirinto, fermo, dentro una massa di ghiaccio trasparente che
+## lascia vedere il mostro. Il mid-boss e' troppo potente per essere
+## congelato: il raggio gli infligge il 50% degli HP max (come il
+## martello). Nella boss room il raggio non si puo' usare (l'evento e'
+## una meccanica del labirinto). Stesse tempistiche di apparizione
+## delle altre pergamene (beacon -> fulmine -> 16s a terra + 2s blink,
+## max 2 apparizioni per livello se non raccolta).
+## Rollback: GameConstants.SCROLL_FREEZE_ENABLED = false.
+static var SCROLL_FREEZE_ENABLED: bool = true
+
+## Colpi del raggio congelante per raccolta.
+const SCROLL_FREEZE_CHARGES: int = 2
+
+## TASK 54: torcia del labirinto come sprite animato PixelLab
+## (env/torch_sheet.png, 4 frame @ 8 FPS). Rollback: false = torcia
+## procedurale a primitive (aura + bastone + cestello + fiamma 3 strati).
+static var TORCH_SPRITE_ENABLED: bool = true
+
+## TASK 54: portale magico (respawn nemici) come sprite animato PixelLab
+## (env/portal_sheet.png, 4 frame). Rollback: false = portale procedurale
+## a cerchi orbitanti viola/ciano.
+static var PORTAL_SPRITE_ENABLED: bool = true
+
+## TASK 56: fireball pixel-art nelle esplosioni (effect_explosion_sheet.png,
+## 4 frame sopra le particelle detriti). Rollback: false = solo particelle.
+static var EXPLOSION_SPRITE_ENABLED: bool = true
+
+## TASK 57: muri del labirinto con texture roccia PixelLab
+## (env/rock_texture.png, luminanza) tintata con le 8 palette per livello.
+## Rollback: false = noise procedurale FastNoiseLite.
+static var WALL_ROCK_PIXELLAB_ENABLED: bool = true
+
+## TASK 80 (luci lanterne): dungeon a toni scuri + visibilita' localizzata.
+## Pozze di luce calda bakeate sul pavimento per OGNI torcia + lanterna
+## dell'eroe che segue i player vivi + alone caldo sui muri vicino alle
+## torce (Maze.gd: _draw_lantern_floor_pools / _draw_lantern_wall_halos).
+## Rollback: false = solo le 6 PointLight2D delle torce (look pre-TASK 80).
+static var LANTERN_LIGHT_ENABLED: bool = true
+
+# ============================================================================
+# TASK 81 — FANTASMI LENZUOLO + CELLE ZOMBIE (nuove meccaniche labirinto)
+# ============================================================================
+## TASK 81.1 — fantasmi: lenzuoli trasparenti bianco/rosso/verde che
+## emergono da un muro, ATTRAVERSANO IL CORRIDOIO e si compenetrano nel
+## muro opposto. IMMORTALI e DANNOSI (correzione utente: "non devono
+## essere innocui, il player li puo' evitare saltandoli ma se toccono il
+## player levano il 33% dell'energia"): il tocco scala il 33% dell'energia
+## max (Player.take_hazard_damage — il SALTO protegge, come per gli altri
+## pericoli del dungeon); i proiettili passano attraverso (immortali).
+## Grafica PixelLab (env/ghost_sheet_{white,red,green}.png, 4 frame).
+## Rollback: false = niente fantasmi (MazeGhosts.gd si spegne).
+static var GHOSTS_ENABLED: bool = true
+## TASK 81c — pool FISSO dei 3 colori del lenzuolo (bianco, rosso, verde):
+## niente piu' quarto colore duplicato casuale, l'ondata ruota i 3.
+const GHOST_POOL_SIZE: int = 3
+## Velocita' di attraversamento (px/s): ~1 cella al secondo.
+const GHOST_SPEED_PX_S: float = 72.0
+## TASK 81 (correzione utente) — danno percentuale del tocco fantasma:
+## -33% dell'energia max per tocco ("se toccono il player levano il 33%
+## dell'energia"), arrotondato, min 1 (5 energie -> 2 punti). Il salto
+## EVITA il tocco ("il player li puo' evitare saltandoli").
+const GHOST_TOUCH_DAMAGE_PCT: float = 0.33
+## Raggio del tocco dannoso (px, centro lenzuolo - centro player): il
+## player grid-locked passa per il centro della cella corridoio, il
+## fantasma percorre la mezzeria dello stesso corridoio -> allineamento
+## garantito quando si incontrano.
+const GHOST_TOUCH_RADIUS_PX: float = 34.0
+## Ritardo della PRIMA ondata dall'avvio del livello (rng seedato per
+## livello: riproducibile, pattern hazards/zcells).
+const GHOST_FIRST_SPAWN_MIN_MS: float = 1500.0
+const GHOST_FIRST_SPAWN_MAX_MS: float = 4000.0
+
+## TASK 81c (richiesta utente) — RESPAWN INFINITO A ONDATE: "i fantasmi
+## lenzuolo respawnano per tutto il tempo, non per un numero di volte
+## limitato; quello che cambia da un livello all'altro e' che respawnano
+## piu' spesso ed in numero [via via crescente], finche' andando avanti
+## con i livelli appariranno tutti e 3 insieme e respawneranno insieme
+## dopo pochissimo tempo". Meccanica:
+##   * i lenzuoli escono in ONDATE simultanee (colore in rotazione:
+##     L1 bianco -> rosso -> verde -> bianco...; L2 [bianco,rosso] ->
+##     [verde,bianco] -> [rosso,verde]...; L7+ tutti e 3 insieme);
+##   * quando l'ULTIMO lenzuolo dell'ondata e' scomparso nel muro opposto
+##     parte il conteggio del respawn: "sparisce contro il muro opposto e
+##     DOPO 30 secondi appare il prossimo" (L1: 30s, L2: 25s, -5s/level
+##     fino al minimo di 5s dal L6: "dopo pochissimo tempo");
+##   * MAI budget esaurito: le ondate continuano per tutta la partita.
+## Ritmo dell'ondata successiva in funzione del livello (ms).
+const GHOST_WAVE_MAX_MS: float = 30000.0  # L1: 30s esatti (spec utente)
+const GHOST_WAVE_STEP_MS: float = 5000.0  # -5s per livello (L2: 25s)
+const GHOST_WAVE_MIN_MS: float = 5000.0   # floor dal L6 ("pochissimo")
+
+static func ghost_wave_respawn_ms(level: int) -> float:
+        return clampf(GHOST_WAVE_MAX_MS - GHOST_WAVE_STEP_MS * float(level - 1),
+                        GHOST_WAVE_MIN_MS, GHOST_WAVE_MAX_MS)
+
+## TASK 81c — lenzuoli per ondata al livello dato: 1 (L1), 2 (L2-6), 3
+## (L7+, tutti e 3 insieme). Soglia L7 allineata alle celle zombie che
+## raggiungono il max di 3 proprio al L7 (stessa curva di difficolta').
+static func ghost_wave_size(level: int) -> int:
+        if level <= 1:
+                return 1
+        if level <= 6:
+                return 2
+        return 3
+
+## TASK 81c (stessa richiesta utente) — "Rimpiccioliamo le gemme (rubino
+## rosso, blue) del 30%": solo GEM (zaffiro blu) e RUBY (rubino rosso);
+## corona/oro/forziere restano alle dimensioni dei task precedenti.
+const TREASURE_GEM_SHRINK: float = 0.70
+
+## TASK 81.2 — celle zombie: blocchi muro con finestra inferriata e volto
+## zombie dietro le sbarre; a intervalli casuali le BRACCIA si protendono
+## nel corridoio davanti alla cella per ZOMBIE_ARM_OUT_MS, poi si ritraggono.
+## Le braccia riempiono l'intera cella corridoio: il player NON puo'
+## schivarle, puo' solo aspettare la ritrazione (richiesta utente) — oppure
+## passarci sopra pagando il danno. Grafica: finestrella PROCEDURALE del
+## colore del muro + volto PixelLab (env/zombie_face.png) + braccia PixelLab
+## (env/zombie_arms_sheet.png) — TASK 81b, niente piu' blocco opaco.
+## Rollback: false = niente celle zombie (ZombieCells.gd si spegne).
+static var ZOMBIE_CELLS_ENABLED: bool = true
+## Numero di celle per livello: 1 (L1-3), 2 (L4-6), 3 (L7+, il massimo).
+static func zombie_cells_for_level(level: int) -> int:
+        return clampi(1 + int((level - 1) / 3.0), 1, 3)
+
+## Distanza minima (Manhattan celle) tra due celle zombie: "ben distanziate".
+const ZOMBIE_CELLS_MIN_DIST: int = 8
+## Distanza minima (Manhattan) dallo spawn del player (1,1): niente braccia
+## in faccia all'avvio del livello.
+const ZOMBIE_CELLS_MIN_DIST_SPAWN: int = 4
+## Quanto restano fuori le braccia (richiesta utente: 5 secondi).
+const ZOMBIE_ARM_OUT_MS: float = 5000.0
+## Durata estensione/ritrazione delle braccia (animazione slide).
+const ZOMBIE_EMERGE_MS: float = 450.0
+## Danno per tocco: 20% dell'energia massima (richiesta utente), arrotondato
+## con minimo 1 (pattern HAZARD_TRAP_DAMAGE_PCT: calcolato su max_energy).
+const ZOMBIE_ARM_DAMAGE_PCT: float = 0.20
+## Intervallo casuale tra un'estensione e la successiva (al livello 1; si
+## comprime leggermente col livello fino al 70%).
+const ZOMBIE_OUT_MIN_MS: float = 4000.0
+const ZOMBIE_OUT_MAX_MS: float = 10000.0
+const ZOMBIE_OUT_FAST_SCALE: float = 0.70
+## Prima estensione dopo l'avvio del livello: 3-8s.
+const ZOMBIE_FIRST_OUT_MIN_MS: float = 3000.0
+const ZOMBIE_FIRST_OUT_MAX_MS: float = 8000.0
+
+## Punti per ogni nemico congelato (come le altre pergamene evento).
+const SCROLL_FREEZE_POINTS: int = 5000
+
+## Gittata massima del raggio (in celle del labirinto). Il beam si
+## ferma al primo muro incontrato.
+const SCROLL_FREEZE_RANGE_CELLS: int = 9
+
+## Raggio di colpibilita' del beam attorno alla sua traiettoria (px):
+## un nemico e' colpito se la traiettoria passa entro questa distanza
+## dal suo centro (leggermente piu' larga del raggio di collisione
+## nemico-player per un feel generoso).
+const SCROLL_FREEZE_HIT_RADIUS_PX: float = 20.0
+
+## Passo di campionamento della traiettoria hitscan (px).
+const SCROLL_FREEZE_STEP_PX: float = 4.0
+
+## Danno del raggio al MID-BOSS (frazione HP max, come il martello).
+const SCROLL_FREEZE_MINIBOSS_DMG_PCT: float = 0.5
+
+## Stordimento del mid-boss quando il raggio lo colpisce (ms).
+const SCROLL_FREEZE_MINIBOSS_STUN_MS: int = 1000
 
 
 # ============================================================================
@@ -1186,6 +1527,20 @@ enum RelicType {
         ALCHEMIST_BOMBS = 112, ## Bombe dell'Alchimista
         # --- SPECIALE ---
         REFLECT_BOLT = 113,    ## Proiettile riflesso dalle Scaglie del Drago
+        # --- ELEMENTALI Task 61 (armi trovate nel labirinto dai non-umani) ---
+        THROWING_SWORD = 114,      ## Spade Lanciate (CAVALIERE)
+        THROWING_AXE = 115,        ## Ascia da Lancio (CAVALIERE/ORC)
+        HALBERD_THROW = 116,       ## Alabarda Turbinio (CAVALIERE)
+        FIRE_STAFF = 117,          ## Bastone Lancia-Fuoco (MAGO, brucia)
+        ICE_LANCE = 118,           ## Lancia-Ghiaccio (MAGO, congela)
+        ICE_ARROW = 119,           ## Freccia di Ghiaccio (ELFO, congela)
+        THROWN_BOULDER = 120,      ## Masso da Lancio (GOLEM)
+        GOLEM_HAMMER_THROW = 121,  ## Martello del Golem Lanciato (GOLEM)
+        BLOOD_DART = 122,          ## Dardo Sanguigno (VAMPIRO)
+        FLAME_EMBER = 123,         ## Fiammella Rapida (DRAGO, brucia)
+        FIREBALL_RED = 124,        ## Palla di Fuoco Rossa (DRAGO, brucia)
+        FLAME_BLUE = 125,          ## Fiamma Blu (DRAGO, congela)
+        FIRE_MAELSTROM = 126,      ## Cataclisma di Fiamme (DRAGO, AoE+brucia)
 }
 
 ## Colpi necessari a uccidere un nemico, per tipo di arma equipaggiata.
@@ -1212,6 +1567,22 @@ const WEAPON_HITS_TO_KILL: Dictionary = {
         RelicType.ALCHEMIST_BOMBS: 2,
         # --- Proiettile riflesso dalle Scaglie del Drago (113) ---
         RelicType.REFLECT_BOLT: 2,
+        # --- ELEMENTALI Task 61 (114..126): scala specchiata sulle umane
+        #     (4/4/3/3/2/2) — "danni diversi ma distribuiti come quelle
+        #     dell'uomo/donna" (richiesta utente). ---
+        RelicType.THROWING_SWORD: 4,
+        RelicType.THROWING_AXE: 3,
+        RelicType.HALBERD_THROW: 2,
+        RelicType.FIRE_STAFF: 3,
+        RelicType.ICE_LANCE: 2,
+        RelicType.ICE_ARROW: 3,
+        RelicType.THROWN_BOULDER: 3,
+        RelicType.GOLEM_HAMMER_THROW: 2,
+        RelicType.BLOOD_DART: 3,
+        RelicType.FLAME_EMBER: 4,
+        RelicType.FIREBALL_RED: 3,
+        RelicType.FLAME_BLUE: 3,
+        RelicType.FIRE_MAELSTROM: 2,
 }
 
 
@@ -1223,10 +1594,17 @@ const WEAPON_HITS_TO_KILL: Dictionary = {
 ## l'arma colpisce come se avesse 1 hit-to-kill in MENO (floor 2: la regola
 ## "nessuna arma one-shot" resta sacra anche potenziata).
 static func weapon_damage_for(weapon_type: int, target_max_health: int,
-                fury: bool = false) -> int:
+                fury: bool = false, char_type: int = -1) -> int:
         var hits: int = int(WEAPON_HITS_TO_KILL.get(weapon_type, 4))
         if fury:
                 hits = maxi(2, hits - 1)
+        # TASK 61 — penalita' affinita' (squadre miste): chi usa un'arma
+        # TROVATA nel labirinto fuori dal proprio archetipo colpisce a
+        # meta' danno (= hits-to-kill raddoppiati). Le reliquie dello
+        # schermo bonus restano libere (scelta consapevole del player).
+        if char_type >= 0 \
+                        and not weapon_in_affinity(weapon_type, char_type):
+                hits *= 2
         if hits < 2:
                 hits = 2  # sicurezza: mai one-shot per costruzione
         var dmg: int = int(ceil(float(target_max_health) / float(hits)))
@@ -1336,11 +1714,11 @@ const RELIC_MELEE: Array[Dictionary] = [
                 "name": "Spadone del Cavaliere", "short": "SPADONE",
                 "name_en": "Knight's Greatsword", "short_en": "GREATSWORD",
                 "color": Color(0.82, 0.86, 0.94), "power": 3, "hits": 2,
-                "shots": 33, "shape": "sector", "radius_px": 128.0,
-                "arc_deg": 120.0, "fire_cd": 320,
+                "shots": 33, "shape": "sector", "radius_px": 150.0,
+                "arc_deg": 150.0, "fire_cd": 260, "max_targets": 4,
                 "png_grip_deg": -90.0,
-                "desc": "Arco ampio (2 celle): fende tutti i nemici davanti a te.",
-                "desc_en": "Wide arc (2 tiles): cleaves every enemy in front of you.",
+                "desc": "Arco amplissimo: fende fino a 4 nemici davanti a te.",
+                "desc_en": "Huge arc: cleaves up to 4 enemies in front of you.",
         },
         {
                 "id": "axe", "type": RelicType.AXE, "family": "mischia",
@@ -1474,6 +1852,209 @@ const RELIC_RANGED: Array[Dictionary] = [
         },
 ]
 
+# ============================================================================
+# TASK 61 — ARMI ELEMENTALI per archetipo (design: ARMI_ELEMENTALI_TASK61.md)
+# ============================================================================
+# Armi che i personaggi NON-UMANI trovano nel labirinto AL POSTO delle armi
+# da fuoco. Scala specchiata sulle umane: hits-to-kill 4/3/2 e munizioni
+# 20/26/11/6 ("danni diversi ma distribuiti come quelle dell'uomo/donna").
+#
+# Flag elementali sul colpo di grazia (il colpo che ucciderebbe comunque):
+#   burn_ms > 0  -> il nemico si INFUOCA e muore (start_burning, meccanica
+#                   esistente: aura fuoco Task 21/dinamite)
+#   freeze true  -> il nemico si CONGELA in statua e muore (freeze_kill,
+#                   meccanica Task 50 del raggio congelante)
+#
+# Queste armi NON entrano nello schermo bonus (lista separata dalle 18
+# reliquie storiche): si trovano SOLO nelle celle del labirinto, secondo
+# l'affinita' dell'archetipo del player (AFFINITY_POOLS qui sotto).
+# ============================================================================
+const ELEMENTAL_WEAPONS: Array[Dictionary] = [
+        # ---------------- CAVALIERE (spade e asce da lancio) --------------
+        {
+                "id": "throwing_sword", "type": RelicType.THROWING_SWORD, "family": "distanza",
+                "name": "Spade Lanciate", "short": "SPADE",
+                "name_en": "Throwing Swords", "short_en": "SWORDS",
+                "color": Color(0.85, 0.90, 1.00), "power": 1, "hits": 4,
+                "shots": 20, "fire_cd": 140,
+                "desc": "Spade d'acciaio roteanti: rapide e leggere.",
+                "desc_en": "Spinning steel swords: quick and light.",
+        },
+        {
+                "id": "throwing_axe", "type": RelicType.THROWING_AXE, "family": "distanza",
+                "name": "Ascia da Lancio", "short": "ASCIA",
+                "name_en": "Throwing Axe", "short_en": "AXE",
+                "color": Color(0.75, 0.55, 0.30), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 170,
+                "desc": "Ascia da guerra che rotea lacerando l'aria.",
+                "desc_en": "War axe spinning through the air.",
+        },
+        {
+                "id": "halberd_throw", "type": RelicType.HALBERD_THROW, "family": "distanza",
+                "name": "Alabarda Turbinio", "short": "ALABARDA",
+                "name_en": "Whirlwind Halberd", "short_en": "HALBERD",
+                "color": Color(0.60, 0.70, 0.80), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 260,
+                "desc": "L'alabarda della guardia reale, scagliata in tuffo.",
+                "desc_en": "The royal guard's halberd, hurled headfirst.",
+        },
+        # ---------------- MAGO (bastoni, palle di magia, ghiaccio) --------
+        {
+                "id": "fire_staff", "type": RelicType.FIRE_STAFF, "family": "distanza",
+                "name": "Bastone Lancia-Fuoco", "short": "B. FUOCO",
+                "name_en": "Fire Staff", "short_en": "FIRE STAFF",
+                "color": Color(1.00, 0.50, 0.15), "power": 2, "hits": 3,
+                "shots": 26, "fire_cd": 150, "burn_ms": 30,
+                "desc": "Dardi di fiamma: il colpo finale incendia il nemico.",
+                "desc_en": "Flame darts: the killing blow sets enemies ablaze.",
+        },
+        {
+                "id": "ice_lance", "type": RelicType.ICE_LANCE, "family": "distanza",
+                "name": "Lancia-Ghiaccio", "short": "L. GHIACCIO",
+                "name_en": "Ice Lance", "short_en": "ICE LANCE",
+                "color": Color(0.55, 0.85, 1.00), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 240, "freeze": true,
+                "desc": "Lancia di ghiaccio eterno: il colpo finale congela.",
+                "desc_en": "Everfrost lance: the killing blow freezes solid.",
+        },
+        # ---------------- ELFO (archi e ghiaccio silvano) -----------------
+        {
+                "id": "ice_arrow", "type": RelicType.ICE_ARROW, "family": "distanza",
+                "name": "Freccia di Ghiaccio", "short": "F. GHIACCIO",
+                "name_en": "Ice Arrow", "short_en": "ICE ARROW",
+                "color": Color(0.70, 0.95, 1.00), "power": 2, "hits": 3,
+                "shots": 26, "fire_cd": 150, "freeze": true,
+                "desc": "Frecce di brina: il colpo finale pietrifica nel gelo.",
+                "desc_en": "Rime arrows: the killing blow freezes to ice.",
+        },
+        # ---------------- GOLEM (massi e martelli) -------------------------
+        {
+                "id": "thrown_boulder", "type": RelicType.THROWN_BOULDER, "family": "distanza",
+                "name": "Masso da Lancio", "short": "MASSO",
+                "name_en": "Thrown Boulder", "short_en": "BOULDER",
+                "color": Color(0.55, 0.45, 0.30), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 200,
+                "desc": "Un macigno scagliato: colpisce e respinge.",
+                "desc_en": "A hurled boulder: crushes and knocks back.",
+        },
+        {
+                "id": "golem_hammer_throw", "type": RelicType.GOLEM_HAMMER_THROW, "family": "distanza",
+                "name": "Martello del Golem", "short": "MARTELLO",
+                "name_en": "Golem Hammer", "short_en": "HAMMER",
+                "color": Color(0.60, 0.60, 0.65), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 270,
+                "desc": "Il martello di pietra scagliato: devastante.",
+                "desc_en": "The stone hammer, hurled: devastating.",
+        },
+        # ---------------- VAMPIRO (lame e sangue) --------------------------
+        {
+                "id": "blood_dart", "type": RelicType.BLOOD_DART, "family": "distanza",
+                "name": "Dardo Sanguigno", "short": "DARDO",
+                "name_en": "Blood Dart", "short_en": "BLOOD DART",
+                "color": Color(0.85, 0.10, 0.20), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 160, "homing": true,
+                "desc": "Dardo di sangue che insegue la preda.",
+                "desc_en": "A blood dart that hunts its prey.",
+        },
+        # ---------------- DRAGO (palle di fuoco: spec utente) --------------
+        # Fiammella piccola rapida / palla rossa media / fiamma blu
+        # congelante / cataclisma AoE: "palle di fuoco di diverso tipo e
+        # dimensioni, fuoco rosso, fuoco blu, i nemici si infuocano o si
+        # congelano e muoiono".
+        {
+                "id": "flame_ember", "type": RelicType.FLAME_EMBER, "family": "distanza",
+                "name": "Fiammella Rapida", "short": "FIAMMELLA",
+                "name_en": "Quick Ember", "short_en": "EMBER",
+                "color": Color(1.00, 0.65, 0.20), "power": 1, "hits": 4,
+                "shots": 20, "fire_cd": 90, "burn_ms": 30,
+                "desc": "Getti rapidi di fiamma: il colpo finale incendia.",
+                "desc_en": "Rapid flame jets: the killing blow ignites.",
+        },
+        {
+                "id": "fireball_red", "type": RelicType.FIREBALL_RED, "family": "distanza",
+                "name": "Palla di Fuoco Rossa", "short": "F. ROSSA",
+                "name_en": "Red Fireball", "short_en": "FIREBALL",
+                "color": Color(1.00, 0.40, 0.10), "power": 2, "hits": 3,
+                "shots": 26, "fire_cd": 150, "burn_ms": 30,
+                "desc": "Sfera incandescente: il colpo finale incendia il nemico.",
+                "desc_en": "Burning sphere: the killing blow sets enemies ablaze.",
+        },
+        {
+                "id": "flame_blue", "type": RelicType.FLAME_BLUE, "family": "distanza",
+                "name": "Fiamma Blu", "short": "F. BLU",
+                "name_en": "Blue Flame", "short_en": "BLUE FLAME",
+                "color": Color(0.30, 0.65, 1.00), "power": 2, "hits": 3,
+                "shots": 11, "fire_cd": 170, "freeze": true,
+                "desc": "Fuoco blu gelido: il colpo finale congela in statua.",
+                "desc_en": "Cold blue fire: the killing blow freezes to statue.",
+        },
+        {
+                "id": "fire_maelstrom", "type": RelicType.FIRE_MAELSTROM, "family": "distanza",
+                "name": "Cataclisma di Fiamme", "short": "CATACLISMA",
+                "name_en": "Fire Maelstrom", "short_en": "MAELSTROM",
+                "color": Color(1.00, 0.30, 0.05), "power": 5, "hits": 2,
+                "shots": 6, "fire_cd": 280, "lob_px": 160.0,
+                "radius_px": 88.0, "burn_ms": 30,
+                "desc": "Palla di fuoco gigante a parabola: esplode ad area.",
+                "desc_en": "Giant lobbed fireball: explodes in an area.",
+        },
+]
+
+## Pool per archetipo: id delle armi che quel personaggio TROVA nel
+## labirinto. "@firearm" = le 4 armi da fuoco classiche. In squadra mista
+## il labirinto spawna l'UNIONE dei pool dei player; usare un'arma fuori
+## affinita' dimezza il danno (weapon_damage_for, Task 61).
+## Pool con soli id GIÀ definiti (reliquie storiche o ELEMENTAL_WEAPONS):
+## il mirror e' ARCO->PISTOL(4), PUGNALI/BASTONI->LASER(3),
+## BALESTRA/BOMBE->SHOTGUN-ROCKET(2).
+const AFFINITY_POOLS: Dictionary = {
+        CharacterType.HERO_M: ["@firearm"],
+        CharacterType.HERO_F: ["@firearm"],
+        CharacterType.KNIGHT: ["throwing_sword", "throwing_axe",
+                        "crossbow", "halberd_throw"],
+        CharacterType.MAGE: ["arcane_orb", "storm_rod",
+                        "fire_staff", "ice_lance"],
+        CharacterType.ELF: ["ranger_bow", "twin_daggers",
+                        "ice_arrow", "crossbow"],
+        CharacterType.ORC: ["twin_daggers", "throwing_axe",
+                        "alchemist_bombs"],
+        CharacterType.GOLEM: ["thrown_boulder", "alchemist_bombs",
+                        "golem_hammer_throw"],
+        CharacterType.VAMPIRE: ["twin_daggers", "blood_dart",
+                        "crossbow"],
+        CharacterType.DRAGON: ["flame_ember", "fireball_red",
+                        "flame_blue", "fire_maelstrom"],
+}
+
+## Def elementale per id ({} se assente). Cerca in ELEMENTAL_WEAPONS.
+static func get_elemental_by_id(weap_id: String) -> Dictionary:
+        for def in ELEMENTAL_WEAPONS:
+                if str(def.get("id", "")) == weap_id:
+                        return def
+        return {}
+
+## True se il tipo d'arma e' nel pool di affinita' dell'archetipo.
+## REGOLE (le reliquie dello schermo bonus restano SEMPRE libere: sono
+## una scelta consapevole del player e NON vengono mai penalizzate):
+##   - reliquie STORICHE (101..113): mai penalizzate (bonus screen);
+##   - armi da fuoco (0..3): penalizzate solo se il char non e' umano;
+##   - ELEMENTALI (114+, trovate nel labirinto): penalizzate se l'id
+##     non e' nel pool dell'archetipo (squadra mista: drago che usa
+##     la freccia di ghiaccio dell'elfo, ecc.).
+static func weapon_in_affinity(weapon_type: int, char_type: int) -> bool:
+        var pool: Array = AFFINITY_POOLS.get(char_type, [])
+        if pool.is_empty():
+                return true   # archetipo senza pool: nessuna penalita'
+        # 1) Reliquie storiche (e proiettile riflesso): bonus screen, libere.
+        if weapon_type >= RelicType.SWORD and weapon_type <= RelicType.REFLECT_BOLT:
+                return true
+        # 2) Armi da fuoco: in affinita' solo per gli umani ("@firearm").
+        if not is_relic_weapon(weapon_type):
+                return pool.has("@firearm")
+        # 3) Elementali del labirinto (114+): affinita' per id nel pool.
+        var def: Dictionary = get_relic_def(weapon_type)
+        return pool.has(str(def.get("id", "")))
+
 ## ARMATURE — equipaggiabili (slot dedicato, NON occupano l'arma):
 ##   kind: absorb | reflect | thorns | regen | aura | fury
 ##   charges: durabilita' iniziale (si consuma secondo il kind)
@@ -1534,13 +2115,19 @@ const RELIC_ARMORS: Array[Dictionary] = [
 ]
 
 ## Definizione reliquia per type ({} se non e' una reliquia). Ricerca
-## lineare nelle 12 armi + il proiettile riflesso: chiamata raramente e su
-## liste minuscole (niente dict costanti mutabili, vietate in GDScript).
+## lineare nelle 12 armi + il proiettile riflesso + le elementali Task 61
+## (chiamata raramente e su liste minuscole: niente dict costanti
+## mutabili, vietate in GDScript).
 static func get_relic_def(type: int) -> Dictionary:
         for def in RELIC_MELEE:
                 if int(def.get("type", 0)) == type:
                         return def
         for def in RELIC_RANGED:
+                if int(def.get("type", 0)) == type:
+                        return def
+        # TASK 61 — le armi elementali passano da tutti i percorsi delle
+        # reliquie (HUD, presa in mano, cooldown, knockback, nome).
+        for def in ELEMENTAL_WEAPONS:
                 if int(def.get("type", 0)) == type:
                         return def
         if type == RelicType.REFLECT_BOLT:

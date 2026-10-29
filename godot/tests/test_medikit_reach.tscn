@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testmedikitreach"]
+
+[ext_resource type="Script" path="res://tests/test_medikit_reach.gd" id="1"]
+
+[node name="TestMedikitReach" type="Node"]
+script = ExtResource("1")

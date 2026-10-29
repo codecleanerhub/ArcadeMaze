@@ -20,6 +20,32 @@ extends Node
 var _texture_cache: Dictionary = {}
 
 
+## TASK 48 (pixellab-v2) — override PNG delle texture ambientali.
+## Se esiste assets/sprites/env/{name}.png (generato PixelLab v2,
+## 128x128, stile gotico coerente coi boss/player rigenerati) viene
+## usato AL POSTO del disegno procedurale. Rollback: cancellare il PNG
+## (o rinominare la cartella env/) e il fallback procedurale riprende.
+func _try_png_override(name: String) -> Texture2D:
+        var path := "res://assets/sprites/env/%s.png" % name
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        var img := Image.new()
+        if img.load(abs_path) != OK:
+                return null
+        return ImageTexture.create_from_image(img)
+
+
+func _cached_or_png(key: String, maker: Callable) -> Texture2D:
+        if _texture_cache.has(key):
+                return _texture_cache[key]
+        var tex: Texture2D = _try_png_override(key)
+        if tex == null:
+                tex = maker.call()
+        _texture_cache[key] = tex
+        return tex
+
+
 # ============================================================================
 # API pubblica
 # ============================================================================
@@ -33,58 +59,106 @@ func get_treasure_texture(treasure_type: int) -> Texture2D:
                 1: tex = _make_gold_pile()   # TRES_GOLD
                 2: tex = _make_chest()       # TRES_CHEST
                 3: tex = _make_gem()         # TRES_GEM
-                4: tex = _make_cup()         # TRES_CUP
+                4: tex = _make_ruby()        # TRES_RUBY (ex coppa, Task 65c)
                 _: tex = _make_crown()
         _texture_cache[key] = tex
         return tex
 
 
 func get_coffin_texture() -> Texture2D:
-        if _texture_cache.has("coffin"):
-                return _texture_cache["coffin"]
-        var tex := _make_coffin()
-        _texture_cache["coffin"] = tex
-        return tex
+        return _cached_or_png("coffin", _make_coffin)
 
 
 func get_column_texture() -> Texture2D:
-        if _texture_cache.has("column"):
-                return _texture_cache["column"]
-        var tex := _make_column()
-        _texture_cache["column"] = tex
-        return tex
+        return _cached_or_png("column", _make_column)
 
 
 func get_rubble_texture() -> Texture2D:
-        if _texture_cache.has("rubble"):
-                return _texture_cache["rubble"]
-        var tex := _make_rubble()
-        _texture_cache["rubble"] = tex
-        return tex
+        return _cached_or_png("rubble", _make_rubble)
 
 
 func get_skull_texture() -> Texture2D:
-        if _texture_cache.has("skull"):
-                return _texture_cache["skull"]
-        var tex := _make_skull()
-        _texture_cache["skull"] = tex
-        return tex
+        return _cached_or_png("skull", _make_skull)
 
 
 func get_cobweb_texture() -> Texture2D:
-        if _texture_cache.has("cobweb"):
-                return _texture_cache["cobweb"]
-        var tex := _make_cobweb()
-        _texture_cache["cobweb"] = tex
-        return tex
+        return _cached_or_png("cobweb", _make_cobweb)
 
 
 func get_torch_texture() -> Texture2D:
-        if _texture_cache.has("torch"):
-                return _texture_cache["torch"]
-        var tex := _make_wall_torch()
-        _texture_cache["torch"] = tex
-        return tex
+        return _cached_or_png("torch", _make_wall_torch)
+
+
+# ============================================================================
+# TASK 60a — URNE decorative del labirinto (PixelLab PNG-first).
+# 3 varianti con le STESSE palette procedurali ereditate dal C++
+# (pietra grigia / bronzo / marmo scuro): idx 0 = pietra, 1 = bronzo,
+# 2 = marmo. Il fallback procedurale resta in Maze.gd _draw_urn
+# (rollback = cancellare i PNG env/urn_*.png).
+# ============================================================================
+
+func get_urn_texture(idx: int) -> Texture2D:
+        var key: String
+        match idx:
+                0: key = "urn_stone"
+                1: key = "urn_bronze"
+                _: key = "urn_marble"
+        return _cached_or_png(key, _make_no_texture)
+
+
+# ============================================================================
+# TASK 50 — ARCHITETTURE ARENA BLOODBORNE (props PixelLab 256x256).
+# 10 props gotici ispirati a Yharnam, piu' ricchi e grandi dei 6 del
+# Task 48 (128x128). Fallback procedurale assente: se il PNG manca il prop
+# semplicemente non viene disegnato (rollback = cancellare il PNG).
+# NOTA CACHE (bug fix Task 50): usare _cached_or_png, MAI _try_png_override
+# diretto — senza cache il BossRoom (che ridisegna ogni frame) creerebbe
+# ~1000 ImageTexture/secondo esaurendo la VRAM: le texture nuove falliscono
+# l'upload e renderizzano come quadrati bianchi pieni.
+# ============================================================================
+
+func _make_no_texture() -> Texture2D:
+        return null
+
+
+func get_column_ornate_texture() -> Texture2D:
+        return _cached_or_png("column_ornate", _make_no_texture)
+
+
+func get_arch_texture() -> Texture2D:
+        return _cached_or_png("arch", _make_no_texture)
+
+
+func get_statue_texture() -> Texture2D:
+        return _cached_or_png("statue", _make_no_texture)
+
+
+func get_chandelier_texture() -> Texture2D:
+        return _cached_or_png("chandelier", _make_no_texture)
+
+
+func get_altar_texture() -> Texture2D:
+        return _cached_or_png("altar", _make_no_texture)
+
+
+func get_obelisk_texture() -> Texture2D:
+        return _cached_or_png("obelisk", _make_no_texture)
+
+
+func get_gargoyle_texture() -> Texture2D:
+        return _cached_or_png("gargoyle", _make_no_texture)
+
+
+func get_gate_texture() -> Texture2D:
+        return _cached_or_png("gate", _make_no_texture)
+
+
+func get_candelabra_texture() -> Texture2D:
+        return _cached_or_png("candelabra", _make_no_texture)
+
+
+func get_sarcophagus_texture() -> Texture2D:
+        return _cached_or_png("sarcophagus", _make_no_texture)
 
 
 func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
@@ -92,14 +166,102 @@ func get_weapon_pickup_texture(weapon_type: int) -> Texture2D:
         if _texture_cache.has(key):
                 return _texture_cache[key]
         var tex: Texture2D = null
+        # TASK 51 (P7): RIDISEGNO ARMI PixelLab — PNG in sprites/weapons/
+        # ha la precedenza; il disegno procedurale resta come fallback
+        # (rollback: cancellare i PNG).
+        var wpn_name: String = ""
         match weapon_type:
-                0: tex = _make_weapon_pistol()
-                1: tex = _make_weapon_shotgun()
-                2: tex = _make_weapon_rocket()
-                3: tex = _make_weapon_laser()
-                _: tex = _make_weapon_pistol()
+                0: wpn_name = "pistol"
+                1: wpn_name = "shotgun"
+                2: wpn_name = "rocket"
+                3: wpn_name = "laser"
+        if wpn_name != "":
+                var wpath: String = "res://assets/sprites/weapons/weapon_%s.png" % wpn_name
+                var wabs: String = ProjectSettings.globalize_path(wpath)
+                if FileAccess.file_exists(wabs):
+                        var wimg := Image.new()
+                        if wimg.load(wabs) == OK:
+                                # TASK 50: anche le armi PNG vengono
+                                # NORMALIZZATE (75% canvas): dimensioni
+                                # uniformi per tutte le armi a terra.
+                                tex = ImageTexture.create_from_image(
+                                                _normalize_weapon_content(wimg))
+        # TASK 61 — ARMI ELEMENTALI/reliquie a terra: PNG relics/{id}.png
+        # (asse/lancia/lama/vampire esistono gia'; i PNG mancanti del set
+        # nuovo arrivano col Task 61c; fallback = quadrato colorato in
+        # Maze._render_weapon_cell). Normalizzazione 75% come le altre.
+        if tex == null and weapon_type > 100:
+                var rdef: Dictionary = GameConstants.get_relic_def(weapon_type)
+                if not rdef.is_empty():
+                        var rid: String = str(rdef.get("id", ""))
+                        var rpath: String = "res://assets/sprites/relics/%s.png" % rid
+                        var rabs: String = ProjectSettings.globalize_path(rpath)
+                        if FileAccess.file_exists(rabs):
+                                var rimg := Image.new()
+                                if rimg.load(rabs) == OK:
+                                        tex = ImageTexture.create_from_image(
+                                                        _normalize_weapon_content(rimg))
+        if tex == null:
+                match weapon_type:
+                        0: tex = _finalize(_normalize_weapon_content(_make_weapon_pistol()))
+                        1: tex = _finalize(_normalize_weapon_content(_make_weapon_shotgun()))
+                        2: tex = _finalize(_normalize_weapon_content(_make_weapon_rocket()))
+                        3: tex = _finalize(_normalize_weapon_content(_make_weapon_laser()))
+                        _: tex = _finalize(_normalize_weapon_content(_make_weapon_pistol()))
         _texture_cache[key] = tex
         return tex
+
+
+## TASK 50 (armi troppo grandi): normalizza il CONTENUTO della texture arma.
+## I generatori procedurali disegnano armi con bbox molto diversi (pistola
+## ~46px di 128, razzo ~95px) e i PNG PixelLab del TASK 51 hanno canvas
+## ancora diversi (216-238px): il renderer non puo' compensare con un
+## multiplier per-tipo senza sbagliare. Qui si ritaglia l'alpha-bbox e si
+## riscala la side piu' lunga al 75% del lato del CANVAS (relativo: vale
+## per 128 come per 238), centrato: OGNI arma occupa esattamente il 75% del
+## proprio rettangolo di draw, quindi a schermo le dimensioni visive sono
+## identiche per tutte (~48px, come martello/shotgun dello screenshot).
+const WEAPON_NORM_FRAC: float = 0.75
+
+
+func _normalize_weapon_content(src: Image) -> Image:
+        var w: int = src.get_width()
+        var h: int = src.get_height()
+        var side_max: int = maxi(w, h)
+        var target: int = int(round(float(side_max) * WEAPON_NORM_FRAC))
+        # alpha-bbox del CONTENUTO OPACO (soglia 0.5: l'ombra ellittica
+        # semitrasparente a terra NON gonfia il bbox — altrimenti la pistola,
+        # che ha un'ombra larga e un corpo piccolo, risultava troppo piccola)
+        var min_x: int = w
+        var min_y: int = h
+        var max_x: int = -1
+        var max_y: int = -1
+        for y in h:
+                for x in w:
+                        if src.get_pixel(x, y).a > 0.5:
+                                if x < min_x: min_x = x
+                                if x > max_x: max_x = x
+                                if y < min_y: min_y = y
+                                if y > max_y: max_y = y
+        if max_x < 0 or max_y < 0:
+                return src
+        var bw: int = max_x - min_x + 1
+        var bh: int = max_y - min_y + 1
+        var side: int = maxi(bw, bh)
+        if side <= 0:
+                return src
+        var scale: float = float(target) / float(side)
+        var nw: int = maxi(1, int(round(bw * scale)))
+        var nh: int = maxi(1, int(round(bh * scale)))
+        var out := Image.create(w, h, false, Image.FORMAT_RGBA8)
+        out.fill(Color(0, 0, 0, 0))
+        # blit scalato centrato (nearest: pixel art, niente smoothing)
+        var ox: int = (w - nw) / 2
+        var oy: int = (h - nh) / 2
+        var tmp := src.get_region(Rect2i(min_x, min_y, bw, bh))
+        tmp.resize(nw, nh, Image.INTERPOLATE_NEAREST)
+        out.blend_rect(tmp, Rect2i(0, 0, nw, nh), Vector2i(ox, oy))
+        return out
 
 
 # ============================================================================
@@ -470,32 +632,59 @@ func _make_gem() -> Texture2D:
 
 
 # Coppa/calice d'oro - calice con coppa superiore
-func _make_cup() -> Texture2D:
+# TASK 65c: il tesoro-coppa e' stato sostituito dal RUBINO (richiesta
+# utente: "sembra una coppa ma non deve vincere nulla, rendi un altro tipo
+# di tesoro, un rubino magari"). Fallback procedurale coerente: gemma a
+# silhouette classica (corona esagonale + padiglione a punta).
+func _make_ruby() -> Texture2D:
         var img := _new_image(128)
         # Ombra base
-        _fill_ellipse(img, 64, 100, 18, 4, Color(0, 0, 0, 0.4))
-        # Base (piattello)
-        _fill_ellipse(img, 64, 95, 18, 6, Color(0.85, 0.65, 0.0))
-        _fill_ellipse(img, 64, 93, 18, 4, Color(1.0, 0.78, 0.0))
-        # Stelo (sottile)
-        _fill_rect(img, 60, 70, 8, 25, Color(1.0, 0.78, 0.0))
-        _fill_rect(img, 61, 70, 2, 25, Color(1.0, 0.9, 0.3))  # highlight
-        # Nodo centrale (sfera decorativa)
-        _fill_circle(img, 64, 70, 6, Color(1.0, 0.78, 0.0))
-        _fill_circle(img, 64, 70, 4, Color(1.0, 0.84, 0.1))
-        _fill_circle(img, 62, 68, 2, Color(1.0, 0.95, 0.5))  # highlight
-        # Coppa superiore (calice)
-        _fill_ellipse(img, 64, 50, 22, 12, Color(0.85, 0.65, 0.0))  # esterno
-        _fill_ellipse(img, 64, 48, 20, 10, Color(1.0, 0.78, 0.0))  # interno oro
-        _fill_ellipse(img, 64, 46, 18, 6, Color(0.7, 0.5, 0.0))    # interno scuro (vino)
-        # Bordo superiore
-        _fill_ellipse(img, 64, 44, 22, 3, Color(1.0, 0.84, 0.1))   # bordo
-        # Decorazioni (gemme sul calice)
-        _fill_circle(img, 54, 50, 2, Color(0.9, 0.1, 0.1))  # rubino
-        _fill_circle(img, 64, 52, 2, Color(0.1, 0.3, 0.9))  # zaffiro
-        _fill_circle(img, 74, 50, 2, Color(0.1, 0.8, 0.3))  # smeraldo
-        # Highlight coppa
-        _fill_ellipse(img, 56, 46, 4, 2, Color(1.0, 0.95, 0.5))
+        _fill_ellipse(img, 64, 102, 16, 4, Color(0, 0, 0, 0.4))
+        var ruby := Color(0.82, 0.08, 0.18)
+        var ruby_dark := Color(0.5, 0.02, 0.1)
+        var ruby_mid := Color(0.93, 0.25, 0.32)
+        var ruby_light := Color(1.0, 0.62, 0.62)
+        # Padiglione (parte bassa a punta)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(38, 60), Vector2(90, 60), Vector2(64, 104)
+        ]), ruby)
+        # Facce laterali padiglione
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(38, 60), Vector2(64, 60), Vector2(64, 104)
+        ]), ruby_dark)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(64, 60), Vector2(78, 60), Vector2(64, 86)
+        ]), ruby_mid)
+        # Corona (parte alta)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(44, 42), Vector2(84, 42), Vector2(90, 60),
+                Vector2(38, 60)
+        ]), ruby_mid)
+        # Tavola superiore
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(52, 30), Vector2(76, 30), Vector2(84, 42),
+                Vector2(44, 42)
+        ]), ruby_dark)
+        # Spigoli corona
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(44, 42), Vector2(52, 30), Vector2(52, 42)
+        ]), ruby)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(84, 42), Vector2(76, 30), Vector2(76, 42)
+        ]), ruby)
+        # Facette corona (triangoli chiaro/scuro alternati)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(44, 42), Vector2(64, 42), Vector2(54, 60)
+        ]), ruby)
+        _fill_polygon(img, PackedVector2Array([
+                Vector2(64, 42), Vector2(84, 42), Vector2(74, 60)
+        ]), ruby_dark)
+        # Highlight a stella sulla tavola
+        _fill_circle(img, 58, 35, 3, ruby_light)
+        _fill_circle(img, 60, 33, 2, Color(1.0, 0.9, 0.9))
+        # Scintille
+        _fill_circle(img, 46, 52, 2, ruby_light)
+        _fill_circle(img, 80, 66, 2, ruby_light)
         return _finalize(img)
 
 
@@ -711,7 +900,7 @@ func _make_wall_torch() -> Texture2D:
 # ============================================================================
 # GENERATORI: Armi pickup (4 tipi) - dettagliate
 # ============================================================================
-func _make_weapon_pistol() -> Texture2D:
+func _make_weapon_pistol() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 95, 24, 4, Color(0, 0, 0, 0.4))
@@ -738,10 +927,10 @@ func _make_weapon_pistol() -> Texture2D:
         ], Color(0.4, 0.4, 0.45))
         # Mira (pallino rosso)
         _fill_circle(img, 70, 53, 2, Color(0.9, 0.1, 0.1))
-        return _finalize(img)
+        return img
 
 
-func _make_weapon_shotgun() -> Texture2D:
+func _make_weapon_shotgun() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 100, 35, 5, Color(0, 0, 0, 0.4))
@@ -767,10 +956,10 @@ func _make_weapon_shotgun() -> Texture2D:
         _fill_rect(img, 35, 65, 20, 1, Color(0.6, 0.4, 0.2))
         # Grilletto
         _fill_rect(img, 68, 65, 3, 12, Color(0.5, 0.5, 0.55))
-        return _finalize(img)
+        return img
 
 
-func _make_weapon_rocket() -> Texture2D:
+func _make_weapon_rocket() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 100, 35, 5, Color(0, 0, 0, 0.4))
@@ -797,10 +986,10 @@ func _make_weapon_rocket() -> Texture2D:
         _fill_rect(img, 65, 75, 3, 10, Color(0.5, 0.5, 0.55))
         # Mirino (ottone)
         _fill_circle(img, 70, 47, 3, Color(0.85, 0.7, 0.2))
-        return _finalize(img)
+        return img
 
 
-func _make_weapon_laser() -> Texture2D:
+func _make_weapon_laser() -> Image:
         var img := _new_image(128)
         # Ombra
         _fill_ellipse(img, 64, 95, 30, 4, Color(0, 0, 0, 0.4))
@@ -828,7 +1017,7 @@ func _make_weapon_laser() -> Texture2D:
         _fill_polygon(img, [
                 Vector2(60, 60), Vector2(72, 60), Vector2(74, 85), Vector2(58, 85)
         ], Color(0.2, 0.2, 0.25))
-        return _finalize(img)
+        return img
 
 
 # ============================================================================

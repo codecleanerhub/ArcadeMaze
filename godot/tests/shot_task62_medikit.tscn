@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://testtask62med"]
+
+[ext_resource type="Script" path="res://tests/shot_task62_medikit.gd" id="1"]
+
+[node name="ShotTask62Medikit" type="Node2D"]
+script = ExtResource("1")

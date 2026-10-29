@@ -1,0 +1,19 @@
+{
+ "id": "065fa555-9075-43d7-abb1-bec0e40341bf",
+ "name": "arcade-char_dragon-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A full-body, low top-down perspective of a small, stout quadrupedal dragon with a heroic stance. The dragon features deep crimson scales contrasting with pale, slate-grey underbelly plating. It is outfitted in intricate, polished steel plate barding that covers the chest and head, featuring sharp, gothic-inspired filigree. A vivid, blood-red velvet caparison is draped over its back, secured with ornate gold trim that catches the light. The dragon has small, leathery bat-like wings folded neatly against its shoulders and a long, muscular tail that curves elegantly behind it. The face displays a determined, friendly expression with bright, alert eyes. High-contrast shading defines the muscular form, with crisp, medium-weight outlines and subtle, sharp highlights on the metallic armor surfaces to emphasize the material texture.",
+ "created_at": "2026-10-22T19:43:55.651153+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "8d617e56-096f-440f-b76b-2b4bddecd0b3",
+   "animation_type": "custom-The dragon knight executes a c"
+  }
+ ]
+}

@@ -6,9 +6,12 @@
 ##   C. PLAYER legacy: flag OFF -> ricade sullo sheet SD (frame 64px, scala 1.3)
 ##      [rollback garantito]
 ##   D. RUOTA SELEZIONE: texture XHD caricate (larghezza 1024)
-##   E. BOSS: DeformableSprite su sheet XHD (texture 1024x256, sub_rect 256,
-##      grid 12x12, filtro LINEAR) + profili arti assegnati per tutti i 17 tipi
-##   F. BOSS legacy: flag OFF -> sheet SD (sub_rect 64, grid 8x8) [rollback]
+##   E. BOSS: DeformableSprite su sheet XHD PixelLab v2 (texture 1536x512
+##      o 1536x768 = griglia 6x2/6x3 frame @ 256px, sub_rect 256,
+##      grid 16x16, filtro LINEAR) + profili arti per tutti i 17 tipi
+##      + rilevamento frame TASK 46 coerente (cols=6, rows=2/3)
+##   F. BOSS legacy: flag OFF -> sheet SD (384x128/384x192, sub_rect 64,
+##      grid 8x8) [rollback]
 ##   G. DEFORMABLE SPRITE: mesh valida per OGNI LimbProfile (nessun crash,
 ##      vertici attesi, offset arti non nulli a metà frame)
 ##   H. PROIETTILI: _draw() tematico per TUTTI i 17 BossProjKind senza crash
@@ -182,9 +185,20 @@ func _phase_e_boss_xhd() -> void:
                         remove_child(b); b.queue_free()
                         continue
                 var tex: Texture2D = b.deform_sprite.texture
-                if tex.get_width() != 1024:
-                        _fail("boss tipo %d: texture XHD attesa 1024, avuta %d"
+                # TASK 69: sheet boss PixelLab v2 = griglie 6x2/6x3 di frame
+                # 256px -> larghezza SEMPRE 1536, altezza 512 (2 righe) o
+                # 768 (3 righe: idle/attack/walk). Era 1024x256 pre-v2.
+                if tex.get_width() != 1536:
+                        _fail("boss tipo %d: texture XHD attesa 1536, avuta %d"
                                         % [t, tex.get_width()])
+                var th: int = tex.get_height()
+                if th != 512 and th != 768:
+                        _fail("boss tipo %d: altezza XHD attesa 512/768, avuta %d"
+                                        % [t, th])
+                # TASK 46: rilevamento frame reali coerente con la griglia v2
+                if b._frame_cols != 6 or b._frame_rows != th / 256:
+                        _fail("boss tipo %d: frame grid %dx%d != attesa 6x%d"
+                                        % [t, b._frame_cols, b._frame_rows, th / 256])
                 if b.deform_sprite.sub_rect.size.x != 256.0:
                         _fail("boss tipo %d: sub_rect XHD errata %s"
                                         % [t, b.deform_sprite.sub_rect.size])
@@ -198,8 +212,9 @@ func _phase_e_boss_xhd() -> void:
                 # update_step con XHD: scala = size/256
                 var out: Array = []
                 b.update_step(500.0, 500.0, 16, out)
-                _ok("boss tipo %d: XHD ok (tex %d, sub_rect %.0f, grid %d, profilo %d, scala %.3f)"
-                                % [b.boss_type, tex.get_width(), b.deform_sprite.sub_rect.size.x,
+                _ok("boss tipo %d: XHD ok (tex %dx%d, grid frame %dx%d, sub_rect %.0f, grid %d, profilo %d, scala %.3f)"
+                                % [b.boss_type, tex.get_width(), th, b._frame_cols,
+                                   b._frame_rows, b.deform_sprite.sub_rect.size.x,
                                    b.deform_sprite.grid_w, prof, b.size / float(b._frame_px)])
                 remove_child(b)
                 b.queue_free()
@@ -214,13 +229,16 @@ func _phase_f_boss_legacy() -> void:
         add_child(b)
         b.setup(4, 1920, 1080)
         b._draw()
-        if b.deform_loaded and b.deform_sprite.texture.get_width() == 256 \
+        if b.deform_loaded and b.deform_sprite.texture.get_width() == 384 \
+                        and (b.deform_sprite.texture.get_height() == 128
+                                        or b.deform_sprite.texture.get_height() == 192) \
                         and b.deform_sprite.sub_rect.size.x == 64.0 \
                         and b.deform_sprite.grid_w == 8:
-                _ok("rollback boss: sheet SD 256x64, sub_rect 64, grid 8 (identico a pre-Task 22)")
+                _ok("rollback boss: sheet SD v2 384x128/192, sub_rect 64, grid 8")
         else:
-                _fail("rollback boss: tex %d sub_rect %s grid %d" % [
+                _fail("rollback boss: tex %dx%d sub_rect %s grid %d" % [
                         b.deform_sprite.texture.get_width(),
+                        b.deform_sprite.texture.get_height(),
                         b.deform_sprite.sub_rect.size, b.deform_sprite.grid_w])
         # un update_step con il flag spento deve lasciare LP_NONE
         var out: Array = []

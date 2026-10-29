@@ -12,10 +12,12 @@ extends Control
 
 const C = preload("res://scripts/core/GameConstants.gd")
 
-@export var color_title: Color = Color(0.95, 0.82, 0.35)
-@export var color_header: Color = Color(0.78, 0.62, 0.20)
-@export var color_row: Color = Color(0.92, 0.88, 0.78)
-@export var color_row_top: Color = Color(1.0, 0.84, 0.3)
+# TASK 78 — palette ORO MEDIEVALE (stessa del logo del titolo in font
+# Goth And Gothic): titolo e intestazioni in oro/bronzo, righe in osso.
+@export var color_title: Color = Color(0.941, 0.780, 0.373)    # oro caldo
+@export var color_header: Color = Color(0.615, 0.443, 0.180)   # bronzo invecchiato
+@export var color_row: Color = Color(0.92, 0.88, 0.78)         # osso (leggibilita')
+@export var color_row_top: Color = Color(0.980, 0.820, 0.450)  # oro chiaro
 @export var color_empty: Color = Color(0.55, 0.50, 0.45)
 
 # Se true, questa istanza è stata aperta dallo standby del menu (alternanza
@@ -23,6 +25,9 @@ const C = preload("res://scripts/core/GameConstants.gd")
 var from_standby: bool = false
 
 var _bg_texture: Texture2D = null
+# TASK 78: header "HALL OF FAME" ORO medievale (font Goth And Gothic,
+# stesso stile del logo del titolo); fallback al testo procedurale se il PNG manca.
+var _title_logo: Texture2D = null
 var _time: float = 0.0
 var _standby_timer: float = 0.0
 var _entries: Array = []
@@ -41,6 +46,11 @@ func _ready() -> void:
                 var _img := Image.new()
                 if _img.load(_abs) == OK:
                         _bg_texture = ImageTexture.create_from_image(_img)
+        var _tl_abs := ProjectSettings.globalize_path("res://assets/ui/header_halloffame.png")
+        if FileAccess.file_exists(_tl_abs):
+                var _tl_img := Image.new()
+                if _tl_img.load(_tl_abs) == OK:
+                        _title_logo = ImageTexture.create_from_image(_tl_img)
         _entries = HallOfFameData.load_entries()
         # FIX (Hall of Fame): evidenzia la voce appena salvata (se richiesta)
         # e resetta il flag di apertura da standby.
@@ -108,6 +118,10 @@ func _go_back() -> void:
 
 func _draw() -> void:
         var font := get_theme_default_font()
+        # TASK 78: font medievale Goth And Gothic per il titolo testuale di
+        # fallback (le righe della classifica restano col font leggibile).
+        var gf: FontFile = GameConstants.gothic_font()
+        var title_font: Font = gf if gf != null else font
         var vp: Vector2 = size
         var cx: float = vp.x * 0.5
 
@@ -124,12 +138,30 @@ func _draw() -> void:
         # --- Overlay scuro per leggibilità ---
         draw_rect(Rect2(0, 0, vp.x, vp.y), Color(0.0, 0.0, 0.0, 0.45), true)
 
-        # --- Titolo con pulsazione dorata ---
+        # --- Titolo (TASK 78: logo oro medievale Goth And Gothic, fallback procedurale) ---
         # TASK 44: "HALL OF FAME" resta in inglese in entrambe le lingue
         # (termine arcade usato anche in Italia, richiesta utente).
         var title_pulse: float = 1.0 + 0.03 * sin(_time * 2.0)
-        draw_string(font, Vector2(cx - 450, 120), I18n.t("menu.hall_of_fame"),
-                HORIZONTAL_ALIGNMENT_CENTER, 900, int(58 * title_pulse), color_title)
+        if _title_logo != null:
+                # TASK 78: il nuovo header e' piu' largo che alto (aspect ~7:1):
+                # la larghezza deriva dal CAP di ALTEZZA (110px) come prima,
+                # con cap di larghezza per non sconfinare nel pannello sotto.
+                var lh: float = 110.0
+                var lw: float = lh * float(_title_logo.get_width()) / maxf(_title_logo.get_height(), 1.0)
+                if lw > vp.x * 0.6:
+                        lw = vp.x * 0.6
+                        lh = lw * float(_title_logo.get_height()) / maxf(_title_logo.get_width(), 1.0)
+                var lx: float = cx - lw * 0.5
+                var ly: float = 118.0 - lh * 0.5
+                # alone AMBRATO pulsante dietro il logo
+                var glow_a: float = 0.10 + 0.05 * sin(_time * 1.7)
+                draw_circle(Vector2(cx, 118.0), maxf(lw, lh) * 0.42,
+                                Color(0.55, 0.38, 0.10, glow_a))
+                draw_texture_rect(_title_logo, Rect2(lx, ly, lw, lh), false,
+                                Color(1, 1, 1, 0.93 + 0.07 * sin(_time * 1.9)))
+        else:
+                draw_string(title_font, Vector2(cx - 450, 120), I18n.t("menu.hall_of_fame"),
+                        HORIZONTAL_ALIGNMENT_CENTER, 900, int(58 * title_pulse), color_title)
         # Ornamenti (linea + rombo, come MainMenu)
         var orn_y: float = 148.0
         draw_rect(Rect2(cx - 330, orn_y - 1, 280, 2), color_header)
@@ -140,10 +172,10 @@ func _draw() -> void:
         ])
         draw_colored_polygon(dpts, color_header)
 
-        # --- Pannello classifica (pergamena scura) ---
+        # --- Pannello classifica (pergamena scura TASK 78: bruno/oro) ---
         var panel_rect := Rect2(cx - 560, 180, 1120, 700)
-        draw_rect(panel_rect, Color(0.06, 0.045, 0.03, 0.82), true)
-        draw_rect(panel_rect, Color(0.55, 0.39, 0.20), false, 5.0)
+        draw_rect(panel_rect, Color(0.055, 0.038, 0.016, 0.85), true)
+        draw_rect(panel_rect, Color(0.615, 0.443, 0.180), false, 5.0)
 
         # --- Intestazione colonne (TASK 44: localizzate) ---
         var head_y: float = 248.0
@@ -155,7 +187,7 @@ func _draw() -> void:
                 HORIZONTAL_ALIGNMENT_RIGHT, 260, 24, color_header)
         draw_string(font, Vector2(cx + 300, head_y), I18n.t("hof.level"),
                 HORIZONTAL_ALIGNMENT_RIGHT, 200, 24, color_header)
-        draw_rect(Rect2(cx - 500, head_y + 10, 1000, 2), Color(0.55, 0.39, 0.20, 0.8), true)
+        draw_rect(Rect2(cx - 500, head_y + 10, 1000, 2), Color(0.615, 0.443, 0.180, 0.8), true)
 
         # --- Righe della classifica ---
         var row_y: float = head_y + 56.0
@@ -179,9 +211,9 @@ func _draw() -> void:
                 if is_highlight:
                         var glow: float = 0.5 + 0.5 * sin(_time * 4.0)
                         draw_rect(Rect2(cx - 520, y - 26, 1040, 44),
-                                Color(0.78, 0.62, 0.20, 0.10 + 0.10 * glow), true)
+                                Color(0.75, 0.55, 0.16, 0.12 + 0.12 * glow), true)
                         draw_rect(Rect2(cx - 520, y - 26, 1040, 44),
-                                Color(1.0, 0.84, 0.3, 0.5 * glow + 0.3), false, 2.0)
+                                Color(1.0, 0.87, 0.42, 0.5 * glow + 0.3), false, 2.0)
                 # Rango (medaglia per il top 3)
                 var rank_col: Color = row_col
                 if i == 0:

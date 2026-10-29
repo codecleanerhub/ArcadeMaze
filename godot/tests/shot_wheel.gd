@@ -9,6 +9,7 @@ var sp: Control = null
 
 
 func _ready() -> void:
+        LoadingScreen.skip_boot_hold()
         # A/B: WHEEL_SD=1 forza lo sheet SD legacy (per confronto prima/dopo)
         if OS.get_environment("WHEEL_SD") == "1":
                 GameConstants.SPRITE_XHD_ENABLED = false

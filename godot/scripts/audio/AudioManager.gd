@@ -125,12 +125,22 @@ enum SoundType {
         WEAKNESS_HIT,
         BURST_FROST,
         BURST_LIGHTNING,
-        BURST_POISON
+        BURST_POISON,
+        # TASK 50 (pergamena del GHIACCIO): FREEZE_RAY = sparo del raggio
+        #   congelante — sweep discendente cristallino (il freddo "cala")
+        #   con soffio di brina e coda di ghiaccio che si solidifica
+        #   (~0.5s).
+        # TASK 50b: FREEZE_HIT = COLPO del raggio sul nemico — il blocco di
+        #   ghiaccio cristallizza attorno alla creatura: schiocco vetroso,
+        #   crepitio di espansione con ping di cristalli che crescono e
+        #   tonfo freddo della solidificazione (~0.55s).
+        FREEZE_RAY,
+        FREEZE_HIT
 }
 # NB: fix off-by-one pre-esistente (il conteggio dichiarava una voce in piu'
 # dell'enum reale: slot nullo mai generato, innocuo ma impreciso).
-# 46 voci storiche (0..45) + 8 del Task 39 = 54 (0..53).
-const SOUND_TYPE_COUNT: int = 54
+# 46 voci storiche (0..45) + 8 del Task 39 + 1 Task 50 + 1 Task 50b = 56 (0..55).
+const SOUND_TYPE_COUNT: int = 56
 
 # --- Music track indices (mirrors AudioManager.h) ---------------------------
 const TRACK_LEVEL_BASE:   int = 0    # tracks 0..3 = levels
@@ -182,6 +192,18 @@ var _epic_playing: bool = false
 # Track index currently on the epic channel (or -1 if stopped).
 var _epic_track_idx: int = -1
 
+# TASK 76 — sintesi progressiva in background thread.
+var _synth_thread: Thread = null
+var _synth_mutex: Mutex = Mutex.new()
+var _synth_cancel: bool = false
+var _synth_queue: Array = []  # [[kind:String, idx:int], ...] in ordine di priorita'
+var _synth_started_ms: int = 0
+var _synth_done_count: int = 0
+# Traccia musicale richiesta mentre era ancora in sintesi (parte da sola
+# appena il worker la rende disponibile).
+var _pending_music_track: int = -1
+var _pending_music_loop: bool = true
+
 # Master switch (mirrors Game::musicEnabled).
 # FIX (musica parte al boot anche se in off): default music_enabled = false
 # per allinearsi con GameManager.music_enabled (default false). Prima era
@@ -232,28 +254,25 @@ func _ready() -> void:
                 add_child(p)
                 _sfx_pool.append(p)
 
-        # Pre-synthesize every SFX and every music track (avoid runtime hitches).
+        # TASK 76 (avvio lento — segnalazione utente: "il gioco ci mette
+        # parecchio a partire, carica tutto in un colpo?"): la pre-sintesi
+        # COMPLETA di 56 SFX + 18 spari boss + 10 tracce musicali bloccava
+        # il boot per ~16s (misurato: SFX 1.4s + musica 14.5s). Ora la
+        # sintesi corre in un THREAD IN BACKGROUND con ordine di priorita'
+        # (menu -> SFX -> tracce livello -> boss/portale -> jingle -> spari
+        # boss): il menu appare in ~0.3s e tutto il resto arriva mentre
+        # l'utente naviga. Ogni play_* ha un fallback on-demand (sintesi
+        # sincrona) se il suono non e' ancora pronto.
+        _synth_started_ms = Time.get_ticks_msec()
+        var _boot_t0: int = Time.get_ticks_msec()
         _sfx_streams.resize(SOUND_TYPE_COUNT)
-        for i in SOUND_TYPE_COUNT:
-                _sfx_streams[i] = _generate_sfx(i as SoundType)
-
-        # TASK 26: pre-sintesi degli SFX di sparo dei boss (uno per tipo di
-        # munizione). Rollback: GameConstants.BOSS_SHOOT_SFX_ENABLED = false
-        # (nessuno stream generato e play_boss_shoot diventa no-op).
-        if GameConstants.BOSS_SHOOT_SFX_ENABLED:
-                _boss_shoot_streams.resize(BOSS_SHOOT_KIND_COUNT)
-                for i in BOSS_SHOOT_KIND_COUNT:
-                        _boss_shoot_streams[i] = _generate_boss_shoot(i)
-                        print("[AudioManager] boss shoot SFX %d/%d pronto" % [i + 1, BOSS_SHOOT_KIND_COUNT])
-
+        _boss_shoot_streams.resize(BOSS_SHOOT_KIND_COUNT)
         _music_streams.resize(MUSIC_TRACK_COUNT)
-        for i in MUSIC_TRACK_COUNT:
-                _music_streams[i] = _generate_track(i)
+        _build_synth_queue()
+        _synth_thread = Thread.new()
+        _synth_thread.start(_synth_worker)
+        print("[AudioManager] synth worker avviato (boot audio: %d ms)" % [Time.get_ticks_msec() - _boot_t0])
 
-
-# ============================================================================
-# PUBLIC API  (mirrors the public methods of AudioManager)
-# ============================================================================
 
 # Play a one-shot sound effect on the first free voice in the SFX pool.
 # Anti-overlap: if the same sound type is already playing, skip (debounce).
@@ -266,6 +285,11 @@ func play_sound(type: SoundType) -> void:
         if idx < 0 or idx >= _sfx_streams.size():
                 return
         var stream: AudioStreamWAV = _sfx_streams[idx]
+        if stream == null:
+                # TASK 76: SFX non ancora sintetizzato dal worker (partita
+                # iniziata nei primi secondi) -> sintesi on-demand (~25ms).
+                stream = _generate_sfx(idx as SoundType)
+                _sfx_streams[idx] = stream
         if stream == null:
                 return
         # Debounce: skip if same sound was played < 200ms ago
@@ -288,6 +312,10 @@ func play_boss_shoot(kind: int) -> void:
         if kind < 0 or kind >= _boss_shoot_streams.size():
                 kind = 0
         var stream: AudioStreamWAV = _boss_shoot_streams[kind]
+        if stream == null:
+                # TASK 76: fallback on-demand (sintesi progressiva).
+                stream = _generate_boss_shoot(kind)
+                _boss_shoot_streams[kind] = stream
         if stream == null:
                 return
         var now_ms: int = Time.get_ticks_msec()
@@ -355,6 +383,10 @@ func play_epic_music(track_idx: int, loop: bool = false) -> void:
                 return  # stesso jingle già in riproduzione: no restart
         var stream: AudioStreamWAV = _music_streams[track_idx]
         if stream == null:
+                # TASK 76: fallback on-demand (sintesi progressiva).
+                stream = _generate_track(track_idx)
+                _music_streams[track_idx] = stream
+        if stream == null:
                 return
         stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
         _epic_player.stream = stream
@@ -380,6 +412,10 @@ func play_ghost_music() -> void:
         if _ghost_music_playing and _ghost_player.playing:
                 return  # già in riproduzione: no restart
         var stream: AudioStreamWAV = _music_streams[TRACK_GHOST]
+        if stream == null:
+                # TASK 76: fallback on-demand (sintesi progressiva).
+                stream = _generate_track(TRACK_GHOST)
+                _music_streams[TRACK_GHOST] = stream
         if stream == null:
                 return
         stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -407,6 +443,86 @@ func set_music_enabled(enabled: bool) -> void:
                 stop_epic_music()
 
 # ============================================================================
+# TASK 76 — Sintesi progressiva (background thread)
+# ============================================================================
+
+## Coda di sintesi in ordine di PRIORITA': menu subito (serve quando il
+## menu principale appare), poi tutti gli SFX (economici, servono ovunque),
+## poi le tracce dei livelli (il livello 1 e' il primo che si gioca), poi
+## boss/portale/jingle/fantasma, infine gli spari dei boss (solo boss room).
+func _build_synth_queue() -> void:
+        _synth_queue.clear()
+        _synth_queue.append(["music", TRACK_MENU])
+        for i in SOUND_TYPE_COUNT:
+                _synth_queue.append(["sfx", i])
+        for i in 4:
+                _synth_queue.append(["music", i])  # tracce livello 0..3
+        _synth_queue.append(["music", TRACK_BOSS])
+        _synth_queue.append(["music", TRACK_PORTAL])
+        _synth_queue.append(["music", TRACK_EPIC_CHALICE])
+        _synth_queue.append(["music", TRACK_EPIC_SCEPTER])
+        _synth_queue.append(["music", TRACK_GHOST])
+        for i in BOSS_SHOOT_KIND_COUNT:
+                _synth_queue.append(["boss", i])
+
+
+## Corpo del thread: estrae un task alla volta, sintetizza e riconsegna il
+## risultato al main thread con call_deferred (mai tocco il tree da qui).
+func _synth_worker() -> void:
+        while true:
+                if _synth_cancel:
+                        break
+                var task: Array = []
+                _synth_mutex.lock()
+                if not _synth_queue.is_empty():
+                        task = _synth_queue.pop_front()
+                _synth_mutex.unlock()
+                if task.is_empty():
+                        break
+                var stream: AudioStreamWAV = null
+                if task[0] == "sfx":
+                        stream = _generate_sfx(task[1] as SoundType)
+                elif task[0] == "boss":
+                        stream = _generate_boss_shoot(task[1])
+                elif task[0] == "music":
+                        stream = _generate_track(task[1])
+                _apply_synth_result.call_deferred(task[0], int(task[1]), stream)
+        _synth_finished.call_deferred()
+
+
+## Main thread: archivia lo stream sintetizzato e, se c'e' una traccia
+## musicale in attesa appena diventata pronta, la fa partire da sola.
+func _apply_synth_result(kind: String, idx: int, stream: AudioStreamWAV) -> void:
+        if stream == null:
+                return
+        if kind == "sfx" and idx < _sfx_streams.size():
+                _sfx_streams[idx] = stream
+        elif kind == "boss" and idx < _boss_shoot_streams.size():
+                _boss_shoot_streams[idx] = stream
+        elif kind == "music" and idx < _music_streams.size():
+                _music_streams[idx] = stream
+                if idx == _pending_music_track:
+                        _pending_music_track = -1
+                        _play_music_track(idx, _pending_music_loop)
+        _synth_done_count += 1
+
+
+## Main thread: worker esaurito — libera il thread e logga il totale.
+func _synth_finished() -> void:
+        if _synth_thread != null and _synth_thread.is_started():
+                _synth_thread.wait_to_finish()
+        print("[AudioManager] sintesi completa: %d suoni in %d ms (background)"
+                        % [_synth_done_count, Time.get_ticks_msec() - _synth_started_ms])
+
+
+## Arresto pulito del worker alla chiusura (l'autoload muore con l'app).
+func _exit_tree() -> void:
+        _synth_cancel = true
+        if _synth_thread != null and _synth_thread.is_started():
+                _synth_thread.wait_to_finish()
+
+
+# ============================================================================
 # Internal helpers
 # ============================================================================
 
@@ -430,6 +546,18 @@ func _play_music_track(track_idx: int, loop: bool) -> void:
                 return
         _music_player.stop()
         var stream: AudioStreamWAV = _music_streams[track_idx]
+        if stream == null:
+                # TASK 76 (sintesi progressiva): traccia non ancora pronta —
+                # se il worker sta ancora girando, la richiesta resta in
+                # attesa e la musica parte DA SOLA appena sintetizzata.
+                if _synth_thread != null and _synth_thread.is_started() \
+                                and not _synth_queue.is_empty():
+                        _pending_music_track = track_idx
+                        _pending_music_loop = loop
+                        print("[AudioManager] track %d in sintesi: partira' appena pronta" % track_idx)
+                        return
+                stream = _generate_track(track_idx)
+                _music_streams[track_idx] = stream
         if stream == null:
                 print("[AudioManager] _play_music_track SKIP - stream %d is null" % track_idx)
                 return
@@ -585,6 +713,8 @@ func _generate_sfx(type: int) -> AudioStreamWAV:
                 SoundType.BURST_FROST:     s = _sfx_burst_frost()
                 SoundType.BURST_LIGHTNING: s = _sfx_burst_lightning()
                 SoundType.BURST_POISON:    s = _sfx_burst_poison()
+                SoundType.FREEZE_RAY:      s = _sfx_freeze_ray()
+                SoundType.FREEZE_HIT:      s = _sfx_freeze_hit()
                 _:
                         s = PackedFloat32Array()
         return _samples_to_stream(s)
@@ -1369,6 +1499,98 @@ func _sfx_burst_poison() -> PackedFloat32Array:
                                                 * sin(PI * dt / 0.09)
                 var v: float = gurgle + 0.22 * noise_gen() * exp(-t * 6.0)
                 s.append(1600.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+
+# --- FREEZE_RAY (~0.5s) TASK 50: sparo del raggio congelante — sweep
+# discendente cristallino (il freddo "cade"), soffio di brina e coda di
+# ghiaccio che si solidifica.
+func _sfx_freeze_ray() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Zap congelante discendente (0.14s): 2300 -> 750 Hz
+        var c1: int = int(SR * 0.14)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 16.0)
+                var f: float = 2300.0 - 1550.0 * (t / 0.14)
+                var v: float = sine_wave(t * f) * 0.7 \
+                                + 0.25 * pulse_wave(t * f * 2.0, 0.3)
+                s.append(2400.0 / 32767.0 * _soft_clip(v * env))
+        # Soffio di brina + shimmer cristallino (0.20s)
+        var c2: int = int(SR * 0.20)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 9.0)
+                var shimmer: float = 0.0
+                # 4 ping di ghiaccio a scalare, sempre piu' gravi
+                for k in 4:
+                        var tk: float = 0.015 + float(k) * 0.042
+                        var dt: float = t - tk
+                        if dt >= 0.0:
+                                var fk: float = 2900.0 - float(k) * 500.0
+                                shimmer += 0.20 * sine_wave(dt * fk) * exp(-dt * 30.0)
+                var v: float = shimmer + 0.30 * noise_gen() * exp(-t * 12.0)
+                s.append(1900.0 / 32767.0 * _soft_clip(v * env))
+        # Solidificazione (0.16s): tonfo freddo + micro-crepak del ghiaccio
+        var c3: int = int(SR * 0.16)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 20.0)) * exp(-t * 10.0)
+                var crackle: float = 0.0
+                if int(i % int(SR * 0.031)) < 3:
+                        crackle = noise_gen() * 0.5
+                var v: float = 0.5 * sine_wave(t * 190.0) + crackle
+                s.append(1500.0 / 32767.0 * _soft_clip(v * env))
+        return s
+
+
+# --- FREEZE_HIT (~0.55s) TASK 50b: COLPO del raggio congelante sul nemico —
+# cristallizzazione istantanea del blocco di ghiaccio che lo ingloba:
+# schiocco vetroso iniziale, crepitio di espansione con ping di cristalli
+# che crescono verso l'alto e tonfo grave della solidificazione finale.
+func _sfx_freeze_hit() -> PackedFloat32Array:
+        var s := PackedFloat32Array()
+        # Schiocco vetroso (0.09s): crack secco ad alta frequenza, attacco
+        # immediato (il freddo aggredisce la carne in un istante)
+        var c1: int = int(SR * 0.09)
+        for i in c1:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 26.0) * (1.0 - exp(-t * 90.0))
+                var snap: float = 0.0
+                if i < int(SR * 0.004):
+                        snap = noise_gen() * 0.9
+                var v: float = 0.55 * noise_gen() + snap \
+                                + 0.20 * pulse_wave(t * 3400.0, 0.2)
+                s.append(2600.0 / 32767.0 * _soft_clip(v * env))
+        # Crescita dei cristalli (0.28s): crepitio che dirada + 5 ping
+        # ascendenti sempre piu' acuti (il ghiaccio si espande)
+        var c2: int = int(SR * 0.28)
+        for i in c2:
+                var t: float = float(i) / SR
+                var env: float = exp(-t * 5.5)
+                var shimmer: float = 0.0
+                for k in 5:
+                        var tk: float = 0.02 + float(k) * 0.045
+                        var dt: float = t - tk
+                        if dt >= 0.0:
+                                var fk: float = 1500.0 + float(k) * 420.0
+                                shimmer += 0.16 * sine_wave(dt * fk) * exp(-dt * 22.0)
+                # crepitio: impulsi sparsi la cui densita' cala nel tempo
+                var rate: float = 900.0 * exp(-t * 8.0) + 90.0
+                if int(t * rate) != int((t - 1.0 / SR) * rate) and t > 0.0:
+                        shimmer += 0.30 * noise_gen()
+                var v: float = shimmer + 0.16 * noise_gen() * exp(-t * 9.0)
+                s.append(2200.0 / 32767.0 * _soft_clip(v * env))
+        # Tonfo della solidificazione (0.18s): battuta grave + ultima
+        # scintilla di brina che si spegne
+        var c3: int = int(SR * 0.18)
+        for i in c3:
+                var t: float = float(i) / SR
+                var env: float = (1.0 - exp(-t * 26.0)) * exp(-t * 11.0)
+                var v: float = 0.55 * sine_wave(t * 150.0) \
+                                + 0.25 * sine_wave(t * 300.0) \
+                                + 0.12 * noise_gen() * exp(-t * 14.0)
+                s.append(1700.0 / 32767.0 * _soft_clip(v * env))
         return s
 
 

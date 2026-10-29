@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cq71cardshot"]
+
+[ext_resource type="Script" path="res://tests/shot_task71_card.gd" id="1"]
+
+[node name="ShotTask71Card" type="Node"]
+script = ExtResource("1")

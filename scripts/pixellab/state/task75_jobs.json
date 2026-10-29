@@ -1,0 +1,62 @@
+{
+  "unicorn_statue": {
+    "job_id": "9f5b77e0-dffe-4a0f-aec3-525712774408",
+    "done": true,
+    "n_raw": 5
+  },
+  "walk_mage": {
+    "job_id": "550294ea-11c6-4dbd-9d67-4a7e53338c6d",
+    "done": true,
+    "n_raw": 5
+  },
+  "walk_orc": {
+    "job_id": "2dc5a5a9-e5a4-4871-97b6-9452514d947f",
+    "done": true,
+    "n_raw": 5
+  },
+  "walk_golem": {
+    "job_id": "73530e44-3533-4cf5-8b5a-a19e52f9abea",
+    "done": true,
+    "n_raw": 5
+  },
+  "walk_dragon": {
+    "job_id": "ec2a3201-a650-4df2-a89a-c4ceb16ae924",
+    "done": true,
+    "n_raw": 5
+  },
+  "walk_vampire": {
+    "job_id": "8d3c0326-e463-4adf-9159-f32f9023dd2f",
+    "done": true,
+    "n_raw": 5
+  },
+  "arm_player1": {
+    "job_id": "1590e9d5-e8d4-487b-b471-bc41430a289f",
+    "done": true,
+    "n_raw": 5
+  },
+  "arm_player2": {
+    "job_id": "ad2560d9-8b39-499d-9f02-92409a0a0feb",
+    "done": true,
+    "n_raw": 5
+  },
+  "arm_orc": {
+    "job_id": "0fb29806-29b0-48d8-b3ed-1e0a29a52aae",
+    "done": true,
+    "n_raw": 5
+  },
+  "arm_golem": {
+    "job_id": "6dc9244d-496d-4652-acf9-f308efc8303f",
+    "done": true,
+    "n_raw": 5
+  },
+  "arm_dragon": {
+    "job_id": "59b8be0b-1c03-4111-aca9-4519afaab16c",
+    "done": true,
+    "n_raw": 5
+  },
+  "arm_vampire": {
+    "job_id": "cd880815-7665-4aaf-a417-b8b7da0ece4f",
+    "done": true,
+    "n_raw": 5
+  }
+}

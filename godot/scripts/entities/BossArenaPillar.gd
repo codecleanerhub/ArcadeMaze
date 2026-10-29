@@ -1063,13 +1063,30 @@ func _draw_rubble() -> void:
                 draw_circle(Vector2(cos(ang) * rr,
                                 ground - 3.0 + sin(ang) * rr * 0.18),
                                 2.6, lime.darkened(0.25))
-        # braci elementali morenti nel cumulo
-        var ember: float = 0.35 + 0.30 * sin(_t * 2.0 + _seed)
-        for i in 4:
-                draw_circle(Vector2(-10.0 + float(i) * 7.0, pile_c + 4.0
-                                + 3.0 * sin(_seed + float(i))),
-                                1.8, Color(el.r, el.g, el.b,
-                                                ember * (0.7 - 0.15 * float(i))))
+        # TASK 51 (P10): braci elementali nel cumulo — RIFATTE realistiche.
+        # Prima erano 4 puntini hard da 1.8px che a schermo sembravano
+        # "residui incomprensibili". Ora: 3 braci con NUCLEO luminoso +
+        # ALONE radiale morbido (glow additivo decrescente su 3 anelli),
+        # colore che vira dal rosso-brace profondo all'arancio, flicker
+        # organico sfasato per bracia (fasi diverse da _seed + indice).
+        # Cosi' si LEGGONO come braci che covano sotto le macerie.
+        var ember_flick: float = 0.55 + 0.45 * sin(_t * 2.0 + _seed)
+        for i in 3:
+                var ex: float = -12.0 + float(i) * 11.0
+                var ey: float = pile_c + 4.0 + 3.5 * sin(_seed * 1.7 + float(i) * 2.1)
+                var fl: float = ember_flick * (0.85 - 0.18 * float(i))
+                # colore brace: rosso profondo -> arancio caldo
+                var ecol: Color = Color(
+                                lerp(el.r, 0.95, 0.35 + 0.15 * fl),
+                                lerp(el.g * 0.55, 0.42, fl),
+                                lerp(el.b * 0.3, 0.12, 0.5))
+                # alone morbido a 3 anelli decrescenti (glow realistico)
+                draw_circle(Vector2(ex, ey), 6.5, Color(ecol.r, ecol.g, ecol.b, 0.10 * fl))
+                draw_circle(Vector2(ex, ey), 4.0, Color(ecol.r, ecol.g, ecol.b, 0.22 * fl))
+                draw_circle(Vector2(ex, ey), 2.2, Color(ecol.r, ecol.g, ecol.b, 0.42 * fl))
+                # nucleo caldo brillante
+                draw_circle(Vector2(ex - 0.6, ey - 0.5), 1.1,
+                                Color(1.0, 0.86, 0.55, 0.55 * fl))
         # ultimo riflesso del pomo aureo sepolto
         draw_circle(Vector2(15.0, pile_c - 10.0), 1.4,
                         Color(gold.r, gold.g, gold.b,

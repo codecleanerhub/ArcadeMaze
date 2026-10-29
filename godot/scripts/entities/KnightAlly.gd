@@ -80,6 +80,25 @@ var _sprite_loaded: bool = false
 var _statue_texture: Texture2D = null
 var _statue_loaded: bool = false
 
+# --- TASK 64 (alleato alternato per livello) ---
+# L'alleato evocato dalla statuetta alterna per livello: livelli DISPARI
+# (1,3,5..) = UNICORNO (comportamento storico, retrocompatibile), livelli
+# PARI (2,4,6..) = CAVALLIERE. Entrambi gli sheet sono PixelLab v2 Task 71
+# (rigenerati con anim 4f a POSE REALI: il vecchio unicorn_ally era un puro
+# slide frame-0-traslato, il cavaliere e' stato rifatto per coerenza).
+# MainGameController imposta questa variabile PRIMA dell'add_child (il
+# _ready carica le texture in base alla variante); default "unicorn" =
+# comportamento precedente alla Task 64 (test e call-site legacy intatti).
+var ally_variant: String = "unicorn"
+const ALLY_SHEET_BY_VARIANT := {
+        "unicorn": "res://assets/sprites/unicorn_ally_sheet.png",
+        "knight": "res://assets/sprites/knight_ally_sheet.png",
+}
+const ALLY_STATUE_BY_VARIANT := {
+        "unicorn": "res://assets/sprites/collectibles/item_unicorn_statue.png",
+        "knight": "res://assets/sprites/collectibles/item_knight_statue.png",
+}
+
 # --- Projectiles ---
 var projectiles: Array = []
 
@@ -95,7 +114,11 @@ func _ready() -> void:
 
 
 func _load_sprite() -> void:
-        var path := "res://assets/sprites/unicorn_ally_sheet.png"
+        # TASK 64: sheet per variante (unicorno livelli dispari / cavaliere
+        # livelli pari); fallback silenzioso al disegno procedurale se il
+        # PNG manca, identico al comportamento pre-Task 64.
+        var path: String = ALLY_SHEET_BY_VARIANT.get(ally_variant,
+                        ALLY_SHEET_BY_VARIANT["unicorn"])
         var abs_path := ProjectSettings.globalize_path(path)
         if not FileAccess.file_exists(abs_path):
                 _sprite_loaded = false
@@ -106,9 +129,11 @@ func _load_sprite() -> void:
                 _sprite_loaded = _sprite_sheet != null
 
 
-# FIX (statua di pietra): carica la texture della statua (unicorno di pietra)
+# FIX (statua di pietra): carica la texture della statua di pietra coerente
+# con la variante dell'alleato (TASK 64: unicorno/cavaliere per parita' livello)
 func _load_statue_texture() -> void:
-        var path := "res://assets/sprites/collectibles/item_unicorn_statue.png"
+        var path: String = ALLY_STATUE_BY_VARIANT.get(ally_variant,
+                        ALLY_STATUE_BY_VARIANT["unicorn"])
         var abs_path := ProjectSettings.globalize_path(path)
         if not FileAccess.file_exists(abs_path):
                 _statue_loaded = false
@@ -611,10 +636,12 @@ func get_pixel_pos() -> Vector2:
 
 
 func _draw() -> void:
-        # FIX (unicorno unificato): usa SEMPRE _statue_texture per tutte le
-        # fasi, applicando effetti procedurali (tint dorata, bob, nube) per
-        # differenziare visivamente. Questo evita il "cambio palese di PNG"
-        # tra statua e forma attiva.
+        # TASK 65d (feedback utente "pedina del Monopoly"): la statua con
+        # piedistallo resta SOLO nelle fasi di statua (STONE, TRANSFORMING);
+        # la forma ATTIVA usa lo sheet walk animato PixelLab (4 frame, flip
+        # direzione, bob) cosi' l'alleato in movimento non sembra una
+        # statuina su base ma una creatura viva. La transizione resta
+        # mascherata dalla nube del TRANSFORMING.
         var is_moving: bool = (dx != 0 or dy != 0)
         var move_bob: float = 0.0
         if is_moving and state == State.ACTIVE:
@@ -643,11 +670,11 @@ func _draw() -> void:
                 return
 
         # Fase 4: disappearing (smoke) — effetto NUDE
-        # FIX (nube su disappear): nube densa + statua che sfuma
+        # FIX (nube su disappear): nube densa + alleato che sfuma
         if state == State.DISAPPEARING:
                 var t2: float = 1.0 - (float(smoke_timer_ms) / 1200.0)
-                # Statua che sfuma
-                _draw_statue_unified(1.0 - t2 * 0.3, 1.0 - t2, 1.0, 0.0, false)
+                # TASK 65d: anche qui sheet walk (creatura viva che svanisce)
+                _draw_sprite(1.0 - t2 * 0.2, 1.0 - t2)
                 # NUDE densa che si espande
                 _draw_cloud_effect(t2, 0.8)
                 # Aura finale
@@ -658,9 +685,12 @@ func _draw() -> void:
         if state == State.DEAD:
                 return
 
-        # Fase 3: ACTIVE - statua con aura celeste chiara + bob movimento
-        # FIX (effetto movimento): bob verticale quando si muove
-        _draw_statue_unified(1.0, 1.0, 1.0, move_bob, true)
+        # Fase 3: ACTIVE - sheet walk animato + aura celeste chiara.
+        # TASK 71: _draw_sprite = walk cycle 4 frame a 12.5 fps (80ms/frame,
+        # come il Player) quando si muove, frame idle + respiro leggero
+        # quando fermo, flip orizzontale secondo last_dx. Niente piu' statua
+        # con base in movimento.
+        _draw_sprite(1.0, 1.0)
         # FIX (NO aura dorata): sostituita con aura celeste chiara appena visibile
         var aura_pulse: float = (sin(float(anim_time) * 0.008) + 1.0) * 0.5
         draw_circle(Vector2.ZERO, 32.0,
@@ -841,12 +871,20 @@ func _draw_statue(alpha_mul: float, alpha: float, color_t: float) -> void:
                 draw_rect(Rect2(-s / 2.0, -s / 2.0, s, s), gold_tint, true)
 
 
+# TASK 65d/71: sheet walk PixelLab della variante (unicorno livelli
+# dispari / cavaliere livelli pari) usato nelle fasi ACTIVE e DISAPPEARING.
+# TASK 71 (feedback utente "immagine statica che si sposta traslando"): lo
+# sheet e' stato rigenerato con PixelLab (anim 4f a pose REALI — il vecchio
+# unicorn_ally aveva frame 0==2 e 1==3==0 traslato 1px: puro slide) e il
+# ciclo va a 12.5 fps (80ms/frame) come il Player, che e' il riferimento di
+# "fluido" del gioco. Nessun bob extra in movimento: sono i frame a portare
+# l'andatura; respiro leggero 1px quando fermo. Fallback: procedurale storico.
 func _draw_sprite(scale_val: float, alpha: float) -> void:
         if _sprite_loaded and _sprite_sheet != null:
                 var is_moving: bool = (dx != 0 or dy != 0)
                 var frame: int = 0
                 if is_moving:
-                        frame = (int(anim_time) / 100) % 4
+                        frame = (int(anim_time) / 80) % 4
                 var frame_w: int = 64
                 var frame_h: int = 64
                 var src_rect: Rect2 = Rect2(frame * frame_w, 0, frame_w, frame_h)
@@ -856,7 +894,14 @@ func _draw_sprite(scale_val: float, alpha: float) -> void:
                 var target_size: float = 78.0 * scale_val
                 var bob_y: float = 0.0
                 if is_moving:
-                        bob_y = sin(float(anim_time) * 0.01) * 2.0
+                        # TASK 71: i frame del gallop/trot hanno il bounce
+                        # DENTRO l'animazione — un bob sinusoidale aggiunto
+                        # sopra dava il "doppio rimbalzo" fasullo
+                        bob_y = 0.0
+                else:
+                        # TASK 65d: respiro lento quando fermo (1px) — la
+                        # creatura resta "viva" anche senza camminare
+                        bob_y = sin(float(anim_time) * 0.003) * 1.0
                 var draw_pos: Vector2 = Vector2(-target_size / 2.0, -target_size / 2.0 + bob_y)
                 var flip: bool = last_dx < 0
                 # FIX (ally disegnato +72px a destra quando guarda a sinistra):

@@ -1,0 +1,19 @@
+{
+ "id": "1c7b0913-ec8e-4ac3-99f5-5792cb362048",
+ "name": "arcade-char_mage-armored-task51",
+ "size": {
+  "width": 256,
+  "height": 256
+ },
+ "view": "low top-down",
+ "prompt": "A full-body depiction of an elderly, hunched mage standing in a wide, brave stance. The character wears a long, dark forest-green robe beneath a set of ornate gothic plate armor, including a polished steel breastplate adorned with intricate engraved filigree, heavy riveted pauldrons, and matching steel gauntlets and greaves. A vivid crimson red tabard with shimmering gold trim is draped over the armor. The mage wears a wide-brimmed pointed hat, framing a face with a long, flowing white beard and an expression of grim determination. One hand grips a gnarled, weathered wooden staff. The composition utilizes high-contrast shading with subtle rim lighting to define the metallic textures, rendered with crisp, medium-weight outlines and sharp, bright highlights on the steel surfaces.",
+ "created_at": "2026-10-22T18:25:31.903921+00:00",
+ "tags": [],
+ "animations": [
+  {
+   "display_name": "v2-walk",
+   "group_id": "5572b917-eefd-4118-a93c-99111cc1397a",
+   "animation_type": "custom-The armored wizard initiates a"
+  }
+ ]
+}

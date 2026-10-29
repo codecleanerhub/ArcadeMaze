@@ -132,6 +132,9 @@ var _mesh: ArrayMesh = null
 var _verts: PackedVector2Array = []
 var _uvs: PackedVector2Array = []
 var _indices: PackedInt32Array = []
+# TASK 79d: array di superficie COMPLETO (ARRAY_MAX) cachato dalla build:
+# evita il round-trip surface_get_arrays nel _sync_mesh per-frame.
+var _surface_arrays: Array = []
 
 
 func _ready() -> void:
@@ -188,6 +191,26 @@ func set_grid_size(w: int, h: int) -> void:
         grid_w = max(2, w)
         grid_h = max(2, h)
         _rebuild_mesh()
+
+
+## TASK 46 — selezione del frame corrente sullo sheet (animazione a FRAME
+## REALI: grafica PixelLab per il Golem + cicli legacy 4-frame degli altri
+## boss, che il percorso DeformableSprite mostrava congelati sul frame 0).
+## Cambia SOLO il sub_rect: la texture resta in cache (nessun ricaricamento
+## da disco) e il mesh viene ricostruito sulla nuova regione UV.
+## row 0 = ciclo camminata/idle, row 1 = ciclo attacco (se presente).
+func set_sheet_frame(col: int, row: int = 0) -> void:
+        if texture == null or sub_rect.size.x <= 0 or sub_rect.size.y <= 0:
+                return
+        var fw := sub_rect.size.x
+        var fh := sub_rect.size.y
+        var fx := float(col) * fw
+        var fy := float(row) * fh
+        # Frame fuori sheet (sheet più corto del previsto): ignora.
+        if fx + fw > float(texture.get_width()) + 0.5 \
+                        or fy + fh > float(texture.get_height()) + 0.5:
+                return
+        sub_rect = Rect2(fx, fy, fw, fh)
 
 
 # -----------------------------------------------------------------------
@@ -320,6 +343,11 @@ func _rebuild_mesh() -> void:
         arr[Mesh.ARRAY_TEX_UV] = _uvs
         arr[Mesh.ARRAY_INDEX] = _indices
         _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+        # TASK 79d (performance): conserva l'array di superficie COMPLETO in
+        # una member: _sync_mesh puo' rimuovere+ricreare la surface SENZA il
+        # round-trip GPU->CPU di surface_get_arrays (che copiava vertici+UV+
+        # indici OGNI FRAME per OGNI sprite deformato — boss in testa).
+        _surface_arrays = arr
 
         # Apply texture via the mesh surface material.
         # In Godot 4.7, MeshInstance2D renders the ArrayMesh, and the material
@@ -464,8 +492,21 @@ func _transform_vertex(idx: int, mode: int, time: float,
 func _sync_mesh() -> void:
         if _mesh == null or _mesh.get_surface_count() == 0:
                 return
-        # Cheap path: rewrite the vertex array of surface 0.
-        var arr := _mesh.surface_get_arrays(0)
-        arr[Mesh.ARRAY_VERTEX] = _verts
+        # TASK 79d (performance — root cause degli "scatti" del boss in
+        # fase 2): la versione precedente chiamava _mesh.surface_get_arrays(0)
+        # OGNI FRAME: questa API COPIA dalla mesh (round-trip verso i dati
+        # interni del rendering) tutti gli array (vertici + UV + indici) e ne
+        # alloca di nuovi, poi surface_remove+add_surface_from_arrays
+        # ri-uploadeda tutto. Ora l'array COMPLETO e' cachato in
+        # _surface_arrays da _rebuild_mesh: aggiorniamo il riferimento ai
+        # vertici (gia' condiviso con _verts) e rimontiamo la surface.
+        # add_surface_from_arrays copia i dati correnti -> risultato identico.
+        if _surface_arrays.is_empty():
+                # Robustezza (mesh costruita fuori da _rebuild_mesh): fallback
+                # al percorso lento una volta, poi resta cachato.
+                _surface_arrays = _mesh.surface_get_arrays(0)
+                if _surface_arrays.is_empty():
+                        return
+        _surface_arrays[Mesh.ARRAY_VERTEX] = _verts
         _mesh.surface_remove(0)
-        _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+        _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _surface_arrays)

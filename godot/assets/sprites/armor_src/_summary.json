@@ -1,0 +1,56 @@
+{
+ "blood-drop": {
+  "anims": [
+   "drip-cycle"
+  ],
+  "frames_downloaded": 6
+ },
+ "player1-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "player2-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "mage-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "orc-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "elf-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "knight-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "golem-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ },
+ "dragon-armored": {
+  "anims": [
+   "v2-walk"
+  ],
+  "frames_downloaded": 6
+ }
+}

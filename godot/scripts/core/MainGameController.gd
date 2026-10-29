@@ -32,6 +32,10 @@ const LightningStrikeFx = preload("res://scripts/entities/LightningStrikeEffect.
 ## TASK 38 — onda di luce che si diffonde per TUTTO il labirinto dopo il
 ## fulmine delle pergamene (esplosione di luce dal punto d'impatto).
 const MazeLightWaveFx = preload("res://scripts/entities/MazeLightWaveEffect.gd")
+
+## TASK 50 — raggio congelante della pergamena del ghiaccio (beam dal
+## player fino al primo muro, con brina e anello di impatto).
+const IceBeamFx = preload("res://scripts/entities/IceBeamEffect.gd")
 # FUOCO AMICO (Task 18): raggio di collisione proiettile player -> altro
 # player (~25 px, tra proiettile-nemico 24.5 e miniboss 35).
 const FF_HIT_RADIUS_SQ: float = 625.0
@@ -49,6 +53,17 @@ const FF_HIT_RADIUS_SQ: float = 625.0
 ## ganasce, voragini e muri di roccia. Inserito in MainGame.tscn tra Maze
 ## e Player (draw order: pavimento -> hazard -> entita').
 @onready var hazards: Node2D = $Hazards
+
+## TASK 81.1 — fantasmi lenzuolo: nodo dopo Collectibles in MainGame.tscn
+## (i lenzuoli fluttuano SOPRA muri/player/nemici: "a mezz'aria").
+@onready var maze_ghosts: Node2D = $Ghosts
+
+## TASK 81.2 — celle zombie: nodo tra Maze e Hazards (la finestrella e'
+## disegnata SOPRA la texture roccia del muro, colori derivati dal
+## wall_color: TASK 81b; le braccia scivolano fuori dalla facciata e
+## stanno SOTTO le entita').
+@onready var zombie_cells: Node2D = $ZombieCells
+
 @onready var hud: Control = $HUDLayer/HUD
 
 # --- Game state ---
@@ -143,10 +158,23 @@ var scroll_chasm_phase: int = ScrollPhase.DONE
 var scroll_chasm_timer_ms: float = 0.0
 var scroll_chasm_item: Node2D = null
 var scroll_chasm_beacon: Sprite2D = null
+# TASK 50 — PERGAMENA DEL GHIACCIO: stessa macchina a stati delle altre
+# due (WAIT -> BEACON -> GROUND -> DONE, stesse tempistiche), ma la
+# raccolta EQUIPAGGIA il player: il fuoco spara il raggio congelante
+# (2 colpi). Il beam congela i nemici per TUTTO il livello.
+var scroll_freeze_phase: int = ScrollPhase.DONE
+var scroll_freeze_timer_ms: float = 0.0
+var scroll_freeze_item: Node2D = null
+var scroll_freeze_beacon: Sprite2D = null
 ## TASK 36 — apparizioni gia' consumate in questo livello (per TIPO):
 ## il budget e' PARCHMENT_MAX_SPAWNS (2), ma l'USO e' uno solo.
 var scroll_quake_spawns_used: int = 0
 var scroll_chasm_spawns_used: int = 0
+var scroll_freeze_spawns_used: int = 0
+## TASK 50 — equip della pergamena del ghiaccio: 0 = nessuno, 1 = P1,
+## 2 = P2; colpi rimasti del raggio congelante.
+var freeze_scroll_player: int = 0
+var freeze_charges_left: int = 0
 var _scroll_rng := RandomNumberGenerator.new()
 # FIX (2P): in modalità due giocatori il mini boss immortale NON è uno ma
 # DUE, uno per player, e si differenziano SOLO nel colore: quello che
@@ -222,6 +250,22 @@ var hammer_item: Node2D = null          # item a terra (Collectibles.Kind.HAMMER
 var hammer_player: int = 0              # 0 = nessuno, 1 = P1, 2 = P2
 var hammer_uses_left: int = 0           # lanci rimasti (max HAMMER_MAX_USES)
 var hammer_thrown: Node2D = null        # Hammer in volo (scripts/items/Hammer.gd)
+# TASK 50 (martello autofire): stato precedente del pulsante FUOCO dei pad,
+# per rilevare il FRONTE di pressione (premuto adesso e NON premuto al frame
+# precedente). Il martello e la dinamite si lanciano SOLO sul fronte: tenendo
+# il pulsante premuto non si rilancia quando il martello torna in mano
+# (sprecava il secondo colpo). Le armi normali mantengono l'autofire held.
+var _p1_joy_fire_prev: bool = false
+var _p2_joy_fire_prev: bool = false
+# TASK 75 (card + fuoco tenuto premuto — feedback utente): la card bonus si
+# chiude TENENDO PREMUTO il fuoco per 1s; alla riapertura del gioco il
+# pulsante e' ancora giu' e il primo frame di polling generava un FRONTE
+# fantasma (_p1_joy_fire_prev era rimasto false per tutta la pausa) -> la
+# dinamite appena raccolta veniva LANCIATA da sola. Gate per player:
+# finche' il rispettivo pulsante di fuoco non risulta RILASCIATO almeno
+# una volta, il fuoco di quel player e' inibito (edge E autofire).
+var _fire_rearm_p1: bool = false
+var _fire_rearm_p2: bool = false
 const HAMMER_MAX_USES: int = 2
 
 # FIX (HUD last hit enemy): traccia l'ultimo nemico colpito dal player.
@@ -509,6 +553,11 @@ func _ready() -> void:
         _setup_camera()
         # FIX (fulmini invisibili): crea overlay layer per disegnare SOPRA il maze
         _create_foreground_layer()
+        # TASK 68 (portale sotto i muri): registra la callback con cui il
+        # Maze disegna il portale magico TRA la passata pavimento e quella
+        # muri (prima era nell'overlay sopra tutto e il vortice 84px
+        # copriva le rocce delle celle muro adiacenti).
+        maze.portal_draw_callback = Callable(self, "_draw_portal_into")
         # Load advanced-decal spritesheets via SpriteManager (mirror C++ static
         # SpriteSheet load in drawAshPiles 4012-4017 / drawFireBursts 3903-3908).
         if SpriteManager:
@@ -639,6 +688,8 @@ func _draw_overlay(ci: CanvasItem) -> void:
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
                         continue
+                if proj.is_in_group("fx_effect"):
+                        continue
                 if not is_instance_valid(proj) or not proj.visible:
                         continue
                 var ppos: Vector2 = proj.position
@@ -667,34 +718,13 @@ func _draw_overlay(ci: CanvasItem) -> void:
                 # (magic portal, etc.)
                 ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
         # Magic portal
-        if spawner != null and spawner.magic_portal.active:
-                var ppos2: Vector2 = spawner.magic_portal.pos
-                var prot2: float = spawner.magic_portal.rotation
-                var pglow2: float = spawner.magic_portal.glow_pulse
-                var aura_r: float = 40.0 + sin(pglow2 * 2.0) * 6.0
-                ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
-                for i in 12:
-                        var a2: float = prot2 + (float(i) / 12.0) * TAU
-                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 32.0
-                        ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
-                for i in 8:
-                        var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
-                        var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
-                        ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
-                var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
-                # FIX (pallino procedurale accanto al miniboss, 2° tentativo):
-                # il fix precedente aveva ridotto solo l'alpha del cerchietto
-                # bianco più piccolo (riga 328, alpha 1.0 -> 0.5), MA il
-                # PALLINO VERO era il disco LAVANDA qui sotto (alpha 0.9,
-                # raggio 10px, quasi solido). Ridotto alpha da 0.9 a 0.25:
-                # rimane un nucleo viola tenue che pulsa con glow_pulse,
-                # ma non è più un cerchio solido che appare come "pallino
-                # alieno" accanto al miniboss spawnato 1-4 celle più in là.
-                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
-                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
-                # FIX: pallino centrale bianco alpha 0.5 (era 1.0 nel commit
-                # 424b038, confermato invariato).
-                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
+        # TASK 68: il portale NON si disegna più qui (overlay SOPRA il maze):
+        # lo sprite 84px su cella 64 sbordava ~10px sulle celle muro
+        # adiacenti coprendo le rocce. Ora il render è in _draw_portal_into,
+        # registrata come Maze.portal_draw_callback e invocata dentro
+        # Maze._draw() TRA la passata pavimento e quella muri: i muri
+        # coprono lo sbordo del vortice (segnalazione utente Task 68
+        # "il portale viene disegnato sotto il muro").
 
 
 # ============================================================================
@@ -861,6 +891,10 @@ func _unhandled_input(event: InputEvent) -> void:
         # è aperta (l'unico input ammesso è quello dell'overlay).
         if _continue_pending_player != 0:
                 return
+        # TASK 51 — CARD BONUS: niente pausa/uscita mentre la card informativa
+        # e' aperta (l'unico input ammesso e' l'hold del fuoco).
+        if _bonus_card != null:
+                return
         # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
         # fase di uscita dalla scena. Usiamo una variabile locale con null check.
         if event.is_action_pressed("pause") and not event.is_echo():
@@ -882,6 +916,13 @@ func _unhandled_input(event: InputEvent) -> void:
 # the MainGame transform). Without this cleanup, they would persist into the
 # next scene (e.g. MainMenu) and cause rendering issues.
 func _exit_tree() -> void:
+        # TASK 51 — CARD BONUS: libera l'overlay e sblocca il tree se si
+        # esce dalla scena mentre la card e' aperta (cambio livello/ESC).
+        if _bonus_card != null:
+                _bonus_card.queue_free()
+                _bonus_card = null
+                if get_tree():
+                        get_tree().paused = false
         # FIX (pausa attiva al cambio scena): se si esce dal MainGame mentre
         # è in pausa (ESC dal menu gestito sotto, transizioni), il tree va
         # ripristinato sennò la scena successiva parte congelata.
@@ -908,11 +949,22 @@ func _exit_tree() -> void:
                 _fg_drawer = null
 
 
+# FIX (pausa P senza feedback visivo): overlay PAUSE (mirror MainGame).
+# TASK 51 — CARD BONUS: pure-code CanvasLayer che mostra la card informativa
+# alla PRIMA raccolta di un bonus particolare (gioco in pausa, si chiude
+# tenendo premuto il fuoco per 1 secondo).
+var _bonus_card: CanvasLayer = null
+const BonusCardOverlayClass = preload("res://scripts/ui/BonusCardOverlay.gd")
+
 func _physics_process(_delta: float) -> void:
         # TASK 23: continue per-player aperto — gioco CONGELATO (mirror della
         # pausa: nessun update, nessun input di gameplay; l'overlay gira in
         # PROCESS_MODE_ALWAYS e smette da solo alla scelta).
         if _continue_pending_player != 0:
+                return
+        # TASK 51 — CARD BONUS aperta: gioco in pausa (l'overlay gira in
+        # PROCESS_MODE_ALWAYS e si chiude da solo con l'hold del fuoco).
+        if _bonus_card != null:
                 return
         if is_paused:
                 return
@@ -929,6 +981,10 @@ func _physics_process(_delta: float) -> void:
 # Input handling
 # ============================================================================
 func _handle_input() -> void:
+        # TASK 75: aggiorna i gate di riarmo del fuoco (post-card): se il
+        # pulsante era tenuto premuto alla chiusura della card, il gate si
+        # sblocca SOLO quando il pulsante risulta fisicamente rilasciato.
+        _update_fire_rearm()
         # P1 input — keyboard OR joystick (joystick is read first if a pad is
         # connected, then keyboard is layered on top so the user can mix).
         # The C++ engine (Game.cpp:1417-1431) read both at once and picked the
@@ -1010,24 +1066,54 @@ func _handle_input() -> void:
                         player.activate_jump()
                         if not was_jumping and player.is_jumping() and AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                if Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn):
+                # TASK 50 (martello autofire — bug utente): il ramo martello/
+                # dinamite NON controllava lo shoot_cooldown e scattava a
+                # OGNI frame di pressione (is_joy_button_pressed = "tenuto
+                # premuto"): quando il martello tornava in mano col pulsante
+                # ancora premuto, il secondo colpo partiva da solo. Ora
+                # martello e dinamite si lanciano SOLO sul FRONTE di pressione
+                # (fire_edge, aggiornato SEMPRE anche a pulsante rilasciato);
+                # il fuoco delle armi normali resta automatico tenendo premuto
+                # (comportamento arcade).
+                var fire_now: bool = Input.is_joy_button_pressed(p1_joy_id, joy_shoot_btn)
+                var fire_edge: bool = fire_now and not _p1_joy_fire_prev
+                _p1_joy_fire_prev = fire_now
+                # TASK 75: fuoco inibito finche' il pulsante non e' stato
+                # RILASCIATO dopo la chiusura della card (il _prev sopra resta
+                # allineato allo stato FISICO per non creare falsi fronti al
+                # rilascio del gate).
+                if _fire_rearm_p1:
+                        fire_now = false
+                        fire_edge = false
+                if fire_now:
                         # FIX (dinamite): se il player ha la dinamite equipaggiata,
                         # il fuoco lancia il candelotto invece di sparare.
                         # FIX (dinamite del proprietario — 2P): solo se la dinamite
                         # appartiene a P1 (se l'ha raccolta P2, il fuoco di P1
                         # spara normalmente).
-                        # FIX (dinamite non lanciata): rimosso il check shoot_cooldown==0
+                        # FIX (dinamite non lanciata): niente check shoot_cooldown==0
                         # perché dopo il pickup, shoot_cooldown potrebbe essere > 0
                         # e bloccare il lancio. La dinamite ha il suo cooldown separato.
                         if dynamite_equipped and dynamite_player == 1:
-                                print("[Dynamite] Joy fire pressed, throwing!")
-                                _throw_dynamite()
-                                player.shoot_cooldown = 300
+                                if fire_edge:
+                                        print("[Dynamite] Joy fire pressed, throwing!")
+                                        _throw_dynamite()
+                                        player.shoot_cooldown = 300
+                        elif freeze_scroll_player == 1 and freeze_charges_left > 0 \
+                                        and not is_boss_state and player.shoot_cooldown == 0:
+                                # TASK 50: il fuoco spara il RAGGIO
+                                # CONGELANTE (2 colpi, solo nel labirinto).
+                                # Anche il raggio e' sul FRONTE di pressione
+                                # (come dinamite/martello: niente autofire).
+                                if fire_edge:
+                                        _fire_freeze_ray(player)
                         elif hammer_player == 1 and hammer_thrown == null:
                                 # FIX (martello di Thor): il fuoco lancia IL
                                 # MARTELLO (fino a 2 volte, poi scompare).
-                                _throw_hammer(player)
-                                player.shoot_cooldown = 300
+                                # SOLO fronte di pressione: vedi TASK 50 sopra.
+                                if fire_edge:
+                                        _throw_hammer(player)
+                                        player.shoot_cooldown = 300
                         elif player.shoot_cooldown == 0:
                                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                                 player.shoot()
@@ -1056,12 +1142,17 @@ func _handle_input() -> void:
         player.set_direction(p1_dx, p1_dy)
 
         # P1 keyboard shoot (also works without joystick — matches C++ fallback)
-        if Input.is_action_just_pressed("shoot"):
+        # TASK 75: gate anti-sparo post-card anche da tastiera.
+        if Input.is_action_just_pressed("shoot") and not _fire_rearm_p1:
                 # FIX (dinamite del proprietario — 2P): anche da tastiera il
                 # lancio avviene solo se la dinamite appartiene a P1.
                 if dynamite_equipped and dynamite_player == 1:
                         _throw_dynamite()
                         player.shoot_cooldown = 300
+                elif freeze_scroll_player == 1 and freeze_charges_left > 0 \
+                                and not is_boss_state and player.shoot_cooldown == 0:
+                        # TASK 50: raggio congelante da tastiera (P1).
+                        _fire_freeze_ray(player)
                 elif hammer_player == 1 and hammer_thrown == null:
                         # FIX (martello di Thor): lancio da tastiera (P1).
                         _throw_hammer(player)
@@ -1167,29 +1258,57 @@ func _handle_input() -> void:
                                 if not was_jumping_2 and player2.is_jumping() \
                                                 and AudioManager:
                                         AudioManager.play_sound(AudioManager.SoundType.JUMP)
-                        if Input.is_joy_button_pressed(p2_joy_id, j2_shoot) and player2.shoot_cooldown == 0:
+                        # TASK 50 (martello autofire): fronte di pressione anche per P2
+                        # (stesso fix di P1 — il martello non si rilancia da solo se il
+                        # pulsante resta premuto quando torna in mano). L'edge si basa
+                        # SOLO sullo stato fisico del pulsante: il cooldown non deve
+                        # creare falsi fronti quando scade col pulsante gia' premuto.
+                        var fire2_now: bool = Input.is_joy_button_pressed(p2_joy_id, j2_shoot)
+                        var fire2_edge: bool = fire2_now and not _p2_joy_fire_prev
+                        _p2_joy_fire_prev = fire2_now
+                        # TASK 75: gate anti-sparo post-card (speculare a P1).
+                        if _fire_rearm_p2:
+                                fire2_now = false
+                                fire2_edge = false
+                        if fire2_now and player2.shoot_cooldown == 0:
                                 # FIX (dinamite del giocatore 2 — bug utente 2P):
                                 # prima il ramo dinamite NON esisteva nel fuoco
                                 # di P2: poteva raccoglierla ma non lanciarla.
                                 # Ora il fuoco di P2 lancia la dinamite se è SUA.
                                 if dynamite_equipped and dynamite_player == 2:
-                                        _throw_dynamite()
-                                        player2.shoot_cooldown = 300
+                                        if fire2_edge:
+                                                _throw_dynamite()
+                                                player2.shoot_cooldown = 300
+                                elif freeze_scroll_player == 2 and freeze_charges_left > 0 \
+                                                and not is_boss_state:
+                                        # TASK 50: raggio congelante P2 joystick
+                                        # (l'outer check richiede gia' cooldown 0).
+                                        # Fronte di pressione come P1.
+                                        if fire2_edge:
+                                                _fire_freeze_ray(player2)
                                 elif hammer_player == 2 and hammer_thrown == null:
                                         # FIX (martello di Thor): lancio P2 joystick.
-                                        _throw_hammer(player2)
-                                        player2.shoot_cooldown = 300
+                                        if fire2_edge:
+                                                _throw_hammer(player2)
+                                                player2.shoot_cooldown = 300
                                 else:
                                         player2.shoot()
                                         player2.shoot_cooldown = C.relic_fire_cooldown(
                                                         player2.current_weapon)
                 player2.set_direction(p2_dx, p2_dy)
-                if Input.is_action_just_pressed("p2_shoot") and player2.shoot_cooldown == 0:
+                # TASK 75: gate anti-sparo post-card anche da tastiera (P2).
+                if Input.is_action_just_pressed("p2_shoot") and not _fire_rearm_p2 \
+                                and player2.shoot_cooldown == 0:
                         # FIX (dinamite del giocatore 2 — bug utente 2P): ramo
                         # dinamite anche da tastiera (tasto E), come per P1.
                         if dynamite_equipped and dynamite_player == 2:
                                 _throw_dynamite()
                                 player2.shoot_cooldown = 300
+                        elif freeze_scroll_player == 2 and freeze_charges_left > 0 \
+                                        and not is_boss_state:
+                                # TASK 50: raggio congelante P2 tastiera
+                                # (l'outer check richiede gia' cooldown 0).
+                                _fire_freeze_ray(player2)
                         elif hammer_player == 2 and hammer_thrown == null:
                                 # FIX (martello di Thor): lancio P2 tastiera.
                                 _throw_hammer(player2)
@@ -1242,6 +1361,19 @@ func _update_playing(delta_ms: float) -> void:
                 player2.update_player(maze, false, delta_ms)
                 if player2.consume_picked_weapon() and AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+        # TASK 80 (lanterna dell'eroe): aggiorna le posizioni dei player
+        # VIVI (spazio pixel = spazio Maze) — il Maze disegna sul pavimento
+        # una pozza di luce calda sotto ciascuno, cosi' il player scuro
+        # (elf) e i nemici scuri vicini restano visibili per contrasto
+        # nel dungeon a toni scuri. Player morto/in attesa dell'anima =
+        # lanterna spenta (niente pozze su posizioni stantie).
+        var lanterns: Array = []
+        if player != null and is_instance_valid(player) and player.lives > 0 \
+                        and not player.soul_pending:
+                lanterns.append(player.position)
+        if _is_p2_active() and player2.lives > 0 and not player2.soul_pending:
+                lanterns.append(player2.position)
+        maze.player_light_positions = lanterns
         if maze.get_remaining_treasures() < treasures_before:
                 # FIX (Hurry Up!): il pickup di un tesoro resetta il conteggio
                 # dei 10s — il fantasma appare solo se il player SMETTE di
@@ -1271,6 +1403,16 @@ func _update_playing(delta_ms: float) -> void:
         # roccia, cattura/mash delle ganasce, rallentamento sabbie.
         hazards.update_hazards(delta_ms, maze)
 
+        # TASK 81.2 — CELLE ZOMBIE: macchina a fasi (idle -> braccia fuori
+        # 5s -> ritrazione) e danno 20% energia per tocco sui player VIVI
+        # che attraversano la cella corridoio davanti alla facciata.
+        zombie_cells.update_cells(delta_ms, _alive_players())
+        # TASK 81.1 — FANTASMI LENZUOLO: scheduler delle apparizioni e
+        # attraversamento dei corridoi. CORREZIONE UTENTE: immortali ma
+        # DANNOSI (-33% energia al tocco, il salto evita) -> passano i
+        # player VIVI per il check del tocco.
+        maze_ghosts.update_ghosts(delta_ms, _alive_players())
+
         # (1d) TASK 32 — NUBE DI PIPISTRELLI: spawn programmato, caccia,
         # morsi e abbattimento (lo sciame vola sopra i muri: niente
         # interazione col maze, solo con player e proiettili).
@@ -1294,6 +1436,10 @@ func _update_playing(delta_ms: float) -> void:
         # Collect enemy projectiles in a real array (enemies that shoot add to it)
         var enemy_projectiles: Array = []
         for enemy in spawner.enemies:
+                # TASK 76 (crash get_tree() null): salta nemici non validi o
+                # fuori dal tree (finestra di teardown/respawn).
+                if not is_instance_valid(enemy) or not enemy.is_inside_tree():
+                        continue
                 if not enemy.is_death_anim_done():
                         var target_p: CharacterBody2D = _nearest_alive_player(enemy.get_pixel_pos())
                         if target_p != null:
@@ -1344,6 +1490,8 @@ func _update_playing(delta_ms: float) -> void:
         # check. Se il proiettile entra in una cella WALL, viene distrutto.
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D:
+                        continue
+                if proj.is_in_group("fx_effect"):
                         continue
                 if not is_instance_valid(proj):
                         continue
@@ -1563,6 +1711,18 @@ func _advance_projectiles(container: Node2D, _delta_ms: float) -> void:
                 p.queue_free()
 
 
+## TASK 61 — archetipi dei player attivi (selettore del pool armi del
+## labirinto: umani -> armi da fuoco, non-umani -> elementali).
+func _collect_char_types() -> Array:
+        var out: Array = []
+        if player != null and is_instance_valid(player):
+                out.append(player.character_type)
+        if GameManager and GameManager.num_players == 2 \
+                        and player2 != null and is_instance_valid(player2):
+                out.append(player2.character_type)
+        return out
+
+
 func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
         # Player.gd stores projectiles as Array[Dictionary] with keys:
         # pos, dir, power, active, type
@@ -1595,8 +1755,50 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
                                 # 2). NESSUNA arma uccide con un colpo solo:
                                 # solo mina, dinamite e item magici
                                 # (calice/scettro) restano kill istantanei.
-                                enemy.take_weapon_hit(int(proj.get("type", 0)), fury)
+                                # TASK 61 — COLPO DI GRAZIA ELEMENTALE + penalita'
+                                # affinita'. Il colpo che ucciderebbe il
+                                # nemico innesca lo stato della def:
+                                # burn_ms -> si infuoca e muore (start_burning,
+                                # macchinario aura/dinamite esistente);
+                                # freeze -> statua di ghiaccio (freeze_kill,
+                                # macchinario raggio congelante Task 50).
+                                # Il danno normale passa comunque da
+                                # take_weapon_hit con il char_type del tiratore
+                                # per la penalita' -50% fuori affinita'.
+                                var w_type61: int = int(proj.get("type", 0))
+                                var edef61: Dictionary = C.get_relic_def(w_type61)
+                                var dmg61: int = C.weapon_damage_for(w_type61,
+                                                enemy.max_health, fury,
+                                                p.character_type)
+                                if enemy.health - dmg61 <= 0 \
+                                                and not edef61.is_empty() \
+                                                and not enemy.is_dead():
+                                        if int(edef61.get("burn_ms", 0)) > 0:
+                                                enemy.start_burning(
+                                                                int(edef61.get("burn_ms", 30)))
+                                        elif bool(edef61.get("freeze", false)):
+                                                enemy.freeze_kill()
+                                        else:
+                                                enemy.take_weapon_hit(w_type61, fury,
+                                                                p.character_type)
+                                else:
+                                        enemy.take_weapon_hit(w_type61, fury,
+                                                        p.character_type)
                                 hit_ids.append(enemy)
+                                # TASK 51 (P3) — KNOCKBACK da armi reliquia a
+                                # DISTANZA: spinta visiva ~24px in direzione
+                                # opposta al player + stun 400ms (cap 1.5s).
+                                # Le mischia non sparano proiettili: se il
+                                # proiettile ha una def reliquia di famiglia
+                                # "distanza" e' un arco/balestra/bomba/ecc.
+                                var kdef: Dictionary = C.get_relic_def(
+                                                int(proj.get("type", 0)))
+                                if not kdef.is_empty() \
+                                                and kdef.get("family", "") == "distanza":
+                                        var kdir: Vector2 = (e_pos - p.get_pixel_pos()).normalized()
+                                        enemy.apply_knockback(kdir, 24.0)
+                                        if not enemy.is_dead():
+                                                enemy.apply_stun(400)
                                 # RELIC (Task 21) — Verga della Tempesta: il
                                 # fulmine salta ai nemici vicini al bersaglio.
                                 if proj.has("chain"):
@@ -1662,6 +1864,8 @@ func _check_player_projectiles_vs_enemies(p: CharacterBody2D) -> void:
 func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
         for proj in enemy_projectiles_node.get_children():
                 if not proj is Node2D or not proj.visible:
+                        continue
+                if proj.is_in_group("fx_effect"):
                         continue
                 var proj_pos: Vector2 = proj.position
                 if proj_pos.distance_squared_to(p.get_pixel_pos()) < 600.0:
@@ -1743,12 +1947,27 @@ func _check_pending_relic_melee(p: CharacterBody2D) -> void:
         var p_pos: Vector2 = p.get_pixel_pos()
         var hits: int = 0
         var primary_hits: Array = []
+        # TASK 51 (P4) — Spadone "max_targets": cap esplicito di nemici per
+        # fendente (4 per lo Spadone buffato). Se il def NON ha max_targets
+        # il comportamento resta quello storico (tutti i nemici nella shape).
+        # Selettore NEAREST-FIRST: con piu' nemici nell'arco di quanti ne
+        # possa colpire, vincono i piu' vicini (colpo "fisico" che parte
+        # dal player, non dall'angolo piu' comodo).
+        var max_targets: int = int(def.get("max_targets", 0))
+        var in_shape: Array = []
         for enemy in spawner.enemies:
                 if enemy.is_dead():
                         continue
                 var e_pos: Vector2 = enemy.get_pixel_pos()
                 if not C.relic_melee_in_shape(def, aim, p_pos, e_pos):
                         continue
+                in_shape.append([p_pos.distance_squared_to(e_pos), enemy])
+        in_shape.sort_custom(func(a, b): return a[0] < b[0])
+        for pair in in_shape:
+                if max_targets > 0 and hits >= max_targets:
+                        break
+                var enemy = pair[1]
+                var e_pos: Vector2 = enemy.get_pixel_pos()
                 enemy.take_damage(C.relic_melee_damage(def, enemy.max_health, fury))
                 primary_hits.append(enemy)
                 hits += 1
@@ -1854,7 +2073,7 @@ func _apply_storm_chain(p: CharacterBody2D, proj: Dictionary,
                         continue
                 if first_pos.distance_squared_to(enemy.get_pixel_pos()) \
                                 < radius * radius:
-                        enemy.take_weapon_hit(type, fury)
+                        enemy.take_weapon_hit(type, fury, p.character_type)
                         chained.append(enemy)
                         arc_path.append(enemy.get_pixel_pos())
                         jumps_left -= 1
@@ -1895,7 +2114,7 @@ func _consume_relic_bombs(p: CharacterBody2D) -> void:
                                 continue
                         if blast_pos.distance_squared_to(enemy.get_pixel_pos()) \
                                         < radius * radius:
-                                enemy.take_weapon_hit(type, fury)
+                                enemy.take_weapon_hit(type, fury, p.character_type)
                                 if enemy.is_dead():
                                         _on_relic_enemy_killed(p, enemy.get_pixel_pos())
                 if mini_boss != null and is_instance_valid(mini_boss) \
@@ -1988,102 +2207,123 @@ func _check_mine_vs_enemies() -> void:
                 return
         var mine_pos2: Vector2 = mine_item.position
         var mine_vel: Vector2 = mine_item.velocity
-        # FIX (bomba homing): ogni 250ms ricalcola la direzione verso il nemico
-        # più vicino usando BFS. La bomba "segue il labirinto" attivamente
-        # invece di muoversi solo in linea retta.
+        # =========================================================================
+        # TASK 50 (mina si blocca al primo muro e torna indietro in loop):
+        # riscritto l'homing. VECCHIO modello: ogni 250ms il BFS dava una
+        # direzione axis-aligned; tra un ricalcolo e l'altro la mina andava
+        # dritto e RIMBALZAVA elasticamente sui muri, finendo in oscillazione
+        # destra-sinistra finché non esplodeva. NUOVO modello: path-FOLLOWING
+        # continuo — BFS completo (BFS.find_path_cells), la mina insegue il
+        # centro del waypoint corrente, avanza appena entra nella cella e
+        # ricalcola appena il nemico si sposta di cella (o ogni 200ms).
+        # Nessun rimbalzo: se un passo finisse in un muro, scivola sull'asse
+        # libero (mai inversione di direzione).
+        # =========================================================================
+        var mine_cell := Vector2i(int(mine_pos2.x / C.TILE_SIZE),
+                        int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        var best_enemy: Node2D = null
+        var best_dist: float = INF
+        for enemy in spawner.enemies:
+                if enemy.is_dead():
+                        continue
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                var d: float = mine_pos2.distance_squared_to(e_pos)
+                if d < best_dist:
+                        best_dist = d
+                        best_enemy = enemy
+        if mini_boss != null and not mini_boss.is_dead():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                var d_mb: float = mine_pos2.distance_squared_to(mb_pos)
+                if d_mb < best_dist:
+                        best_dist = d_mb
+                        best_enemy = mini_boss
         var homing_timer: int = mine_item.homing_ms
         homing_timer -= 16
-        if homing_timer <= 0:
-                var mine_cell := Vector2i(int(mine_pos2.x / C.TILE_SIZE),
-                                int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                var best_enemy: Node2D = null
-                var best_dist: float = INF
-                for enemy in spawner.enemies:
-                        if enemy.is_dead():
+        if best_enemy != null and homing_timer <= 0:
+                var bpos: Vector2 = best_enemy.get_pixel_pos()
+                var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
+                                int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                var new_path: Array[Vector2i] = BFS.find_path_cells(maze, mine_cell, target_cell)
+                if new_path.size() > 0:
+                        mine_item.path_cells = new_path
+                        mine_item.path_idx = 0
+                homing_timer = 200
+        # --- Segui il waypoint corrente (steering continuo) ---
+        var speed: float = clampf(mine_vel.length(), 6.0, 7.5)
+        if mine_item.path_cells.size() > 0 and best_enemy != null:
+                # avanza i waypoint gia' raggiunti (cella corrente o sorpassati)
+                while mine_item.path_idx < mine_item.path_cells.size():
+                        var wp: Vector2i = mine_item.path_cells[mine_item.path_idx]
+                        if wp == mine_cell:
+                                mine_item.path_idx += 1
                                 continue
-                        var e_pos: Vector2 = enemy.get_pixel_pos()
-                        var d: float = mine_pos2.distance_squared_to(e_pos)
-                        if d < best_dist:
-                                best_dist = d
-                                best_enemy = enemy
-                if mini_boss != null and not mini_boss.is_dead():
-                        var mb_pos: Vector2 = mini_boss.get_pixel_pos()
-                        var d_mb: float = mine_pos2.distance_squared_to(mb_pos)
-                        if d_mb < best_dist:
-                                best_dist = d_mb
-                                best_enemy = mini_boss
-                if best_enemy != null:
-                        var bpos: Vector2 = best_enemy.get_pixel_pos()
-                        var target_cell := Vector2i(int(bpos.x / C.TILE_SIZE),
-                                        int((bpos.y - C.UI_HEIGHT) / C.TILE_SIZE))
-                        var next_dir: Vector2i = BFS.find_path_dir(maze, mine_cell, target_cell)
-                        if next_dir != Vector2i.ZERO:
-                                var speed: float = mine_vel.length()
-                                if speed < 0.001:
-                                        speed = 8.0
-                                mine_vel = Vector2(next_dir) * speed
-                homing_timer = 250
-        # FIX (bomba rimbalza senza inseguire): il save di homing_ms è
-        # SPOSTATO dopo il bounce check. Prima era prima del bounce, quindi
-        # l'azzeramento homing_timer=0 dopo il rimbalzo non veniva salvato
-        # → al prossimo frame homing_timer ripartiva da 250 invece di 0 →
-        # il BFS non ricalcolava subito → oscillazione.
-        # FIX (bomba arcade bouncing): muovi; se la nuova posizione è in un
-        # muro, inverte l'asse di impatto e NON damped (rimbalzo elastico
-        # puro, velocità costante).
-        # FIX (bomba rimbalza senza inseguire): dopo ogni rimbalzo, forza
-        # ricalcolo homing al prossimo frame (homing_timer=0). Prima, il
-        # timer homing di 250ms faceva sì che la bomba continuasse a
-        # rimbalzare nella STESSA direzione per 15 frame prima che il BFS
-        # ricalcolasse → oscillazione destra-sinistra ripetuta senza
-        # inseguire i nemici. Ora, dopo un rimbalzo, il BFS ricalcola
-        # immediatamente la direzione ottimale verso il nemico.
-        var _bounced: bool = false
+                        break
+                if mine_item.path_idx < mine_item.path_cells.size():
+                        var wp2: Vector2i = mine_item.path_cells[mine_item.path_idx]
+                        var step_d: Vector2i = wp2 - mine_cell
+                        var tgt: Vector2
+                        if absi(step_d.x) > 1 or absi(step_d.y) > 1:
+                                # Tunnel Pac-Man: il waypoint e' l'imbocco partner
+                                # opposto. Vola VERSO L'ESTERNO dal proprio imbocco:
+                                # il tunnel_wrap teletrasporta e il waypoint dopo
+                                # l'attraversamento e' adiacente di nuovo.
+                                # direzione d'uscita = verso il bordo piu' vicino
+                                # dell'imbocco (la cella corrente e' di bordo)
+                                var outward: Vector2 = Vector2(
+                                        signf(float(mine_cell.x) - float(C.MAZE_COLS - 1) * 0.5),
+                                        signf(float(mine_cell.y) - float(C.MAZE_ROWS - 1) * 0.5))
+                                if absf(outward.x) > absf(outward.y):
+                                        outward = Vector2(signf(outward.x), 0)
+                                else:
+                                        outward = Vector2(0, signf(outward.y))
+                                tgt = mine_pos2 + outward * 80.0
+                        else:
+                                tgt = Vector2((wp2.x + 0.5) * C.TILE_SIZE,
+                                                C.UI_HEIGHT + (wp2.y + 0.5) * C.TILE_SIZE)
+                        var to_t: Vector2 = tgt - mine_pos2
+                        if to_t.length() > 1.0:
+                                mine_vel = to_t.normalized() * speed
+                else:
+                        # percorso esaurito: puntala direttamente al nemico
+                        var direct: Vector2 = best_enemy.get_pixel_pos() - mine_pos2
+                        if direct.length() > 1.0:
+                                mine_vel = direct.normalized() * speed
+        elif best_enemy != null:
+                # nessun percorso BFS (nemico irraggiungibile / stessa cella):
+                # puntala direttamente al nemico
+                var direct2: Vector2 = best_enemy.get_pixel_pos() - mine_pos2
+                if direct2.length() > 1.0:
+                        mine_vel = direct2.normalized() * speed
+        # --- Movimento con SLIDE sui muri (mai rimbalzo) + wrap tunnel ---
         var new_pos: Vector2 = mine_pos2 + mine_vel
         var cur_col: int = int(mine_pos2.x / C.TILE_SIZE)
         var cur_row: int = int((mine_pos2.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        var next_col: int = int(new_pos.x / C.TILE_SIZE)
-        var next_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
-        if next_col >= 0 and next_col < C.MAZE_COLS and next_row >= 0 and next_row < C.MAZE_ROWS:
-                if next_col != cur_col and maze.is_wall(next_col, cur_row):
-                        mine_vel.x = -mine_vel.x  # rimbalzo elastico (no damping)
-                        new_pos.x = mine_pos2.x
-                        _bounced = true
-                if next_row != cur_row and maze.is_wall(cur_col, next_row):
-                        mine_vel.y = -mine_vel.y  # rimbalzo elastico (no damping)
-                        new_pos.y = mine_pos2.y
-                        _bounced = true
-        else:
-                # FIX (mina incastrata nel tunnel — bug utente): la mina che
-                # entra in una galleria Pac-Man deve ATTRAVERSARLA e riemergere
-                # dal lato opposto ESATTAMENTE come player e nemici (tunnel_wrap
-                # su GameConstants). Prima cadeva nel ramo out-of-bounds e
-                # rimbalzava sul bordo schermo: l'homing BFS la respingeva di
-                # nuovo verso il tunnel -> la mina vibrava INCASTRATA
-                # nell'imbocco (il BFS la instrada attraverso la galleria perche'
-                # e' la via piu' corta verso i nemici sull'altro lato).
-                # Nota: la mina puo' uscire dai bordi SOLO attraverso un imbocco
-                # di galleria (tutte le altre celle di bordo sono muri da cui
-                # rimbalza), quindi il wrap e' intrinsecamente sicuro.
+        if new_pos.x < 0.0 or new_pos.x >= C.WINDOW_WIDTH \
+                        or new_pos.y < C.UI_HEIGHT or new_pos.y >= C.WINDOW_HEIGHT:
                 var wrapped_mine: Vector2 = GameConstants.tunnel_wrap(new_pos)
                 if wrapped_mine != new_pos:
                         new_pos = wrapped_mine
-                else:
-                        # Vero out-of-bounds al di fuori delle gallerie (non
-                        # dovrebbe mai succedere): rimbalzo sui bordi schermo.
-                        if new_pos.x < 64.0 or new_pos.x > C.WINDOW_WIDTH - 64.0:
-                                mine_vel.x = -mine_vel.x
-                                new_pos.x = mine_pos2.x
-                                _bounced = true
-                        if new_pos.y < C.UI_HEIGHT + 32.0 or new_pos.y > C.WINDOW_HEIGHT - 64.0:
-                                mine_vel.y = -mine_vel.y
-                                new_pos.y = mine_pos2.y
-                                _bounced = true
-        # FIX (bomba rimbalza senza inseguire): dopo un rimbalzo, forza
-        # ricalcolo homing al prossimo frame.
-        if _bounced:
-                homing_timer = 0
-        # SAVE homing_ms DOPO il bounce check (così l'azzeramento persiste).
+        var next_col: int = int(new_pos.x / C.TILE_SIZE)
+        var next_row: int = int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE)
+        if next_col >= 0 and next_col < C.MAZE_COLS and next_row >= 0 and next_row < C.MAZE_ROWS:
+                var blocked_x: bool = next_col != cur_col and maze.is_wall(next_col, cur_row)
+                var blocked_y: bool = next_row != cur_row and maze.is_wall(cur_col, next_row)
+                var blocked_diag: bool = (next_col != cur_col or next_row != cur_row) \
+                                and maze.is_wall(next_col, next_row)
+                if blocked_x and blocked_y:
+                        # angolo: resta dov'e' e forza ricalcolo percorso
+                        new_pos = mine_pos2
+                        homing_timer = 0
+                elif blocked_diag and not blocked_x and not blocked_y:
+                        # taglio dell'angolo: muovi solo sull'asse che resta libero
+                        if not maze.is_wall(cur_col, next_row):
+                                new_pos = Vector2(mine_pos2.x, new_pos.y)
+                        else:
+                                new_pos = Vector2(new_pos.x, mine_pos2.y)
+                elif blocked_x:
+                        new_pos = Vector2(mine_pos2.x, new_pos.y)
+                elif blocked_y:
+                        new_pos = Vector2(new_pos.x, mine_pos2.y)
         mine_item.homing_ms = homing_timer
         mine_pos2 = new_pos
         # Aggiorna posizione e velocità della mine
@@ -2425,8 +2665,13 @@ func _reset_parchments(level: int) -> void:
         _free_scroll_visuals()
         scroll_quake_phase = ScrollPhase.DONE
         scroll_chasm_phase = ScrollPhase.DONE
+        scroll_freeze_phase = ScrollPhase.DONE
         scroll_quake_spawns_used = 0
         scroll_chasm_spawns_used = 0
+        scroll_freeze_spawns_used = 0
+        # TASK 50: l'equip della pergamena del ghiaccio NON sopravvive al
+        # cambio livello (i colpi non usati sono persi, come il martello).
+        _unequip_freeze_scroll()
         if not C.PARCHMENTS_ENABLED or level < C.PARCHMENT_GRACE_LEVEL:
                 return
         _scroll_rng.seed = hash("scrolls_v1_%d" % level)
@@ -2436,6 +2681,14 @@ func _reset_parchments(level: int) -> void:
         scroll_chasm_phase = ScrollPhase.WAIT
         scroll_chasm_timer_ms = float(_scroll_rng.randi_range(
                 C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS))
+        # TASK 50: la pergamena del ghiaccio usa le STESSE finestre
+        # temporali delle altre due (stesse tempistiche di apparizione).
+        # Il suo draw RNG avviene DOPO quake e chasm: le sequenze dei due
+        # eventi esistenti restano IDENTICHE ai livelli precedenti.
+        if C.SCROLL_FREEZE_ENABLED:
+                scroll_freeze_phase = ScrollPhase.WAIT
+                scroll_freeze_timer_ms = float(_scroll_rng.randi_range(
+                        C.PARCHMENT_FIRST_MIN_MS, C.PARCHMENT_FIRST_MAX_MS))
 
 
 ## Libera item a terra e beacon di entrambe le pergamene (fine livello /
@@ -2458,6 +2711,15 @@ func _free_scroll_visuals() -> void:
                 if is_instance_valid(scroll_chasm_beacon):
                         scroll_chasm_beacon.queue_free()
                 scroll_chasm_beacon = null
+        # TASK 50: pulizia difensiva anche della pergamena del ghiaccio.
+        if scroll_freeze_item != null:
+                if is_instance_valid(scroll_freeze_item):
+                        scroll_freeze_item.queue_free()
+                scroll_freeze_item = null
+        if scroll_freeze_beacon != null:
+                if is_instance_valid(scroll_freeze_beacon):
+                        scroll_freeze_beacon.queue_free()
+                scroll_freeze_beacon = null
 
 
 ## Macchina a stati delle due pergamene (WAIT -> BEACON -> GROUND -> DONE).
@@ -2468,6 +2730,7 @@ func _free_scroll_visuals() -> void:
 func _update_parchments(delta_ms: float) -> void:
         _update_one_scroll(delta_ms, true)   # terremoto
         _update_one_scroll(delta_ms, false)  # voragini
+        _update_freeze_scroll(delta_ms)      # TASK 50: ghiaccio
 
 
 func _update_one_scroll(delta_ms: float, is_quake: bool) -> void:
@@ -2689,6 +2952,264 @@ func _consume_scroll_ground(is_quake: bool, collected: bool) -> void:
                 scroll_quake_phase = ScrollPhase.DONE
         else:
                 scroll_chasm_phase = ScrollPhase.DONE
+
+
+# ============================================================================
+# TASK 50 — PERGAMENA DEL GHIACCIO. Copia DIRETTA della macchina a stati
+# delle altre due pergamene (WAIT -> BEACON -> GROUND -> DONE) con le
+# STESSE costanti (PARCHMENT_*): tempistiche di apparizione identiche.
+# Differenze: colore celeste-ghiaccio, kind FREEZE_SCROLL e raccolta che
+# EQUIPAGGIA il player invece di attivare un evento immediato.
+# ============================================================================
+
+func _update_freeze_scroll(delta_ms: float) -> void:
+        match scroll_freeze_phase:
+                ScrollPhase.WAIT:
+                        scroll_freeze_timer_ms -= delta_ms
+                        if scroll_freeze_timer_ms <= 0.0:
+                                # budget apparizioni esaurito?
+                                if scroll_freeze_spawns_used >= C.PARCHMENT_MAX_SPAWNS:
+                                        scroll_freeze_phase = ScrollPhase.DONE
+                                        return
+                                # condizione: almeno il 30% dei nemici vivi
+                                var alive: int = spawner.alive_count()
+                                var total: int = maxi(1, spawner.initial_count)
+                                if float(alive) >= float(total) * C.PARCHMENT_MIN_ALIVE_PCT:
+                                        _start_freeze_beacon()
+                                        return
+                                # troppi morti: riprova piu' tardi
+                                scroll_freeze_timer_ms = float(C.PARCHMENT_RETRY_MS)
+                ScrollPhase.BEACON:
+                        scroll_freeze_timer_ms -= delta_ms
+                        if scroll_freeze_beacon != null \
+                                        and is_instance_valid(scroll_freeze_beacon):
+                                var k: float = 1.0 - scroll_freeze_timer_ms \
+                                                / float(C.PARCHMENT_TELEGRAPH_MS)
+                                var pulse_k: float = 0.75 + 0.25 * sin(
+                                                _time_now() * 16.0)
+                                scroll_freeze_beacon.scale = Vector2.ONE \
+                                                * (0.55 + k * 0.75) * pulse_k
+                                scroll_freeze_beacon.rotation += delta_ms / 900.0
+                        if scroll_freeze_timer_ms <= 0.0:
+                                _spawn_freeze_item()
+                                return
+                ScrollPhase.GROUND:
+                        # il lifetime (16s + 2s blink) vive nel Collectibles;
+                        # qui si vigilano scomparsa (active=false) e validita'.
+                        if scroll_freeze_item == null \
+                                        or not is_instance_valid(scroll_freeze_item) \
+                                        or not scroll_freeze_item.active:
+                                _consume_freeze_ground(false)
+                ScrollPhase.DONE:
+                        pass
+
+
+## Fase BEACON: bagliore/aura CELESTE GHIACCIO sulla cella scelta.
+func _start_freeze_beacon() -> void:
+        var cell := _random_empty_cell()
+        if cell == Vector2i(-1, -1):
+                scroll_freeze_timer_ms = float(C.PARCHMENT_RETRY_MS)
+                return
+        var pos: Vector2 = _cell_to_pixel(cell)
+        var beacon := Sprite2D.new()
+        var tex: Texture2D = load("res://assets/sprites/parchment/beacon_glow.png")
+        if tex != null:
+                beacon.texture = tex
+        beacon.position = pos
+        beacon.scale = Vector2.ONE * 0.55
+        # celeste ghiaccio per la pergamena del congelamento
+        beacon.modulate = Color(0.35, 0.8, 1.0, 0.85)
+        beacon.z_index = 5
+        collectibles_node.add_child(beacon)
+        scroll_freeze_beacon = beacon
+        scroll_freeze_phase = ScrollPhase.BEACON
+        scroll_freeze_timer_ms = float(C.PARCHMENT_TELEGRAPH_MS)
+        scroll_freeze_item = null
+        set_meta("scroll_freeze_cell", cell)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.HAZARD_RUMBLE)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.0, 0.2)
+
+
+## Fase GROUND: il bagliore si spegne, il FULMINE SI ABBATE AL SUOLO
+## (tinta ghiaccio) e la pergamena celeste appare.
+func _spawn_freeze_item() -> void:
+        var cell: Vector2i = get_meta("scroll_freeze_cell", Vector2i(-1, -1))
+        if scroll_freeze_beacon != null and is_instance_valid(scroll_freeze_beacon):
+                scroll_freeze_beacon.queue_free()
+        if cell == Vector2i(-1, -1):
+                cell = _random_empty_cell()
+        if cell == Vector2i(-1, -1):
+                _consume_freeze_ground(false)
+                return
+        var item: Collectibles = _create_collectible(
+                        CollectiblesClass.Kind.FREEZE_SCROLL, _cell_to_pixel(cell))
+        item.scroll_lifetime_ms = float(C.PARCHMENT_VISIBLE_MS + C.PARCHMENT_BLINK_MS)
+        collectibles_node.add_child(item)
+        scroll_freeze_item = item
+        scroll_freeze_beacon = null
+        scroll_freeze_phase = ScrollPhase.GROUND
+        scroll_freeze_spawns_used += 1
+        # FULMINE che si abbatte al suolo, tinto CELESTE GHIACCIO
+        var tint := Color(0.35, 0.8, 1.0)
+        var strike: Node2D = LightningStrikeFx.new()
+        strike.setup(item.position, tint)
+        collectibles_node.add_child(strike)
+        # ONDA DI LUCE che si diffonde dal punto d'impatto (pattern Task 38)
+        var wave: Node2D = MazeLightWaveFx.new()
+        wave.setup(item.position, tint, 900.0)
+        collectibles_node.add_child(wave)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.SCROLL_LIGHTNING)
+        if EffectsManager:
+                EffectsManager.screen_shake(3.0, 0.3)
+
+
+## Fine della fase GROUND (raccolta o scadenza a terra). Se NON raccolta
+## puo' riapparire (max PARCHMENT_MAX_SPAWNS per livello); se RACCOLTA
+## (equipaggiata) l'evento e' chiuso per il resto del livello.
+func _consume_freeze_ground(collected: bool) -> void:
+        if scroll_freeze_item != null and is_instance_valid(scroll_freeze_item):
+                if not collected:
+                        if EffectsManager:
+                                var puff := EffectsManager.spawn_explosion(
+                                                scroll_freeze_item.position,
+                                                Color(0.55, 0.75, 0.9), 8, 0.4)
+                                collectibles_node.add_child(puff)
+                scroll_freeze_item.queue_free()
+        scroll_freeze_item = null
+        scroll_freeze_beacon = null
+        if not collected:
+                if scroll_freeze_spawns_used < C.PARCHMENT_MAX_SPAWNS:
+                        scroll_freeze_phase = ScrollPhase.WAIT
+                        scroll_freeze_timer_ms = float(_scroll_rng.randi_range(
+                                C.PARCHMENT_NEXT_MIN_MS, C.PARCHMENT_NEXT_MAX_MS))
+                        return
+        scroll_freeze_phase = ScrollPhase.DONE
+
+
+## Rimuove l'equip della pergamena del ghiaccio dal player che la tiene
+## (fine colpi, cambio livello, reset difensivo).
+func _unequip_freeze_scroll() -> void:
+        if freeze_scroll_player != 0:
+                var p: CharacterBody2D = player if freeze_scroll_player == 1 else player2
+                if p != null and is_instance_valid(p) \
+                                and p.has_method("set_freeze_scroll_equipped"):
+                        p.set_freeze_scroll_equipped(false)
+        freeze_scroll_player = 0
+        freeze_charges_left = 0
+
+
+## TASK 50 — SPARO DEL RAGGIO CONGELANTE. Hitscan dalla posizione del
+## player lungo la direzione di fuoco: congela TUTTI i nemici la cui
+## distanza dalla traiettoria e' entro SCROLL_FREEZE_HIT_RADIUS_PX (il
+## beam attraversa i nemici e si ferma al primo muro). Ogni nemico
+## congelato = uccisione one-shot (sprite CONGELATO sul posto per tutto
+## il livello). Il mid-boss subisce il 50% degli HP max + stordimento.
+## Consuma UNO dei 2 colpi; a zero colpi la pergamena scompare.
+func _fire_freeze_ray(p: CharacterBody2D) -> void:
+        var shoot_dx: int = p.dx if p.dx != 0 else p.last_dx
+        var shoot_dy: int = p.dy if p.dy != 0 else p.last_dy
+        if shoot_dx == 0 and shoot_dy == 0:
+                shoot_dx = 1  # fallback: spara a destra (come shoot())
+        var dir := Vector2(float(shoot_dx), float(shoot_dy)).normalized()
+        var muzzle: Vector2 = p.get_pixel_pos() + Vector2(0.0, -12.0) \
+                        + dir * 20.0
+
+        # --- Hitscan: cammina lungo il raggio fino al primo muro -----------
+        var max_len: float = float(C.SCROLL_FREEZE_RANGE_CELLS * C.TILE_SIZE)
+        var beam_end: Vector2 = muzzle + dir * max_len
+        var step: float = C.SCROLL_FREEZE_STEP_PX
+        var travelled: float = 0.0
+        while travelled < max_len:
+                travelled += step
+                var probe: Vector2 = muzzle + dir * travelled
+                var col: int = int(probe.x) / C.TILE_SIZE
+                var row: int = int(probe.y - C.UI_HEIGHT) / C.TILE_SIZE
+                if col < 0 or col >= C.MAZE_COLS or row < 0 or row >= C.MAZE_ROWS:
+                        beam_end = probe
+                        break
+                if maze.get_cell_type(col, row) != C.CellType.EMPTY:
+                        beam_end = probe - dir * (step * 0.5)
+                        break
+
+        # --- Congela i nemici colpiti dalla traiettoria ---------------------
+        var hit_r_sq: float = C.SCROLL_FREEZE_HIT_RADIUS_PX * C.SCROLL_FREEZE_HIT_RADIUS_PX
+        var frozen_count: int = 0
+        for enemy in spawner.enemies:
+                if enemy == null or not is_instance_valid(enemy):
+                        continue
+                if enemy.is_dead():
+                        continue
+                # distanza punto-segmento (muzzle -> beam_end)
+                var e_pos: Vector2 = enemy.get_pixel_pos()
+                var ap: Vector2 = e_pos - muzzle
+                var ab: Vector2 = beam_end - muzzle
+                var ab_len_sq: float = ab.length_squared()
+                var tproj: float = ap.dot(ab) / ab_len_sq if ab_len_sq > 0.0 else 0.0
+                tproj = clampf(tproj, 0.0, 1.0)
+                var closest: Vector2 = muzzle + ab * tproj
+                if e_pos.distance_squared_to(closest) > hit_r_sq:
+                        continue
+                enemy.freeze_kill()
+                frozen_count += 1
+                p.add_score(C.SCROLL_FREEZE_POINTS)
+                # esplosione di brina + frantumazione ghiaccio sul nemico
+                if EffectsManager:
+                        var burst := EffectsManager.spawn_explosion(
+                                        e_pos, Color(0.55, 0.85, 1.0), 18, 0.5)
+                        collectibles_node.add_child(burst)
+                if AudioManager:
+                        # TASK 50b: suono dedicato della cristallizzazione
+                        # (schiocco vetroso + crescita cristalli + tonfo)
+                        AudioManager.play_sound(AudioManager.SoundType.FREEZE_HIT)
+
+        # --- Mid-boss nella traiettoria: troppo potente per congelare,
+        # subisce il 50% degli HP max + stordimento (come il martello). ---
+        if mini_boss != null and is_instance_valid(mini_boss) \
+                        and not mini_boss.is_dead():
+                var mb_pos: Vector2 = mini_boss.get_pixel_pos()
+                var ap_mb: Vector2 = mb_pos - muzzle
+                var ab_mb: Vector2 = beam_end - muzzle
+                var tmb: float = ap_mb.dot(ab_mb) / ab_mb.length_squared()
+                tmb = clampf(tmb, 0.0, 1.0)
+                var closest_mb: Vector2 = muzzle + ab_mb * tmb
+                if mb_pos.distance_squared_to(closest_mb) <= hit_r_sq:
+                        var mb_max: int = mini_boss.get_max_health()
+                        var mb_dmg: int = maxi(1, int(round(
+                                        float(mb_max) * C.SCROLL_FREEZE_MINIBOSS_DMG_PCT)))
+                        mini_boss.take_damage(mb_dmg)
+                        if mini_boss.has_method("apply_stun"):
+                                mini_boss.apply_stun(C.SCROLL_FREEZE_MINIBOSS_STUN_MS)
+                        if EffectsManager:
+                                var burst_mb := EffectsManager.spawn_explosion(
+                                                mb_pos, Color(0.55, 0.85, 1.0), 14, 0.45)
+                                collectibles_node.add_child(burst_mb)
+                        if AudioManager:
+                                # TASK 50b: cristallizzazione anche sul mid-boss
+                                AudioManager.play_sound(AudioManager.SoundType.FREEZE_HIT)
+
+        # --- Visual: raggio congelante + screen flash leggero ---------------
+        var beam: Node2D = IceBeamFx.new()
+        beam.setup(muzzle, beam_end)
+        collectibles_node.add_child(beam)
+        if EffectsManager:
+                EffectsManager.screen_shake(2.5, 0.2)
+
+        # --- Consumo del colpo ----------------------------------------------
+        freeze_charges_left -= 1
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.FREEZE_RAY)
+        p.shoot_cooldown = 300
+        p.shoot_anim_timer = 300
+        var shooter_id: int = freeze_scroll_player
+        if freeze_charges_left <= 0:
+                _unequip_freeze_scroll()
+                print("[Parchment] Player ", shooter_id,
+                                " ha esaurito i colpi del raggio congelante")
+        print("[Parchment] Raggio congelante: ", frozen_count,
+                        " nemici congelati (colpi rimasti: ", freeze_charges_left, ")")
 
 
 ## Cella EMPTY casuale non-tunnel e libera da collectible a terra.
@@ -3078,6 +3599,126 @@ func _on_soul_delivered(winner: CharacterBody2D, victim: CharacterBody2D) -> voi
 # ============================================================================
 # Collectibles update + collision with player
 # ============================================================================
+
+# TASK 51 — CARD BONUS (richiesta utente): mostra la card informativa alla
+# PRIMA raccolta di un bonus particolare. Il gioco si mette in PAUSA; la
+# card presenta nome/effetto/usi/danno, icona stilizzata e una demo animata
+# in loop; si chiude TENENDO PREMUTO il fuoco per 1 secondo. Se lo stesso
+# bonus viene ripreso piu' avanti nella partita la card NON riappare
+# (memoria per-run: GameManager.bonus_cards_seen, azzerata a nuova run).
+func _maybe_show_bonus_card(kind: int, player_num: int, ally_variant := "unicorn") -> void:
+        if not C.BONUS_CARD_ENABLED:
+                return
+        var key := "kind_%d" % kind
+        if GameManager == null or GameManager.has_seen_bonus_card(key):
+                return
+        # una card alla volta (pickup simultanei in 2P): il secondo bonus
+        # NON viene segnato come visto — la sua card comparira' alla
+        # prossima raccolta, non viene saltata in silenzio.
+        if _bonus_card != null:
+                return
+        GameManager.mark_bonus_card_seen(key)
+        var card: CanvasLayer = BonusCardOverlayClass.new()
+        # TASK 58b: la demo mostra la sprite PixelLab del personaggio che
+        # ha raccolto il bonus (player2 e' un nodo della scena anche in 1P,
+        # con character_type di default HERO_M se mai selezionato).
+        var char_owner: CharacterBody2D = player2 if player_num == 2 else player
+        var ct := 0
+        if char_owner != null and "character_type" in char_owner:
+                ct = int(char_owner.character_type)
+        card.setup(kind, player_num, ct, ally_variant)
+        card.card_closed.connect(_on_bonus_card_closed)
+        _bonus_card = card
+        add_child(card)
+        get_tree().paused = true
+
+
+# TASK 51 — chiusura della card: riavvia il gioco e libera l'overlay.
+# TASK 75: la card si chiude TENENDO PREMUTO il fuoco -> alla riapertura il
+# pulsante e' ancora giu'. Senza gate, il primo frame di polling generava un
+# fronte fantasma e la dinamite appena raccolta partiva DA SOLA. Da qui in
+# poi il fuoco di ENTRAMBI i player richiede un RILASCIO preliminare: il
+# gate si sblocca solo quando il pulsante risulta fisicamente rilasciato
+# (vedi _update_fire_rearm); chi non tiene premuto non se ne accorge.
+func _on_bonus_card_closed() -> void:
+        if _bonus_card != null:
+                _bonus_card.queue_free()
+                _bonus_card = null
+        _fire_rearm_p1 = true
+        _fire_rearm_p2 = true
+        if get_tree():
+                get_tree().paused = false
+
+
+# TASK 75 — stato FISICO attuale del fuoco P1 (tastiera + joystick), mirror
+# di BonusCardOverlay._owner_fire_held: usato solo per sbloccare il gate.
+func _p1_fire_raw() -> bool:
+        var held := Input.is_action_pressed("shoot") \
+                        or Input.is_action_pressed("confirm")
+        var joy := _resolve_p1_joy()
+        if joy >= 0:
+                var btn: int = ConfigManager.joy_shoot() if ConfigManager else -1
+                if btn < 0:
+                        btn = JOY_BUTTON_B
+                held = held or Input.is_joy_button_pressed(joy, btn)
+        return held
+
+
+# TASK 75 — stato FISICO attuale del fuoco P2 (tastiera + joystick).
+func _p2_fire_raw() -> bool:
+        var held := Input.is_action_pressed("p2_shoot")
+        var joy2 := _resolve_p2_joy()
+        if joy2 >= 0:
+                var btn2: int = ConfigManager.joy2_shoot() if ConfigManager else -1
+                if btn2 < 0:
+                        btn2 = JOY_BUTTON_B
+                held = held or Input.is_joy_button_pressed(joy2, btn2)
+        return held
+
+
+# TASK 75 — device joystick corrente di P1 (mirror della risoluzione in
+# _handle_input / BonusCardOverlay._resolve_p1_joy).
+func _resolve_p1_joy() -> int:
+        var pads: Array = Input.get_connected_joypads()
+        if ConfigManager and ConfigManager.joy_id() >= 0 \
+                        and pads.has(ConfigManager.joy_id()):
+                return ConfigManager.joy_id()
+        if pads.size() > 0:
+                return pads[0]
+        return -1
+
+
+# TASK 75 — device joystick corrente di P2 (mirror di _handle_input:
+# JOY2_ID configurato, else secondo pad, anti-conflitto col pad di P1).
+func _resolve_p2_joy() -> int:
+        var pads: Array = Input.get_connected_joypads()
+        var p1 := _resolve_p1_joy()
+        var joy2: int = -1
+        if ConfigManager and ConfigManager.joy2_id() >= 0 \
+                        and pads.has(ConfigManager.joy2_id()):
+                joy2 = ConfigManager.joy2_id()
+        elif pads.size() > 1:
+                joy2 = pads[1]
+        if joy2 == p1 and p1 >= 0:
+                joy2 = -1
+                for pad_id in pads:
+                        if pad_id != p1:
+                                joy2 = pad_id
+                                break
+        return joy2
+
+
+# TASK 75 — sblocca i gate di riarmo quando il pulsante e' rilasciato.
+# Chiamato a inizio _handle_input (mai durante la pausa: _physics_process
+# early-returna con la card aperta, quindi il gate sopravvive finche' il
+# gioco non riprende e il pulsante non viene lasciato).
+func _update_fire_rearm() -> void:
+        if _fire_rearm_p1 and not _p1_fire_raw():
+                _fire_rearm_p1 = false
+        if _fire_rearm_p2 and not _p2_fire_raw():
+                _fire_rearm_p2 = false
+
+
 func _update_collectibles(delta_ms: float) -> void:
         var p1_pos: Vector2 = player.get_pixel_pos()
         var p2_pos: Vector2 = Vector2.ZERO
@@ -3133,6 +3774,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
         var kind_int: int = item.kind
         match kind_int:
                 CollectiblesClass.Kind.MINE: 
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.MINE, player_id)
                         # FIX (bomba scompare subito): velocità iniziale troppo alta
                         # (randf()*4-2)*50 = fino a 100px/frame → la bomba usciva
                         # dallo schermo in 1-2 frame. Ridotta a *5 (max 10px/frame).
@@ -3145,6 +3787,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.TRAP)
                 CollectiblesClass.Kind.CHALICE:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.CHALICE, player_id)
                         # FIX (durata calice -3s + bug doppio decremento): il timer
                         # veniva decrementato DUE volte per frame (in
                         # Player.update_player E in _update_invincible_burn),
@@ -3175,6 +3818,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(1.0, 0.84, 0.0))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.SCEPTER:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.SCEPTER, player_id)
                         item.trigger_scepter()
                         item.active = false
                         item.queue_free()
@@ -3193,6 +3837,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.5, 0.8, 1.0))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.SPEED_BOOTS:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.SPEED_BOOTS, player_id)
                         if item.owner_id == 0 or item.owner_id == player_id:
                                 p.activate_speed_boost()
                                 item.active = false
@@ -3240,6 +3885,8 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.3, 1.0, 0.3))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.KNIGHT_STATUE:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.KNIGHT_STATUE,
+                                        player_id, _ally_variant_for_level())
                         # FIX (nuova meccanica): evoca cavaliere alleato.
                         # Il cavaliere appare accanto al player e combatte.
                         item.active = false
@@ -3254,6 +3901,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.4, 0.7, 1.0))
                                 collectibles_node.add_child(burst)
                 CollectiblesClass.Kind.DYNAMITE:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.DYNAMITE, player_id)
                         # FIX (nuova meccanica): candelotto di dinamite.
                         # Animazione accensione miccia (0.8s), poi player equipaggia.
                         # La miccia brucia per 7s, poi alert + 2s esplosione.
@@ -3265,6 +3913,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         # esplosione e rendering sul player giusto).
                         _start_dynamite_pickup(p, player_id)
                 CollectiblesClass.Kind.POTION:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.POTION, player_id)
                         # FIX (pozione magica): il player BEVE la pozione.
                         # Suono di deglutizione + effetto fantasma per 5s:
                         # evanescente, attraversa i muri, uscita automatica dal
@@ -3291,6 +3940,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.45, 1.0, 0.55))
                                 collectibles_node.add_child(burst_p)
                 CollectiblesClass.Kind.HAMMER:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.HAMMER, player_id)
                         # FIX (martello di Thor — nuova meccanica): il player
                         # raccoglie Mjolnir. Da questo momento il tasto di
                         # fuoco LANCIA il martello (max 2 volte); poi
@@ -3311,6 +3961,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 collectibles_node.add_child(burst_h)
                         print("[Hammer] Player ", player_id, " ha raccolto Mjolnir (2 lanci)")
                 CollectiblesClass.Kind.QUAKE_SCROLL:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.QUAKE_SCROLL, player_id)
                         # TASK 35 (pergamene evento): si attiva IMMEDIATAMENTE
                         # alla raccolta — terremoto: -50% HP a tutti i nemici,
                         # eliminati quelli che restano sotto il 50%. Il player
@@ -3328,6 +3979,7 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                         print("[Parchment] Player ", player_id,
                                         " ha letto la pergamena del terremoto")
                 CollectiblesClass.Kind.CHASM_SCROLL:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.CHASM_SCROLL, player_id)
                         # TASK 35: pergamena delle voragini — 3 ondate da 4
                         # voragini magiche: uccidono i nemici, il player e'
                         # immune e non puo' caderci.
@@ -3342,6 +3994,29 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                 collectibles_node.add_child(burst_c)
                         print("[Parchment] Player ", player_id,
                                         " ha letto la pergamena delle voragini")
+                CollectiblesClass.Kind.FREEZE_SCROLL:
+                        _maybe_show_bonus_card(CollectiblesClass.Kind.FREEZE_SCROLL, player_id)
+                        # TASK 50 (pergamena del GHIACCIO): il player la
+                        # EQUIPAGGIA — il tasto di fuoco spara il raggio
+                        # congelante (2 colpi, poi la pergamena scompare).
+                        # Congela i nemici per TUTTO il livello: conta come
+                        # uccisione one-shot ma lo sprite resta sul
+                        # labirinto, congelato nel ghiaccio trasparente.
+                        item.active = false
+                        _consume_freeze_ground(true)
+                        freeze_scroll_player = player_id
+                        freeze_charges_left = C.SCROLL_FREEZE_CHARGES
+                        p.set_freeze_scroll_equipped(true)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+                                AudioManager.play_sound(AudioManager.SoundType.BURST_FROST)
+                        if EffectsManager:
+                                var burst_f := EffectsManager.spawn_pickup_burst(
+                                        p.get_pixel_pos(), Color(0.35, 0.8, 1.0))
+                                collectibles_node.add_child(burst_f)
+                        print("[Parchment] Player ", player_id,
+                                        " ha equipaggiato la pergamena del ghiaccio (",
+                                        C.SCROLL_FREEZE_CHARGES, " colpi)")
 
 
 # ============================================================================
@@ -3455,6 +4130,10 @@ func start_level(lvl: int) -> void:
         scepter_strikes_left = 0
         # Generate maze (o RIPRISTINO dallo snapshot del continue)
         if restore.is_empty():
+                # TASK 61 — le armi nel labirinto seguono l'affinita' degli
+                # archetipi dei player (umani -> armi da fuoco, non-umani ->
+                # elementali del pool del personaggio).
+                maze.affinity_char_types = _collect_char_types()
                 maze.generate(current_level)
         else:
                 maze.restore_state(restore.get("maze", {}))
@@ -3528,6 +4207,16 @@ func start_level(lvl: int) -> void:
         # stati freschi (le voragini ri-partono dal telegrafo). generate()
         # ripulisce prima tutto (sprite + registro dynamic_walls del Maze).
         hazards.generate(current_level, maze, self)
+        # TASK 81.2 — CELLE ZOMBIE: dopo hazards.generate (le lastre mobili
+        # del Task 30 sono gia' in maze.dynamic_walls e vengono escluse dal
+        # placement). RNG seedato sul livello: al continue le celle tornano
+        # negli stessi punti della griglia ripristinata (pattern hazards).
+        zombie_cells.generate(current_level, maze)
+        # TASK 81.1/81c — FANTASMI LENZUOLO: pool fisso W/R/G, respawn
+        # INFINITO a ondate (1 lenzuolo al L1 con rotazione colori, 2 dal
+        # L2, 3 dal L7; delay 30s al L1 che scende di 5s/level fino a 5s).
+        # Orari seedati per livello (continue riproducibile).
+        maze_ghosts.generate(current_level, maze)
         # TASK 32 — NUBE DI PIPISTRELLI: programma gli eventi del livello
         # (1 dal livello 5, 2 dal 31) e rimuove l'eventuale sciame del
         # livello precedente.
@@ -3662,6 +4351,10 @@ func _build_session_snapshot() -> Dictionary:
         # --- Martello ---
         if hammer_player != 0:
                 snap["hammer"] = {"player": hammer_player, "uses_left": hammer_uses_left}
+        # --- TASK 50: pergamena del ghiaccio equipaggiata ---
+        if freeze_scroll_player != 0:
+                snap["freeze_scroll"] = {"player": freeze_scroll_player,
+                                "charges_left": freeze_charges_left}
         # --- Dinamite (se in mano senza essere scoppiata) ---
         snap["dynamite_equipped"] = dynamite_equipped
         snap["dynamite_player"] = dynamite_player
@@ -3748,6 +4441,8 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                         node.owner_id = 2
                 if key == "statue":
                         node.active = true
+                        # TASK 64: variante statuetta coerente col livello corrente
+                        node.statue_variant = _ally_variant_for_level()
                 collectibles_node.add_child(node)
                 match key:
                         "mine": mine_item = node
@@ -3823,6 +4518,17 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 hammer_uses_left = int(hammer_snap.get("uses_left", 0))
         player.set_hammer_equipped(hammer_player == 1 and hammer_uses_left > 0)
         player2.set_hammer_equipped(hammer_player == 2 and hammer_uses_left > 0)
+        # --- TASK 50: pergamena del ghiaccio in spalla al player giusto ---
+        var freeze_snap: Dictionary = snap.get("freeze_scroll", {})
+        freeze_scroll_player = 0
+        freeze_charges_left = 0
+        if not freeze_snap.is_empty():
+                freeze_scroll_player = int(freeze_snap.get("player", 1))
+                freeze_charges_left = int(freeze_snap.get("charges_left", 0))
+        player.set_freeze_scroll_equipped(
+                        freeze_scroll_player == 1 and freeze_charges_left > 0)
+        player2.set_freeze_scroll_equipped(
+                        freeze_scroll_player == 2 and freeze_charges_left > 0)
         # --- Dinamite equipaggiata (senza miccia evoluta: riparte da 7s) ---
         dynamite_equipped = bool(snap.get("dynamite_equipped", false))
         dynamite_fuse_timer_ms = int(snap.get("dynamite_fuse_ms", 7000)) \
@@ -4254,6 +4960,11 @@ func _spawn_collectibles() -> void:
                 var statue_pos := _cell_to_pixel(cell)
                 knight_statue_item = _create_collectible(CollectiblesClass.Kind.KNIGHT_STATUE, statue_pos)
                 knight_statue_item.active = true
+                # TASK 64 (alleato alternato per livello): l'icona della
+                # statuetta a terra segue la parita' del livello (dispari =
+                # unicorno, pari = cavaliere), cosi' il player vede fin da
+                # subito QUALE alleato verra' evocato.
+                knight_statue_item.statue_variant = _ally_variant_for_level()
                 collectibles_node.add_child(knight_statue_item)
 
         # FIX (nuova meccanica): Dinamite (1 per livello, posizione casuale)
@@ -4618,10 +5329,24 @@ func _find_free_cell_near(from_col: int, from_row: int, prefer_dir: int,
         return Vector2i(-1, -1)
 
 
+# TASK 64 (alleato alternato per livello): l'alleato evocato dalla
+# statuetta alterna per livello — livelli DISPARI (1,3,5..) = UNICORNO
+# (comportamento storico, retrocompatibile col livello 1), livelli PARI
+# (2,4,6..) = CAVALLIERE. Entrambi gli sheet sono PixelLab v2: unicorn_ally
+# (2206 colori) e knight_ally (rigenerato Task 63b). Statuetta a terra,
+# statua di pietra, bonus card (icona/nome/demo) e alleato vivo seguono
+# tutti questa unica regola.
+func _ally_variant_for_level() -> String:
+        return "knight" if current_level % 2 == 0 else "unicorn"
+
+
 func _spawn_knight_ally(player_pos: Vector2) -> void:
         if knight_ally != null and is_instance_valid(knight_ally):
                 return  # già evocato
         var ka := KnightAllyClass.new()
+        # TASK 64: variante estetica per parita' livello (PRIMA dell'add_child:
+        # il _ready di KnightAlly carica sheet alleato + statua di pietra).
+        ka.ally_variant = _ally_variant_for_level()
         # Stessa energia del player (lives = 3 default)
         # FIX (cavaliere energia 1.5x): energia = lives del player * 1.5
         # Player ha 3 lives → cavaliere ha 4.5 → arrotondato a 5
@@ -5677,3 +6402,83 @@ func _draw() -> void:
         # un CanvasLayer (layer=1). Prima erano qui in _draw() che viene
         # chiamato PRIMA dei figli → il maze copriva tutto.
         pass
+
+
+# ============================================================================
+# TASK 54: cache statica dello sheet portale PixelLab (env/portal_sheet.png,
+# 4 frame vortice). Null se il PNG non esiste -> fallback cerchi procedurali.
+# ============================================================================
+static var _portal_sheet_cache: Texture2D = null
+static var _portal_sheet_tried: bool = false
+
+static func _get_portal_sheet() -> Texture2D:
+        if _portal_sheet_tried:
+                return _portal_sheet_cache
+        _portal_sheet_tried = true
+        var path := "res://assets/sprites/env/portal_sheet.png"
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if FileAccess.file_exists(abs_path):
+                var img := Image.new()
+                if img.load(abs_path) == OK:
+                        _portal_sheet_cache = ImageTexture.create_from_image(img)
+        return _portal_sheet_cache
+
+
+# ============================================================================
+# TASK 68 (portale sotto i muri): render del portale magico, invocato da
+# Maze._draw() tramite portal_draw_callback TRA la passata pavimento e la
+# passata muri. Codice identico al vecchio blocco in _draw_overlay (aura +
+# vortice PixelLab 4 frame + fallback cerchi procedurali); cambia SOLO il
+# contesto di draw: il CanvasItem del Maze invece dell'overlay CanvasLayer.
+# Risultato: lo sprite 84px che sconfina ~10px dai bordi della cella 64px
+# viene coperto dalle celle muro adiacenti -> il portale appare DENTRO il
+# corridoio (fix segnalazione utente: il vortice invade il muro).
+# TASK 72 (feedback utente: "il portale sta ancora sotto il muro, e' tagliato
+# perche' il muro e' disegnato sopra... non puoi usare uno z-index?"): il
+# portale si disegna ORA ALLA FINE della passata del Maze, DOPO i muri e le
+# decorazioni (Maze._draw chiama portal_draw_callback per ultimo). Con la
+# geometria Task 70 (vortice 62px centrato nella cella 64px) il portale non
+# invade nessun muro, e col z-order sopra non puo' MAI essere coperto: la
+# gestione e' definitiva. Storia: Task 68 lo mise sotto i muri perche' lo
+# sprite 84px sbordava sulle rocce; Task 70 lo rientro' nella cella ma il
+# z-order sotto restava; Task 72 chiude col z-index sopra.
+# ============================================================================
+func _draw_portal_into(ci: CanvasItem) -> void:
+        if spawner == null or not spawner.magic_portal.active:
+                return
+        var ppos2: Vector2 = spawner.magic_portal.pos
+        var prot2: float = spawner.magic_portal.rotation
+        var pglow2: float = spawner.magic_portal.glow_pulse
+        # TASK 70: aura entro la cella (raggio max 30 -> diametro 60 <= 64)
+        var aura_r: float = 26.0 + sin(pglow2 * 2.0) * 4.0
+        # Aura viola morbida attorno al portale (sia sprite sia proc)
+        ci.draw_circle(ppos2, aura_r, Color(0.5, 0.2, 0.8, 0.2))
+        # --- TASK 54: portale come sprite animato PixelLab ---
+        # (env/portal_sheet.png, 4 frame vortice). Rollback:
+        # GameConstants.PORTAL_SPRITE_ENABLED = false -> cerchi.
+        if C.PORTAL_SPRITE_ENABLED and _get_portal_sheet() != null:
+                var sheet: Texture2D = _get_portal_sheet()
+                var frame_idx: int = int(prot2 * 2.2 + pglow2 * 3.0) % 4
+                if frame_idx < 0:
+                        frame_idx += 4
+                var pulse: float = 1.0 + sin(pglow2 * 2.0) * 0.06
+                # TASK 70: 62px = max che tiene il contenuto (60px/frame)
+                # DENTRO la cella 64 anche a pulse massimo (62*1.06*60/64=61.6)
+                var w: float = 62.0 * pulse
+                var src := Rect2(float(frame_idx) * 64.0, 0.0, 64.0, 64.0)
+                var dst := Rect2(ppos2.x - w * 0.5, ppos2.y - w * 0.5, w, w)
+                ci.draw_texture_rect_region(sheet, dst, src, Color.WHITE, false)
+        else:
+                # TASK 70: anello esterno r 32 -> 26 per restare nella cella
+                for i in 12:
+                        var a2: float = prot2 + (float(i) / 12.0) * TAU
+                        var p1: Vector2 = ppos2 + Vector2(cos(a2), sin(a2)) * 26.0
+                        ci.draw_circle(p1, 3.0, Color(0.7, 0.3, 1.0, 0.7))
+                for i in 8:
+                        var a2b: float = -prot2 * 1.5 + (float(i) / 8.0) * TAU
+                        var p2: Vector2 = ppos2 + Vector2(cos(a2b), sin(a2b)) * 22.0
+                        ci.draw_circle(p2, 2.5, Color(0.3, 0.8, 1.0, 0.8))
+                var core_r: float = 10.0 + sin(pglow2 * 4.0) * 2.0
+                ci.draw_circle(ppos2, core_r + 4.0, Color(1.0, 1.0, 1.0, 0.1))
+                ci.draw_circle(ppos2, core_r, Color(0.9, 0.7, 1.0, 0.25))
+                ci.draw_circle(ppos2, core_r * 0.5, Color(1.0, 1.0, 1.0, 0.5))
