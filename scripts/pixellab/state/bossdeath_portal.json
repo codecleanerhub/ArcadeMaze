@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/bossdeath_portal/base.png",
+  "anim_job_id": "37acb8aa-31d5-4619-8fbb-0f352cb2b51f",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/bossdeath_portal_sheet.png"
+}

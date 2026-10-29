@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/blade_sharp/base.png",
+  "anim_job_id": "5a01a26f-11fb-4ccb-b62d-515fcec3313f",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/hazards/blade_sharp_sheet.png"
+}

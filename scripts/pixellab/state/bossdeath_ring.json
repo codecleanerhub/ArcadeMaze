@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/bossdeath_ring/base.png",
+  "anim_job_id": "8b1dde26-fb16-4993-a6da-b0ceb8f4d37c",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/bossdeath_ring_sheet.png"
+}
