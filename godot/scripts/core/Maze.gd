@@ -122,6 +122,22 @@ static var _rock_texture_cache: Dictionary = {}  # key=pal_idx -> ImageTexture
 # Variabile di istanza: texture corrente per il livello (riferimento alla cache).
 var _rock_tex: Texture2D = null
 
+# TASK 85 (feedback utente: "tutti i blocchi come quelli col segno blu,
+# senza pezzi con sfumatura d'angolo"): offsets delle finestre 64x64 della
+# texture 128x128 che contengono il MASSO COMPLETO. La texture ha un masso
+# centrato con giunzioni scure ai 4 bordi; le finestre della vecchia griglia
+# {0,32,64}² che cadevano sui bordi mostravano porzioni scure "a sfumatura
+# d'angolo" (il blocco segnato in rosso dallo screen utente: q=[61,61,43,43]
+# meta' inferiore scura). Le 3 finestre qui sotto sono le uniche, tra tutti
+# gli offset scansionati (passo 4), con quadranti uniformi (qRange<=5.6) e
+# luminanza media 60-61 — identica ai blocchi OK (segni blu). La varietà
+# per-cellula resta garantita dall'hash h%3 + crepe/muschio/torce.
+const _ROCK_CLEAN_WINDOWS: Array[Vector2i] = [
+        Vector2i(32, 32),
+        Vector2i(28, 28),
+        Vector2i(24, 32),
+]
+
 
 # Genera una texture rocciosa procedurale 128x128 via FastNoiseLite.
 # Composta da 3 strati di rumore:
@@ -1327,8 +1343,21 @@ func _render_wall_cell(c: int, r: int, px: float, py: float, size: float) -> voi
         # e' selezionata deterministicamente per cella -> niente tiling visibile.
         if _rock_tex != null:
                 var h: int = abs((c * 73856093) ^ (r * 19349663) ^ (level * 83492791))
-                var ox: float = float((h % 3) * 32)
-                var oy: float = float(((h / 3) % 3) * 32)
+                # TASK 85 (feedback utente: "tutti i blocchi come quelli col
+                # segno blu, senza pezzi con sfumatura d'angolo"): la texture
+                # 128x128 contiene UN masso centrato con giunzioni scure ai
+                # bordi; le vecchie finestre (h%3)*32 su griglia {0,32,64}²
+                # tagliavano le giunzioni → 8 blocchi su 9 mostravano una
+                # porzione scura "a sfumatura d'angolo" (83% delle celle muro,
+                # verificato su screenshot livello 1: q=[62,62,43,43]).
+                # Ora la scelta e' ristretta alle finestre che contengono il
+                # MASSO COMPLETO (quadranti uniformi, luminanza ~61 = il look
+                # dei blocchi OK dello screen utente): offset verificati con
+                # scan numerico (qRange<=5.6, halfRange<=7.7, media 60-61).
+                # Stile, texture, tint (0.25+lum*1.2) e palette INVARIATI.
+                var w: Vector2i = _ROCK_CLEAN_WINDOWS[h % _ROCK_CLEAN_WINDOWS.size()]
+                var ox: float = float(w.x)
+                var oy: float = float(w.y)
                 var src_rect := Rect2(ox, oy, float(C.TILE_SIZE), float(C.TILE_SIZE))
                 var dst_rect := Rect2(px, py, size, size)
                 draw_texture_rect_region(_rock_tex, dst_rect, src_rect, Color.WHITE, false, false)
