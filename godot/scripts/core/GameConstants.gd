@@ -1196,6 +1196,64 @@ static func spear_count_for_level(level: int) -> int:
 
 
 # ============================================================================
+# TASK 90 — DISTRIBUZIONE DEI MALUS (budget planner per livello)
+# ============================================================================
+# Analisi di distribuzione in funzione del livello e della difficolta'
+# crescente, tre regole (richieste utente):
+#   1. PRIORITA' TIPI > NUMERO: al crescere del livello prima ENTRANO
+#      nuovi tipi di malus (grace levels scaglionati: hazard base L4,
+#      terremoto L6, lame L10, lance L12), poi crescono le quantita' per
+#      tipo. La diversita' non scende MAI sotto 1 per tipo attivo.
+#   2. CAP GLOBALE di elementi nocivi piazzabili simultanei: se la somma
+#      delle formule supera il cap, si riducono PRIMA i counts piu' alti
+#      (i tipi base, che crescono da piu' tempo — a parita' il barile,
+#      che e' anche una risorsa). Rationale: performance (ogni malus ha
+#      sprite+update) E spazio di manovra del player ("non voglio
+#      riempire troppo i labirinti").
+#   3. SPACING strutturale gia' garantito dal placement (gap Manhattan 2
+#      tra hazard, lame che reclamano interi corridoi in `used`, lance
+#      fuori dalle corsie delle lame, tunnel/spawn/item esclusi): se il
+#      labirinto non ha spazio per tutto il budget, il placement piazza
+#      meno (graceful, mai affollato).
+## Cap globale malus statici+mobili per livello (9 hazard base + 6 barili
+## + 5 lame + 4 lance = 24 teorici a fine campagna: il cap li mantiene
+## ~15, con la difficolta' che cresce dai TIPI e dai timing, non dal numero).
+const MALUS_BUDGET_CAP: int = 15
+
+## Budget malus per livello: counts per tipo DOPO il taglio del cap.
+## Due fasi: (1) si riducono PRIMA i tipi BASE (quicksand/trap/chasm/
+## rock_wall/barrel, attivi dai primi livelli) verso 1 — cosi' i tipi
+## NUOVI (lame fino a 5, lance fino a 4) crescono fino ai loro cap come
+## da specifica e la difficolta' sale dai tipi recenti; (2) solo se il
+## cap fosse ancora superato (labirinti minuscoli), si riducono anche
+## lame/lance. Mai sotto 1 per tipo attivo.
+static func malus_budget_for_level(level: int) -> Dictionary:
+        var b: Dictionary = {
+                "quicksand": hazard_count_for_level(level),
+                "trap": hazard_count_for_level(level),
+                "chasm": hazard_count_for_level(level),
+                "rock_wall": hazard_count_for_level(level),
+                "barrel": barrel_count_for_level(level),
+                "blade": blade_count_for_level(level),
+                "spear": spear_count_for_level(level),
+        }
+        var total: int = 0
+        for k in b:
+                total += int(b[k])
+        # FASE 1: tipi base verso 1 (lame/lance intatte)
+        for k in ["quicksand", "trap", "chasm", "rock_wall", "barrel"]:
+                while total > MALUS_BUDGET_CAP and int(b[k]) > 1:
+                        b[k] = int(b[k]) - 1
+                        total -= 1
+        # FASE 2: solo se serve ancora
+        for k in ["blade", "spear"]:
+                while total > MALUS_BUDGET_CAP and int(b[k]) > 1:
+                        b[k] = int(b[k]) - 1
+                        total -= 1
+        return b
+
+
+# ============================================================================
 # TASK 31 — BARILI ESPLOSIVI + TERREMOTO CON ROCCE DAL SOFFITTO
 # ============================================================================
 # Due eventi ambientali supplementari (approvati dall'utente insieme agli

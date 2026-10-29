@@ -142,11 +142,18 @@ const WALL_JITTER: float = 2.5
 func generate(level: int, maze: Node, ctrl: Node) -> void:
         controller = ctrl
         clear(maze)
-        var count: int = C.hazard_count_for_level(level)
-        var barrels: int = C.barrel_count_for_level(level)
-        var blades: int = C.blade_count_for_level(level)
-        var spears: int = C.spear_count_for_level(level)
-        if count <= 0 and barrels <= 0 and blades <= 0 and spears <= 0:
+        # TASK 90 — BUDGET DEI MALUS: counts per tipo decisi dal planner
+        # (priorita' tipi > numero, cap globale per performance/spazio di
+        # manovra: vedi GameConstants.malus_budget_for_level). Il placement
+        # resta graceful: se il labirinto non ha spazio, piazza meno.
+        var budget: Dictionary = C.malus_budget_for_level(level)
+        var count: int = int(budget["quicksand"])
+        var barrels: int = int(budget["barrel"])
+        var blades: int = int(budget["blade"])
+        var spears: int = int(budget["spear"])
+        var wall_count: int = int(budget["rock_wall"])
+        if count <= 0 and barrels <= 0 and blades <= 0 and spears <= 0 \
+                        and wall_count <= 0:
                 _init_quake(level)
                 return
         _rng.seed = hash("hazards_v1_%d" % level)
@@ -191,15 +198,19 @@ func generate(level: int, maze: Node, ctrl: Node) -> void:
                 _spawn_spear(spear_cell)
                 used.append(spear_cell)
 
-        for t in [HazardType.QUICKSAND, HazardType.TRAP, HazardType.CHASM]:
-                for _i in count:
+        # TASK 90: counts per-tipo dal budget (piazza meno se non c'e' spazio)
+        for tp in [
+                        ["quicksand", HazardType.QUICKSAND],
+                        ["trap", HazardType.TRAP],
+                        ["chasm", HazardType.CHASM]]:
+                for _i in int(budget[tp[0]]):
                         var cell := _pop_cell(floor_cells, used, maze)
                         if cell == Vector2i(-1, -1):
                                 break
-                        _spawn_floor_hazard(t, cell, maze)
+                        _spawn_floor_hazard(tp[1], cell, maze)
                         used.append(cell)
 
-        for _i in count:
+        for _i in wall_count:
                 var cell := _pop_cell(wall_cells, used, maze)
                 if cell == Vector2i(-1, -1):
                         break
