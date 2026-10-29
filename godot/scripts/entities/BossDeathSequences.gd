@@ -931,6 +931,35 @@ func _update_chunks(dt: float) -> void:
 # RENDERING
 # ============================================================================
 
+# ---- Asset pixel-art (PixelLab, TASK 86) ----
+# Sheet 4 frame da 64x64 in assets/sprites/env/bossdeath_<id>_sheet.png.
+# Caricamento lazy con fallback procedurale se l'asset manca (il gioco
+# resta funzionante anche senza i PNG).
+var _fx_tex: Dictionary = {}
+
+
+func _fx_frame(id: String, idx: int) -> AtlasTexture:
+        var key: String = "%s/%d" % [id, idx]
+        if _fx_tex.has(key):
+                return _fx_tex[key]
+        var out: AtlasTexture = null
+        var p: String = "res://assets/sprites/env/bossdeath_%s_sheet.png" % id
+        # Pattern SpriteManager: Image.load() diretto (bypass import system,
+        # funziona anche senza cache .godot/imported).
+        var abs_p: String = ProjectSettings.globalize_path(p)
+        if FileAccess.file_exists(abs_p):
+                var img := Image.new()
+                if img.load(abs_p) == OK:
+                        var tex := ImageTexture.create_from_image(img)
+                        if tex != null:
+                                var at := AtlasTexture.new()
+                                at.atlas = tex
+                                at.region = Rect2(float(idx % 4) * 64.0, 0.0, 64.0, 64.0)
+                                out = at
+        _fx_tex[key] = out
+        return out
+
+
 func _draw() -> void:
         if boss == null:
                 return
@@ -1028,6 +1057,18 @@ func _draw_hell_ground(t: float) -> void:
                                         3.0 + 4.0 * flick,
                                         Color(1.0, 0.55 + 0.30 * flick, 0.10,
                                                         0.55 + 0.35 * flick))
+                # vortice pixel-art (PixelLab): ruota sopra la voragine e
+                # 'risucchia' il boss (semi-trasparente: il boss resta
+                # visibile mentre sprofonda).
+                var vt: AtlasTexture = _fx_frame("vortex", int(t * 0.012) % 4)
+                if vt != null:
+                        var vsize: float = rx * 2.7
+                        draw_set_transform(pit_center, rot * 1.35, Vector2.ONE)
+                        draw_texture_rect(vt,
+                                        Rect2(-vsize * 0.5, -vsize * 0.52,
+                                                        vsize, vsize * 0.96),
+                                        false, Color(1.0, 1.0, 1.0, 0.88))
+                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
         else:
                 var k: float = (t - 2300.0) / 500.0
                 var rx: float = boss_size * 0.55 * (1.0 - k)
@@ -1152,19 +1193,41 @@ func _draw_chunk(ch: Dictionary) -> void:
                 "rubble":
                         if ch.get("vanish_glow", false):
                                 draw_circle(pos, psize * 1.6, Color(1.0, 0.55, 0.20, f * 0.30))
-                        draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
-                        var poly: PackedVector2Array = _rock_poly(psize, float(ch["seed"]))
-                        var rc: Color = Color(col.r, col.g, col.b, f)
-                        draw_colored_polygon(poly, rc)
-                        draw_polyline(_close_poly(poly), rc.darkened(0.40), 1.0)
-                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                        var rt: AtlasTexture = _fx_frame("rubble",
+                                        int(float(ch["seed"]) * 4.0) % 4)
+                        if rt != null:
+                                # sassolino pixel-art (variante per seed)
+                                draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
+                                var rs: float = psize * 2.6
+                                draw_texture_rect(rt,
+                                                Rect2(-rs * 0.5, -rs * 0.5, rs, rs),
+                                                false, Color(1.0, 1.0, 1.0, f))
+                                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                        else:
+                                draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
+                                var poly: PackedVector2Array = _rock_poly(psize, float(ch["seed"]))
+                                var rc: Color = Color(col.r, col.g, col.b, f)
+                                draw_colored_polygon(poly, rc)
+                                draw_polyline(_close_poly(poly), rc.darkened(0.40), 1.0)
+                                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
                 "bone":
-                        draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
-                        var bc: Color = Color(col.r, col.g, col.b, f)
-                        draw_rect(Rect2(-psize * 0.5, -psize * 0.16, psize, psize * 0.32), bc)
-                        draw_circle(Vector2(-psize * 0.5, 0.0), psize * 0.24, bc)
-                        draw_circle(Vector2(psize * 0.5, 0.0), psize * 0.24, bc)
-                        draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                        var bt: AtlasTexture = _fx_frame("bones",
+                                        int(float(ch["seed"]) * 4.0) % 4)
+                        if bt != null:
+                                # osso pixel-art (variante per seed)
+                                draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
+                                var bs: float = psize * 2.2
+                                draw_texture_rect(bt,
+                                                Rect2(-bs * 0.5, -bs * 0.5, bs, bs),
+                                                false, Color(1.0, 1.0, 1.0, f))
+                                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                        else:
+                                draw_set_transform(pos, float(ch["rot"]), Vector2.ONE)
+                                var bc: Color = Color(col.r, col.g, col.b, f)
+                                draw_rect(Rect2(-psize * 0.5, -psize * 0.16, psize, psize * 0.32), bc)
+                                draw_circle(Vector2(-psize * 0.5, 0.0), psize * 0.24, bc)
+                                draw_circle(Vector2(psize * 0.5, 0.0), psize * 0.24, bc)
+                                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
                 "goo":
                         if ch["settle"]:
                                 _ellipse(pos, psize * 1.6, psize * 0.55,
@@ -1247,6 +1310,16 @@ func _draw_chunk(ch: Dictionary) -> void:
 # --- attore volante: pipistrello (vampiro) / corvo (strega) ---
 func _draw_bat_actor(pos: Vector2, psize: float, age: float, f: float,
                 col: Color, crow: bool) -> void:
+        # sprite pixel-art (PixelLab): ciclo flap per età (ali desincronizzate
+        # tra esemplari); fallback procedurale se l'asset manca.
+        var id: String = "crow" if crow else "bat"
+        var fps: float = 11.0 if crow else 14.0
+        var ft: AtlasTexture = _fx_frame(id, int(age * fps) % 4)
+        if ft != null:
+                var s: float = psize * (3.4 if crow else 3.0)
+                draw_texture_rect(ft, Rect2(pos.x - s * 0.5, pos.y - s * 0.5, s, s),
+                                false, Color(1.0, 1.0, 1.0, f))
+                return
         var flap: float = sin(age * (11.0 if crow else 15.0))
         var body: Color = Color(col.r, col.g, col.b, f)
         draw_set_transform(pos, 0.0, Vector2.ONE)

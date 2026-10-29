@@ -35,6 +35,7 @@ func _ready() -> void:
         _test_maps()
         await _test_all_sequences()
         await _test_integration_hell()
+        _test_fx_assets()
         _test_source_guards()
         if fails > 0:
                 print("[TEST] ESITO: FALLITO (%d errori)" % fails)
@@ -181,6 +182,23 @@ func _test_integration_hell() -> void:
         else:
                 print("[TEST] OK C4: boss nascosto a fine sequenza")
         room.queue_free()
+
+
+# --- E: asset pixel-art PixelLab presenti e caricabili ---
+func _test_fx_assets() -> void:
+        var seq: Node2D = BDS.new()
+        add_child(seq)
+        var missing: Array = []
+        for id in ["vortex", "bat", "crow", "rubble", "bones"]:
+                for i in 4:
+                        if seq._fx_frame(id, i) == null:
+                                missing.append("%s/%d" % [id, i])
+        seq.queue_free()
+        if missing.is_empty():
+                print("[TEST] OK E: 5 sheet pixel-art (5x4 frame) caricati da assets/sprites/env/")
+        else:
+                fails += 1
+                print("[TEST] FALLITO E: frame mancanti: %s" % ", ".join(missing))
 
 
 # --- D: guardie sul sorgente ---

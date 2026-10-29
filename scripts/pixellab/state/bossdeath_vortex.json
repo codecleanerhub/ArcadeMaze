@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/bossdeath_vortex/base.png",
+  "anim_job_id": "d30514fd-5cdb-4722-a911-0aa45a48af8e",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/bossdeath_vortex_sheet.png"
+}

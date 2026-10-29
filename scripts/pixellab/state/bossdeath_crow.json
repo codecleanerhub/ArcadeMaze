@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/bossdeath_crow/base.png",
+  "anim_job_id": "ccc507eb-defe-470c-bdcf-3358cab237fc",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/bossdeath_crow_sheet.png"
+}

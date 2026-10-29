@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/bossdeath_bat/base.png",
+  "anim_job_id": "84ddab3c-ae79-40be-b5e8-ca062125ae36",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/env/bossdeath_bat_sheet.png"
+}
