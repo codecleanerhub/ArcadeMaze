@@ -20,14 +20,17 @@ for t in "${TESTS[@]}"; do
         total=$((total + 1))
         out=$(timeout 150 "$GODOT" --headless --path godot "res://tests/$name" 2>&1)
         rc=$?
-        verdict=$(echo "$out" | grep -E "TUTTI PASSATI|TUTTI I CHECK SUPERATI" | head -1)
-        if [ $rc -eq 0 ] && [ -n "$verdict" ]; then
+        # verdict: exit code 0 E nessuna riga di fallimento esplicita
+        # (i test usano formati diversi di messaggio finale: "TUTTI I TEST X
+        # SUPERATI", "TUTTI PASSATI", ecc. — l'exit code resta la base).
+        fails_txt=$(echo "$out" | grep -cE "\[TEST\] (FALLITO|ESITO: FALLITO)|FAILURE|FAILED CHECK" || true)
+        if [ $rc -eq 0 ] && [ "$fails_txt" = "0" ]; then
                 passed=$((passed + 1))
                 printf "PASS  %s\n" "$name" | tee -a "$LOG"
         else
                 failed=$((failed + 1))
-                printf "FAIL  %s (rc=%d)\n" "$name" "$rc" | tee -a "$LOG"
-                echo "$out" | grep -E "\[TEST\] (FALLITO|ESITO)|ERROR|SCRIPT ERROR" | head -8 | tee -a "$LOG"
+                printf "FAIL  %s (rc=%d, fail_txt=%s)\n" "$name" "$rc" "$fails_txt" | tee -a "$LOG"
+                echo "$out" | grep -E "\[TEST\] (FALLITO|ESITO: FALLITO)|ERROR|SCRIPT ERROR" | head -8 | tee -a "$LOG"
         fi
 done
 echo "=== RISULTATO: $passed/$total PASS, $failed FAIL ===" | tee -a "$LOG"

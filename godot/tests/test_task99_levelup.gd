@@ -60,6 +60,7 @@ func _ready() -> void:
         await _test_modal()
         _test_carry_skills()
         _test_source_guards_f2()
+        await _test_assets_f3()
         if fails > 0:
                 print("[TEST] ESITO: FALLITO (%d errori)" % fails)
                 get_tree().quit(1)
@@ -590,3 +591,107 @@ func _test_source_guards_f2() -> void:
                 _fail("Q: magazine/speed non cablati nel Player")
         else:
                 _ok("Q5: Caricatore e Rapidità cablate nel Player")
+
+
+# --- R: asset PixelLab della FASE 3 + integrazione ---
+func _load_img(path: String) -> Image:
+        var img := Image.new()
+        var abs_path: String = ProjectSettings.globalize_path(path)
+        if not FileAccess.file_exists(abs_path):
+                return null
+        if img.load(abs_path) != OK:
+                return null
+        return img
+
+
+func _test_assets_f3() -> void:
+        # icone 8× 64×64 con contenuto e bordi trasparenti
+        var ids := ["energy", "stamina", "jump", "firepower",
+                        "magazine", "swiftness", "luck", "regen"]
+        var icons_ok: int = 0
+        for id in ids:
+                var img := _load_img("res://assets/sprites/skills/skill_%s.png" % id)
+                if img == null:
+                        _fail("R: icona %s mancante" % id)
+                        continue
+                if img.get_width() != 64 or img.get_height() != 64:
+                        _fail("R: icona %s %dx%d (attesa 64x64)"
+                                        % [id, img.get_width(), img.get_height()])
+                        continue
+                var opaque: int = 0
+                for y in 64:
+                        for x in 64:
+                                if img.get_pixel(x, y).a > 0.5:
+                                        opaque += 1
+                if opaque < 64:
+                        _fail("R: icona %s quasi vuota (%d px)" % [id, opaque])
+                        continue
+                icons_ok += 1
+        if icons_ok == 8:
+                _ok("R1: 8 icone 64x64 con contenuto")
+        # sheet fulmine 4 frame distinti
+        var bolt := _load_img("res://assets/sprites/skills/levelup_bolt_sheet.png")
+        if bolt == null or bolt.get_width() != 256 or bolt.get_height() != 64:
+                _fail("R: bolt sheet assente o wrong size")
+        else:
+                var hashes := []
+                for i in 4:
+                        var h: int = 0
+                        for y in range(0, 64, 4):
+                                for x in range(i * 64, (i + 1) * 64, 4):
+                                        h = (h * 31 + int(img_get_hash_px(bolt, x, y))) % 999999937
+                        hashes.append(h)
+                if hashes[0] == hashes[1] or hashes[1] == hashes[2] or hashes[2] == hashes[3]:
+                        _fail("R: frame del bolt duplicati (puro slide)")
+                else:
+                        _ok("R2: bolt sheet 256x64 con 4 frame distinti")
+        # scritta dorata
+        var title := _load_img("res://assets/sprites/skills/levelup_title.png")
+        if title == null or title.get_width() < 200:
+                _fail("R: title sprite assente o troppo stretto")
+        else:
+                _ok("R3: scritta LEVEL UP! dorata %dx%d"
+                                % [title.get_width(), title.get_height()])
+        # integrazione: annuncio carica bolt+title, modale icone+pietra+angoli
+        var ann := AnnounceClass.new()
+        ann.setup(1, 2, 1, Vector2(300.0, 300.0), self)
+        add_child(ann)
+        await get_tree().process_frame
+        if ann._bolt_frames.size() != 4 or ann._title_texture == null:
+                _fail("R: annuncio non usa gli asset PixelLab (bolt %d, title %s)"
+                                % [ann._bolt_frames.size(), ann._title_texture])
+        else:
+                _ok("R4: annuncio con fulmine PixelLab 4f + scritta dorata")
+        ann.queue_free()
+        var p := PlayerClass.new()
+        p.player_num = 1
+        p.skill_points = 1
+        var modal: CanvasLayer = OverlayClass.new()
+        modal.setup(p)
+        add_child(modal)
+        await get_tree().process_frame
+        var null_icons: Array = []
+        for id in C.SKILL_IDS:
+                if modal._icons.get(id) == null:
+                        null_icons.append(id)
+        if not null_icons.is_empty():
+                _fail("R: icone non caricate nella modale: %s" % str(null_icons))
+        elif modal._stone_texture == null or modal._corner_tl == null:
+                _fail("R: pietra/angoli del frame non caricati")
+        else:
+                _ok("R5: modale con 8 icone PixelLab + frame pietra/ottone")
+        modal.queue_free()
+        p.queue_free()
+        # guardia sorgente
+        var s_ann := _read("res://scripts/ui/LevelUpAnnounce.gd")
+        if "levelup_bolt_sheet.png" not in s_ann \
+                        or "levelup_title.png" not in s_ann:
+                _fail("R: path asset assenti dal sorgente annuncio")
+        else:
+                _ok("R6: path asset PixelLab nel sorgente (PNG-first)")
+
+
+func img_get_hash_px(img: Image, x: int, y: int) -> int:
+        var c: Color = img.get_pixel(x, y)
+        return int(c.r * 255.0) * 3 + int(c.g * 255.0) * 5 \
+                        + int(c.b * 255.0) * 7 + int(c.a * 255.0)

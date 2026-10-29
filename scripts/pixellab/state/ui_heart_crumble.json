@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/ui_heart_crumble/base.png",
+  "anim_job_id": "f263f0cf-e413-4512-9076-1b14c985ceab",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/ui_heart_crumble_sheet.png"
+}

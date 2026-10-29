@@ -1,0 +1,7 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/levelup_bolt/base.png",
+  "anim_job_id": "52b74e19-7fc7-4158-9d5c-8f53e3753c91",
+  "frame_count": 4,
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/skills/levelup_bolt_sheet.png"
+}

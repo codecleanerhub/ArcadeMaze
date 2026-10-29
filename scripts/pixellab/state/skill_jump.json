@@ -1,0 +1,5 @@
+{
+  "stage": "done",
+  "base_file": "/home/z/my-project/ArcadeMaze/scripts/pixellab/out/skill_jump/base.png",
+  "output": "/home/z/my-project/ArcadeMaze/godot/assets/sprites/skills/skill_jump.png"
+}
