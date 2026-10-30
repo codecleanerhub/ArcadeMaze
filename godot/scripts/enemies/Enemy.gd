@@ -320,7 +320,12 @@ func init(t: int, start_col: int, start_row: int) -> void:
         # Pull stats from the per-type table.
         var stats: Dictionary = STATS.get(type, _DEFAULT_STATS)
         speed = stats.speed
-        max_health = int(stats.max_health) * ENEMY_HEALTH_SCALE
+        # TASK 105 (NEW GAME PLUS): resistenza dei nemici scala col tier
+        # (x1.33 NG+ / x1.50 NG++). Il danno % delle armi resta calcolato
+        # sugli HP "di base" (GameConstants.newgameplus_base_health dentro
+        # weapon_damage_for): più HP = davvero più colpi per uccidere.
+        max_health = int(round(float(int(stats.max_health) * ENEMY_HEALTH_SCALE)
+                        * C.newgameplus_resist_multiplier()))
         health = max_health
 
         # Reset all timers (constructor initializer list in C++).
@@ -871,8 +876,13 @@ func _report_grid_cell(maze: Object, col: int, row: int) -> void:
 ## tipo piu' tosto vale di piu' (feedback utente: "piu' sono duri a morire
 ## e piu' punti danno"). Usato da TUTTE le fonti di uccisione.
 func get_score_reward() -> int:
-        return int(round(float(max_health) / float(ENEMY_HEALTH_SCALE))) \
-                        * C.ENEMY_POINTS_PER_HP
+        ## TASK 97: nemico = HP base x 10 (più sono duri, più danno punti).
+        ## TASK 105 (NEW GAME PLUS): gli HP sono scalati col tier, ma i PUNTI
+        ## restano quelli di base (economia Task 97 invariata e HOF
+        ## comparabile tra run: nel NG+ la ricompensa è tenersi gli upgrade).
+        var base_hp: int = C.newgameplus_base_health(
+                        int(round(float(max_health) / float(ENEMY_HEALTH_SCALE))))
+        return base_hp * C.ENEMY_POINTS_PER_HP
 
 
 func take_damage(dmg: int) -> void:

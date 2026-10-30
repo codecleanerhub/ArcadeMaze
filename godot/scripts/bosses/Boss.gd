@@ -298,7 +298,13 @@ func setup(level: int, screen_w: int, screen_h: int) -> void:
                 speed = 2
 
         # Health (50 + level*20).
-        health = 50 + level * 20
+        # TASK 105 (NEW GAME PLUS): resistenza del boss scala col tier
+        # (x1.33 NG+ / x1.50 NG++); le armi del player in boss room fanno
+        # danno FLAT, quindi più HP = davvero più colpi per abbatterlo
+        # (cannone d'assedio e mina sono % degli HP max e restano invariati
+        # in termini relativi).
+        health = int(round(float(50 + level * 20)
+                        * C.newgameplus_resist_multiplier()))
         max_health = health
 
         sprite_id = get_sprite_id(boss_type)

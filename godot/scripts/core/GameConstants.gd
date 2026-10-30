@@ -93,6 +93,52 @@ static func ui_is_italian() -> bool:
         return ui_language == 1
 
 # ============================================================================
+# 0d2. TASK 105 — NEW GAME PLUS (richiesta utente)
+# ============================================================================
+# Meccanica: conclusa la campagna (dopo i credits) una card stile "armi
+# bonus" chiede se continuare a giocare in NEW GAME PLUS: si riparte dal
+# PRIMO livello mantenendo la progressione Level Up (livello/punti/abilità)
+# con nemici più duri. Due tier oltre la partita base, poi cap:
+#   * tier 0 = partita normale       (danno x1.00, resistenza x1.00)
+#   * tier 1 = NEW GAME PLUS         (danno x1.20, resistenza x1.33)
+#   * tier 2 = NEW GAME PLUS PLUS    (danno x1.40, resistenza x1.50)  <- cap
+# "Danno +20%" = ogni colpo infitto da nemici/mini-boss/boss al player
+# scala x1.20 (banca frazionaria in Player.take_damage per l'energia a
+# numeri interi); "resistenza +33%" = HP dei nemici/mini-boss/boss x1.33.
+# I damage-helper in % degli HP max (weapon_damage_for / hammer / aura)
+# compensano dividendo per il moltiplicatore, così "più HP" diventa davvero
+# "più colpi per uccidere" invece di autoscalare il danno delle armi.
+# Mirror statico del tier (pattern ui_language): l'unico SCRITTORE è
+# GameManager (newgameplus_tier setter / go_to_menu / begin_newgameplus);
+# Enemy/MiniBoss/Boss/Player leggono gli helper statici da qualunque
+# contesto, anche dove gli autoload non sono risolvibili.
+## Tier massimo raggiungibile (2 = NG++; oltre la card non riappare).
+const NEWGAMEPLUS_MAX_TIER: int = 2
+## Moltiplicatore DANNO inflitto dai nemici per tier (indice = tier).
+const NEWGAMEPLUS_DAMAGE_MULTS: Array[float] = [1.0, 1.2, 1.4]
+## Moltiplicatore RESISTENZA (HP) di nemici/mini-boss/boss per tier.
+const NEWGAMEPLUS_RESIST_MULTS: Array[float] = [1.0, 1.33, 1.5]
+## Mirror statico del tier corrente (0..NEWGAMEPLUS_MAX_TIER).
+static var newgameplus_tier: int = 0
+
+## TASK 105: moltiplicatore di danno dei nemici per il tier corrente.
+static func newgameplus_damage_multiplier() -> float:
+        return NEWGAMEPLUS_DAMAGE_MULTS[clampi(newgameplus_tier, 0, NEWGAMEPLUS_MAX_TIER)]
+
+## TASK 105: moltiplicatore di resistenza (HP) nemici/mini-boss/boss.
+static func newgameplus_resist_multiplier() -> float:
+        return NEWGAMEPLUS_RESIST_MULTS[clampi(newgameplus_tier, 0, NEWGAMEPLUS_MAX_TIER)]
+
+## TASK 105: HP effettivi "di base" di un bersaglio con `max_health` HP
+## nel tier corrente (cioè gli HP SENZA il bonus NG+): li usano i
+## damage-helper % per non autoscalare col tier. A tier 0 è identità.
+static func newgameplus_base_health(max_health: int) -> int:
+        var mult: float = newgameplus_resist_multiplier()
+        if mult == 1.0:
+                return maxi(1, max_health)
+        return maxi(1, int(round(float(max_health) / mult)))
+
+# ============================================================================
 # 0e. TASK 78 — FONT MEDIEVALE "GOTH AND GOTHIC" (scelta dell'utente)
 # ============================================================================
 # Font blackletter x grotesk (Aaron Amar, 2021, licenza libera anche
@@ -1933,7 +1979,13 @@ static func weapon_damage_for(weapon_type: int, target_max_health: int,
                 hits *= 2
         if hits < 2:
                 hits = 2  # sicurezza: mai one-shot per costruzione
-        var dmg: int = int(ceil(float(target_max_health) / float(hits)))
+        # TASK 105 (NEW GAME PLUS): il danno delle armi resta calcolato sugli
+        # HP "di base" del bersaglio (senza il bonus di resistenza NG+):
+        # così nemici con HP x1.33/x1.5 richiedono davvero ~33%/50% colpi in
+        # più, invece di autoscalare il danno a parità di colpi (il danno è
+        # % degli HP max). Chiamato SOLO su nemici del labirinto.
+        var eff_max_health: int = newgameplus_base_health(target_max_health)
+        var dmg: int = int(ceil(float(eff_max_health) / float(hits)))
         if dmg_mult != 1.0:
                 dmg = maxi(1, int(round(float(dmg) * dmg_mult)))
         return maxi(1, dmg)
@@ -1941,8 +1993,11 @@ static func weapon_damage_for(weapon_type: int, target_max_health: int,
 
 ## Danno del MARTELLO (50% degli HP massimi del nemico colpito: 2 colpi per
 ## uccidere qualunque nemico, come richiesto dall'utente).
+## TASK 105 (NEW GAME PLUS): come weapon_damage_for, calcolato sugli HP
+## "di base" (senza bonus resistenza NG+) -> col tier il martello impiega
+## un colpo in più invece di autoscalare.
 static func hammer_damage_for(target_max_health: int) -> int:
-        return maxi(1, int(round(float(target_max_health) * 0.5)))
+        return maxi(1, int(round(float(newgameplus_base_health(target_max_health)) * 0.5)))
 
 
 ## Returns the human-readable name of a weapon type. TASK 26 (richiesta
@@ -2619,7 +2674,8 @@ static func reflect_bolt_power(current_weapon: Dictionary) -> int:
 static func relic_aura_contact_damage(armor: Dictionary,
                 target_max_health: int) -> int:
         var hits: int = maxi(2, int(armor.get("contact_hits", 2)))
-        return maxi(1, int(ceil(float(target_max_health) / float(hits))))
+        # TASK 105 (NEW GAME PLUS): sugli HP "di base" (v. weapon_damage_for).
+        return maxi(1, int(ceil(float(newgameplus_base_health(target_max_health)) / float(hits))))
 
 
 ## Nome corto dell'armatura per la HUD ("" se nessuna armatura equipaggiata).

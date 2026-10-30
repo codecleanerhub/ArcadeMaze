@@ -161,7 +161,11 @@ func setup(t: int, lvl: int, start_col: int, start_row: int) -> void:
         level = lvl
         pos = Vector2(start_col * TILE_SIZE + TILE_SIZE / 2.0,
                                   start_row * TILE_SIZE + UI_HEIGHT + TILE_SIZE / 2.0)
-        max_health = get_base_health(t) + (level - 1) * 3
+        # TASK 105 (NEW GAME PLUS): resistenza del mini-boss scala col tier
+        # (x1.33 NG+ / x1.50 NG++); il danno che RICEVE dal player è flat
+        # (potenza delle armi), quindi più HP = più colpi reali per ucciderlo.
+        max_health = int(round(float(get_base_health(t) + (level - 1) * 3)
+                        * C.newgameplus_resist_multiplier()))
         health = max_health
         speed = get_base_speed(t)
         size = get_base_size(t)

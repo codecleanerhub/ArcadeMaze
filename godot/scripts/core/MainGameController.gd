@@ -586,6 +586,14 @@ func _ready() -> void:
                 GameManager.restore_player_carry(player, player2)
         # Start the first level
         start_level(current_level)
+        # TASK 105 (NEW GAME PLUS): la conferma sulla card post-credits ha
+        # messo in carry_p1/p2 la SOLA progressione Level Up; start_level(1)
+        # ha appena passato i player da reset() (partita pulita) e ORA si
+        # riapplica il livello/punti/abilità conservati (il ramo "livello > 1"
+        # sopra è saltato apposta: una partita NUOVA deve restare pulita).
+        if GameManager and GameManager.newgameplus_carry_pending:
+                GameManager.restore_player_carry(player, player2)
+                GameManager.newgameplus_carry_pending = false
         # Start level music if enabled
         if AudioManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, false)
@@ -1699,7 +1707,8 @@ func _update_playing(delta_ms: float) -> void:
                                                         mb_dmg = mini_boss.get_attack_damage()
                                                 var num_hits: int = max(1, mb_dmg / 5)
                                                 for _i in num_hits:
-                                                        melee_p.take_damage()
+                                                        # TASK 105 (NG+): colpo melee del mini-boss — danno scalato.
+                                                        melee_p.take_enemy_damage()
                                                 if AudioManager:
                                                         AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
         # MiniBoss death cleanup
@@ -1921,7 +1930,8 @@ func _check_enemy_projectiles_vs_player(p: CharacterBody2D) -> void:
                         # in direzione opposta col danno del suo miglior colpo).
                         if _reflect_enemy_projectile_if_armored(p, proj, proj_pos):
                                 break
-                        p.take_damage()
+                        # TASK 105 (NG+): proiettile nemico — danno scalato.
+                        p.take_enemy_damage()
                         proj.visible = false
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
@@ -2499,7 +2509,11 @@ func _check_melee_collisions(p: CharacterBody2D, delta_ms: float = 16.0) -> void
                                 enemy.take_damage(thorn_dmg)
                                 if enemy.is_dead():
                                         _on_relic_enemy_killed(p, enemy.get_pixel_pos(), enemy)
-                        p.take_damage()
+                        # TASK 105 (NG+): contatto con un nemico del labirinto
+                        # — danno scalato col tier (il GhostReaper sotto resta
+                        # a danno base: è la punizione dell'Hurry Up!, non un
+                        # "elemento" nemico/mini-boss/boss).
+                        p.take_enemy_damage()
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
                         break

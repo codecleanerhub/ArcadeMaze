@@ -37,6 +37,13 @@ extends Control
 
 signal back_to_menu_requested()
 
+# TASK 105 (NEW GAME PLUS): card stile "armi bonus" proposta DOPO i titoli
+# dei credits (sullo schermo "THANK YOU FOR PLAYING!") quando la campagna
+# è appena finita (GameManager.newgameplus_offer_pending) e resta un tier
+# (NG+ / NG++). Pure-code CanvasLayer, pattern BonusCardOverlay.
+const NewGamePlusCardClass = preload("res://scripts/ui/NewGamePlusCard.gd")
+var _ngp_card: CanvasLayer = null
+
 # --- Colors (mirror the SFML palette in drawCredits) ----------------------
 # TASK 78 — palette ORO MEDIEVALE: le sezioni dei credits in oro caldo
 # (coerente col nuovo logo del titolo in font Goth And Gothic).
@@ -242,8 +249,14 @@ func _update_credits(delta: float) -> void:
                         _end_timer_ms = 0.0
         else:
                 _end_timer_ms += delta * 1000.0
-                # After 5 seconds of "Thank you!", return to the menu.
+                # After 5 seconds of "Thank you!": TASK 105 — se la run appena
+                # conclusa può proporre un NEW GAME PLUS, mostra la card SÌ/NO
+                # (il flusso prosegue su SÌ = nuova run NG+, NO = menu);
+                # altrimenti il comportamento storico: ritorno al menu.
                 if _end_timer_ms > END_HOLD_MS:
+                        if _ngp_offer_eligible():
+                                _show_ngp_card()
+                                return
                         back_to_menu_requested.emit()
                         set_process(false)  # avoid emitting repeatedly
 
@@ -252,12 +265,23 @@ func _update_credits(delta: float) -> void:
 # Input
 # ============================================================================
 func _unhandled_input(event: InputEvent) -> void:
-        # ESC: return to menu (matches the C++ behavior - the original uses
-        # ESC because Enter is the key that opened the credits screen).
+        # TASK 105: mentre la card NG+ è aperta i credits NON consumano input
+        # (la card gestisce i SUOI tasti via polling; ESC qui resterebbe
+        # intrappolato chiudendo i credits sotto la card).
+        if _ngp_card != null and is_instance_valid(_ngp_card):
+                return
+        # ESC: skip dei credits — TASK 105: se la card NG+ è proponibile,
+        # ESC salta direttamente alla card (niente attesa dei 5s di "Thank
+        # you!"); altrimenti il comportamento storico: ritorno al menu
+        # (l'originale usa ESC perché ENTER apre i credits dal menu).
         if event is InputEventKey and event.pressed and not event.echo:
                 if event.keycode == KEY_ESCAPE:
-                        back_to_menu_requested.emit()
-                        set_process(false)
+                        if _ngp_offer_eligible():
+                                skip_to_end()
+                                _show_ngp_card()
+                        else:
+                                back_to_menu_requested.emit()
+                                set_process(false)
 
 
 # ============================================================================
@@ -355,6 +379,48 @@ func _draw_plain_string(font: Font, at: Vector2, text: String,
                 pos.x = at.x - w / 2.0
         draw_string(font, Vector2(pos.x, pos.y + font_size), text,
                 HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+
+
+# ============================================================================
+# TASK 105 — NEW GAME PLUS: card SÌ/NO dopo i credits
+# ============================================================================
+## True solo se i credits seguono una VITTORIA FINALE con almeno un tier
+## ancora disponibile (NG+ a tier 0, NG++ a tier 1). I credits aperti dal
+## MENU non hanno offer_pending e NON propongono la card.
+func _ngp_offer_eligible() -> bool:
+        return GameManager != null \
+                        and GameManager.newgameplus_offer_pending \
+                        and GameManager.newgameplus_available()
+
+
+## Mostra la card stile "armi bonus" con la domanda NG+ (testo utente) e
+## le opzioni SÌ / NO (Ritorna al Menù Principale). Il livello mostrato
+## come CONSERVATO viene dal carry salvato alla vittoria finale.
+## Auto-gated su _ngp_offer_eligible() (difesa in profondità): i credits
+## aperti dal menu, o con il cap tier raggiunto, NON mostrano nulla.
+func _show_ngp_card() -> void:
+        if _ngp_card != null and is_instance_valid(_ngp_card):
+                return
+        if not _ngp_offer_eligible():
+                return
+        # consuma l'offerta (una sola proposta per vittoria)
+        GameManager.newgameplus_offer_pending = false
+        var kept_level: int = int(GameManager.carry_p1.get("level", 1))
+        _ngp_card = NewGamePlusCardClass.new()
+        _ngp_card.setup(int(GameManager.newgameplus_tier) + 1, kept_level)
+        _ngp_card.choice_made.connect(_on_ngp_choice)
+        add_child(_ngp_card)
+        set_process(false)  # il flusso dei credits si ferma: decide la card
+
+
+## Scelta sulla card: SÌ = nuova run NG+ (tier+1, progressione Level Up
+## conservata, livello 1); NO = Ritorna al Menù Principale.
+func _on_ngp_choice(accepted: bool) -> void:
+        _ngp_card = null
+        if accepted:
+                GameManager.begin_newgameplus()
+        else:
+                GameManager.go_to_menu()
 
 
 # ============================================================================

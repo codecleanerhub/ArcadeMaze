@@ -90,6 +90,12 @@ func _finish() -> void:
                 GameManager.session_restore_pending = false
                 GameManager.carry_p1.clear()
                 GameManager.carry_p2.clear()
+                # TASK 105 (NEW GAME PLUS): una partita avviata dal menu è SEMPRE
+                # una partita base (tier 0) — belt & braces oltre al reset in
+                # go_to_menu: il NG+ si entra solo con la SÌ sulla card
+                # post-credits, che non passa per l'intro.
+                GameManager.newgameplus_tier = 0
+                GameManager.newgameplus_carry_pending = false
                 GameManager.go_to_maze()
         else:
                 # TASK 44: LoadingScreen al posto dello schermo nero.

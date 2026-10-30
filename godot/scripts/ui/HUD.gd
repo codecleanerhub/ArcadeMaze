@@ -451,15 +451,24 @@ func _draw_2p() -> void:
 # TASK 99 (LEVEL UP): riga "LV n" dorata + badge "PUNTI +n" lampeggiante
 # quando ci sono punti abilità non ancora spesi (richiama il player alla
 # modale). Il badge pulsa a ~4 Hz in oro chiaro, stile warning soft.
+# TASK 105 (NEW GAME PLUS): badge "NG+"/"NG++" rosso-oro davanti a LV quando
+# la run corrente è oltre la partita base (feedback immediato del tier).
 # ----------------------------------------------------------------------------
 func _draw_level_status(snap: Dictionary, x: float, y: float) -> void:
         var lv: int = int(snap.get("level", 1))
         var pts: int = int(snap.get("skill_points", 0))
-        _draw_label_colored(I18n.t("hud.level") % lv, x, y, Color(1.0, 0.84, 0.25))
+        var badge_x: float = x
+        if GameManager and GameManager.newgameplus_tier > 0:
+                var ngp_label: String = "NG+" if GameManager.newgameplus_tier == 1 else "NG++"
+                var ngp_pulse: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.008)
+                _draw_label_colored(ngp_label, x, y,
+                                Color(1.0, 0.45, 0.25, ngp_pulse))
+                badge_x = x + 44.0
+        _draw_label_colored(I18n.t("hud.level") % lv, badge_x, y, Color(1.0, 0.84, 0.25))
         if pts > 0:
                 var blink: float = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.012)
                 _draw_label_colored(I18n.t("hud.skill_points") % pts,
-                                x + 58.0, y, Color(1.0, 0.92, 0.45, blink))
+                                badge_x + 58.0, y, Color(1.0, 0.92, 0.45, blink))
 
 
 # ----------------------------------------------------------------------------

@@ -131,6 +131,83 @@ signal boss_defeated(boss_index: int)
 ## flusso 2P per sapere chi deve riprendere.
 var continue_player_num: int = 0
 
+# ============================================================================
+# TASK 105 — NEW GAME PLUS
+# ============================================================================
+## Tier di difficoltà della run corrente: 0 = partita normale,
+## 1 = NEW GAME PLUS (nemici danno x1.20 / HP x1.33),
+## 2 = NEW GAME PLUS PLUS (danno x1.40 / HP x1.50) — CAP.
+## Il setter tiene allineato il mirror statico C.newgameplus_tier letto da
+## Enemy/MiniBoss/Boss/Player e dai damage-helper (pattern ui_language).
+var newgameplus_tier: int = 0:
+        set(v):
+                newgameplus_tier = clampi(v, 0, C.NEWGAMEPLUS_MAX_TIER)
+                C.newgameplus_tier = newgameplus_tier
+
+## True dalla conferma (SÌ) della card NG+ finché il MainGameController
+## non ha applicato il carry della progressione: serve perché il NG+
+## riparte dal livello 1, dove il restore del carry è normalmente saltato
+## ("current_level > 1" — una partita nuova deve partire pulita).
+var newgameplus_carry_pending: bool = false
+
+## TASK 105: true dalla VITTORIA FINALE (BossRoomController salva il carry
+## e va a WinScreen) finché i credits non mostrano la card NG+ (che lo
+## consuma). I credits aperti dal MENU NON propongono il NG+ (niente run
+## appena conclusa alle spalle): questo flag è l'unico discriminante.
+var newgameplus_offer_pending: bool = false
+
+## TASK 105: true se conclusa la run si può proporre ancora un tier superiore
+## (la card NG+ appare dopo i credits solo se true; a tier 2 non riappare).
+func newgameplus_available() -> bool:
+        return newgameplus_tier < C.NEWGAMEPLUS_MAX_TIER
+
+## TASK 105: progressione Level Up da CONSERVARE nel NG+ (il resto è una
+## run nuova: score/vite/reliquie/armi ripartono da zero — "Ricomincerai
+## dal primo livello di gioco senza perdere i tuoi upgrade accumulati").
+static func _ngp_kept_progression(snap: Dictionary) -> Dictionary:
+        var skills: Dictionary = snap.get("skill_levels", {})
+        return {
+                        "score": 0,
+                        "lives": 3,
+                        "next_life_threshold": C.EXTRA_LIFE_EVERY_POINTS,
+                        "level": int(snap.get("level", 1)),
+                        "skill_points": int(snap.get("skill_points", 0)),
+                        "pending_levelup_fx": int(snap.get("pending_levelup_fx", 0)),
+                        "skill_levels": (skills as Dictionary).duplicate(),
+        }
+
+## TASK 105 — inizia la run NEW GAME PLUS (SÌ sulla card post-credits):
+## tier +1 (cap 2), livello 1, crediti continue freschi, sessione/carry
+## ripuliti e sostituiti con la SOLA progressione Level Up conservata
+## (carry_p1/p2 erano stati salvati dal BossRoomController alla vittoria
+## finale, PRIMA di WinScreen/HOF/credits). start_level(1) -> go_to_maze.
+func begin_newgameplus() -> void:
+        var kept_p1: Dictionary = _ngp_kept_progression(carry_p1)
+        var kept_p2: Dictionary = _ngp_kept_progression(carry_p2)
+        newgameplus_tier += 1
+        newgameplus_carry_pending = true
+        newgameplus_offer_pending = false
+        current_level = 1
+        continues_left = 3
+        continues_left_p2 = 3
+        continue_player_num = 0
+        died_in_boss = false
+        continues_timer = 10
+        continues_choice = true
+        # TASK 51 — CARD BONUS: nuova run = le card informative dei bonus
+        # tornano a comparire alla prima raccolta (memoria per-run).
+        bonus_cards_seen.clear()
+        # FIX (continue = sessione ESATTA): nuova run = nessun restore.
+        session_snapshot.clear()
+        session_restore_pending = false
+        # Il carry diventa la SOLA progressione conservata; il restore avviene
+        # nel _ready del MainGameController DOPO start_level(1) (reset()).
+        carry_p1 = kept_p1
+        carry_p2 = kept_p2
+        # I finali della run appena conclusa restano per la HOF già salvata.
+        start_level(1)
+
+
 ## TASK 23: true quando la Hall of Fame è raggiunta dal flusso di VITTORIA
 ## (WinScreen -> tastiera -> HOF): a fine visualizzazione si prosegue verso
 ## i CREDITS e poi il menu (sequenza richiesta dall'utente: congratulazioni
@@ -454,6 +531,10 @@ func reset_run() -> void:
         continues_timer = 10
         continues_choice = true
         died_in_boss = false
+        # TASK 105 — NEW GAME PLUS: nuova sessione = partita base.
+        newgameplus_tier = 0
+        newgameplus_carry_pending = false
+        newgameplus_offer_pending = false
         # TASK 51 — CARD BONUS: nuova partita = le card informative dei bonus
         # tornano a comparire alla prima raccolta (memoria per-run).
         bonus_cards_seen.clear()
@@ -580,6 +661,14 @@ func change_scene(scene_path: String) -> void:
                         LoadingScreen.hide_loading()
 
 func go_to_menu() -> void:
+        # TASK 105 — NEW GAME PLUS: tornare al menu CHIUDE la run corrente:
+        # il tier NG+ si azzera (la prossima run dal menu è una partita base;
+        # l'unico accesso al NG+ è la SÌ sulla card post-credits, che non
+        # passa mai dal menu). Evita anche che la demo mode erediti i
+        # moltiplicatori di una run NG+ abbandonata.
+        newgameplus_tier = 0
+        newgameplus_carry_pending = false
+        newgameplus_offer_pending = false
         current_state = C.GameState.MENU
         change_scene("res://scenes/MainMenu.tscn")
 

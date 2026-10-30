@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/shot_task105_ngpcard.gd" id="1"]
+
+[node name="ShotTask105NgpCard" type="Node"]
+script = ExtResource("1")

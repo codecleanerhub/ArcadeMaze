@@ -158,6 +158,30 @@ const TEXTS: Dictionary = {
         },
         "levelup.locked": {"en": "REQUIRES STAMINA 4", "it": "RICHIEDE RESISTENZA 4"},
         "levelup.max": {"en": "MAX", "it": "MAX"},
+        # ---------------- TASK 105: New Game Plus (card post-credits) --------
+        "ngp.title": {"en": "NEW GAME PLUS", "it": "NEW GAME PLUS"},
+        "ngp.title2": {"en": "NEW GAME PLUS PLUS", "it": "NEW GAME PLUS PLUS"},
+        "ngp.question": {
+                "en": "Do you want to keep playing (new game plus)? You will restart from the first level of the game without losing your accumulated upgrades, at a higher difficulty.",
+                "it": "Vuoi continuare a giocare (new game plus)? Ricomincerai dal primo livello di gioco senza perdere i tuoi upgrade accumulati ad una difficoltà maggiore.",
+        },
+        "ngp.question2": {
+                "en": "Do you want to keep playing (new game plus plus)? You will restart from the first level of the game without losing your accumulated upgrades, at an even higher difficulty.",
+                "it": "Vuoi continuare a giocare (new game plus plus)? Ricomincerai dal primo livello di gioco senza perdere i tuoi upgrade accumulati ad una difficoltà ancora maggiore.",
+        },
+        "ngp.chip_damage": {"en": "ENEMY DAMAGE: +%d%%", "it": "DANNO NEMICI: +%d%%"},
+        "ngp.chip_resist": {"en": "ENEMY RESISTANCE: +%d%%", "it": "RESISTENZA NEMICI: +%d%%"},
+        "ngp.chip_kept": {"en": "LEVEL %d KEPT", "it": "LIVELLO %d CONSERVATO"},
+        "ngp.yes": {"en": "YES", "it": "SÌ"},
+        "ngp.no": {"en": "NO", "it": "NO"},
+        "ngp.no_hint": {
+                "en": "Return to the Main Menu",
+                "it": "Ritorna al Menù Principale",
+        },
+        "ngp.hint": {
+                "en": "UP/DOWN to choose - ENTER/SPACE to confirm",
+                "it": "SU/GIÙ per scegliere — INVIO/SPAZIO per confermare",
+        },
         # ---------------- Win / Lose ----------------
         "win.title": {"en": "VICTORY!", "it": "VITTORIA!"},
         "win.subtitle": {

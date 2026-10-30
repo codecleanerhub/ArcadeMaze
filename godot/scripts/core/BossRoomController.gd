@@ -609,7 +609,8 @@ func _update_boss_pits(delta_ms: float) -> void:
                                                 and not player.is_jumping():
                                         if player.get_pixel_pos().distance_to(
                                                         pit["pos"]) <= C.BOSS_PHASE2_PIT_RADIUS:
-                                                player.take_damage()
+                                                # TASK 105 (NG+): buca fase 2 del boss — danno scalato.
+                                                player.take_enemy_damage()
                                                 pit["hit_p1"] = true
                                 if not pit["hit_p2"] and GameManager \
                                                 and GameManager.num_players == 2 \
@@ -618,7 +619,8 @@ func _update_boss_pits(delta_ms: float) -> void:
                                                 and not player2.is_jumping():
                                         if player2.get_pixel_pos().distance_to(
                                                         pit["pos"]) <= C.BOSS_PHASE2_PIT_RADIUS:
-                                                player2.take_damage()
+                                                # TASK 105 (NG+): buca fase 2 del boss — danno scalato.
+                                                player2.take_enemy_damage()
                                                 pit["hit_p2"] = true
                                 if float(pit["timer"]) <= 0.0:
                                         boss_pits.remove_at(i)
@@ -644,7 +646,8 @@ func _on_boss_slam_landed(world_pos: Vector2, radius: float) -> void:
                 if p.is_invulnerable() or p.is_jumping() or p.is_ghost():
                         continue
                 if p.get_pixel_pos().distance_to(world_pos) <= radius:
-                        p.take_damage()
+                        # TASK 105 (NG+): onda d'urto del salto del boss — danno scalato.
+                        p.take_enemy_damage()
 
 
 # ============================================================================
@@ -1115,7 +1118,7 @@ func _check_boss_projectiles_vs_player(p: CharacterBody2D) -> void:
                                 if EffectsManager:
                                         EffectsManager.screen_shake(3.0, 0.15)
                                 break
-                        p.take_damage()
+                        p.take_enemy_damage()
                         proj.visible = false
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.LOSE_LIFE)
@@ -1493,6 +1496,15 @@ func _finish_boss_death(with_sequence: bool) -> void:
                         GameManager.final_score_p2 = player2.score if \
                                         (GameManager.num_players == 2 and player2.visible) else 0
                         GameManager.final_level = current_level
+                        # TASK 105 (NEW GAME PLUS): salva lo stato dei player
+                        # PRIMA di uscire dalla scena: se dopo i credits il
+                        # player accetta il NG+, begin_newgameplus() costruisce
+                        # da QUESTO carry la progressione Level Up da conservare
+                        # (livello/punti/abilità; score/reliquie si ignorano).
+                        # offer_pending = i credits DOPO questa vittoria possono
+                        # proporre la card NG+ (i credits aperti dal menu no).
+                        GameManager.save_player_carry(player, player2)
+                        GameManager.newgameplus_offer_pending = true
                         # Vittoria finale: NESSUNA schermata bonus (una
                         # reliquia non servirebbe più oltre la fine della
                         # campagna) — transizione diretta alla WinScreen.

@@ -223,6 +223,16 @@ var _skill_regen_acc: float = 0.0
 # salto da terra, si consuma a ogni salto a mezz'aria).
 var _air_jumps_left: int = 0
 
+# TASK 105 (NEW GAME PLUS): banca del danno frazionario subito dai nemici,
+# in MILESIMI interi (lezione 48: l'accumulo float 0.2 x 5 = 0.9999998 NON
+# raggiunge mai la soglia con int()). L'energia è a numeri interi (cuori):
+# il +20%/+40% del tier NG+ si accumula qui a ogni colpo SCALATO che
+# ATTRAVERSA i gate (salto schivato, invulnerabilità e Corazza d'Oro NON
+# alimentano la banca: il colpo non ha fatto nulla); quando la frazione
+# raggiunge 1000 millesimi, il colpo corrente toglie un punto energia in
+# più. Su 5 colpi a x1.2 il danno totale è 6 = +20% ESATTO.
+var _ngp_dmg_bank_ms: int = 0
+
 # ===========================================================================
 # TASK 82 — LAMPO DI VOLATA (muzzle flash): feedback visivo dello sparo.
 # Quando un'arma spara, per ~160 ms all'estremita' dell'arma appare un
@@ -711,6 +721,8 @@ func reset() -> void:
         _skill_regen_timer_ms = 0.0
         _skill_regen_acc = 0.0
         _air_jumps_left = 0
+        # TASK 105 (NEW GAME PLUS): nuova run = banca danno frazionario vuota.
+        _ngp_dmg_bank_ms = 0
         current_weapon = _make_weapon(WeaponType.PISTOL)
         projectiles.clear()
         picked_weapon_this_frame = false
@@ -1658,7 +1670,12 @@ func _after_player_shot_fired() -> void:
 # take_damage(): applies 1 point of energy damage if NOT invulnerable and
 # NOT jumping. On 0 energy, lose a life, restore energy, and respawn.
 # Mirrors Player::takeDamage() line 364-374.
-func take_damage() -> void:
+# TASK 105 (NEW GAME PLUS): `points` (>1 solo da fonti NG+ o test) scala
+# più unità energia in UN colpo — l'invulnerabilità post-colpo scatta una
+# volta sola per tutta l'ampiezza del colpo; `ngp_scaled` = la fonte è un
+# NEMICO/mini-boss/boss → il danno scala col moltiplicatore del tier
+# (banca frazionaria _ngp_dmg_bank, applicata SOLO se il colpo passa i gate).
+func take_damage(points: int = 1, ngp_scaled: bool = false) -> void:
         # FUOCO AMICO (Task 18): il corpo accasciato in attesa dell'anima è
         # già morto ai fini del gameplay: invulnerabile a ogni fonte di danno.
         if soul_pending:
@@ -1669,7 +1686,16 @@ func take_damage() -> void:
         # riserva (una carica per tocco/proiettile); l'energia NON cala.
         if _try_absorb_with_golden_armor():
                 return
-        energy -= 1
+        var pts: int = maxi(1, points)
+        if ngp_scaled:
+                var mult: float = C.newgameplus_damage_multiplier()
+                if mult > 1.0:
+                        _ngp_dmg_bank_ms += int(round((mult - 1.0) * 1000.0))
+                        var extra: int = _ngp_dmg_bank_ms / 1000
+                        if extra >= 1:
+                                _ngp_dmg_bank_ms -= extra * 1000
+                                pts += extra
+        energy -= pts
         damage_timer = 1000  # ~1 s of invulnerability after hit
         # Effetti Godot-native: screen shake + particelle danno
         if EffectsManager:
@@ -1687,6 +1713,15 @@ func take_damage() -> void:
                 # pavimento con un gemito di sofferenza; il respawn avviene
                 # alla fine dell'effetto (controller -> respawn_after_soul).
                 begin_collapse()
+
+
+## TASK 105 (NEW GAME PLUS): danno inflitto da una fonte NEMICO (contatto,
+## proiettile nemico/mini-boss, proiettile/buche/onda d'urto del boss):
+## take_damage() con lo scaling del tier corrente. Le fonti AMICHE
+## (fuoco amico 2P) e AMBIENTALI (hazard/fantasmi/braccia zombie) restano
+## su take_damage() semplice: il tier non le tocca.
+func take_enemy_damage() -> void:
+        take_damage(1, true)
 
 
 # take_hazard_damage(dmg): TASK 30 — danno AMBIENTALE del labirinto
