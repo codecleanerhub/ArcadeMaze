@@ -3498,6 +3498,14 @@ func _check_all_players_out() -> void:
                 return
         if _continue_pending_player != 0:
                 return  # c'è ancora una scelta continue in sospeso
+        # TASK 101: la LOSE (game over 2P) aspetta le animazioni di morte in
+        # corso (collasso in attesa/avviato o anima in volo): il game over
+        # appare DOPO che l'ultimo corpo si è accasciato, come la schermata
+        # continue in 1P.
+        for p in [player, player2]:
+                if p != null and is_instance_valid(p) and p.visible \
+                                and (p.soul_pending or p.collapse_requested):
+                        return
         if AudioManager:
                 AudioManager.stop_epic_music()
                 AudioManager.stop_ghost_music()
@@ -3524,7 +3532,17 @@ func _check_death() -> void:
         # TASK 87: se il player si sta ancora accasciando (animazione di
         # morte in corso), la transizione verso CONTINUES/LOSE aspetta la
         # fine dell'effetto (~1.2s).
-        if _is_collapsing(player):
+        # TASK 101 (continue DOPO l'animazione di morte): _is_collapsing()
+        # copre solo l'effetto GIÀ avviato, ma l'effetto parte al frame
+        # SUCCESSIVO alla morte (_start_pending_collapses è in testa a
+        # _update_playing): nel frame della morte _collapses è ancora vuoto
+        # e la transizione scattava PRIMA ancora che l'animazione iniziasse
+        # (schermata continue istantanea, corpo mai accasciato). Il gate ora
+        # copre TUTTO l'arco della morte: collapse_requested (richiesta
+        # appena fatta), soul_pending (congelato dal begin_collapse fino
+        # alla fine dell'effetto) e l'effetto in corsa.
+        if _is_collapsing(player) or player.soul_pending \
+                        or player.collapse_requested:
                 return
         var p1_dead: bool = player.lives <= 0
         var p2_dead: bool = true

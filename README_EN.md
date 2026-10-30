@@ -125,7 +125,7 @@ godot/                       # Godot project (open this one)
 ├── scenes/                  # 13 .tscn scenes
 ├── shaders/                 # 11 shaders (enhancement, armor outfits, boss deform…)
 ├── assets/                  # sprites (SD + XHD + env), backgrounds, fonts
-└── tests/                   # 55 headless runtime tests + 80 screenshot harnesses
+└── tests/                   # 56 headless runtime tests + 81 screenshot harnesses
 src/                         # Legacy C++/SFML prototype (reference only)
 scripts/                     # Python asset generators (sprites)
 tools/bestiary/              # Bestiary generators
@@ -147,7 +147,7 @@ docs/                        # Repository banner and materials
 
 ## Quality and Testing
 
-The project ships a **headless runtime test suite of 55 tests** plus **80 screenshot harnesses** for visual QA, running without a window:
+The project ships a **headless runtime test suite of 56 tests** plus **81 screenshot harnesses** for visual QA, running without a window:
 
 ```bash
 # Example: run one test

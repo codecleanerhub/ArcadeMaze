@@ -105,7 +105,15 @@ func _update_carried(_delta: float) -> void:
         if not _carrier_alive():
                 drop()
                 return
-        var target: Vector2 = carrier.position + CARRY_OFFSET
+        # TASK 101 (barile che segue il salto): il corpo del player si alza
+        # in aria di jump_offset px durante il salto (sprite.offset, non
+        # position), quindi il barile fluttuante sopra la testa deve
+        # sottrarre lo STESSO offset dal proprio target: resta "attaccato"
+        # al portatore in ogni frame dell'arco, altrimenti restava fermo a
+        # quota terra mentre il player volava (richiesta utente: "il barile
+        # deve seguire il movimento del player, vale per tutte le armi").
+        var target: Vector2 = carrier.position + CARRY_OFFSET \
+                        - Vector2(0.0, carrier.jump_offset)
         position = position.lerp(target, CARRY_LERP)
 
 
@@ -172,7 +180,10 @@ func throw_barrel(dir: Vector2) -> void:
                 return
         if dir == Vector2.ZERO:
                 dir = Vector2(1.0, 0.0)
-        position = carrier.position + dir * 22.0 + Vector2(0.0, -18.0)
+        # TASK 101: il lancio parte dall'altezza VISIVA del barile (se il
+        # portatore è a mezz'aria, il barile parte da lì e non da terra).
+        position = carrier.position + dir * 22.0 \
+                        + Vector2(0.0, -18.0 - carrier.jump_offset)
         velocity = dir.normalized() * THROW_SPEED
         spin_vel_deg = 14.0 * (1.0 if dir.x >= 0.0 else -1.0)
         carrier = null

@@ -931,6 +931,14 @@ func _check_all_players_out() -> void:
                         any_alive = true
         if any_alive or _continue_pending_player != 0:
                 return
+        # TASK 101: anche in 2P il flusso di fine partita aspetta le
+        # animazioni di morte in corso (collasso in attesa/avviato o anima
+        # in volo): la LOSE appare DOPO che l'ultimo corpo si è accasciato,
+        # come la schermata continue in 1P.
+        for p in [player, player2]:
+                if p != null and is_instance_valid(p) and p.visible \
+                                and (p.soul_pending or p.collapse_requested):
+                        return
         if AudioManager:
                 AudioManager.stop_epic_music()
                 AudioManager.stop_ghost_music()
@@ -1313,7 +1321,14 @@ func _check_boss_death() -> void:
                 # TASK 87: il player si sta ancora accasciando — la
                 # transizione verso CONTINUES/LOSE aspetta la fine
                 # dell'animazione di morte (~1.2s).
-                if _is_collapsing(player):
+                # TASK 101 (continue DOPO l'animazione di morte): il gate
+                # copre anche il frame della morte STESSA (soul_pending /
+                # collapse_requested): l'effetto di collasso parte infatti
+                # al frame successivo (_start_pending_collapses è in testa a
+                # _update_boss), quindi _is_collapsing() da solo lasciava
+                # passare la transizione PRIMA che l'animazione iniziasse.
+                if _is_collapsing(player) or player.soul_pending \
+                                or player.collapse_requested:
                         return
                 # Player death -> continues (1P, flusso scene-based storico)
                 var p1_dead_1p: bool = player.lives <= 0

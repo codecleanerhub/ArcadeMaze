@@ -24,6 +24,9 @@ class_name Player
 extends CharacterBody2D
 
 const C = preload("res://scripts/core/GameConstants.gd")
+# TASK 101: texture del Cannone d'Assedio in mano (stessa del pickup a
+# terra — cache statica condivisa, zero costo aggiuntivo).
+const BossSiegeCannonGfx = preload("res://scripts/entities/BossSiegeCannon.gd")
 
 # --- Engine config ----------------------------------------------------------
 # Run in physics step so timers/snap-to-grid stay deterministic at 60 FPS.
@@ -1508,7 +1511,9 @@ func _weapon_tip_dist_px() -> float:
                 WeaponType.LASER:
                         return 67.0 if png else 15.0
                 WeaponType.SIEGE:
-                        return 30.0
+                        # TASK 101: allineato al cannone ora VISIBILE in mano
+                        # (pivot mano a +22, punta a (1-0.23)*56 oltre: ~65px).
+                        return 65.0
                 _:
                         return 24.0
 
@@ -3797,6 +3802,38 @@ func _draw_equipped_weapon() -> void:
                                                         disp_len, disp_h), false)
                 draw_set_transform(Vector2.ZERO)
                 return
+
+        # TASK 101 (tutte le armi seguono il player): CANNONE D'ASSEDIO in
+        # mano. Prima il tipo SIEGE non aveva ALCUN rendering (il ramo PNG
+        # vale solo per type <= 3 e il match sotto non ha il caso SIEGE):
+        # raccolto il pickup il cannone SPARIVA dallo schermo e restava solo
+        # il lampo di volata allo sparo. Ora impugna la STESSA texture del
+        # pickup a terra (passaggio terra->mano senza salti visivi), pivot
+        # sulla ruota dell'affusto, e segue l'arco del salto con la regola
+        # di OGNI altra arma (y = -4 - jump_offset, arma "attaccata" alla
+        # mano in ogni frame del volo).
+        if int(current_weapon.type) == WeaponType.SIEGE:
+                var cannon_tex: Texture2D = BossSiegeCannonGfx.make_cannon_texture()
+                if cannon_tex != null:
+                        # Dimensioni NATIVE del pickup (56x44): il cannone
+                        # passa da terra a mano SENZA cambio di scala.
+                        var c_w: float = 56.0
+                        var c_h: float = c_w * cannon_tex.get_height() \
+                                        / maxf(cannon_tex.get_width(), 1.0)
+                        if facing_right:
+                                draw_set_transform(Vector2(x_off, y + 6.0), 0.0,
+                                                Vector2.ONE)
+                                draw_texture_rect(cannon_tex,
+                                                Rect2(-c_w * 0.23, -c_h * 0.75,
+                                                                c_w, c_h), false)
+                        else:
+                                draw_set_transform(Vector2(-x_off, y + 6.0), 0.0,
+                                                Vector2(-1.0, 1.0))
+                                draw_texture_rect(cannon_tex,
+                                                Rect2(-c_w * 0.23, -c_h * 0.75,
+                                                                c_w, c_h), false)
+                        draw_set_transform(Vector2.ZERO)
+                        return
 
         match current_weapon.type:
                 WeaponType.PISTOL:

@@ -125,7 +125,7 @@ godot/                       # Progetto Godot (aprire questo)
 ├── scenes/                  # 13 scene .tscn
 ├── shaders/                 # 11 shader (enhancement, outfit armature, deform boss…)
 ├── assets/                  # sprites (SD + XHD + env), backgrounds, fonts
-└── tests/                   # 55 test runtime headless + 80 harness screenshot
+└── tests/                   # 56 test runtime headless + 81 harness screenshot
 src/                         # Prototipo legacy C++/SFML (solo riferimento)
 scripts/                     # Generatori Python degli asset sprite
 tools/bestiary/              # Generatori del bestiario
@@ -147,7 +147,7 @@ docs/                        # Banner e materiali del repository
 
 ## Qualità e test
 
-Il progetto ha una suite di **55 test runtime headless** più **80 harness di screenshot** per la QA visiva, eseguibili senza finestra:
+Il progetto ha una suite di **56 test runtime headless** più **81 harness di screenshot** per la QA visiva, eseguibili senza finestra:
 
 ```bash
 # Esempio: esecuzione di un test
