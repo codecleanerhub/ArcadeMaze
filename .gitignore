@@ -34,3 +34,10 @@ Thumbs.db
 # (commit per-task + rami). I file .bak* non devono più accumularsi nel repo. ---
 *.bak
 *.bak-*
+
+# --- Secrets / chiavi API (TASK R1): MAI nel repo, nessuna eccezione ---
+secrets/
+.env*
+
+# --- Artefatti rigenerabili degli script di inventario testi (TASK R1) ---
+scripts/game_texts.json
