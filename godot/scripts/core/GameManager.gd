@@ -403,11 +403,12 @@ static func make_player_carry(p: Node) -> Dictionary:
                 "pending_levelup_fx": int(p.get("pending_levelup_fx")),
                 "skill_levels": (p.get("skill_levels") as Dictionary).duplicate(),
                 # TASK 107 (CUORI): l'ENERGIA del cuore corrente attraversa le
-                # scene (niente piu' refill gratuito a ogni cambio scena) e
-                # con lei il contatore dei cuori riscattati a punti (alimenta
-                # l'escalation del costo nella schermata bonus).
-                "energy": int(p.get("energy")),
-                "hearts_redeemed": int(p.get("hearts_redeemed")),
+                # scene (niente piu' refill gratuito a ogni cambio scena).
+                # TASK 108 (VOODOO): mentre e' posseduto, l'energia del nodo e'
+                # quella del NEMICO: si trasporta quella REALE salvata; la
+                # bambola (pagata a punti) attraversa le scene come le armi.
+                "energy": int(p.get_real_energy()) if p.has_method("get_real_energy") else int(p.get("energy")),
+                "voodoo_equipped": bool(p.get("voodoo_equipped")),
         }
         # Arma reliquia (le armi base NON si portano: comportamento storico
         # invariato — la boss room dà già la sua arma potenziata d'ingresso).
@@ -464,13 +465,13 @@ func _apply_carry(p: Node, snap: Dictionary) -> void:
         var ra: Dictionary = snap.get("relic_armor", {})
         if not ra.is_empty() and p.has_method("restore_relic_armor"):
                 p.restore_relic_armor(ra)
-        # TASK 107 (CUORI): per ULTIMO, dopo abilita'/armatura (che ricalcolano
-        # max_energy): il contatore cuori-riscattati e l'ENERGIA trasportata,
+        # TASK 107/108 (CUORI/VOODOO): per ULTIMO, dopo abilita'/armatura (che
+        # ricalcolano max_energy): la bambola in tasca e l'ENERGIA trasportata,
         # clampata al massimo corrente. Chiave assente (salvataggi vecchi,
         # NG+, run nuova) = il player resta com'e' (energia piena dal reset).
         # NB: "prop in obj" (non obj.has()) perche' i Node non hanno .has().
-        if "hearts_redeemed" in p:
-                p.set("hearts_redeemed", int(snap.get("hearts_redeemed", 0)))
+        if "voodoo_equipped" in p:
+                p.set("voodoo_equipped", bool(snap.get("voodoo_equipped", false)))
         if snap.has("energy") and "energy" in p:
                 var carried_energy: int = int(snap.get("energy", 5))
                 if "max_energy" in p:

@@ -1,41 +1,41 @@
-## test_task107_hearts.gd — TASK 107 (CUORI): energia persistente tra scene,
-## cuore nascosto nel labirinto, riscatto cuori a punti nella bonus screen.
+## test_task107_hearts.gd — TASK 107/108 (CUORI): energia persistente tra
+## scene, cuore nascosto nel labirinto, economia dello SHOP del mago.
 ##
 ## Check:
-##   A — costanti + regola di spawn del cuore nascosto (ogni 3 labirinti,
-##       mai sui boss) e indice labirinto
-##   B — economia del riscatto: costo base*k, max riscattabile, costo totale
-##       (coerenza walk), primo cuore = 4000 (circa un boss)
+##   A — regola di spawn del cuore nascosto (ogni 3 labirinti, mai sui
+##       boss) e indice labirinto
+##   B — TASK 108: prezzi shop ordinati (voodoo > cuore > medikit) e
+##       soglia di nascita dello shop (>= costo del cuore, mai sui boss);
+##       la vecchia escalation del riscatto in bonus screen NON esiste piu'
 ##   C — Player.spend_score: punteggio scende (mai sotto 0), livello =
-##       high watermark (non scende), hearts_redeemed/reset
+##       high watermark (non scende)
 ##   D — ENERGIA NEL CARRY: carry->restore NON rifila piu' l'energia piena
-##       (era il refill a ogni cambio scena), clamp al max, contatore
-##       cuori riscattati nel carry, NG+ NON li conserva
+##       (era il refill a ogni cambio scena), clamp al max; NG+ NON la
+##       conserva; la bambola voodoo attraversa le scene nel carry
 ##   E — restore_relic_armor NON cura piu' (solo clamp); equip (scelta in
 ##       bonus) cura ancora piena (reward design)
 ##   F — Collectibles: Kind.HEART + factory make_heart attiva
-##   G — BonusScreen: _redeem_max dal punteggio, _apply_redeem applica
-##       vite/score/contatore e ricalcola il massimo
-##   H — guardie sorgente (spawn, pickup, snapshot, i18n, UI)
+##   G — TASK 108: la BonusScreen NON contiene piu' la riga riscatto
+##       (rimossa: il cuore si compra nello SHOP)
+##   H — guardie sorgente (spawn, pickup, snapshot, shop, i18n)
 extends Node
 
 const C = preload("res://scripts/core/GameConstants.gd")
 const PlayerScript = preload("res://scripts/core/Player.gd")
 const CollectiblesClass = preload("res://scripts/items/Collectibles.gd")
-const BonusScreenClass = preload("res://scripts/ui/BonusScreen.gd")
 
 var fails: int = 0
 
 
 func _ready() -> void:
-        print("[TEST] === TASK 107: CUORI ===")
+        print("[TEST] === TASK 107/108: CUORI + SHOP ===")
         _test_spawn_rule()
-        _test_redeem_economy()
+        _test_shop_economy()
         _test_spend_score()
         _test_energy_carry()
         _test_armor_restore_no_heal()
         _test_collectible_heart()
-        _test_bonus_redeem()
+        _test_bonus_no_redeem()
         _test_source_guards()
         if fails == 0:
                 print("[TEST] ESITO: TUTTI PASSATI")
@@ -79,60 +79,39 @@ func _test_spawn_rule() -> void:
         _ok("A: cuore nascosto = 1 ogni 3 labirinti, mai sui livelli boss (17/run su 51 labirinti)")
 
 
-# --- B: economia del riscatto --------------------------------------------------
-func _test_redeem_economy() -> void:
-        if C.HEART_REDEEM_BASE_COST != 4000:
-                _fail("B: HEART_REDEEM_BASE_COST = %d (atteso 4000)" % C.HEART_REDEEM_BASE_COST)
+# --- B: economia dello SHOP (Task 108) ----------------------------------------
+func _test_shop_economy() -> void:
+        # ordine dei prezzi richiesto dall'utente: voodoo > cuore > medikit
+        if not (C.SHOP_COST_VOODOO > C.SHOP_COST_HEART
+                        and C.SHOP_COST_HEART > C.SHOP_COST_MEDICIT):
+                _fail("B: ordine prezzi sbagliato (v%d h%d m%d)" % [
+                                C.SHOP_COST_VOODOO, C.SHOP_COST_HEART,
+                                C.SHOP_COST_MEDICIT])
                 return
-        if C.heart_redeem_cost(1) != 4000 or C.heart_redeem_cost(2) != 8000 \
-                        or C.heart_redeem_cost(5) != 20000:
-                _fail("B: heart_redeem_cost escalation errata (%d/%d/%d)" % [
-                                C.heart_redeem_cost(1), C.heart_redeem_cost(2),
-                                C.heart_redeem_cost(5)])
-                return
-        if C.heart_redeem_cost(0) != 4000 or C.heart_redeem_cost(-3) != 4000:
-                _fail("B: heart_redeem_cost deve clampare k<=0 a base")
-                return
-        # max riscattabile
-        if C.heart_redeem_max_count(12000, 0) != 2:
-                _fail("B: max_count(12000,0) = %d (atteso 2 esatto)" % C.heart_redeem_max_count(12000, 0))
-                return
-        if C.heart_redeem_max_count(11999, 0) != 1:
-                _fail("B: max_count(11999,0) = %d (atteso 1)" % C.heart_redeem_max_count(11999, 0))
-                return
-        if C.heart_redeem_max_count(3999, 0) != 0:
-                _fail("B: max_count(3999,0) = %d (atteso 0)" % C.heart_redeem_max_count(3999, 0))
-                return
-        if C.heart_redeem_max_count(30000, 0) != 3:
-                _fail("B: max_count(30000,0) = %d (atteso 3)" % C.heart_redeem_max_count(30000, 0))
-                return
-        if C.heart_redeem_max_count(30000, 1) != 2:
-                _fail("B: max_count(30000,1) = %d (atteso 2 con escalation)" % C.heart_redeem_max_count(30000, 1))
-                return
-        # costo totale coerente con max_count
-        if C.heart_redeem_total_cost(3, 0) != 24000 or C.heart_redeem_total_cost(2, 1) != 20000:
-                _fail("B: total_cost errato (%d / %d)" % [
-                                C.heart_redeem_total_cost(3, 0), C.heart_redeem_total_cost(2, 1)])
-                return
-        for s in [5000, 12345, 30000, 99999, 4000, 3999]:
-                for a in [0, 1, 4]:
-                        var n: int = C.heart_redeem_max_count(s, a)
-                        var tot: int = C.heart_redeem_total_cost(n, a)
-                        if tot > s:
-                                _fail("B: total_cost(%d cuori, gia %d) = %d > score %d" % [n, a, tot, s])
-                                return
-                        if n < 99 and tot + C.heart_redeem_cost(a + n + 1) <= s:
-                                _fail("B: max_count sottostima con score %d gia %d" % [s, a])
-                                return
-        # il primo cuore costa quanto circa un boss (2500..4100 x 1.0..1.6)
+        # il cuore costa circa un boss (2500..4100)
         var boss_min: int = C.BOSS_KILL_POINTS_BASE
         var boss_max: int = C.BOSS_KILL_POINTS_BASE + 16 * C.BOSS_KILL_POINTS_PER_INDEX
-        var ratio: float = float(C.heart_redeem_cost(1)) / float(boss_max)
-        if ratio < 0.8 or ratio > 1.6:
-                _fail("B: 1o cuore %d fuori dal range boss %d..%d" % [
-                                C.heart_redeem_cost(1), boss_min, boss_max])
+        if C.SHOP_COST_HEART < boss_min or C.SHOP_COST_HEART > boss_max * 1.6:
+                _fail("B: cuore %d fuori range boss %d..%d" % [
+                                C.SHOP_COST_HEART, boss_min, boss_max])
                 return
-        _ok("B: riscatto = 4000 x k (1o cuore ~ 1 boss), max/costo coerenti, auto-limitante")
+        # shop: nasce dal primo livello con punti >= costo del cuore, MAI sui boss
+        if C.shop_spawns_at(3, C.SHOP_COST_HEART) != true:
+                _fail("B: shop deve nascere con score = costo cuore")
+                return
+        if C.shop_spawns_at(3, C.SHOP_COST_HEART - 1) != false:
+                _fail("B: shop NON deve nascere sotto il costo del cuore")
+                return
+        if C.shop_spawns_at(4, 999999) != false:
+                _fail("B: shop MAI sui livelli boss (4)")
+                return
+        # la vecchia escalation del riscatto e' stata RIMOSSA da GameConstants
+        var src: String = _read("res://scripts/core/GameConstants.gd")
+        if src.contains("heart_redeem_cost") or src.contains("HEART_REDEEM_BASE_COST"):
+                _fail("B: resti dell'escalazione heart_redeem in GameConstants")
+                return
+        _ok("B: shop = voodoo %d > cuore %d (~1 boss) > medikit %d; soglia spawn = costo cuore, mai sui boss" % [
+                        C.SHOP_COST_VOODOO, C.SHOP_COST_HEART, C.SHOP_COST_MEDICIT])
 
 
 # --- C: spend_score + high watermark ------------------------------------------
@@ -174,14 +153,15 @@ func _test_spend_score() -> void:
                 _fail("C: level up gratuito sotto soglia (%d con %d punti)" % [
                                 p.level, p.score])
                 return
-        # reset azzera l'escalation
-        p.hearts_redeemed = 5
+        # la bambola si azzera a reset (run nuova)
+        p.voodoo_equipped = true
+        p.possession_active = true
         p.reset()
-        if p.hearts_redeemed != 0:
-                _fail("C: reset() non azzera hearts_redeemed (%d)" % p.hearts_redeemed)
+        if p.voodoo_equipped or p.possession_active:
+                _fail("C: reset() non azzera voodoo/possessione")
                 return
         p.queue_free()
-        _ok("C: spend_score clampa a 0; livello = high watermark; reset azzera il contatore")
+        _ok("C: spend_score clampa a 0; livello = high watermark; reset azzera voodoo/possessione")
 
 
 # --- D: ENERGIA NEL CARRY (niente refill tra scene) ----------------------------
@@ -192,14 +172,14 @@ func _test_energy_carry() -> void:
         p1.energy = 2           # cuore corrente parzialmente sgretolato
         p1.lives = 4
         p1.score = 5000
-        p1.hearts_redeemed = 1
+        p1.voodoo_equipped = true
         GameManager.save_player_carry(p1)
         var carry: Dictionary = GameManager.carry_p1
         if int(carry.get("energy", -1)) != 2:
                 _fail("D: carry senza energia (%s)" % str(carry.keys()))
                 return
-        if int(carry.get("hearts_redeemed", -1)) != 1:
-                _fail("D: carry senza contatore cuori riscattati")
+        if not bool(carry.get("voodoo_equipped", false)):
+                _fail("D: carry senza bambola voodoo")
                 return
         # il player della scena nuova e' appena passato da reset() (energia 5)
         var p2 := PlayerScript.new()
@@ -212,8 +192,8 @@ func _test_energy_carry() -> void:
         if p2.energy != 2:
                 _fail("D: restore_player_carry deve applicare l'energia trasportata (%d, atteso 2)" % p2.energy)
                 return
-        if p2.hearts_redeemed != 1:
-                _fail("D: restore_player_carry deve applicare il contatore (%d)" % p2.hearts_redeemed)
+        if not p2.voodoo_equipped:
+                _fail("D: restore_player_carry deve trasportare la bambola")
                 return
         # clamp al max (energia salvata oltre il massimo corrente)
         p1.energy = 9
@@ -223,15 +203,30 @@ func _test_energy_carry() -> void:
                 _fail("D: energia trasportata non clampata al max (%d/%d)" % [
                                 p2.energy, p2.max_energy])
                 return
-        # NG+: la progressione conservata NON include energia ne' contatore
+        # possession-aware: mentre e' posseduto il carry porta l'energia REALE
+        p1.reset()
+        p1.energy = 3
+        p1.begin_possession(null, 12, 40)
+        if p1.energy != 12:
+                _fail("D: setup possessione fallito (%d)" % p1.energy)
+                return
+        GameManager.save_player_carry(p1)
+        if int(GameManager.carry_p1.get("energy", -1)) != 3:
+                _fail("D: il carry durante la possessione deve portare l'energia REALE (%s)" % str(GameManager.carry_p1.get("energy")))
+                return
+        p1.handle_possession_death()
+        # NG+: la progressione conservata NON include energia ne' bambola
+        GameManager.save_player_carry(p1)
+        p1.voodoo_equipped = true
+        GameManager.save_player_carry(p1)
         var kept: Dictionary = GameManager._ngp_kept_progression(GameManager.carry_p1)
-        if kept.has("energy") or kept.has("hearts_redeemed"):
-                _fail("D: NG+ NON deve conservare energia/contatore (%s)" % str(kept.keys()))
+        if kept.has("energy") or kept.has("voodoo_equipped"):
+                _fail("D: NG+ NON deve conservare energia/bambola (%s)" % str(kept.keys()))
                 return
         p1.queue_free()
         p2.queue_free()
         GameManager.carry_p1 = {}
-        _ok("D: l'energia del cuore corrente attraversa le scene (NO refill), NG+ riparte pulito")
+        _ok("D: l'energia attraversa le scene (NO refill), possession-aware, bambola nel carry, NG+ pulito")
 
 
 # --- E: armatura: il restore non cura, l'equip sì -------------------------------
@@ -274,92 +269,73 @@ func _test_collectible_heart() -> void:
         _ok("F: Collectibles.Kind.HEART + make_heart (icona ui_heart.png + fallback)")
 
 
-# --- G: BonusScreen — riga riscatto ---------------------------------------------
-func _test_bonus_redeem() -> void:
-        var p := PlayerScript.new()
-        add_child(p)
-        p.reset()
-        p.score = 30000
-        p.lives = 3
-        p.hearts_redeemed = 0
-        var bonus := BonusScreenClass.new()
-        add_child(bonus)
-        bonus.setup(4, [p])
-        if bonus._redeem_max != 3:
-                _fail("G: _redeem_max = %d (atteso 3 con 30000 punti)" % bonus._redeem_max)
-                return
-        # focus + 2 cuori -> applica: 4000+8000 = 12000 punti, +2 vite
-        bonus._redeem_focus = true
-        bonus._redeem_count = 2
-        bonus._apply_redeem()
-        if p.score != 18000:
-                _fail("G: score dopo riscatto = %d (atteso 18000)" % p.score)
-                return
-        if p.lives != 5:
-                _fail("G: vite dopo riscatto = %d (atteso 5)" % p.lives)
-                return
-        if p.hearts_redeemed != 2:
-                _fail("G: contatore dopo riscatto = %d (atteso 2)" % p.hearts_redeemed)
-                return
-        if bonus._redeem_count != 0:
-                _fail("G: il conteggio a schermo non si azzera dopo l'applicazione")
-                return
-        # escalation: con 18000 e 2 gia' riscattati resta 1 cuore (12000)
-        if bonus._redeem_max != 1:
-                _fail("G: _redeem_max dopo = %d (atteso 1)" % bonus._redeem_max)
-                return
-        if bonus._redeem_feedback == "":
-                _fail("G: feedback riscatto vuoto")
-                return
-        # il chooser NON avanza: la reliquia va ancora scelta
-        if bonus.chooser_idx != 0 or bonus.completed:
-                _fail("G: il riscatto non deve completare la schermata")
-                return
-        bonus.queue_free()
-        p.queue_free()
-        _ok("G: riga riscatto — 2 cuori = 12000 punti, +2 vite, escalation, chooser intatto")
+# --- G: BonusScreen senza riga riscatto ------------------------------------------
+func _test_bonus_no_redeem() -> void:
+        var bonus_src: String = _read("res://scripts/ui/BonusScreen.gd")
+        for needle in ["_draw_redeem_row", "_apply_redeem", "_redeem_focus",
+                        "bonus.redeem"]:
+                if bonus_src.contains(str(needle)):
+                        _fail("G: BonusScreen contiene ancora '%s' (riscatto rimosso dal Task 108)" % str(needle))
+                        return
+        _ok("G: BonusScreen NON ha piu' la riga riscatto (il cuore si compra nello SHOP)")
 
 
 # --- H: guardie sorgente ---------------------------------------------------------
 func _test_source_guards() -> void:
         var guards := {
-                        "GameConstants (Task 107)": [
+                        "GameConstants (Task 107/108)": [
                                         "res://scripts/core/GameConstants.gd",
-                                        ["HIDDEN_HEART_EVERY_LEVELS", "HEART_REDEEM_BASE_COST",
+                                        ["HIDDEN_HEART_EVERY_LEVELS", "SHOP_COST_VOODOO",
+                                                        "SHOP_COST_HEART", "SHOP_COST_MEDICIT",
                                                         "hidden_heart_spawns_at",
-                                                        "heart_redeem_cost",
-                                                        "heart_redeem_max_count",
-                                                        "heart_redeem_total_cost"]],
-                        "MainGame (spawn + pickup + snapshot cuore)": [
+                                                        "shop_spawns_at"]],
+                        "MainGame (spawn + pickup + snapshot cuore/shop/voodoo)": [
                                         "res://scripts/core/MainGameController.gd",
                                         ["_pop_hidden_heart_cell",
                                                         "Kind.HEART",
                                                         "items[\"hiddenheart\"]",
                                                         "\"hiddenheart\": CollectiblesClass.Kind.HEART",
-                                                        "\"hearts_redeemed\": player.hearts_redeemed"]],
-                        "GameManager (energia nel carry)": [
+                                                        "_try_spawn_shop",
+                                                        "_update_shop_entry",
+                                                        "_throw_voodoo_doll",
+                                                        "_update_thrown_voodoo",
+                                                        "_apply_voodoo_possession",
+                                                        "_finish_possession_death",
+                                                        "snap[\"shop\"]"]],
+                        "GameManager (energia + voodoo nel carry)": [
                                         "res://scripts/core/GameManager.gd",
-                                        ["\"energy\": int(p.get(\"energy\"))",
-                                                        "\"hearts_redeemed\": int(p.get(\"hearts_redeemed\"))",
+                                        ["\"energy\": int(p.get_real_energy())",
+                                                        "\"voodoo_equipped\": bool(p.get(\"voodoo_equipped\"))",
                                                         "snap.has(\"energy\")"]],
-                        "Player (spend_score + contatore)": [
+                        "Player (spend_score + possessione)": [
                                         "res://scripts/core/Player.gd",
-                                        ["func spend_score", "var hearts_redeemed",
-                                                        "hearts_redeemed = 0"]],
-                        "BonusScreen (riga riscatto)": [
+                                        ["func spend_score", "var voodoo_equipped",
+                                                        "func begin_possession",
+                                                        "func handle_possession_death",
+                                                        "func update_possession_puppet",
+                                                        "possession_death_pending = true"]],
+                        "BonusScreen (riscatto rimosso)": [
                                         "res://scripts/ui/BonusScreen.gd",
-                                        ["_draw_redeem_row", "_apply_redeem",
-                                                        "_refresh_redeem_max",
-                                                        "bonus.redeem_title",
-                                                        "hearts_redeemed"]],
-                        "I18n (testi riscatto)": [
+                                        ["_apply_choice", "HOLD_CONFIRM_MS"]],
+                        "ShopScreen (negozio del mago)": [
+                                        "res://scripts/ui/ShopScreen.gd",
+                                        ["_item_defs", "_buy_item", "_lock_reason",
+                                                        "shop_exited", "_exit_shop",
+                                                        "shop.item.voodoo",
+                                                        "shop.buy"]],
+                        "ShopStall (casa strega)": [
+                                        "res://scripts/items/ShopStall.gd",
+                                        ["shop_witch_hut.png", "shop_sign_closed.png",
+                                                        "shop.closed", "entry_rect"]],
+                        "VoodooDoll (bambola in volo)": [
+                                        "res://scripts/items/VoodooDoll.gd",
+                                        ["item_voodoo.png", "MAX_TRAVEL_PX",
+                                                        "push_trail_point"]],
+                        "I18n (testi shop)": [
                                         "res://scripts/core/I18nManager.gd",
-                                        ["bonus.redeem_title", "bonus.redeem_score",
-                                                        "bonus.redeem_insufficient",
-                                                        "bonus.redeem_hint"]],
-                        "Collectibles (cuore)": [
-                                        "res://scripts/items/Collectibles.gd",
-                                        ["HEART,", "make_heart", "_draw_heart"]],
+                                        ["shop.title", "shop.item.voodoo",
+                                                        "shop.buy", "shop.exit",
+                                                        "shop.closed"]],
         }
         for label in guards.keys():
                 var spec: Array = guards[label]
@@ -370,7 +346,7 @@ func _test_source_guards() -> void:
                                 missing.append(needle)
                 if not missing.is_empty():
                         _fail("H: %s senza: %s" % [label, ", ".join(missing)])
-        _ok("H: guardie sorgente (spawn/pickup/carry/UI/i18n wired)")
+        _ok("H: guardie sorgente (spawn/pickup/carry/shop/voodoo/UI/i18n wired)")
 
 
 func _read(path: String) -> String:

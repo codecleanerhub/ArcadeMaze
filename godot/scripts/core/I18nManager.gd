@@ -330,35 +330,48 @@ const TEXTS: Dictionary = {
                 "en": "A / D: select    ENTER or P2 FIRE button: confirm",
                 "it": "A / D: seleziona    INVIO o tasto FUOCO P2: conferma",
         },
-        # ---------------- TASK 107: riscatto cuore a punti (riga sotto le card) --
-        "bonus.redeem_title": {"en": "REDEEM HEART", "it": "RISCATTA CUORE"},
-        "bonus.redeem_avail": {
-                "en": "available now: %d",
-                "it": "riscattabili ora: %d",
+        # ---------------- TASK 108: SHOP del mago nel labirinto ----------------
+        "shop.title": {"en": "THE WIZARD'S SHOP", "it": "IL NEGOZIO DEL MAGO"},
+        "shop.greeting": {
+                "en": "WELCOME, WANDERER! SPEND YOUR POINTS",
+                "it": "BENVENUTO, VIANDANTE! SPENDI I TUOI PUNTI",
         },
-        "bonus.redeem_count": {
-                "en": "hearts to redeem:  %s",
-                "it": "cuori da riscattare:  %s",
+        "shop.player": {"en": "PLAYER %d", "it": "GIOCATORE %d"},
+        "shop.score": {"en": "POINTS: %d", "it": "PUNTI: %d"},
+        "shop.buy": {"en": "BUY", "it": "ACQUISTA"},
+        "shop.cost_line": {"en": "%d pts", "it": "%d punti"},
+        "shop.buy_locked": {"en": "NOT ENOUGH POINTS", "it": "PUNTI INSUFFICIENTI"},
+        "shop.buy_owned": {"en": "ALREADY OWNED", "it": "GIÀ POSSIEDI"},
+        "shop.buy_full": {"en": "ENERGY FULL", "it": "ENERGIA PIENA"},
+        "shop.exit": {"en": "EXIT", "it": "ESCI"},
+        "shop.closed": {"en": "CLOSED", "it": "CHIUSO"},
+        "shop.bought": {
+                "en": "PURCHASED: %s (-%d pts)",
+                "it": "ACQUISTATO: %s (-%d punti)",
         },
-        "bonus.redeem_cost": {
-                "en": "next heart: %d pts",
-                "it": "prossimo cuore: %d punti",
+        "shop.hint_1p": {
+                "en": "ARROWS / D-PAD: select    Z or ENTER (FIRE): buy    ESC: exit",
+                "it": "FRECCE / D-PAD: seleziona    Z o INVIO (FUOCO): acquista    ESC: esci",
         },
-        "bonus.redeem_score": {
-                "en": "SCORE  %d  ->  %d",
-                "it": "PUNTI  %d  ->  %d",
+        "shop.hint_2p": {
+                "en": "A / D: select    ENTER or P2 FIRE: buy    ESC: exit",
+                "it": "A / D: seleziona    INVIO o FUOCO P2: acquista    ESC: esci",
         },
-        "bonus.redeem_insufficient": {
-                "en": "NOT ENOUGH POINTS — next heart: %d pts",
-                "it": "PUNTI INSUFFICIENTI — prossimo cuore: %d punti",
+        # ---- TASK 108: items in vendita ----
+        "shop.item.heart": {"en": "HEART", "it": "CUORE"},
+        "shop.item.heart.desc": {
+                "en": "Restore a lost heart",
+                "it": "Recupera un cuore perso",
         },
-        "bonus.redeem_done": {
-                "en": "PLAYER %d REDEEMED %d HEART(S) FOR %d PTS",
-                "it": "IL GIOCATORE %d HA RISCATTATO %d CUORE/I PER %d PUNTI",
+        "shop.item.medikit": {"en": "MEDIKIT", "it": "MEDIKIT"},
+        "shop.item.medikit.desc": {
+                "en": "Recharges 1 energy of the current heart",
+                "it": "Ricarica 1 energia del cuore corrente",
         },
-        "bonus.redeem_hint": {
-                "en": "DOWN: redeem row    LEFT/RIGHT: hearts    HOLD FIRE: redeem",
-                "it": "GIU': riga riscatto    SINISTRA/DESTRA: cuori    TIENI FUOCO: riscatta",
+        "shop.item.voodoo": {"en": "VOODOO DOLL", "it": "BAMBOLA VOODOO"},
+        "shop.item.voodoo.desc": {
+                "en": "Throw it at an enemy: your soul possesses it and you drive its body with your weapons. If it dies you return as you were",
+                "it": "Lanciala contro un nemico: la tua anima lo possiede e ne guidi il corpo con le tue armi. Se muore torni come prima",
         },
         # ---------------- Demo mode ----------------
         "demo.mode": {"en": "DEMO MODE", "it": "DEMO MODE"},

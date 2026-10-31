@@ -1191,16 +1191,27 @@ const SAVE_ANNOUNCE_MS: float = 2000.0
 ## Frequenza controllata a mano da qui: 2 = piu' generoso, 4 = piu' avaro.
 const HIDDEN_HEART_EVERY_LEVELS: int = 3
 
-## TASK 107: RISCATTO CUORE a punti nella schermata bonus post-boss (sotto
-## i riquadri delle reliquie). Il k-esimo cuore riscattato nella run (per
-## player) costa HEART_REDEEM_BASE_COST * k: il primo costa circa quanto il
-## premio di un boss (2500..4100), poi il prezzo sale cosi' comprarne
-## tanti svuota il punteggio. Il punteggio speso NON toglie il livello
-## gia' raggiunto (high watermark: le abilita' restano), ma RITARDA i
-## level up futuri e ABBASSA il punteggio finale in Hall of Fame —
-## "chi compra un cuore e' piu' scarso e finisce piu' giu' in classifica",
-## richiesta utente esplicita.
-const HEART_REDEEM_BASE_COST: int = 4000
+## TASK 108 (SHOP): costi degli items venduti dal MAGO nel negozio nel
+## labirinto (richiesta utente: "il più caro è la bambola voodoo, poi il
+## cuore e poi il medikit"). Prezzi FISSI (l'escalation del vecchio
+## riscatto in bonus screen e' stata rimossa insieme alla riga). Il cuore
+## costa come un boss (2500..4100): comprare tanto svuota la run.
+## Il punteggio speso NON toglie il livello gia' raggiunto (high watermark:
+## le abilita' restano) ma ritarda i level up futuri e ABBASSA il punteggio
+## finale in Hall of Fame — "chi compra un cuore e' piu' scarso e finisce
+## piu' giu' in classifica", richiesta utente esplicita.
+const SHOP_COST_VOODOO: int = 6000
+const SHOP_COST_HEART: int = 4000
+const SHOP_COST_MEDICIT: int = 1500
+
+## TASK 108: lo SHOP (casa strega/capanna hobbit) nasce nel labirinto di
+## ogni livello a partire dal primo in cui un player ha abbastanza punti
+## da comprare un CUORE (soglia = costo del cuore), valutato all'inizio del
+## livello; sui livelli boss non c'è labirinto, quindi niente shop.
+static func shop_spawns_at(level: int, best_score: int) -> bool:
+        if is_boss_level(level):
+                return false
+        return best_score >= SHOP_COST_HEART
 
 
 ## Numero del labirinto (1-based, SOLO livelli non-boss) dentro la run:
@@ -1216,37 +1227,6 @@ static func hidden_heart_spawns_at(level: int) -> bool:
         if HIDDEN_HEART_EVERY_LEVELS <= 0 or is_boss_level(level):
                 return false
         return (maze_index_for_level(level) % HIDDEN_HEART_EVERY_LEVELS) == 0
-
-
-## TASK 107: costo in punti del k-esimo cuore riscattato nella run (k >= 1,
-## escalation lineare base*k: 4000, 8000, 12000...).
-static func heart_redeem_cost(k: int) -> int:
-        return HEART_REDEEM_BASE_COST * maxi(1, k)
-
-
-## TASK 107: quanti cuori puo' riscattare ORA un player con `score` punti
-## e `already` cuori gia' riscattati in questa run (walk dell'escalation).
-static func heart_redeem_max_count(score: int, already: int) -> int:
-        var n: int = 0
-        var remaining: int = maxi(0, score)
-        var k: int = already + 1
-        while remaining >= heart_redeem_cost(k) and n < 99:
-                remaining -= heart_redeem_cost(k)
-                n += 1
-                k += 1
-        return n
-
-
-## TASK 107: costo TOTALE di `count` cuori per chi ne ha gia' riscattati
-## `already` (coerente con heart_redeem_max_count: stesso walk). 0 cuori
-## = 0 punti.
-static func heart_redeem_total_cost(count: int, already: int) -> int:
-        if count <= 0:
-                return 0
-        var total: int = 0
-        for i in range(1, count + 1):
-                total += heart_redeem_cost(already + i)
-        return total
 
 # ============================================================================
 # TASK 99 (LEVEL UP) — il punteggio È esperienza

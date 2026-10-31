@@ -120,11 +120,30 @@ const SPRITE_DEFAULT_FACES_RIGHT := {
 @export var score: int = 0
 @export var speed: int = 2  # base speed (px/frame @ 60 FPS)
 
-# TASK 107 (RISCATTO CUORE): cuori gia' riscattati a punti in questa run
-# (per player). Alimenta l'escalation del costo (base * k) nella
-# schermata bonus post-boss; attraversa le scene nel carry e sopravvive
-# alle continue (session snapshot) ma NON al NG+ (run nuova = 0).
-var hearts_redeemed: int = 0
+# TASK 108 (BAMBOLA VOODOO): true quando il player ha comprato/raccolto
+# la bambola e non l'ha ancora lanciata (utilizzo SINGOLO). Il tasto FUOCO
+# nel labirinto la LANCIA al posto di sparare (pattern martello/dinamite).
+# Attraversa le scene nel carry (è pagata a punti) e si perde solo a nuova
+# run o quando viene lanciata.
+var voodoo_equipped: bool = false
+
+# TASK 108 (POSSESSIONE): true mentre il player GUIDA il corpo del nemico
+# colpito dalla bambola. L'avatar è il solito nodo Player (armi/salto/pickup
+# restano quelli del player) ma il CORPO disegnato è il nemico (puppet
+# figlio del player) e l'energia è quella del nemico. Se il corpo muore,
+# il player torna allo stato salvato SENZA perdere vite.
+var possession_active: bool = false
+var possession_saved_energy: int = 5
+var possession_saved_max_energy: int = 5
+var possession_saved_pos: Vector2 = Vector2.ZERO
+var possession_score_reward: int = 0
+# Puppet = il nodo Enemy posseduto, riparentato come figlio del player:
+# disegna se stesso col suo codice; qui ne pilotiamo solo facing/anim.
+var possession_puppet: Node2D = null
+# TASK 108: true quando una fonte di "morte" (danni a 0, voragine, fuoco
+# amico) ha colpito il CORPO posseduto: il controller al frame dopo fa
+# punti/effetti e riporta il player allo stato salvato (nessuna vita persa).
+var possession_death_pending: bool = false
 
 # --- Public state -----------------------------------------------------------
 # Direction:
@@ -726,8 +745,9 @@ func reset() -> void:
         skill_points = 0
         pending_levelup_fx = 0
         skill_levels.clear()
-        # TASK 107 (RISCATTO CUORE): run nuova = escalation del costo a zero.
-        hearts_redeemed = 0
+        # TASK 108 (VOODOO): run nuova = niente bambola niente possessione.
+        voodoo_equipped = false
+        _end_possession_instant()
         _skill_regen_timer_ms = 0.0
         _skill_regen_acc = 0.0
         _air_jumps_left = 0
@@ -1714,6 +1734,12 @@ func take_damage(points: int = 1, ngp_scaled: bool = false) -> void:
                 if get_parent():
                         get_parent().add_child(p)
         if energy <= 0:
+                # TASK 108 (VOODOO): il corpo posseduto muore, NON il player:
+                # niente vite perse, niente collasso — il controller con
+                # _finish_possession_death fa punti/effetti e l'anima torna.
+                if possession_active:
+                        possession_death_pending = true
+                        return
                 lives -= 1
                 # RELIC (Task 21): alla morte si perdono arma reliquia e
                 # armatura (decisione utente) PRIMA del respawn.
@@ -1768,6 +1794,10 @@ func take_hazard_damage(dmg: int, unblockable: bool = false) -> void:
                 if get_parent():
                         get_parent().add_child(p)
         if energy <= 0:
+                # TASK 108 (VOODOO): muore il corpo posseduto, non il player.
+                if possession_active:
+                        possession_death_pending = true
+                        return
                 lives -= 1
                 lose_relics_on_death()
                 energy = max_energy
@@ -1781,6 +1811,11 @@ func take_hazard_damage(dmg: int, unblockable: bool = false) -> void:
 # chiama questa funzione solo per player grounded sulla cella aperta).
 func fall_into_chasm() -> void:
         if soul_pending:
+                return
+        # TASK 108 (VOODOO): il corpo posseduto cade nella voragine e muore;
+        # il player torna allo stato salvato senza perdere vite.
+        if possession_active:
+                possession_death_pending = true
                 return
         lives -= 1
         lose_relics_on_death()
@@ -1827,6 +1862,12 @@ func begin_collapse() -> void:
 # invisibile finché la sua anima non raggiunge il vincitore
 # (SoulTransferEffect -> soul_delivered -> respawn_after_soul).
 func kill_by_friendly_fire() -> void:
+        # TASK 108 (VOODOO): il "colpo fatale" del compagno arriva al corpo
+        # posseduto: muore il nemico, il player torna come prima (niente
+        # trasferimento anima verso il compagno, niente vita persa).
+        if possession_active:
+                possession_death_pending = true
+                return
         lives -= 1
         energy = max_energy
         damage_timer = 0
@@ -1923,13 +1964,110 @@ func add_life() -> void:
         lives += 1
 
 
-## TASK 107 (RISCATTO CUORE): sottrae `points` dal punteggio (riscatto dei
-## cuori nella schermata bonus post-boss). Il livello e' un HIGH WATERMARK:
-## non scende mai (le abilita' gia' confermate restano), ma i level up
-## futuri ritardano perche' le soglie si ri-raggiungono dal punteggio
-## attuale, e la Hall of Fame registra il punteggio finale scontato.
+## TASK 107: sottrae `points` dal punteggio (acquisti allo SHOP del mago,
+## Task 108). Il livello e' un HIGH WATERMARK: non scende mai (le abilita'
+## gia' confermate restano), ma i level up futuri ritardano perche' le
+## soglie si ri-raggiungono dal punteggio attuale, e la Hall of Fame
+## registra il punteggio finale scontato.
 func spend_score(points: int) -> void:
         score = maxi(0, score - points)
+
+
+# ===========================================================================
+# TASK 108 — BAMBOLA VOODOO: possessione del nemico colpito
+# ===========================================================================
+## Inizia la possessione: il player "entra" nel corpo del nemico.
+## Chiamato dal controller quando la bambola colpisce (l'anima in volo e'
+## l'animazione SoulTransferEffect; il freeze usa i gate soul_pending).
+## `puppet` è il nodo Enemy riparentato dal controller come figlio del
+## player: qui si nasconde il corpo normale, si salva lo stato e si prende
+## l'energia del nemico.
+func begin_possession(puppet: Node2D, enemy_hp: int, score_reward: int) -> void:
+        if possession_active:
+                return
+        possession_active = true
+        possession_saved_energy = energy
+        possession_saved_max_energy = max_energy
+        possession_saved_pos = position
+        possession_score_reward = score_reward
+        possession_puppet = puppet
+        max_energy = maxi(1, enemy_hp)
+        energy = maxi(1, enemy_hp)
+        damage_timer = 0
+        # Il corpo del personaggio sparisce: ora il corpo è il nemico.
+        if sprite != null:
+                _pre_soul_sprite_visible = sprite.visible
+                sprite.visible = false
+        # NB: weapon_sprite torna VISO (era stato nascosto durante il volo
+        # dell'anima): il nemico posseduto combatte con le ARMI DEL PLAYER
+        # (richiesta utente) e l'arma in mano si vede sul puppet.
+        if weapon_sprite != null:
+                weapon_sprite.visible = true
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.SOUL_ABSORB)
+
+
+## Aggiorna il puppet del nemico posseduto ogni frame (facing/anim/salto):
+## il nodo Enemy disegna se stesso; qui sincronizziamo lo stato di disegno
+## con il movimento del player. Chiamato dal controller dopo update_player.
+func update_possession_puppet(delta_ms: float) -> void:
+        if not possession_active or possession_puppet == null:
+                return
+        if not is_instance_valid(possession_puppet):
+                possession_puppet = null
+                return
+        var puppet = possession_puppet  # dynamic: Enemy
+        # Facing orizzontale come il player (le sheet SD sono di profilo).
+        if dx != 0:
+                puppet.set("dx", dx)
+                puppet.set("last_dx", dx)
+        else:
+                puppet.set("dx", 0)
+        puppet.set("dy", dy)
+        # Ciclo di camminata del nemico sull'anim_time del player.
+        puppet.set("anim_time", anim_time)
+        # Salto del player -> offset verticale del puppet.
+        puppet.position = Vector2(0.0, -jump_offset)
+        puppet.queue_redraw()
+
+
+## Il corpo posseduto è DISTRUTTO (energia a 0 / voragine / fuoco amico):
+## il nemico posseduto muore (punti ed effetti li fa il controller con
+## _finish_possession_death), il player NON perde vite e torna allo stato
+## salvato. Ritorna true se la possessione e' stata chiusa qui.
+func handle_possession_death() -> bool:
+        if not possession_active:
+                return false
+        _end_possession_instant()
+        return true
+
+
+## Fine immediata della possessione SENZA effetti: ripristina energia/max
+## e corpo normale e libera il puppet. Usata a fine possessione (morte del
+## corpo, cambio scena, reset) — gli effetti visivi li aggiunge il
+## controller prima/dopo questa chiamata.
+func _end_possession_instant() -> void:
+        if not possession_active:
+                return
+        possession_active = false
+        possession_death_pending = false
+        energy = maxi(1, possession_saved_energy)
+        max_energy = maxi(1, possession_saved_max_energy)
+        if sprite != null and not sprite.visible:
+                sprite.visible = true
+        if possession_puppet != null and is_instance_valid(possession_puppet):
+                possession_puppet.queue_free()
+        possession_puppet = null
+
+
+## Accessori per il controller/carry: punteggio/energia "reali" del player
+## quando e' posseduto (l'energia corrente e' quella del nemico).
+func get_real_energy() -> int:
+        return possession_saved_energy if possession_active else energy
+
+
+func get_real_max_energy() -> int:
+        return possession_saved_max_energy if possession_active else max_energy
 
 
 # ===========================================================================

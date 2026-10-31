@@ -36,7 +36,10 @@ const TRAIL_MAX: int = 10             # lunghezza della scia eterea
 
 # --- Setup (chiamato dal controller PRIMA dell'add_child) --------------------
 var victim: CharacterBody2D = null     # player ucciso (per texture/tint corpo)
-var receiver: CharacterBody2D = null   # player vincitore (target homing)
+var receiver: Node2D = null            # bersaglio dell'anima: player vincitore
+                                       # del fuoco amico OPPURE nemico bersaglio
+                                       # della bambola voodoo (Task 108: entrambi
+                                       # espongono get_pixel_pos per l'homing)
 var death_pos: Vector2 = Vector2.ZERO
 var body_tex: Texture2D = null         # frame dello sprite della vittima
 var body_flip_h: bool = false
@@ -57,7 +60,10 @@ var _rng := RandomNumberGenerator.new()
 
 # setup(): raccoglie tutto ciò che serve dalla vittima PRIMA che questa
 # venga congelata/nascosta (texture del frame corrente, orientamento, tint).
-func setup(p_victim: CharacterBody2D, p_receiver: CharacterBody2D) -> void:
+# TASK 108: `p_receiver` e' Node2D (player vincitore del fuoco amico OPPURE
+# nemico bersaglio della bambola voodoo: del receiver serve solo la
+# posizione viva per l'homing).
+func setup(p_victim: CharacterBody2D, p_receiver: Node2D) -> void:
         victim = p_victim
         receiver = p_receiver
         death_pos = p_victim.get_pixel_pos()
@@ -76,6 +82,21 @@ func setup(p_victim: CharacterBody2D, p_receiver: CharacterBody2D) -> void:
                 clampf(0.78 + body_tint.r * 0.20, 0.0, 1.0),
                 clampf(0.92 + body_tint.g * 0.08, 0.0, 1.0),
                 1.0, 1.0)
+
+
+## TASK 108 (VOODOO): setup "senza corpo" per il volo di RITORNO dell'anima
+## quando il corpo posseduto muore: l'anima vola da `from_pos` a `to_pos`
+## fisse (niente homing, niente corpo accasciato da disegnare — il corpo
+## del nemico esplode a parte nel controller).
+func setup_dummy(from_pos: Vector2, to_pos: Vector2) -> void:
+        victim = null
+        receiver = null
+        death_pos = from_pos
+        last_receiver_pos = to_pos
+        body_tex = null
+        body_flip_h = false
+        body_tint = Color.WHITE
+        soul_color = Color(0.80, 0.95, 1.0, 1.0)
 
 
 func _ready() -> void:
@@ -110,8 +131,10 @@ func _process(delta: float) -> void:
                                 fly_speed = FLY_SPEED_START
                 Phase.FLY:
                         _fly_t += delta
-                        # Homing sulla posizione LIVE del vincitore.
-                        if receiver != null and is_instance_valid(receiver):
+                        # Homing sulla posizione LIVE del bersaglio (player
+                        # vincitore o nemico posseduto: Task 108).
+                        if receiver != null and is_instance_valid(receiver) \
+                                        and receiver.has_method("get_pixel_pos"):
                                 last_receiver_pos = receiver.get_pixel_pos()
                         var to_target: Vector2 = last_receiver_pos - soul_pos
                         var dist: float = to_target.length()
@@ -136,7 +159,8 @@ func _deliver() -> void:
         delivered = true
         phase = Phase.ABSORB
         t = 0.0
-        if receiver != null and is_instance_valid(receiver):
+        if receiver != null and is_instance_valid(receiver) \
+                        and receiver.has_method("get_pixel_pos"):
                 last_receiver_pos = receiver.get_pixel_pos()
         soul_delivered.emit()
 
@@ -171,7 +195,10 @@ func _draw() -> void:
 
 # --- Corpo accasciato: la texture della vittima ruota attorno ai piedi -------
 # fp = progresso della caduta (0 in piedi → 1 disteso), alpha = dissolvenza.
+# TASK 108 (dummy): senza vittima (volo di ritorno voodoo) niente corpo.
 func _draw_body(fp: float, alpha: float) -> void:
+        if victim == null:
+                return
         var pivot: Vector2 = death_pos + Vector2(0.0, 30.0)  # piedi
         # Rotazione accelerata (gravità): da 0 a ~83°, nella direzione in cui
         # guardava la vittima (cade "in avanti").

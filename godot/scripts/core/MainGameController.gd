@@ -255,6 +255,17 @@ var hammer_item: Node2D = null          # item a terra (Collectibles.Kind.HAMMER
 # TASK 107 (CUORE NASCOSTO): item a terra (Collectibles.Kind.HEART) — nasce
 # solo sui livelli dove C.hidden_heart_spawns_at() è true.
 var hidden_heart_item: Node2D = null
+# ============================================================================
+# TASK 108 (SHOP): la casa strega nel labirinto (ShopStall) + schermata di
+# acquisti (ShopScreen) + bambola voodoo in volo (VoodooDoll).
+# ============================================================================
+const ShopStallClass = preload("res://scripts/items/ShopStall.gd")
+const ShopScreenClass = preload("res://scripts/ui/ShopScreen.gd")
+const VoodooDollClass = preload("res://scripts/items/VoodooDoll.gd")
+var shop_stall: Node2D = null          # la capanna 2x2 (null = niente shop)
+var _shop_screen: CanvasLayer = null    # UI aperta mentre il player acquista
+var voodoo_thrown: Node2D = null        # bambola in volo (VoodooDoll.gd)
+var voodoo_thrower_num: int = 0         # 1/2: chi ha lanciato la bambola
 var hammer_player: int = 0              # 0 = nessuno, 1 = P1, 2 = P2
 var hammer_uses_left: int = 0           # lanci rimasti (max HAMMER_MAX_USES)
 var hammer_thrown: Node2D = null        # Hammer in volo (scripts/items/Hammer.gd)
@@ -918,6 +929,11 @@ func _unhandled_input(event: InputEvent) -> void:
         # e' aperta (l'unico input ammesso e' l'hold del fuoco).
         if _bonus_card != null:
                 return
+        # TASK 108 (SHOP): niente pausa/uscita mentre il negozio del mago e'
+        # aperto — ESC ESCE DAL NEGOZIO (gestito da ShopScreen), P non puo'
+        # impilare la pausa sopra la pausa dello shop.
+        if _shop_screen != null:
+                return
         # FIX CRASH: get_viewport() può ritornare null quando il nodo è in
         # fase di uscita dalla scena. Usiamo una variabile locale con null check.
         if event.is_action_pressed("pause") and not event.is_echo():
@@ -962,6 +978,12 @@ func _exit_tree() -> void:
         if _levelup_card != null:
                 _levelup_card.queue_free()
                 _levelup_card = null
+                if get_tree():
+                        get_tree().paused = false
+        # TASK 108 (SHOP): idem per il negozio del mago (sblocca il tree).
+        if _shop_screen != null:
+                _shop_screen.queue_free()
+                _shop_screen = null
                 if get_tree():
                         get_tree().paused = false
         # FIX (pausa attiva al cambio scena): se si esce dal MainGame mentre
@@ -1021,6 +1043,10 @@ func _physics_process(_delta: float) -> void:
                 return
         # TASK 99 (LEVEL UP): modale abilità aperta: gioco in pausa.
         if _levelup_card != null:
+                return
+        # TASK 108 (SHOP): negozio del mago aperto: gioco in pausa (la
+        # schermata gira in PROCESS_MODE_ALWAYS e si chiude con ESCI/ESC).
+        if _shop_screen != null:
                 return
         if is_paused:
                 return
@@ -1174,6 +1200,12 @@ func _handle_input() -> void:
                                 if fire_edge:
                                         _throw_hammer(player)
                                         player.shoot_cooldown = 300
+                        elif player.voodoo_equipped and voodoo_thrown == null:
+                                # TASK 108 (VOODOO): il fuoco LANCIA LA BAMBOLA
+                                # (utilizzo singolo) al posto di sparare.
+                                if fire_edge:
+                                        _throw_voodoo_doll(player)
+                                        player.shoot_cooldown = 300
                         elif player.shoot_cooldown == 0:
                                 var ammo_before: int = player.current_weapon.get("ammo", 0)
                                 player.shoot()
@@ -1216,6 +1248,10 @@ func _handle_input() -> void:
                 elif hammer_player == 1 and hammer_thrown == null:
                         # FIX (martello di Thor): lancio da tastiera (P1).
                         _throw_hammer(player)
+                        player.shoot_cooldown = 300
+                elif player.voodoo_equipped and voodoo_thrown == null:
+                        # TASK 108 (VOODOO): lancio da tastiera (P1).
+                        _throw_voodoo_doll(player)
                         player.shoot_cooldown = 300
                 elif player.shoot_cooldown == 0:
                         var ammo_before: int = player.current_weapon.get("ammo", 0)
@@ -1351,6 +1387,11 @@ func _handle_input() -> void:
                                         if fire2_edge:
                                                 _throw_hammer(player2)
                                                 player2.shoot_cooldown = 300
+                                elif player2.voodoo_equipped and voodoo_thrown == null:
+                                        # TASK 108 (VOODOO): lancio P2 joystick.
+                                        if fire2_edge:
+                                                _throw_voodoo_doll(player2)
+                                                player2.shoot_cooldown = 300
                                 else:
                                         player2.shoot()
                                         player2.shoot_cooldown = C.relic_fire_cooldown(
@@ -1372,6 +1413,10 @@ func _handle_input() -> void:
                         elif hammer_player == 2 and hammer_thrown == null:
                                 # FIX (martello di Thor): lancio P2 tastiera.
                                 _throw_hammer(player2)
+                                player2.shoot_cooldown = 300
+                        elif player2.voodoo_equipped and voodoo_thrown == null:
+                                # TASK 108 (VOODOO): lancio P2 tastiera (tasto E).
+                                _throw_voodoo_doll(player2)
                                 player2.shoot_cooldown = 300
                         else:
                                 player2.shoot()
@@ -1632,6 +1677,12 @@ func _update_playing(delta_ms: float) -> void:
         # FIX (martello di Thor): volo del martello lanciato (andata, impatto,
         # ritorno in mano al player).
         _update_thrown_hammer(delta_ms)
+        # TASK 108 (VOODOO): volo della bambola + possessione in corso
+        # (aggiorna il puppet nemico e gestisce la morte del corpo posseduto).
+        _update_thrown_voodoo(delta_ms)
+        _update_possession(delta_ms)
+        # TASK 108 (SHOP): ingresso del player nella casa strega.
+        _update_shop_entry()
 
         # (9e) Last hit enemy timer (FIX: HUD nemico colpito)
         if last_hit_enemy_timer_ms > 0:
@@ -4602,6 +4653,15 @@ func _build_session_snapshot() -> Dictionary:
                         and hidden_heart_item.active:
                 items["hiddenheart"] = {"pos": hidden_heart_item.pos}
         snap["items"] = items
+        # --- TASK 108 (SHOP): la casa strega ricompare alla morte (aperta se
+        # il player non c'era ancora entrato, CHIUSA col cartello se ne era
+        # gia' uscito). ---
+        if shop_stall != null and is_instance_valid(shop_stall):
+                var stall = shop_stall  # dynamic: ShopStall
+                snap["shop"] = {
+                        "cell": stall.block_cell,
+                        "closed": not stall.open,
+                }
         # --- Porta di uscita ---
         snap["exit_door"] = {
                 "active": bool(exit_door.get("active", false)),
@@ -4641,9 +4701,9 @@ func _build_session_snapshot() -> Dictionary:
                 "skill_points": player.skill_points,
                 "pending_levelup_fx": player.pending_levelup_fx,
                 "skill_levels": player.skill_levels.duplicate(),
-                # TASK 107 (RISCATTO CUORE): il continue conserva anche
-                # l'escalation dei cuori riscattati (il costo non si azzera).
-                "hearts_redeemed": player.hearts_redeemed,
+                # TASK 108 (VOODOO): la continue conserva la bambola in tasca
+                # (pagata a punti: se non era stata lancita resta al player).
+                "voodoo": bool(player.voodoo_equipped),
         }
         snap["p1"] = p1_snap
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -4657,8 +4717,8 @@ func _build_session_snapshot() -> Dictionary:
                         "skill_points": player2.skill_points,
                         "pending_levelup_fx": player2.pending_levelup_fx,
                         "skill_levels": player2.skill_levels.duplicate(),
-                        # TASK 107 (RISCATTO CUORE): idem P1.
-                        "hearts_redeemed": player2.hearts_redeemed,
+                        # TASK 108 (VOODOO): idem P1.
+                        "voodoo": bool(player2.voodoo_equipped),
                 }
         return snap
 
@@ -4744,6 +4804,19 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                         "hammer": hammer_item = node
                         "hiddenheart": hidden_heart_item = node
         medikit_used = not items.has("medikit")
+        # --- TASK 108 (SHOP): ricrea la casa strega allo stesso blocco, con lo
+        # stesso stato (aperta/chiusa col cartello) che aveva alla morte. ---
+        if shop_stall != null and is_instance_valid(shop_stall):
+                shop_stall.queue_free()
+                shop_stall = null
+        var shop_snap: Dictionary = snap.get("shop", {})
+        if not shop_snap.is_empty():
+                var stall := ShopStallClass.new()
+                stall.block_cell = shop_snap.get("cell", Vector2i.ZERO)
+                stall.position = _cell_to_pixel(stall.block_cell)
+                stall.open = not bool(shop_snap.get("closed", false))
+                add_child(stall)
+                shop_stall = stall
         # --- Spawner: portale e soglia del 50% ---
         spawner.initial_count = int(snap.get("initial_count", spawner.enemies.size()))
         spawner.portal_used = bool(snap.get("portal_used", false))
@@ -4844,8 +4917,8 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 var skills1: Dictionary = p1_snap.get("skill_levels", {})
                 if not skills1.is_empty():
                         player.restore_skills(skills1)
-                # TASK 107 (RISCATTO CUORE): il continue conserva l'escalation.
-                player.hearts_redeemed = int(p1_snap.get("hearts_redeemed", 0))
+                # TASK 108 (VOODOO): la continue conserva la bambola in tasca.
+                player.voodoo_equipped = bool(p1_snap.get("voodoo", false))
         var p2_snap: Dictionary = snap.get("p2", {})
         if not p2_snap.is_empty() and GameManager and GameManager.num_players == 2:
                 player2.visible = true
@@ -4862,8 +4935,8 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 var skills2: Dictionary = p2_snap.get("skill_levels", {})
                 if not skills2.is_empty():
                         player2.restore_skills(skills2)
-                # TASK 107 (RISCATTO CUORE): idem P1.
-                player2.hearts_redeemed = int(p2_snap.get("hearts_redeemed", 0))
+                # TASK 108 (VOODOO): idem P1.
+                player2.voodoo_equipped = bool(p2_snap.get("voodoo", false))
         # --- HUD: aggiorna subito con lo stato ripristinato ---
         _update_hud_snapshot()
         print("[Continue] Sessione maze ripristinata: livello ", current_level,
@@ -5139,6 +5212,293 @@ func _break_internal_wall(cell: Vector2i, impact_pos: Vector2) -> void:
                         "): nuova scorciatoia aperta")
 
 
+# ============================================================================
+# TASK 108 (SHOP) — ingresso nella casa strega + acquisti dal mago
+# ============================================================================
+
+## Ingresso: un player VIVO (non in possessione, non congelato) entra nel
+## rettangolo della capanna APERTA -> si apre ShopScreen (pausa automatica).
+## Una sola visita per livello: all'uscita lo shop si chiude (cartello).
+func _update_shop_entry() -> void:
+        if shop_stall == null or not is_instance_valid(shop_stall):
+                return
+        if not shop_stall.open or _shop_screen != null:
+                return
+        var stall = shop_stall  # dynamic: ShopStall
+        var rect: Rect2 = stall.entry_rect()
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.visible:
+                        continue
+                if p.soul_pending or p.possession_active:
+                        continue
+                if rect.has_point(p.get_pixel_pos()):
+                        _open_shop(p)
+                        return
+
+
+## Apre la schermata del negozio per `p` (chi è entrato). Il tree va in
+## pausa dentro ShopScreen._ready (pattern SaveSlotsCard).
+func _open_shop(p: CharacterBody2D) -> void:
+        var screen := ShopScreenClass.new()
+        screen.setup(p)
+        screen.shop_exited.connect(_on_shop_exited.bind(p))
+        add_child(screen)
+        _shop_screen = screen
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+        print("[Shop] Player ", int(p.player_num), " entra nel negozio del mago")
+
+
+## Uscita dal negozio: lo shop si CHIUDE (cartello sulla porta), il player
+## torna accanto alla porta (cella percorribile adiacente) e il gioco
+## riprende (la schermata ha gia' tolto la pausa).
+func _on_shop_exited(p: CharacterBody2D) -> void:
+        _shop_screen = null
+        if shop_stall != null and is_instance_valid(shop_stall):
+                var stall = shop_stall  # dynamic: ShopStall
+                stall.open = false
+                # Riporta il player FUORI dalla capanna, sulla cella
+                # percorribile adiacente (preferisce sotto la porta).
+                if p != null and is_instance_valid(p):
+                        p.position = _shop_exit_pos(stall.block_cell)
+                        p.set_direction(0, 0)
+                        p.dx = 0
+                        p.dy = 0
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.DOOR_OPEN)
+                print("[Shop] negozio chiuso: cartello CHIUSO appeso alla porta")
+
+
+## TASK 108: posizione di uscita dal negozio = centro della prima cella
+## EMPTY adiacente alla porta (sotto, sinistra, destra, sopra; altrimenti
+## la cella stessa leggermente sotto).
+func _shop_exit_pos(door_cell: Vector2i) -> Vector2:
+        var neighbors: Array = [
+                Vector2i(door_cell.x, door_cell.y + 1),
+                Vector2i(door_cell.x - 1, door_cell.y),
+                Vector2i(door_cell.x + 1, door_cell.y),
+                Vector2i(door_cell.x, door_cell.y - 1),
+        ]
+        for nc in neighbors:
+                if nc.x >= 0 and nc.x < C.MAZE_COLS and nc.y >= 0 \
+                                and nc.y < C.MAZE_ROWS \
+                                and maze.get_cell_type(nc.x, nc.y) == C.CellType.EMPTY:
+                        return _cell_to_pixel(nc)
+        return Vector2(door_cell.x * C.TILE_SIZE + C.TILE_SIZE * 0.5,
+                        door_cell.y * C.TILE_SIZE + C.TILE_SIZE * 0.9 + C.UI_HEIGHT)
+
+
+# ============================================================================
+# TASK 108 (VOODOO) — lancio della bambola + possessione del nemico
+# ============================================================================
+
+## Lancia la bambola voodoo nella direzione in cui e' rivolto il player.
+## Utilizzo SINGOLO: voodoo_equipped viene spento subito (la bambola e'
+## in volo). La possessione avviene all'impatto col primo NEMICO valido.
+func _throw_voodoo_doll(p: CharacterBody2D) -> void:
+        if voodoo_thrown != null and is_instance_valid(voodoo_thrown):
+                return  # bambola gia' in volo
+        var dir_vec: Vector2 = Vector2(float(p.last_dx), float(p.last_dy))
+        if dir_vec == Vector2.ZERO:
+                dir_vec = Vector2(1.0, 0.0)
+        dir_vec = dir_vec.normalized()
+        var doll := VoodooDollClass.new()
+        doll.dir = dir_vec
+        doll.speed = 11.0
+        doll.position = p.get_pixel_pos() + dir_vec * 24.0
+        doll.set_meta("thrower_num", 1 if p == player else 2)
+        voodoo_thrower_num = 1 if p == player else 2
+        voodoo_thrown = doll
+        p.set("voodoo_equipped", false)
+        collectibles_node.add_child(doll)
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.SOUL_RELEASE)
+        print("[Voodoo] Player ", 1 if p == player else 2,
+                        " lancia la bambola voodoo")
+
+
+## Update della bambola in volo: muro -> si disintegra (uso perso); nemico
+## -> animazione anima + possessione; mini-boss -> ATTRaversa senza effetto;
+## fine corsa -> svanisce. Pattern _update_thrown_hammer.
+func _update_thrown_voodoo(delta_ms: float) -> void:
+        if voodoo_thrown == null or not is_instance_valid(voodoo_thrown):
+                voodoo_thrown = null
+                return
+        var doll = voodoo_thrown  # dynamic: VoodooDoll
+        var steps_scale: float = delta_ms / 16.6667
+        doll.spin_deg = fmod(doll.spin_deg + 14.0 * steps_scale, 360.0)
+        var new_pos: Vector2 = doll.position + doll.dir * doll.speed * steps_scale
+        doll.travelled_px += doll.speed * steps_scale
+        new_pos = GameConstants.tunnel_wrap(new_pos)
+        doll.position = new_pos
+        doll.push_trail_point(new_pos)
+        # --- MURO: la bambola si disintegra (uso perso) ---
+        var hit_cell: Vector2i = Vector2i(
+                        int(new_pos.x / C.TILE_SIZE),
+                        int((new_pos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        if hit_cell.x >= 0 and hit_cell.x < C.MAZE_COLS \
+                        and hit_cell.y >= 0 and hit_cell.y < C.MAZE_ROWS \
+                        and maze.is_wall(hit_cell.x, hit_cell.y):
+                if EffectsManager:
+                        var puff := EffectsManager.spawn_explosion(new_pos,
+                                        Color(0.72, 0.5, 0.95), 10, 0.4)
+                        collectibles_node.add_child(puff)
+                if AudioManager:
+                        AudioManager.play_sound(AudioManager.SoundType.RELIC_BREAK)
+                doll.queue_free()
+                voodoo_thrown = null
+                print("[Voodoo] la bambola si e' frantumata contro un muro (uso perso)")
+                return
+        # --- NEMICO (non mini-boss): possessione ---
+        for enemy in spawner.enemies:
+                if enemy == null or not is_instance_valid(enemy):
+                        continue
+                if enemy.is_dead() or enemy.is_dying() or enemy.is_frozen():
+                        continue
+                if new_pos.distance_squared_to(enemy.get_pixel_pos()) < 700.0:
+                        doll.queue_free()
+                        voodoo_thrown = null
+                        _start_voodoo_possession(enemy)
+                        return
+        # --- Fine corsa: svanisce (uso perso) ---
+        if doll.travelled_px >= VoodooDollClass.MAX_TRAVEL_PX:
+                if EffectsManager:
+                        var fade := EffectsManager.spawn_sparks(new_pos, 8)
+                        collectibles_node.add_child(fade)
+                doll.queue_free()
+                voodoo_thrown = null
+
+
+## Anima la transizione: il player diventa UN'ANIMA che vola nel corpo del
+## nemico colpito (SoulTransferEffect del Task 18, riusato). Durante il
+## volo il player e' congelato (gate soul_pending) e invisibile.
+func _start_voodoo_possession(enemy: Node2D) -> void:
+        # chi ha lanciato la bambola (voodoo_thrower_num, default P1)
+        var p: CharacterBody2D = player2 if voodoo_thrower_num == 2 else player
+        if p == null or not is_instance_valid(p) or not p.visible \
+                        or p.soul_pending or p.possession_active:
+                # sicurezza: se il lanciatore non puo', prova l'altro player
+                p = player2 if p == player else player
+        if p == null or not is_instance_valid(p) or p.soul_pending or p.possession_active:
+                return
+        var thrower_num: int = 1 if p == player else 2
+        # Congela il player come nel fuoco amico (niente input/danni/rendering):
+        # l'anima in volo e' disegnata da SoulTransferEffect.
+        p.soul_pending = true
+        p.set_direction(0, 0)
+        p.dx = 0
+        p.dy = 0
+        p.projectiles.clear()
+        if p.sprite != null:
+                p._pre_soul_sprite_visible = p.sprite.visible
+                p.sprite.visible = false
+        if p.weapon_sprite != null:
+                p._pre_soul_weapon_visible = p.weapon_sprite.visible
+                p.weapon_sprite.visible = false
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.SOUL_RELEASE)
+                AudioManager.play_sound(AudioManager.SoundType.DARK_LAUGH)
+        var fx: Node2D = SoulTransferFx.new()
+        fx.setup(p, enemy)
+        add_child(fx)
+        fx.soul_delivered.connect(_on_voodoo_soul_delivered.bind(p, enemy))
+        print("[Voodoo] P", thrower_num, ": l'anima vola nel corpo del nemico")
+
+
+## L'anima e' arrivata nel corpo del nemico: APPLICA la possessione.
+func _on_voodoo_soul_delivered(p: CharacterBody2D, enemy: Node2D) -> void:
+        if p == null or not is_instance_valid(p):
+                return
+        p.soul_pending = false
+        if enemy == null or not is_instance_valid(enemy) or enemy.is_dead():
+                # Il nemico e' morto mentre l'anima volava: il player torna
+                # visibile dov'era (niente possessione, nessun danno).
+                if p.sprite != null:
+                        p.sprite.visible = true
+                if p.weapon_sprite != null:
+                        p.weapon_sprite.visible = p._pre_soul_weapon_visible
+                return
+        _apply_voodoo_possession(p, enemy)
+
+
+## Applica la possessione: il nemico viene TOLTO dal campo (array spawner +
+## riparentato come figlio del player a (0,0): il suo _draw usa il facing
+## che gli copiamo dal player ogni frame). Il player prende l'ENERGIA del
+## nemico e continua a giocare con le SUE armi (richiesta utente).
+func _apply_voodoo_possession(p: CharacterBody2D, enemy: Node2D) -> void:
+        var hp: int = maxi(1, int(enemy.health))
+        var reward: int = enemy.get_score_reward() if enemy.has_method("get_score_reward") else 30
+        # Rimuovi il nemico dal pool (come una kill, senza effetti: il corpo
+        # non muore, VIENI posseduto) e riparentalo al player come puppet.
+        spawner.enemies.erase(enemy)
+        enemy.get_parent().remove_child(enemy)
+        p.add_child(enemy)
+        enemy.position = Vector2.ZERO
+        p.begin_possession(enemy, hp, reward)
+        if EffectsManager:
+                EffectsManager.screen_shake(4.0, 0.2)
+                var burst := EffectsManager.spawn_pickup_burst(
+                                p.get_pixel_pos(), Color(0.8, 0.55, 1.0))
+                collectibles_node.add_child(burst)
+        print("[Voodoo] possessione attiva: il player guida il nemico (",
+                        hp, " HP corpo, armi del player)")
+
+
+## Ogni frame di possessione: aggiorna il puppet e gestisce la MORTE del
+## corpo posseduto (possession_death_pending o energia a 0).
+func _update_possession(_delta_ms: float) -> void:
+        for p in [player, player2]:
+                if p == null or not is_instance_valid(p) or not p.visible:
+                        continue
+                if p.possession_active:
+                        p.update_possession_puppet(_delta_ms)
+                        if p.possession_death_pending or p.energy <= 0:
+                                _finish_possession_death(p)
+
+
+## Il corpo posseduto e' morto: il NEMICO muore (punti al player + effetti
+## di morte nemico) e il player torna allo stato di PRIMA — posizione salva,
+## energia salva, NESSUNA vita persa (richiesta utente). L'anima torna con
+## un breve effetto SoulTransfer dal corpo morente al punto salvato.
+func _finish_possession_death(p: CharacterBody2D) -> void:
+        var death_pos: Vector2 = p.get_pixel_pos()
+        var reward: int = p.possession_score_reward
+        var saved_pos: Vector2 = p.possession_saved_pos
+        # Punti della kill al player (il nemico posseduto e' morto).
+        p.add_score(reward)
+        # Effetti morte nemico sul corpo.
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_DEATH)
+                AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
+        if EffectsManager:
+                var burst := EffectsManager.spawn_explosion(death_pos,
+                                Color(0.72, 0.5, 0.95), 18, 0.6)
+                collectibles_node.add_child(burst)
+                EffectsManager.screen_shake(8.0, 0.35)
+        _spawn_blood_stain(death_pos)
+        _spawn_fire_burst(death_pos, 1.0)
+        # Chiude la possessione (energia/max/corpo ripristinati) e riporta il
+        # player al punto salvato (con safety: se la cella e' diventata muro,
+        # resta dov'e' la posizione salvata valida piu' vicina).
+        p.handle_possession_death()
+        var target_pos: Vector2 = saved_pos
+        var tcell: Vector2i = Vector2i(
+                        int(target_pos.x / C.TILE_SIZE),
+                        int((target_pos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        if tcell.x < 0 or tcell.x >= C.MAZE_COLS or tcell.y < 0 \
+                        or tcell.y >= C.MAZE_ROWS \
+                        or maze.is_wall(tcell.x, tcell.y):
+                target_pos = p.position  # cella salvata non piu' valida: resta qui
+        p.position = target_pos
+        p.damage_timer = 800  # breve invulnerabilita' al ritorno
+        # Anima che ritorna al corpo originale (breve volo visibile).
+        var fx: Node2D = SoulTransferFx.new()
+        fx.setup_dummy(death_pos, target_pos)
+        add_child(fx)
+        print("[Voodoo] il corpo posseduto e' morto (+", reward,
+                        " punti): il player torna come prima")
+
+
 # Spawn the level collectibles: mine, chalice, scepter, speed boots.
 # Mirrors Game::startLevel() lines 280-360.
 func _spawn_collectibles() -> void:
@@ -5190,6 +5550,24 @@ func _spawn_collectibles() -> void:
         # TASK 107 (CUORE NASCOSTO): reset a inizio livello (rinasce solo sui
         # livelli che lo prevedono; al restore da snapshot viene ricreato).
         hidden_heart_item = null
+        # TASK 108 (SHOP/VOODOO): reset shop (lo _spawn_collectibles del nuovo
+        # livello lo ricrea se serve) e bambola in volo; la possessione finisce
+        # all'istante (il player torna com'era prima di colpire: se cambia
+        # scena con il corpo in mano, l'anima "rientra" senza effetti).
+        if shop_stall != null and is_instance_valid(shop_stall):
+                shop_stall.queue_free()
+        shop_stall = null
+        if _shop_screen != null and is_instance_valid(_shop_screen):
+                _shop_screen.queue_free()
+        _shop_screen = null
+        if voodoo_thrown != null and is_instance_valid(voodoo_thrown):
+                voodoo_thrown.queue_free()
+        voodoo_thrown = null
+        voodoo_thrower_num = 0
+        if player != null and is_instance_valid(player):
+                player.handle_possession_death()
+        if player2 != null and is_instance_valid(player2):
+                player2.handle_possession_death()
         if player != null:
                 player.set_hammer_equipped(false)
         if player2 != null:
@@ -5222,6 +5600,12 @@ func _spawn_collectibles() -> void:
         # previene sovrapposizioni come "bomba sopra l'oro".
         var used_cells: Array = []
         const MIN_DIST_BETWEEN_ITEMS: int = 3
+
+        # TASK 108 (SHOP): la CASA STREGA viene piazzata PRIMA degli item e
+        # reclama il suo blocco 2x2 all'angolo del labirinto (le celle del
+        # blocco entrano in used_cells: nessun item ci spawna sopra). Nasce
+        # dal primo livello in cui un player può comprare un CUORE.
+        _try_spawn_shop(empty_cells, used_cells)
 
         # Mine (item index 0)
         var cell: Vector2i = _pop_cell_far_enough(empty_cells, used_cells, MIN_DIST_BETWEEN_ITEMS)
@@ -5318,6 +5702,75 @@ func _spawn_collectibles() -> void:
                                         CollectiblesClass.Kind.HEART,
                                         _cell_to_pixel(heart_cell))
                         collectibles_node.add_child(hidden_heart_item)
+
+
+## TASK 108 (SHOP): piazza la casa strega a un'ESTREMITÀ del labirinto
+## (alto-destra / basso-destra / alto-sinistra / basso-sinistra). I corridoi
+## del maze sono larghi UNA cella: la capanna occupa la CELLA VUOTA più
+## vicina al vertice dell'angolo e il suo sprite 128x128 (più grande della
+## cella) copre i muri circostanti — l'effetto è la capanna che "riempie"
+## il cantuccio del labirinto, con la porta sulla cella percorribile.
+## Nasce solo se un player ha abbastanza punti da comprare un CUORE
+## (C.shop_spawns_at). La cella viene rimossa dal pool degli item.
+func _try_spawn_shop(cells: Array, used: Array) -> void:
+        shop_stall = null
+        if _shop_screen != null and is_instance_valid(_shop_screen):
+                _shop_screen.queue_free()
+                _shop_screen = null
+        var best_score: int = int(player.score) if player != null else 0
+        if player2 != null and is_instance_valid(player2) and player2.visible \
+                        and GameManager and GameManager.num_players == 2:
+                best_score = maxi(best_score, int(player2.score))
+        if not C.shop_spawns_at(current_level, best_score):
+                return
+        # Regioni d'angolo (quarto di labirinto, bordo escluso).
+        var cols: int = C.MAZE_COLS
+        var rows: int = C.MAZE_ROWS
+        var corner_ranges: Array = [
+                [cols - 9, cols - 2, 1, 8, "top-right", Vector2i(cols - 1, 0)],
+                [cols - 9, cols - 2, rows - 9, rows - 2, "bottom-right", Vector2i(cols - 1, rows - 1)],
+                [1, 9, 1, 8, "top-left", Vector2i(0, 0)],
+                [1, 9, rows - 9, rows - 2, "bottom-left", Vector2i(0, rows - 1)],
+        ]
+        corner_ranges.shuffle()
+        for range_def in corner_ranges:
+                var x0c: int = int(range_def[0])
+                var x1c: int = int(range_def[1])
+                var y0c: int = int(range_def[2])
+                var y1c: int = int(range_def[3])
+                var vertex: Vector2i = range_def[5]
+                # cerca la cella EMPTY più vicina al VERTICE dell'angolo
+                # (e non già usata da un item).
+                var best_cell: Vector2i = Vector2i(-1, -1)
+                var best_d: int = -1
+                for r in range(y0c, y1c):
+                        for c in range(x0c, x1c):
+                                if maze.get_cell_type(c, r) != C.CellType.EMPTY:
+                                        continue
+                                var taken: bool = false
+                                for u in used:
+                                        if u.x == c and u.y == r:
+                                                taken = true
+                                                break
+                                if taken:
+                                        continue
+                                var d: int = absi(c - vertex.x) + absi(r - vertex.y)
+                                if best_d < 0 or d < best_d:
+                                        best_d = d
+                                        best_cell = Vector2i(c, r)
+                if best_cell.x >= 0:
+                        var stall := ShopStallClass.new()
+                        stall.block_cell = best_cell
+                        stall.position = _cell_to_pixel(best_cell)
+                        stall.open = true
+                        add_child(stall)
+                        shop_stall = stall
+                        cells.erase(best_cell)
+                        used.append(best_cell)
+                        print("[Shop] casa strega piazzata all'angolo ", range_def[4],
+                                        " cella ", best_cell)
+                        return
+        print("[Shop] nessuna cella libera all'angolo: shop saltato")
 
 
 ## TASK 107 (CUORE NASCOSTO): sceglie la cella del cuore nascosto tra le
