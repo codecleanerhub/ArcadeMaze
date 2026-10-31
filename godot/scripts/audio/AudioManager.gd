@@ -29,15 +29,6 @@
 #   The epic jingles play on a SEPARATE channel (`epic_player`) so they
 #   do NOT interrupt the background music.
 #
-# TASK 110 — MUSICA COMPOSTA: le tracce 0..5, 7 e 8 non sono più arpeggi
-#   automatici ma composizioni vere (MusicComposer.gd): melodie scritte a
-#   mano, leitmotiv "Canto del Labirinto" (menu' / livelli variati /
-#   boss corrotto / vittoria che risolve in maggiore), banco strumenti
-#   esteso + bus eco. Restano procedurali il tema del fantasma
-#   (_gen_ghost_track) e tutti gli SFX. Le tracce composte sono a 22050 Hz
-#   (MUSIC_SR) e finiscono in CACHE su disco (user://audio_cache) al primo
-#   avvio: i boot successivi le caricano senza risintetizzarle.
-#
 # Synthesis notes (Godot 4):
 #   * AudioStreamWAV (FORMAT_16_BITS, mono, 44100 Hz) is used for both SFX
 #     and pre-rendered music tracks. Each buffer is built sample-by-sample
@@ -185,25 +176,6 @@ const MUSIC_TRACK_COUNT:   int = 10
 
 # Sample rate (mono).
 const SR: int = 44100
-
-# TASK 110 — compositore musicale "arcade fantasy" (motore a parte:
-# melodie composte a mano, leitmotiv, banco strumenti esteso, bus eco).
-# Lavora a 22050 Hz: il contenuto armonico utile del chiptune sta sotto
-# ~10 kHz e questo dimezza RAM e tempo di sintesi; AudioStreamWAV suona
-# alla sua mix_rate senza ripitch.
-const ComposerScript := preload("res://scripts/audio/MusicComposer.gd")
-const MUSIC_SR: int = 22050
-
-# Cache su disco delle tracce composte: la prima sintesi completa costa
-# ~2 minuti di CPU in background; da qui in poi ogni boot le carica dal
-# disco (istantaneo). Bump della versione = cartella nuova = cache invalidata
-# (v2: ramp iniziale di 5 ms anti-click nel composer).
-const MUSIC_CACHE_VERSION: int = 2
-
-# Istanza del compositore: creata NEL WORKER THREAD (le tabelle d'onda si
-# costruiscono in _init e poi si leggono soltanto -> thread-safe; l'oggetto
-# non tocca mai il scene tree).
-var _composer: RefCounted = null
 
 # TASK 26 — SFX DI SPARO DEI BOSS: numero di timbre (= BossProjKind di
 # Projectile.gd: BP_NORMAL + 17 tematici). Indicizzati per kind, NON per
@@ -492,23 +464,12 @@ func set_music_enabled(enabled: bool) -> void:
 # TASK 76 — Sintesi progressiva (background thread)
 # ============================================================================
 
-## Coda di sintesi in ordine di PRIORITA' (TASK 110): SFX del menu' subito
-## (feedback UI immediato), poi la traccia del MENU' (la musica composta
-## costa ~15s di sintesi al primo boot: parte mentre l'utente e' ancora sul
-## titolo), poi tutti gli SFX (economici, servono ovunque), poi le tracce
-## dei livelli (il livello 1 e' il primo che si gioca), poi
+## Coda di sintesi in ordine di PRIORITA': menu subito (serve quando il
+## menu principale appare), poi tutti gli SFX (economici, servono ovunque),
+## poi le tracce dei livelli (il livello 1 e' il primo che si gioca), poi
 ## boss/portale/jingle/fantasma, infine gli spari dei boss (solo boss room).
 func _build_synth_queue() -> void:
         _synth_queue.clear()
-        # TASK 110: ordine di priorita' ripensato per la musica composta
-        # (la traccia del menu' costa ~15s di sintesi al primo boot):
-        #   1. SFX del menu' (feedback UI immediato, ~0.2s)
-        #   2. traccia del MENU' (la musica che si sente appena avviato)
-        #   3. SFX arena + resto degli SFX (servono prima del gameplay)
-        #   4. musica dei livelli (mentre vengono sintetizzate l'utente e'
-        #      ancora nel menu') e via a seguire.
-        _synth_queue.append(["sfx", SoundType.MENU_SELECT])
-        _synth_queue.append(["sfx", SoundType.MENU_CONFIRM])
         _synth_queue.append(["music", TRACK_MENU])
         # TASK 91 (fix scatti distruzioni): gli SFX della BOSS ARENA
         # (crollo pilastri/rovine, esplosioni barili, burst elementali)
@@ -526,10 +487,7 @@ func _build_synth_queue() -> void:
         for i in arena_first:
                 _synth_queue.append(["sfx", i])
         for i in SOUND_TYPE_COUNT:
-                # MENU_SELECT/CONFIRM sono gia' in testa alla coda (Task 110):
-                # non si ri-accodano (duplicati = doppia sintesi sprecata).
-                if arena_first.has(i) or i == SoundType.MENU_SELECT \
-                                or i == SoundType.MENU_CONFIRM:
+                if arena_first.has(i):
                         continue
                 _synth_queue.append(["sfx", i])
         for i in 4:
@@ -690,8 +648,7 @@ static func noise_gen() -> float:
 #   Now: SFX streams default to LOOP_DISABLED; only the music path passes
 #   loop=true (and _play_music_track already toggles loop_mode correctly).
 # ----------------------------------------------------------------------------
-func _samples_to_stream(samples: PackedFloat32Array, loop: bool = false,
-                mix_rate: int = SR) -> AudioStreamWAV:
+func _samples_to_stream(samples: PackedFloat32Array, loop: bool = false) -> AudioStreamWAV:
         var bytes := PackedByteArray()
         bytes.resize(samples.size() * 2)
         var i: int = 0
@@ -712,7 +669,7 @@ func _samples_to_stream(samples: PackedFloat32Array, loop: bool = false,
                 i += 2
         var stream := AudioStreamWAV.new()
         stream.format = AudioStreamWAV.FORMAT_16_BITS
-        stream.mix_rate = mix_rate
+        stream.mix_rate = SR
         stream.stereo = false
         stream.data = bytes
         # SFX must be one-shot (loop=false). Music tracks set loop=true.
@@ -2261,118 +2218,11 @@ func _generate_track(track_idx: int) -> AudioStreamWAV:
         # musica: al pickup parte l'effetto CHALICE_POWER. L'indice resta
         # riservato (gli indici 7/8/9 non si spostano); se richiesto, il
         # canale epic genera on-demand e non trova lo stream (no-op).
-        # TASK 110: menu'/livelli/boss/portale/scettro(vittoria) passano al
-        # MusicComposer; il tema del fantasma resta la vecchia sintesi.
         match track_idx:
-                TRACK_GHOST:
-                        return _samples_to_stream(_gen_ghost_track())
-                _:
-                        return _generate_composed_track(track_idx)
-
-
-## TASK 110 — traccia composta con cache su disco. Chiamato SOLO dal worker
-## thread: prima prova user://audio_cache (boot successivi, istantaneo),
-## altrimenti sintetizza con il compositore e salva il WAV per le prossime
-## esecuzioni. Loop/endpoint vengono SEMPRE riapplicati: il formato WAV non
-## li conserva.
-func _generate_composed_track(track_idx: int) -> AudioStreamWAV:
-        var looped: bool = track_idx != TRACK_EPIC_SCEPTER
-        var fname: String = _music_cache_dir() + "track_%d.wav" % track_idx
-        var cached: AudioStreamWAV = _try_load_cached_track(fname, looped)
-        if cached != null:
-                return cached
-        if _composer == null:
-                _composer = ComposerScript.new(MUSIC_SR)
-        var samples: PackedFloat32Array
-        match track_idx:
-                TRACK_MENU:          samples = _composer.compose_menu()
-                TRACK_BOSS:          samples = _composer.compose_boss()
-                TRACK_PORTAL:        samples = _composer.compose_portal()
-                TRACK_EPIC_SCEPTER:  samples = _composer.compose_victory()
-                _:                   samples = _composer.compose_level(track_idx)
-        var stream: AudioStreamWAV = _samples_to_stream(samples, looped,
-                        MUSIC_SR)
-        _save_cached_track(fname, stream)
-        return stream
-
-
-## Cartella cache della versione corrente (bump di MUSIC_CACHE_VERSION =
-## cartella nuova; la vecchia resta finché non la si cancella a mano).
-func _music_cache_dir() -> String:
-        return "user://audio_cache/task110_v%d/" % MUSIC_CACHE_VERSION
-
-
-## Carica una traccia dalla cache se esiste ed e' valida; se fallisce torna
-## null e il chiamante sintetizza (fallback silenzioso: una cache corrotta
-## non deve mai bloccare l'audio, si risintetizza e si sovrascrive).
-## NB: si legge con FileAccess + parser RIFF perche' ResourceLoader/load()
-## NON risolve i percorsi user:// (solo res:// e filesystem importato).
-func _try_load_cached_track(fname: String, loop: bool) -> AudioStreamWAV:
-        if not FileAccess.file_exists(fname):
-                return null
-        var f := FileAccess.open(fname, FileAccess.READ)
-        if f == null:
-                return null
-        var stream: AudioStreamWAV = _parse_wav(f.get_buffer(f.get_length()))
-        f.close()
-        if stream == null or stream.data.is_empty():
-                return null
-        stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop \
-                        else AudioStreamWAV.LOOP_DISABLED
-        stream.loop_begin = 0
-        stream.loop_end = stream.data.size() / 2   # 16 bit mono
-        return stream
-
-
-## Parser WAV minimale (RIFF / PCM 16 bit): i file in cache sono scritti
-## da _save_cached_track (save_to_wav), quindi il formato e' noto e stabile.
-## Torna null su qualsiasi anomalia (cache corrotta = si risintetizza).
-func _parse_wav(bytes: PackedByteArray) -> AudioStreamWAV:
-        if bytes.size() < 44:
-                return null
-        if bytes.slice(0, 4) != "RIFF".to_ascii_buffer() \
-                        or bytes.slice(8, 12) != "WAVE".to_ascii_buffer():
-                return null
-        var pos: int = 12
-        var fmt_found: bool = false
-        var channels: int = 0
-        var rate: int = 0
-        var bits: int = 0
-        var data := PackedByteArray()
-        while pos + 8 <= bytes.size():
-                var cid: PackedByteArray = bytes.slice(pos, pos + 4)
-                var clen: int = bytes.slice(pos + 4, pos + 8).decode_u32(0)
-                var body: int = pos + 8
-                if clen < 0 or body + clen > bytes.size():
-                        return null
-                if cid == "fmt ".to_ascii_buffer() and clen >= 16:
-                        channels = bytes.decode_u16(body + 2)
-                        rate = bytes.decode_u32(body + 4)
-                        bits = bytes.decode_u16(body + 14)
-                        fmt_found = true
-                elif cid == "data".to_ascii_buffer():
-                        data = bytes.slice(body, body + clen)
-                pos = body + clen + (clen & 1)   # padding a byte pari
-        if not fmt_found or data.is_empty() or bits != 16:
-                return null
-        if channels != 1 and channels != 2:
-                return null
-        var stream := AudioStreamWAV.new()
-        stream.format = AudioStreamWAV.FORMAT_16_BITS
-        stream.mix_rate = rate
-        stream.stereo = channels == 2
-        stream.data = data
-        return stream
-
-
-## Scrive il WAV composto in cache (primo avvio). Errori NON fatali: senza
-## cache si risintetizza al prossimo avvio.
-func _save_cached_track(fname: String, stream: AudioStreamWAV) -> void:
-        DirAccess.make_dir_recursive_absolute(_music_cache_dir())
-        var err: int = stream.save_to_wav(fname)
-        if err != OK:
-                print("[AudioManager] cache musica non scrivibile (err %d) — \
-si risintetizza al prossimo avvio" % err)
+                TRACK_EPIC_SCEPTER: return _samples_to_stream(_gen_epic_scepter())
+                TRACK_MENU:         return _samples_to_stream(_gen_menu_track())
+                TRACK_GHOST:        return _samples_to_stream(_gen_ghost_track())
+                _:                  return _samples_to_stream(_gen_level_track(track_idx))
 
 
 # --- Level/boss/portal tracks (32 bars, minor scale, ~100 BPM) --------------
