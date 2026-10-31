@@ -104,7 +104,10 @@ func _physics_process(delta: float) -> void:
                                                 + str(GameManager.continues_for(2)) + ")")
                         phase = 3
                 3:
-                        # D: P2 di nuovo a 0 vite -> NO -> eliminato, P1 continua.
+                        # D: P2 di nuovo a 0 vite -> TASK 106: UN solo credito
+                        # continue per player. Dopo il YES della fase C, P2 ha
+                        # 0 crediti: NESSUNA seconda schermata — P2 eliminato
+                        # direttamente e P1 continua da solo.
                         var p2: CharacterBody2D = main.player2
                         p2.lives = 1
                         p2.energy = 1
@@ -115,17 +118,18 @@ func _physics_process(delta: float) -> void:
                         # TASK 87: collasso completato subito (v. fase B).
                         p2.soul_pending = false
                         main._check_player_elimination()
-                        if main._continue_pending_player != 2:
-                                _fail("D: seconda schermata continue non apparsa per P2")
+                        if main._continue_pending_player == 2:
+                                _fail("D: seconda schermata continue per P2 con 0 crediti "
+                                                + "(TASK 106: un solo credito per player)")
+                                main._on_continue_chosen(2, false)
                                 phase = 9
                                 return
-                        main._on_continue_chosen(2, false)
                         if p2.visible:
-                                _fail("D: P2 non eliminato dopo NO")
+                                _fail("D: P2 non eliminato senza crediti")
                         elif main.current_level != 1 and main.is_node_ready():
                                 _fail("D: la scena è cambiuta?!")
                         else:
-                                _ok("D: NO -> P2 eliminato, P1 continua da solo (scena invariata)")
+                                _ok("D: TASK 106 un credito: NESSUNA seconda schermata — P2 eliminato, P1 continua")
                         phase = 4
                 4:
                         # E: P1 muore SENZA crediti -> game over (LOSE).
@@ -176,23 +180,33 @@ func _verdict() -> void:
 
 
 func _phaseA_credits() -> void:
-        # A: crediti iniziali separati (3 + 3) e consumo indipendente.
-        if GameManager.continues_for(1) != 3 or GameManager.continues_for(2) != 3:
-                _fail("A: crediti iniziali non 3+3 ("
-                                + str(GameManager.continues_for(1)) + "/"
-                                + str(GameManager.continues_for(2)) + ")")
+        # A: logica crediti separati (unità: set espliciti, consumo
+        # indipendente) + TASK 106: reset_run dà UN credito per player.
+        GameManager.reset_run()
+        if GameManager.continues_for(1) != GameConstants.CONTINUE_CREDITS_PER_RUN \
+                        or GameManager.continues_for(2) != GameConstants.CONTINUE_CREDITS_PER_RUN:
+                _fail("A: reset_run deve dare %d+%d crediti (TASK 106), avuti (%s/%s)" % [
+                                GameConstants.CONTINUE_CREDITS_PER_RUN,
+                                GameConstants.CONTINUE_CREDITS_PER_RUN,
+                                str(GameManager.continues_for(1)),
+                                str(GameManager.continues_for(2))])
                 return
+        # consumo indipendente (valori espliciti, indipendenti dal default):
+        GameManager.continues_left = 2
+        GameManager.continues_left_p2 = 2
         GameManager.use_continue_for(1)
-        if GameManager.continues_for(1) != 2 or GameManager.continues_for(2) != 3:
+        if GameManager.continues_for(1) != 1 or GameManager.continues_for(2) != 2:
                 _fail("A: consumo P1 ha toccato P2 ("
                                 + str(GameManager.continues_for(1)) + "/"
                                 + str(GameManager.continues_for(2)) + ")")
                 return
         GameManager.use_continue_for(2)
-        if GameManager.continues_for(1) != 2 or GameManager.continues_for(2) != 2:
+        if GameManager.continues_for(1) != 1 or GameManager.continues_for(2) != 1:
                 _fail("A: consumo P2 ha toccato P1")
                 return
-        # ripristina i crediti per le fasi successive.
-        GameManager.continues_left = 3
-        GameManager.continues_left_p2 = 3
-        _ok("A: crediti separati P1/P2 (consumo indipendente verificato)")
+        # ripristina 1+1 (valore reale di una run TASK 106) per le fasi B-E:
+        # B/C consumano l'unico credito di P1 e P2, D verifica che NON ci sia
+        # una seconda schermata, E il game over senza crediti.
+        GameManager.continues_left = GameConstants.CONTINUE_CREDITS_PER_RUN
+        GameManager.continues_left_p2 = GameConstants.CONTINUE_CREDITS_PER_RUN
+        _ok("A: crediti separati P1/P2 (reset 1+1 TASK 106, consumo indipendente verificato)")

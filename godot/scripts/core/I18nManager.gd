@@ -190,6 +190,34 @@ const TEXTS: Dictionary = {
                 "en": "UP/DOWN to choose - ENTER/SPACE to confirm",
                 "it": "SU/GIÙ per scegliere — INVIO/SPAZIO per confermare",
         },
+        # ---------------- TASK 106: salva partita / continua ---------------
+        "menu.continue": {"en": "CONTINUE", "it": "CONTINUA"},
+        "save.card_title": {"en": "CHOOSE YOUR RUN", "it": "SCEGLI LA PARTITA"},
+        "save.row": {
+                "en": "%s  -  GAME LV. %d  -  PLAYER LV. %d  -  %s",
+                "it": "%s  -  LIV. GIOCO %d  -  LIV. PLAYER %d  -  %s",
+        },
+        "save.row_2p": {
+                "en": "%s  -  GAME LV. %d  -  PLAYER LV. %d  -  %s + %s",
+                "it": "%s  -  LIV. GIOCO %d  -  LIV. PLAYER %d  -  %s + %s",
+        },
+        "save.delete_title": {
+                "en": "SAVE SLOTS FULL",
+                "it": "SLOT DI SALVATAGGIO PIENI",
+        },
+        "save.delete_sub": {
+                "en": "Delete one save to free its slot",
+                "it": "Elimina un salvataggio per liberare lo slot",
+        },
+        "save.delete_confirm": {
+                "en": "Delete this save? ENTER to confirm - ESC to cancel",
+                "it": "Eliminare questo salvataggio? INVIO conferma — ESC annulla",
+        },
+        "save.hint": {
+                "en": "UP/DOWN to choose - ENTER to confirm - ESC to cancel",
+                "it": "SU/GIÙ per scegliere — INVIO conferma — ESC annulla",
+        },
+        "save.saved": {"en": "Game saved...", "it": "Partita salvata..."},
         # ---------------- Win / Lose ----------------
         "win.title": {"en": "VICTORY!", "it": "VITTORIA!"},
         "win.subtitle": {

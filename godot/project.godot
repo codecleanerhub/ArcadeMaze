@@ -37,6 +37,10 @@ ConfigManager="*res://scripts/core/ConfigManager.gd"
 ; I18n DOPO ConfigManager (legge la lingua salvata da config.ini nel _ready)
 ; e PRIMA di AudioManager: espone t()/set_language() a tutte le scene.
 I18n="*res://scripts/core/I18nManager.gd"
+; TASK 106 — SaveSystem DOPO I18n (slot_summary usa i nomi personaggio
+; localizzati) e prima di AudioManager: espone save_run/load_slot/... a
+; menu, BossRoom e GameManager.
+SaveSystem="*res://scripts/core/SaveSystem.gd"
 AudioManager="*res://scripts/audio/AudioManager.gd"
 EffectsManager="*res://scripts/core/EffectsManager.gd"
 EnvironmentArt="*res://scripts/core/EnvironmentArt.gd"

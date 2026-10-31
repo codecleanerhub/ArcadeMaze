@@ -36,6 +36,16 @@ var current_level: int = 1
 # TASK 76 — stato AI demo: BFS + isteresi del target + fuga.
 const DEMO_TARGET_HOLD_MS: float = 1200.0  # minimo tra due ripescate target
 const DEMO_FLEE_MS: float = 900.0          # durata della fuga da minaccia
+
+# TASK 106 (demo più brava): il player demo SPARA più spesso (cooldown
+# 260ms invece di 500), salta per SFUGGIRE i nemici (invulnerabilità
+# aerea), raccoglie calice/scettro/stivali/medikit e insegue MEDIKIT o
+# ARMA quando serve (energia bassa / arma scarica).
+const DEMO_SHOOT_COOLDOWN_MS: int = 260
+const DEMO_SHOOT_RANDOM_PCT: int = 30
+const DEMO_JUMP_FLEE_PCT: int = 12
+const DEMO_LOW_ENERGY: int = 2
+const DEMO_LOW_AMMO: int = 3
 const DEMO_FLEE_RADIUS_CELLS: float = 2.1  # nemico entro N celle -> fuga (anticipata)
 const DEMO_HUNT_MAX_CELLS: float = 9.0     # oltre: conviene il tesoro piu' vicino
 # anti-pendolo: la direzione di fuga resta COMMITTATA 600ms e l'U-turn e'
@@ -196,6 +206,18 @@ func _physics_process(_delta: float) -> void:
                                 proj["active"] = false
                                 break
 
+        # TASK 106 (demo più brava): raccolta dei COLLECTIBLES a terra
+        # (pattern _check_collectible_collisions del gioco vero: calice,
+        # scettro, stivali, medikit — le ARMI sono già raccolte da
+        # Player.update_player quando passa sulle celle WEAPON).
+        for child in collectibles_node.get_children():
+                if child == null or not is_instance_valid(child):
+                        continue
+                if not child.get("active"):
+                        continue
+                if p_pos.distance_squared_to(child.pos) < 400.0:
+                        _on_demo_collectible_picked(child)
+
         # Exit door logic (if treasures collected)
         if maze.get_remaining_treasures() == 0:
                 # Demo: just keep playing, don't advance level
@@ -318,10 +340,19 @@ func _update_ai(delta_ms: float) -> void:
         if demo_flee_ms > 0.0:
                 demo_flee_ms -= delta_ms
                 _flee_from(threat, cell, delta_ms)
+                # TASK 106 (demo più brava): SALTO EVASIVO — durante la fuga,
+                # se la minaccia è vicina, salta per sfruttare l'esenzione
+                # danno del salto (il contatto nemico non ferisce un player
+                # a mezz'aria) e attraversare il perimetro.
+                if threat != null and is_instance_valid(threat) \
+                                and not player.is_jumping() \
+                                and sqrt(threat_d2) <= 2.6 * C.TILE_SIZE \
+                                and randi() % 100 < DEMO_JUMP_FLEE_PCT:
+                        player.activate_jump()
                 # durante la fuga continua a sparare al nemico che la incalza
                 demo_ai_shoot_timer_p1 -= int(delta_ms)
                 if demo_ai_shoot_timer_p1 <= 0:
-                        demo_ai_shoot_timer_p1 = 500
+                        demo_ai_shoot_timer_p1 = DEMO_SHOOT_COOLDOWN_MS
                         _shoot_at_target(pos, threat)
                 return
 
@@ -361,6 +392,13 @@ func _update_ai(delta_ms: float) -> void:
                                 int((ep.y - C.UI_HEIGHT) / C.TILE_SIZE))
         elif demo_target_treasure.x >= 0:
                 target_cell = demo_target_treasure
+        # TASK 106 (demo più brava): priorità di SOPRAVVIVENZA — con
+        # energia bassa punta al MEDIKIT a terra; con l'arma scarica punta
+        # alla cella ARMA più vicina (la raccolta avviene passandoci sopra,
+        # in Player.update_player).
+        var prio_cell: Vector2i = _demo_priority_item_cell(cell)
+        if prio_cell.x >= 0:
+                target_cell = prio_cell
         var next_step: Vector2i = Vector2i(0, 0)
         if target_cell != cell:
                 next_step = BFS.find_path(maze, cell, target_cell)
@@ -442,12 +480,12 @@ func _pick_flee_dir(threat: Node, cell: Vector2i, block_reverse: bool) -> Vector
 
 
 ## Fuoco del demo: spara se allineato al bersaglio (stesso asse entro mezza
-## cella) o il 20% delle volte; salta occasionalmente (flavor, 2% frame).
+## cella) o casualmente (TASK 106: 30% — era 20%; cooldown 260ms — era 500).
 func _demo_shoot(pos: Vector2, target: Node, delta_ms: float) -> void:
         demo_ai_shoot_timer_p1 -= int(delta_ms)
         if demo_ai_shoot_timer_p1 > 0:
                 return
-        demo_ai_shoot_timer_p1 = 500
+        demo_ai_shoot_timer_p1 = DEMO_SHOOT_COOLDOWN_MS
         _shoot_at_target(pos, target)
 
 
@@ -458,11 +496,94 @@ func _shoot_at_target(pos: Vector2, target: Node) -> void:
                 var dy: float = absf(target.get_pixel_pos().y - pos.y)
                 if dx < C.TILE_SIZE * 0.5 or dy < C.TILE_SIZE * 0.5:
                         should_shoot = true
-        if not should_shoot and randi() % 100 < 20:
+        if not should_shoot and randi() % 100 < DEMO_SHOOT_RANDOM_PCT:
                 should_shoot = true
         if should_shoot and player.shoot_cooldown == 0:
                 player.shoot()
                 player.shoot_cooldown = 150
+
+
+## TASK 106 (demo più brava): cella del COLLECTIBLE o dell'ARMA più vicina
+## quando la sopravvivenza lo chiede. Ritorna (-1,-1) se non serve nulla:
+##   * energia <= DEMO_LOW_ENERGY e c'è un MEDIKIT a terra -> la sua cella
+##   * arma corrente scarica e c'è una cella WEAPON nel maze -> la più vicina
+func _demo_priority_item_cell(from_cell: Vector2i) -> Vector2i:
+        if player.energy <= DEMO_LOW_ENERGY:
+                var med := _nearest_collectible_cell(CollectiblesClass.Kind.MEDIKIT)
+                if med.x >= 0:
+                        return med
+        if int(player.current_weapon.get("ammo", 0)) <= DEMO_LOW_AMMO:
+                var wpn := _nearest_weapon_cell(from_cell)
+                if wpn.x >= 0:
+                        return wpn
+        return Vector2i(-1, -1)
+
+
+## TASK 106: cella del collectibile ATTIVO di kind `kind` più vicino
+## (Manhattan; -1,-1 se non ce ne sono). Raccoglierlo darà l'effetto nel
+## loop di pickup del controller.
+func _nearest_collectible_cell(kind: int) -> Vector2i:
+        var best: Vector2i = Vector2i(-1, -1)
+        var best_d: int = -1
+        var pc: Vector2i = player.get_grid_pos()
+        for child in collectibles_node.get_children():
+                if child == null or not is_instance_valid(child):
+                        continue
+                if not child.get("active") or int(child.get("kind")) != kind:
+                        continue
+                var cc: Vector2i = Vector2i(
+                                int(child.pos.x / C.TILE_SIZE),
+                                int((child.pos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+                var d: int = absi(cc.x - pc.x) + absi(cc.y - pc.y)
+                if best_d < 0 or d < best_d:
+                        best_d = d
+                        best = cc
+        return best
+
+
+## TASK 106: cella WEAPON più vicina nel maze (-1,-1 se non ce ne sono).
+func _nearest_weapon_cell(from_cell: Vector2i) -> Vector2i:
+        var best: Vector2i = Vector2i(-1, -1)
+        var best_d: int = -1
+        for r in range(C.MAZE_ROWS):
+                for c in range(C.MAZE_COLS):
+                        if maze.get_cell_type(c, r) == C.CellType.WEAPON:
+                                var d: int = absi(c - from_cell.x) + absi(r - from_cell.y)
+                                if best_d < 0 or d < best_d:
+                                        best_d = d
+                                        best = Vector2i(c, r)
+        return best
+
+
+## TASK 106 (demo più brava): pickup di un collectibile da parte del player
+## demo (effetti basilari del gioco vero, senza card informative/epiche:
+## calice = invincibilità + punti, scettro = punti, stivali = velocità,
+## medikit = +1 energia).
+func _on_demo_collectible_picked(item: Node2D) -> void:
+        var kind: int = int(item.get("kind"))
+        match kind:
+                CollectiblesClass.Kind.CHALICE:
+                        player.set_invincible_timer(9500)
+                        player.add_score(C.CHALICE_PICKUP_POINTS)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.TREASURE)
+                CollectiblesClass.Kind.SCEPTER:
+                        item.trigger_scepter()
+                        player.add_score(C.CHALICE_PICKUP_POINTS)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.SCEPTER_PICKUP)
+                CollectiblesClass.Kind.SPEED_BOOTS:
+                        player.activate_speed_boost()
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.WEAPON_PICKUP)
+                CollectiblesClass.Kind.MEDIKIT:
+                        player.energy = mini(player.energy + 1, player.max_energy)
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.POTION_DRINK)
+                _:
+                        return  # mine/statue: fuori dal demo, lasciale a terra
+        item.set("active", false)
+        item.queue_free()
 
 
 ## Tesoro piu' vicino (distanza Manhattan sulla griglia).
@@ -569,6 +690,16 @@ func _spawn_collectibles() -> void:
                         cell.y * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
                 boots.position = boots.pos
                 collectibles_node.add_child(boots)
+        # TASK 106 (demo più brava): anche un MEDIKIT a terra — l'AI lo
+        # insegue quando l'energia è bassa e sopravvive più a lungo.
+        if empty_cells.size() > 0:
+                var cell: Vector2i = empty_cells.pop_back()
+                var medikit := CollectiblesClass.new()
+                medikit.kind = CollectiblesClass.Kind.MEDIKIT
+                medikit.pos = Vector2(cell.x * C.TILE_SIZE + C.TILE_SIZE / 2.0,
+                        cell.y * C.TILE_SIZE + C.TILE_SIZE / 2.0 + C.UI_HEIGHT)
+                medikit.position = medikit.pos
+                collectibles_node.add_child(medikit)
 
 
 func _draw() -> void:

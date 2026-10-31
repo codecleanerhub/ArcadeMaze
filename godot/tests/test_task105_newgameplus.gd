@@ -335,7 +335,11 @@ func _test_card() -> void:
         else:
                 _ok("F: card navigabile + segnale choice_made(true)")
 
-        # testi IT/EN della domanda utente e delle opzioni
+        # testi IT/EN della domanda utente e delle opzioni.
+        # FIX (Task 106): la lingua è PERSISTITA in user://config.ini — un run
+        # precedente con set_language(ITALIAN) (es. harness screenshot) la fa
+        # sopravvivere al processo: il check EN ora la forza esplicitamente.
+        I18n.set_language(I18n.Language.ENGLISH)
         var q_en: String = I18n.t("ngp.question")
         if not q_en.begins_with("Do you want to keep playing"):
                 _fail("F: domanda EN mancante/sbagliata (%s)" % q_en)

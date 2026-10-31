@@ -1881,9 +1881,14 @@ func collect_weapon(w: Dictionary) -> void:
 # add_score(points): add points and grant an extra life every 50k
 # (TASK 97: EXTRA_LIFE_EVERY_POINTS, era 100k — la ricalibrazione ha
 # ridotto il massimo cumulabile a ~200k per run completa).
+# TASK 106: le VITE EXTRA da punti sono DISATTIVATE su richiesta utente
+# ("non eliminare perché potremmo re-inserirla"): il gate è la costante
+# EXTRA_LIVES_FROM_POINTS_ENABLED (false = mai vite dai punti; la
+# soglia next_life_threshold continua a viaggiare nel carry, pronta al
+# riattivamento).
 func add_score(points: int) -> void:
         score += points
-        if score >= next_life_threshold:
+        if C.EXTRA_LIVES_FROM_POINTS_ENABLED and score >= next_life_threshold:
                 lives += 1
                 next_life_threshold += C.EXTRA_LIFE_EVERY_POINTS
         # TASK 99 (LEVEL UP): XP = punteggio. Ogni soglia superata = +1
@@ -1891,11 +1896,15 @@ func add_score(points: int) -> void:
         # colpo (es. premio del boss): il livello arriva subito a quello
         # definitivo ma la CELEBRAZIONE è una sola (pending_levelup_fx
         # accumula e il controller ne consuma una per volta).
+        # TASK 106: salendo di livello il player recupera tutta l'ENERGIA
+        # del cuore corrente (energy -> max_energy); le vite (i cuori
+        # pieni) NON cambiano — richiesta utente esplicita.
         while level < C.LEVELUP_MAX_LEVEL \
                         and score >= C.levelup_threshold(level + 1):
                 level += 1
                 skill_points += 1
                 pending_levelup_fx += 1
+                energy = max_energy
 
 
 # add_life(): bonus life (reward after defeating a boss).

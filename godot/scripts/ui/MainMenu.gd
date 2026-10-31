@@ -14,14 +14,16 @@
 #                   submenu is open.
 #   * Ornament:     gold horizontal line + diamond (between title and items)
 #   * Scroll panel: dark parchment-style rounded rectangle (items list)
-#       Main menu (7 items, selected highlighted in yellow + animated flame):
+#       Main menu (8 items — TASK 106: aggiunta CONTINUA sotto START GAME;
+#       GAME MODE è NASCOSTA finché C.ENDLESS_MODE_VISIBLE è false):
 #           0. NUMBER OF PLAYERS: 1 / 2
-#           1. GAME MODE: STORY / INFINITE
+#           1. GAME MODE: STORY / INFINITE      (nascosta con Endless off)
 #           2. TEST MODE: ON / OFF
 #           3. OPTIONS          (opens the Options submenu)
 #           4. START GAME
-#           5. CREDITS
-#           6. HALL OF FAME
+#           5. CONTINUE         (TASK 106: disabilitata senza salvataggi)
+#           6. CREDITS
+#           7. HALL OF FAME
 #       Options submenu (4 items — TASK 44 aggiunta LANGUAGE):
 #           0. MUSIC: ON / OFF
 #           1. LANGUAGE: ENGLISH / ITALIANO   (cambia tutti i testi del gioco)
@@ -49,11 +51,22 @@ extends Control
 # Game-mode mirror of GameMode enum (kept in sync with ConfigManager).
 enum GameMode { STORY, INFINITE }
 
+# TASK 106: costanti di gioco (ENDLESS_MODE_VISIBLE per nascondere la
+# modalità infinita dal menu).
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # --- Signals ---------------------------------------------------------------
 signal start_requested(num_players: int, game_mode: int, music: bool,
                                            p1_char: int, p2_char: int)
 signal credits_requested()
 signal configure_joystick_requested(player: int)
+
+# TASK 106 (SALVA PARTITA): card scelta run per la voce CONTINUA.
+const SaveSlotsCardClass = preload("res://scripts/ui/SaveSlotsCard.gd")
+## True se esiste almeno uno slot di salvataggio (la voce CONTINUA è
+## accessibile solo dopo il primo salvataggio).
+var _continue_enabled: bool = false
+var _save_card: CanvasLayer = null
 
 # --- Exposed theme colors (match the SFML palette) -------------------------
 # TASK 78 — palette ORO MEDIEVALE (richiesta utente: dal sangue all'oro
@@ -86,7 +99,12 @@ var _wheel_step: int = 0   # 0 = P1 choosing, 1 = P2 choosing (only used in 2P)
 # BACK) instead of the main menu. The OPTIONS item in the main menu sets this
 # to true; the BACK item (or ESC) sets it back to false.
 var _in_options: bool = false
-const MAIN_MENU_ITEMS: int = 7   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CREDITS, HALL OF FAME
+# TASK 106 — SALVA PARTITA: 8 voci — aggiunta CONTINUA (sotto INIZIA
+# PARTITA, indice 5); CREDITS e HALL OF FAME slittano a 6/7.
+const MAIN_MENU_ITEMS: int = 8   # NUMBER OF PLAYERS, GAME MODE, TEST MODE, OPTIONS, START GAME, CONTINUE, CREDITS, HALL OF FAME
+# TASK 106: indice della voce CONTINUA (disabilitata finché non esiste
+# almeno un salvataggio).
+const CONTINUE_MENU_INDEX: int = 5
 # TASK 44: il sottomenu OPTIONS ha 4 voci — MUSIC, LANGUAGE (nuova),
 # CONFIGURE JOYSTICK, BACK.
 const OPTIONS_MENU_ITEMS: int = 4  # MUSIC, LANGUAGE, CONFIGURE JOYSTICK, BACK
@@ -95,7 +113,8 @@ const OPTIONS_MAIN_RETURN_INDEX: int = 3  # main menu index of OPTIONS item
 # (era 1 prima dell'inserimento di LANGUAGE alla posizione 1).
 const OPTIONS_JOY_CONFIG_INDEX: int = 2
 # FIX (Hall of Fame): indice della voce HALL OF FAME nel menu principale
-const HALL_OF_FAME_MENU_INDEX: int = 6
+# TASK 106: slittata a 7 dall'inserimento di CONTINUA.
+const HALL_OF_FAME_MENU_INDEX: int = 7
 # ---
 
 # Animation timer (mirrors menuTime in drawMenu()).
@@ -141,6 +160,15 @@ func _ready() -> void:
         if GameManager:
                 _num_players = GameManager.num_players
                 _game_mode = GameManager.game_mode
+        # TASK 106 — SALVA PARTITA: modalità INFINITA NASCOSTA (richiesta
+        # utente: resta solo STORIA; "nascondi non eliminare" — il toggle
+        # resta nel codice, riattivabile con C.ENDLESS_MODE_VISIBLE).
+        if not C.ENDLESS_MODE_VISIBLE:
+                _game_mode = GameMode.STORY
+                if GameManager:
+                        GameManager.game_mode = C.GameMode.STORY
+        # TASK 106: CONTINUA è accessibile solo dopo il primo salvataggio.
+        _continue_enabled = SaveSystem != null and SaveSystem.has_slots()
         _update_items_text()
         _update_character_wheel()
         # TASK 26: primo collocamento del pannello al centro-destra dopo il
@@ -302,7 +330,13 @@ func _process(delta: float) -> void:
         var flicker: float = sin(_menu_time * 15.0) * 1.5
         for i in _item_labels.size():
                 var lbl: Label = _item_labels[i]
-                if i == _menu_item_index:
+                # TASK 106: CONTINUA disabilitata (nessun salvataggio) =
+                # grigio scuro spento, non selezionabile.
+                if not _in_options and i == CONTINUE_MENU_INDEX \
+                                and not _continue_enabled:
+                        lbl.add_theme_color_override("font_color", color_hint)
+                        lbl.modulate = Color(0.6, 0.6, 0.6, 0.6)
+                elif i == _menu_item_index:
                         lbl.add_theme_color_override("font_color", color_item_selected)
                         lbl.modulate = Color(1.0, 1.0, 1.0, 0.95 + 0.05 * sin(_menu_time * 8.0))
                 else:
@@ -558,12 +592,14 @@ func _build_ui() -> void:
         # Initial placeholder texts; the real text is set in _update_items_text()
         # based on whether the main menu or the Options submenu is active.
         # TASK 44: i testi veri arrivano da I18n.t() in _update_items_text().
+        # TASK 106: aggiunta CONTINUA sotto START GAME.
         var item_texts: Array = [
                 "NUMBER OF PLAYERS:",
                 "GAME MODE:",
                 "TEST MODE:",
                 "OPTIONS",
                 "START GAME",
+                "CONTINUE",
                 "CREDITS",
                 "HALL OF FAME",
         ]
@@ -946,12 +982,15 @@ func _update_items_text() -> void:
                 if _bg:
                         _bg.visible = false
                 return
-        # --- Main menu (7 items) ---
+        # --- Main menu (8 items; TASK 106: GAME MODE nascosta se la
+        # modalità infinita è disattiva, CONTINUA sotto START GAME) ---
         _item_labels[0].text = I18n.t("menu.num_players") % _num_players
         _item_labels[0].visible = true
         _item_labels[1].text = I18n.t("menu.game_mode") % (
                 I18n.t("mode.story") if _game_mode == GameMode.STORY else I18n.t("mode.infinite"))
-        _item_labels[1].visible = true
+        # TASK 106: NASCOSTA la voce GAME MODE quando la modalità INFINITA
+        # è disattivata (resta solo STORIA — niente da scegliere).
+        _item_labels[1].visible = C.ENDLESS_MODE_VISIBLE
         _item_labels[2].text = I18n.t("menu.test_mode") % (
                 I18n.t("menu.on") if _test_mode_enabled else I18n.t("menu.off"))
         _item_labels[2].visible = true
@@ -959,11 +998,15 @@ func _update_items_text() -> void:
         _item_labels[3].visible = true
         _item_labels[4].text = I18n.t("menu.start")
         _item_labels[4].visible = true
-        _item_labels[5].text = I18n.t("menu.credits")
+        # TASK 106 — SALVA PARTITA: voce CONTINUA (disabilitata finché non
+        # c'è almeno un salvataggio: resa in grigio scuro da _process).
+        _item_labels[5].text = I18n.t("menu.continue")
         _item_labels[5].visible = true
-        # FIX (Hall of Fame): 7ª voce di menu
-        _item_labels[6].text = I18n.t("menu.hall_of_fame")
+        _item_labels[6].text = I18n.t("menu.credits")
         _item_labels[6].visible = true
+        # FIX (Hall of Fame): 8ª voce di menu (TASK 106: ora indice 7)
+        _item_labels[7].text = I18n.t("menu.hall_of_fame")
+        _item_labels[7].visible = true
         # Hide any extra labels beyond MAIN_MENU_ITEMS (defensive; should be none).
         for i in range(MAIN_MENU_ITEMS, _item_labels.size()):
                 _item_labels[i].visible = false
@@ -1128,13 +1171,36 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # Move the selection cursor up/down by `delta` (-1 or +1), wrapping around.
-# Wraps at MAIN_MENU_ITEMS (6) when in the main menu and at
-# OPTIONS_MENU_ITEMS (3) when inside the Options submenu.
+# Wraps at MAIN_MENU_ITEMS when in the main menu and at OPTIONS_MENU_ITEMS
+# when inside the Options submenu.
+# TASK 106: nel menu principale la navigazione SALTA le voci non
+# selezionabili (GAME MODE nascosta con l'ENDLESS disattiva; CONTINUA
+# disabilitata senza salvataggi) — il cursore non si ferma mai su una
+# voce inattiva.
 func _move_selection(delta: int) -> void:
-        var count: int = OPTIONS_MENU_ITEMS if _in_options else MAIN_MENU_ITEMS
-        _menu_item_index = posmod(_menu_item_index + delta, count)
+        if _in_options:
+                _menu_item_index = posmod(_menu_item_index + delta, OPTIONS_MENU_ITEMS)
+        else:
+                var idx: int = _menu_item_index
+                for _step in MAIN_MENU_ITEMS:
+                        idx = posmod(idx + delta, MAIN_MENU_ITEMS)
+                        if _is_item_selectable(idx):
+                                break
+                _menu_item_index = idx
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+
+
+## TASK 106: true se la voce del menu principale `idx` è selezionabile
+## (visibile e non disabilitata).
+func _is_item_selectable(idx: int) -> bool:
+        if idx < 0 or idx >= _item_labels.size():
+                return false
+        if not _item_labels[idx].visible:
+                return false
+        if idx == CONTINUE_MENU_INDEX and not _continue_enabled:
+                return false
+        return true
 
 
 # Change the value of the currently-selected option (Left/Right).
@@ -1203,9 +1269,9 @@ func _change_option(delta: int) -> void:
                         # NUMBER OF PLAYERS (vedi sopra).
                         if GameManager:
                                 GameManager.test_mode_enabled = _test_mode_enabled
-                3, 4, 5, 6:
-                        # OPTIONS / START GAME / CREDITS / HALL OF FAME are not toggleable,
-                        # just activate them.
+                3, 4, 5, 6, 7:
+                        # OPTIONS / START GAME / CONTINUA / CREDITS / HALL OF
+                        # FAME are not toggleable, just activate them.
                         pass
                 _:
                         # Move the character wheel selection
@@ -1298,6 +1364,12 @@ func _set_in_options(open_options: bool) -> void:
 # Activate the currently-selected menu item (Enter/Space/A button).
 # Behaviour depends on whether the main menu or the Options submenu is open.
 func _activate_current() -> void:
+        # TASK 106: CONTINUA disabilitata (nessun salvataggio) = nessuna
+        # azione e nessun suono di conferma (il cursore non può fermarcisi,
+        # ma la guardia protegge da uno stato stallo).
+        if not _in_options and _menu_item_index == CONTINUE_MENU_INDEX \
+                        and not _continue_enabled:
+                return
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
         if _in_options:
@@ -1337,6 +1409,11 @@ func _activate_current() -> void:
                         start_requested.emit(_num_players, _game_mode, _music_enabled,
                                          _p1_character, _p2_character)
                 5:
+                        # TASK 106 — SALVA PARTITA: CONTINUA. Apre la card di
+                        # scelta della run salvata (data/ora, livello di gioco,
+                        # livello del player, tipo del player).
+                        _open_continue_card()
+                6:
                         # CREDITS
                         credits_requested.emit()
                 HALL_OF_FAME_MENU_INDEX:
@@ -1348,6 +1425,38 @@ func _activate_current() -> void:
                         # Toggleable items (0..2: NUMBER OF PLAYERS, GAME MODE, TEST MODE)
                         # confirm their current value.
                         _change_option(1 if _menu_item_index == 0 else 0)
+
+
+# ---------------------------------------------------------------------------
+# TASK 106 — SALVA PARTITA: card CONTINUA (scelta della run da riprendere)
+# ---------------------------------------------------------------------------
+func _open_continue_card() -> void:
+        if _save_card != null and is_instance_valid(_save_card):
+                return
+        if SaveSystem == null or not SaveSystem.has_slots():
+                return
+        _save_card = SaveSlotsCardClass.new()
+        _save_card.setup(SaveSlotsCardClass.Mode.LOAD, SaveSystem.all_summaries())
+        _save_card.slot_chosen.connect(_on_continue_slot_chosen)
+        _save_card.closed.connect(_on_continue_card_closed)
+        add_child(_save_card)
+
+
+func _on_continue_slot_chosen(slot: int) -> void:
+        _save_card = null
+        if GameManager:
+                GameManager.begin_continue_from_slot(slot)
+
+
+func _on_continue_card_closed() -> void:
+        _save_card = null
+
+
+## TASK 106: aggiornamento esterno dello stato CONTINUA (uso: screenshot
+## harness che crea salvataggi dopo l'apertura del menu).
+func refresh_continue_state() -> void:
+        _continue_enabled = SaveSystem != null and SaveSystem.has_slots()
+        _update_items_text()
 
 
 # ============================================================================

@@ -22,6 +22,9 @@ const Projectile = preload("res://scripts/items/Projectile.gd")
 # FIX (pausa P senza feedback visivo): overlay PAUSE (mirror MainGame).
 const PauseOverlayClass = preload("res://scripts/ui/PauseOverlay.gd")
 const ContinuesOverlayClass = preload("res://scripts/ui/ContinuesOverlay.gd")
+# TASK 106 (SALVA PARTITA): card di scelta slot da eliminare quando i 10
+# slot sono pieni e la run deve salvare.
+const SaveSlotsCardClass = preload("res://scripts/ui/SaveSlotsCard.gd")
 
 # TASK 23: CONTINUE PER-PLAYER IN 2P anche in boss room (crediti separati
 # P1/P2). Mirror di MainGameController: il player che perde l'ultima vita
@@ -1554,7 +1557,77 @@ func _on_bonus_completed() -> void:
                 # PRIMA del cambio scena — ora include anche reliquia e
                 # armatura (Task 21) così attraversano il cambio di scena.
                 GameManager.save_player_carry(player, player2)
+                # TASK 106 (SALVA PARTITA): AUTO-SAVE su disco dopo ogni boss
+                # vinto — la run corrente sovrascrive SEMPRE il proprio slot;
+                # alla prima vittoria occupa uno slot libero (se sono tutti
+                # occupati, la card chiede quale eliminare e il salvataggio
+                # riprende a scelta fatta).
+                if not _autosave_run():
+                        return  # la card di overflow completa il flusso
                 GameManager.go_to_maze()
+
+
+## TASK 106: scrive lo slot della run corrente. Ritorna true se il
+## salvataggio è COMPLETO (si può cambiare scena); false se ha aperto la
+## card di scelta slot da eliminare (10/10 pieni) — i callback
+## _on_slot_freed_for_save / _on_slot_delete_aborted chiudono il flusso.
+func _autosave_run() -> bool:
+        if GameManager == null or SaveSystem == null:
+                return true  # ambiente minimo (test senza disco): flusso invariato
+        # La modalità ENDLESS non ha una progressione salvabile (run infinita).
+        if GameManager.game_mode != C.GameMode.STORY:
+                return true
+        var slot: int = GameManager.save_slot_current
+        if slot < 0:
+                slot = SaveSystem.first_free_slot()
+                if slot < 0:
+                        # 10 slot pieni: chiedi quale eliminare PRIMA di salvare
+                        # (la card pausa il tree e lo ripristina alla chiusura).
+                        var card := SaveSlotsCardClass.new()
+                        card.setup(SaveSlotsCardClass.Mode.DELETE,
+                                        SaveSystem.all_summaries())
+                        card.slot_deleted.connect(_on_slot_freed_for_save)
+                        card.delete_aborted.connect(_on_slot_delete_aborted)
+                        add_child(card)
+                        return false
+                GameManager.save_slot_current = slot
+        SaveSystem.save_run(slot, _build_save_data())
+        # L'annuncio "Partita salvata..." appare al livello successivo.
+        GameManager.save_announce_pending = true
+        return true
+
+
+## Dati completi dello slot: livello di gioco (già il SUCCESSIVO al boss),
+## personaggi, modalità, tier NG+ e il carry appena salvato (punteggio,
+## vite, level up, reliquie).
+func _build_save_data() -> Dictionary:
+        return {
+                        "num_players": GameManager.num_players,
+                        "game_mode": GameManager.game_mode,
+                        "newgameplus_tier": GameManager.newgameplus_tier,
+                        "current_level": GameManager.current_level,
+                        "char1": GameManager.player1_character,
+                        "char2": GameManager.player2_character,
+                        "carry_p1": GameManager.carry_p1.duplicate(true),
+                        "carry_p2": GameManager.carry_p2.duplicate(true),
+        }
+
+
+## TASK 106: slot liberato dalla card di overflow -> salva lì e prosegui.
+func _on_slot_freed_for_save(slot: int) -> void:
+        if SaveSystem == null:
+                GameManager.go_to_maze()
+                return
+        GameManager.save_slot_current = slot
+        SaveSystem.save_run(slot, _build_save_data())
+        GameManager.save_announce_pending = true
+        GameManager.go_to_maze()
+
+
+## TASK 106: nessuno slot eliminato -> si prosegue SENZA salvataggio
+## (richiesta utente: la scelta è esplicita, il gioco non si blocca).
+func _on_slot_delete_aborted() -> void:
+        GameManager.go_to_maze()
 
 
 # ============================================================================

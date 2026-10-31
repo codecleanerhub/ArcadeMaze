@@ -1148,6 +1148,35 @@ const CHALICE_PICKUP_POINTS: int = 300
 const EXTRA_LIFE_EVERY_POINTS: int = 50000
 
 # ============================================================================
+# TASK 106 — SALVA PARTITA (slot) + continue a credito unico + demo
+# ============================================================================
+## Slot di salvataggio massimi: UNO PER RUN (ogni boss vinto sovrascrive
+## lo slot della run corrente; una run nuova occupa il primo slot libero).
+const SAVE_SLOTS_MAX: int = 10
+
+## Richiesta utente Task 106: le VITE EXTRA vinte col punteggio sono
+## DISATTIVATE per ora ("non eliminare: potremmo riattivarla in futuro").
+## Con false, Player.add_score() NON dà più la vita a ogni soglia
+## EXTRA_LIFE_EVERY_POINTS (la meccanica resta nel codice, pronta al
+## riattivamento mettendo true).
+const EXTRA_LIVES_FROM_POINTS_ENABLED: bool = false
+
+## Richiesta utente Task 106: i player dispongono di UN SOLO credito
+## continue — quando finiscono le vite la schermata CONTINUE appare UNA
+## volta sola per player.
+const CONTINUE_CREDITS_PER_RUN: int = 1
+
+## Richiesta utente Task 106: modalità INFINITA NASCOSTA dal menu
+## principale (resta solo STORIA). "Nascondi non eliminare": il toggle
+## del menu e tutta la logica ENDLESS restano nel codice — riattivabile
+## mettendo true.
+const ENDLESS_MODE_VISIBLE: bool = false
+
+## TASK 106: durata dell'annuncio "Partita salvata..." (appare al livello
+## successivo al boss e sfuma fino a sparire).
+const SAVE_ANNOUNCE_MS: float = 2000.0
+
+# ============================================================================
 # TASK 99 (LEVEL UP) — il punteggio È esperienza
 # ============================================================================
 # Curva: soglia cumulata di punteggio per RAGGIUNGERE il livello n

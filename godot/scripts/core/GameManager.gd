@@ -124,6 +124,10 @@ signal boss_defeated(boss_index: int)
 @export_range(0, 3) var continues_left: int = 3
 
 ## TASK 23: crediti continue del GIOCATORE 2 (separati da quelli di P1).
+## TASK 106: il valore iniziale di default qui non conta più — reset_run(),
+## IntroCutscene e begin_newgameplus lo settano tutti a
+## C.CONTINUE_CREDITS_PER_RUN (1 credito: la schermata CONTINUE appare
+## UNA volta sola per player).
 @export_range(0, 3) var continues_left_p2: int = 3
 
 ## TASK 23: a quale player è rivolta la schermata continue APERTA
@@ -161,6 +165,67 @@ var newgameplus_offer_pending: bool = false
 func newgameplus_available() -> bool:
         return newgameplus_tier < C.NEWGAMEPLUS_MAX_TIER
 
+# ============================================================================
+# TASK 106 — SALVA PARTITA (slot per run)
+# ============================================================================
+## Slot assegnato alla run corrente (-1 = run non ancora salvata: il primo
+## boss vinto le assegna il primo slot libero, o ne chiede uno da liberare
+## se sono tutti occupati). La voce CONTINUA del menu riparte da qui.
+var save_slot_current: int = -1
+
+## True dall'AUTO-SAVE dopo un boss finché il MainGameController del livello
+## successivo non ha mostrato l'annuncio "Partita salvata..." (2s, sfuma
+## fino a sparire). Consumato in _ready, MAI al resume dal menu (il
+## salvataggio è vecchio: niente annuncio).
+var save_announce_pending: bool = false
+
+## TASK 106 (SALVA PARTITA): riprende la run salvata nello slot `slot`
+## (voce CONTINUA del menu principale). La run eredita livello di gioco,
+## carry (punteggio/vite/level up/reliquie), personaggi, numero player,
+## modalità e tier NG+; i crediti continue sono quelli di una run fresca.
+## Il restore del carry avviene nel _ready del MainGameController
+## (current_level > 1, ramo già esistente).
+func begin_continue_from_slot(slot: int) -> void:
+        if SaveSystem == null:
+                go_to_menu()
+                return
+        var data: Dictionary = SaveSystem.load_slot(slot)
+        if data.is_empty():
+                push_warning("[GameManager] slot di salvataggio vuoto: %d" % slot)
+                go_to_menu()
+                return
+        _apply_saved_run(slot, data)
+        start_level_at(current_level)
+
+
+## TASK 106: applica allo stato globale la run salvata (senza toccare le
+## scene — separato da begin_continue_from_slot per essere testabile
+## headless senza cambio scena).
+func _apply_saved_run(slot: int, data: Dictionary) -> void:
+        save_slot_current = slot
+        num_players = clampi(int(data.get("num_players", 1)), 1, 2)
+        game_mode = int(data.get("game_mode", C.GameMode.STORY))
+        newgameplus_tier = int(data.get("newgameplus_tier", 0))
+        current_level = clampi(int(data.get("current_level", 1)), 1,
+                        C.STORY_LEVELS_COUNT)
+        player1_character = int(data.get("char1", C.CharacterType.HERO_M))
+        player2_character = int(data.get("char2", C.CharacterType.HERO_F))
+        carry_p1 = (data.get("carry_p1", {}) as Dictionary).duplicate(true)
+        carry_p2 = (data.get("carry_p2", {}) as Dictionary).duplicate(true)
+        # Sessione pulita (il resume NON è un continue) e crediti freschi
+        # (un solo credito, come ogni nuova ripresa).
+        continues_left = C.CONTINUE_CREDITS_PER_RUN
+        continues_left_p2 = C.CONTINUE_CREDITS_PER_RUN
+        continue_player_num = 0
+        died_in_boss = false
+        continues_timer = 10
+        continues_choice = true
+        bonus_cards_seen.clear()
+        session_snapshot.clear()
+        session_restore_pending = false
+        save_announce_pending = false
+        hof_from_win = false
+
 ## TASK 105: progressione Level Up da CONSERVARE nel NG+ (il resto è una
 ## run nuova: score/vite/reliquie/armi ripartono da zero — "Ricomincerai
 ## dal primo livello di gioco senza perdere i tuoi upgrade accumulati").
@@ -188,8 +253,12 @@ func begin_newgameplus() -> void:
         newgameplus_carry_pending = true
         newgameplus_offer_pending = false
         current_level = 1
-        continues_left = 3
-        continues_left_p2 = 3
+        # TASK 106: NG+ = RUN NUOVA (nuovo slot di salvataggio) e crediti
+        # continue da costante (1 credito).
+        save_slot_current = -1
+        save_announce_pending = false
+        continues_left = C.CONTINUE_CREDITS_PER_RUN
+        continues_left_p2 = C.CONTINUE_CREDITS_PER_RUN
         continue_player_num = 0
         died_in_boss = false
         continues_timer = 10
@@ -523,14 +592,18 @@ func give_up() -> void:
 ## Mirrors Game::cleanupGameEntities() for the state-only portion.
 func reset_run() -> void:
         current_level = 1
-        continues_left = 3
-        # TASK 23: crediti continue separati per player (P1 e P2 = 3 ciascuno).
-        continues_left_p2 = 3
+        # TASK 106: crediti continue da costante (1 credito per player:
+        # la schermata CONTINUE appare UNA volta sola).
+        continues_left = C.CONTINUE_CREDITS_PER_RUN
+        continues_left_p2 = C.CONTINUE_CREDITS_PER_RUN
         continue_player_num = 0
         hof_from_win = false
         continues_timer = 10
         continues_choice = true
         died_in_boss = false
+        # TASK 106 — SALVA PARTITA: nuova sessione = run non ancora salvata.
+        save_slot_current = -1
+        save_announce_pending = false
         # TASK 105 — NEW GAME PLUS: nuova sessione = partita base.
         newgameplus_tier = 0
         newgameplus_carry_pending = false

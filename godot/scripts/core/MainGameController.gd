@@ -103,6 +103,9 @@ var mini_boss_spawned: bool = false
 # lampeggiante sopra tutto (CanvasLayer dedicato, layer 20 > HUD 10). Il
 # toggle del tasto P resta in _unhandled_input (process_mode ALWAYS).
 const PauseOverlayClass = preload("res://scripts/ui/PauseOverlay.gd")
+# TASK 106 (SALVA PARTITA): annuncio "Partita salvata..." al livello
+# successivo al boss (auto-save appena avvenuto).
+const SavedAnnounceClass = preload("res://scripts/ui/SavedAnnounce.gd")
 var _pause_canvas: CanvasLayer = null
 var _pause_overlay: Control = null
 
@@ -594,6 +597,13 @@ func _ready() -> void:
         if GameManager and GameManager.newgameplus_carry_pending:
                 GameManager.restore_player_carry(player, player2)
                 GameManager.newgameplus_carry_pending = false
+        # TASK 106 (SALVA PARTITA): se il BossRoom ha appena AUTO-SALVATO
+        # (fine del bonus post-boss), mostra al centro "Partita salvata..."
+        # che sfuma e scompare (~2s, non bloccante). Il flag è consumato qui:
+        # il resume dal menu NON lo setta (salvataggio vecchio).
+        if GameManager and GameManager.save_announce_pending:
+                GameManager.save_announce_pending = false
+                add_child(SavedAnnounceClass.new())
         # Start level music if enabled
         if AudioManager and GameManager.music_enabled:
                 AudioManager.play_level_music(current_level, false)

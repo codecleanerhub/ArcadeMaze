@@ -5,6 +5,9 @@ extends Control
 
 signal intro_finished
 
+# TASK 106: costanti di gioco (CONTINUE_CREDITS_PER_RUN nel reset run).
+const C = preload("res://scripts/core/GameConstants.gd")
+
 # TASK 44: le didascalie sono localizzate (EN/IT) — vedi I18nManager
 # (chiavi "intro.cap1".."intro.cap4"). Questa costante resta come
 # FALLBACK compile-time se l'autoload I18n non fosse disponibile.
@@ -84,7 +87,12 @@ func _finish() -> void:
                 # alla prima morte saltava DIRETTAMENTE alla schermata game over
                 # senza passare da "CONTINUE?". Il C++ originale resetta i
                 # continues a ogni nuova partita.
-                GameManager.continues_left = 3
+                # TASK 106: un solo credito continue (la schermata appare UNA
+                # volta sola) + run nuova = slot di salvataggio nuovo.
+                GameManager.continues_left = C.CONTINUE_CREDITS_PER_RUN
+                GameManager.continues_left_p2 = C.CONTINUE_CREDITS_PER_RUN
+                GameManager.save_slot_current = -1
+                GameManager.save_announce_pending = false
                 GameManager.died_in_boss = false
                 GameManager.session_snapshot.clear()
                 GameManager.session_restore_pending = false

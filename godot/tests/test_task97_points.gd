@@ -121,6 +121,10 @@ func _test_constants() -> void:
 
 
 # --- D: vita extra alla soglia ---
+# TASK 106: la meccanica è GATED da EXTRA_LIVES_FROM_POINTS_ENABLED
+# (disattivata su richiesta utente, riattivabile): il test copre ENTRAMBI
+# gli stati del flag — attivo = vita alla soglia; disattivo = vite
+# invariate (il gate funziona).
 func _test_extra_life() -> void:
         var p := PlayerScript.new()
         add_child(p)
@@ -132,12 +136,18 @@ func _test_extra_life() -> void:
                 _fail("D: vita extra data un punto prima della soglia")
                 return
         p.add_score(2)
-        if p.lives != 4 or p.next_life_threshold != C.EXTRA_LIFE_EVERY_POINTS * 2:
-                _fail("D: vita extra mancata alla soglia (vite %d, prossima %d)" % [
-                                p.lives, p.next_life_threshold])
-                return
+        if C.EXTRA_LIVES_FROM_POINTS_ENABLED:
+                if p.lives != 4 or p.next_life_threshold != C.EXTRA_LIFE_EVERY_POINTS * 2:
+                        _fail("D: vita extra mancata alla soglia (vite %d, prossima %d)" % [
+                                        p.lives, p.next_life_threshold])
+                        return
+                _ok("D: vita extra ogni %d punti (flag ON: 49999 no, 50001 si)" % C.EXTRA_LIFE_EVERY_POINTS)
+        else:
+                if p.lives != 3:
+                        _fail("D: vita extra assegnata col flag OFF (vite %d)" % p.lives)
+                        return
+                _ok("D: vite extra da punti DISATTIVATE (flag OFF: soglia superata, vite invariate)")
         p.queue_free()
-        _ok("D: vita extra ogni %d punti (49999 no, 50001 si, prossima soglia 100k)" % C.EXTRA_LIFE_EVERY_POINTS)
 
 
 # --- E: guardie sorgente ---

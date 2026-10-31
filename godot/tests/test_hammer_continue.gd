@@ -245,6 +245,10 @@ func _physics_process(delta: float) -> void:
                                 boss_target_hp = int(br.boss.max_health * 0.4)
                                 br.boss.health = boss_target_hp
                                 br.player.score = 43210
+                                # TASK 106: UN credito continue per run — le fasi
+                                # A-D lo hanno consumato: ricaricalo per testare
+                                # la schermata CONTINUE nella boss room.
+                                GameManager.continues_left = C.CONTINUE_CREDITS_PER_RUN
                                 # Morte del player -> snapshot + player_died(true)
                                 br.player.lives = 0
                                 br.player.energy = 0
