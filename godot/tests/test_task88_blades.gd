@@ -244,7 +244,7 @@ func _test_gameplay() -> void:
         if p.energy != e0 - dmg:
                 _fail("F: danno lama %d atteso -%d (energia %d -> %d)" % [
                                 e0 - p.energy, dmg, e0, p.energy])
-        elif p.lives != 3:
+        elif p.lives != C.STARTING_LIVES:
                 _fail("F: la lama non deve uccidere (50%% non letale)")
         else:
                 _ok("F1: tocco lama grounded = -%d/%d energia (50%%), non letale" % [

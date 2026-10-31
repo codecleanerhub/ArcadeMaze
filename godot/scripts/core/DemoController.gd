@@ -423,8 +423,11 @@ func _update_ai(delta_ms: float) -> void:
         _demo_shoot(pos, threat if threat != null else demo_target_enemy, delta_ms)
 
 
-        # Salto casuale (flavor del demo originale)
-        if randi() % 100 < 2:
+        # Salto casuale (flavor del demo originale). GATE is_jumping: da quando
+        # il DOPPIO SALTO è base del player (TASK salti aggiuntivi), senza gate
+        # questo salto scattava anche a mezz'aria allungando l'invulnerabilità
+        # della demo e sfasando test_demo_collapse (contatto schivato).
+        if randi() % 100 < 2 and not player.is_jumping():
                 player.activate_jump()
 
 

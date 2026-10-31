@@ -94,8 +94,9 @@ func _physics_process(delta: float) -> void:
                                                 + str(GameManager.continues_for(2)) + ")")
                         elif GameManager.continues_for(1) != p1_credits_before:
                                 _fail("C: il credito di P1 è stato toccato!")
-                        elif p2.lives != 3 or p2.energy != p2.max_energy:
-                                _fail("C: P2 non riprende con 3 vite/energia piena")
+                        elif p2.lives != GameConstants.STARTING_LIVES or p2.energy != p2.max_energy:
+                                _fail("C: P2 non riparte con %d vite/energia piena"
+                                                % GameConstants.STARTING_LIVES)
                         elif main._continue_pending_player != 0:
                                 _fail("C: pending non azzerato dopo la scelta")
                         else:

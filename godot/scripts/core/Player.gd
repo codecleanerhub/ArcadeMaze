@@ -114,7 +114,9 @@ const SPRITE_DEFAULT_FACES_RIGHT := {
 }
 
 # --- Tunable stats ----------------------------------------------------------
-@export var lives: int = 3
+## TASK (bug utente): "Il player deve partire con 5 vite non 3". Il valore
+## autorevole è C.STARTING_LIVES: reset() e i continue lo usano.
+@export var lives: int = 5
 @export var max_energy: int = 5
 @export var energy: int = 5
 @export var score: int = 0
@@ -280,20 +282,23 @@ var _muzzle_style: String = "fire"        # fire|wide|blast|energy|cannon|flame|
 var _muzzle_light: PointLight2D = null    # luce riusata (mai ricreata a colpo)
 
 # ===========================================================================
-# FIX (stamina dei salti): il player può eseguire al massimo 2 SALTI
-# CONSECUTIVI (TASK 23: richiesto dall'utente — prima erano 3), poi "si
-# stanca" e non può più saltare.
-#   * Ogni salto consuma 1/2 della barra (visibile in HUD, verde, sotto la
-#     barra della vita).
+# FIX (stamina dei salti): la barra di stamina misura QUANTI SALTI CONSECUTIVI
+# ci si può permettere (TASK 23: 2 di base), poi "si stanca" e non può più
+# saltare finché la barra non è ricarica COMPLETAMENTE.
+#   * Il costo di OGNI salto è barra_max / salti_massimi: con 0 abilità
+#     1/2 barra a salto (2 salti), col 1° Salto Aggiuntivo 1/3 (3 salti),
+#     col 2° 1/4 (4 salti). FIX bug utente: prima il costo era FISSO a 1/2
+#     e col 2° salto aggiuntivo la stamina finiva al primo salto (salti
+#     totali 2 invece di 4).
+#   * Il doppio salto (1 salto a mezz'aria) è BASE: ogni livello di Salto
+#     Aggiuntivo ne aggiunge UNO (1° = 3 salti, 2° = 4 salti, il 3° non
+#     esiste — vedi GameConstants.SKILL_JUMP_REQ_STAMINA_BY_LEVEL).
 #   * Dopo ogni salto la barra tende a ricaricarsi se il player non salta
-#     nuovamente (la ricarica parte poco dopo l'ultimo salto).
-#   * Al secondo salto consecutivo la barra si svuota: il player non può
-#     saltare finché non si è caricata COMPLETAMENTE.
+#     nuovamente (la ricarica parte poco dopo l'atterraggio).
 #   * Se prova a saltare senza stamina, non salta e si sente un rumore
 #     secco di pulsante premuto "a vuoto" (click, vedi STAMINA_CLICK).
 # ===========================================================================
-const STAMINA_JUMP_COST: float = 1.0 / 2.0
-const STAMINA_RECHARGE_FULL_MS: float = 2400.0   # barra vuota → piena in 2.4s
+const STAMINA_RECHARGE_FULL_MS: float = 2400.0   # un'UNITÀ di barra si ricarica in 2.4s (barre grandi = più lente)
 const STAMINA_RECHARGE_DELAY_MS: float = 720.0   # la ricarica parte ~0.72s dopo l'ATTERRAGGIO dell'ultimo salto (così 2 salti in catena restano tali a qualunque framerate)
 
 ## TASK 38 — nascita/rinascita: dopo lo spawn (nuovo livello, continue o
@@ -733,7 +738,7 @@ func _ready() -> void:
 # ===========================================================================
 func reset() -> void:
         reset_position()
-        lives = 3
+        lives = C.STARTING_LIVES
         max_energy = 5
         energy = max_energy
         score = 0
@@ -2108,13 +2113,38 @@ func _perk_energy_bonus_units() -> int:
         return int(ceil(0.05 * float(lvl) * 5.0))
 
 
-# --- Resistenza: +7% max, -5% attesa per livello --------------------------
+# --- Resistenza: +1.75% max / -1.25% attesa per livello (cap 40) ----------
+## TASK salti aggiuntivi: Resistenza ora ha cap 40 (era 10) con passi più
+## piccoli — STESSI TOTALI del vecchio design a fine corsa:
+## 0.0175 x 40 = +70% barra, 0.0125 x 40 = +50% ricarica (come 0.07/0.05 x 10).
 func get_stamina_max() -> float:
-        return 1.0 + 0.07 * float(get_skill_level("stamina"))
+        return 1.0 + 0.0175 * float(get_skill_level("stamina"))
 
 
 func get_stamina_recharge_mult() -> float:
-        return 1.0 + 0.05 * float(get_skill_level("stamina"))
+        return 1.0 + 0.0125 * float(get_skill_level("stamina"))
+
+
+# --- Salti: quota aerea, costo stamina, salti acquistabili ----------------
+## Salti CONSECUTIVI massimi per barra piena: 2 di base (doppio salto)
+## + uno per livello di Salto Aggiuntivo (1° = 3, 2° = 4 salti).
+func get_max_consecutive_jumps() -> int:
+        return 2 + maxi(0, get_skill_level("jump"))
+
+
+## Costo di stamina di UN salto: barra_max / salti_massimi. Così una barra
+## piena compra ESATTAMENTE tutta la catena di salti (fix bug utente: col
+## 2° salto aggiuntivo la stamina finiva al primo salto — salti 2 invece di 4).
+func get_stamina_jump_cost() -> float:
+        return get_stamina_max() / float(maxi(1, get_max_consecutive_jumps()))
+
+
+## Salti ancora "pagabili" con la stamina corrente (per l'HUD: VERDE =
+## tutti disponibili, ARANCIONE = almeno uno, ROSSO = zero).
+func get_stamina_jumps_left() -> int:
+        if stamina_exhausted:
+                return 0
+        return int(floor((stamina + 0.0001) / get_stamina_jump_cost()))
 
 
 # --- Rapidità: +4%/livello ------------------------------------------------
@@ -2142,9 +2172,14 @@ func get_regen_rate() -> float:
         return 0.2 * float(get_skill_level("regen"))
 
 
-# --- Salto Aggiuntivo: +1 salto in aria per livello (richiede Stam 4) -----
+# --- Salto Aggiuntivo: +1 salto in aria per livello (1° a Stam 10, 2° a 40)
+## Il DOPPIO SALTO (primo salto a mezz'aria) è BASE del player (TASK 23:
+## "2 salti consecutivi"); ogni livello di Salto Aggiuntivo ne aggiunge UNO:
+## 1° = 3 salti totali, 2° = 4 (richiesta utente: "con il secondo salto
+## aggiuntivo il player deve poter saltare quattro volte"). Il 3° livello
+## non è acquistabile (vedi GameConstants.SKILL_JUMP_REQ_STAMINA_BY_LEVEL).
 func get_extra_air_jumps() -> int:
-        return get_skill_level("jump")
+        return 1 + maxi(0, get_skill_level("jump"))
 
 
 ## Applica il bonus caricatore all'arma CORRENTE (le reliquie usano ammo
@@ -2206,12 +2241,13 @@ func _recalc_skill_effects() -> void:
 # di 1000ms (1 secondo) per potersi allontanare dai nemici. Questo mirrora
 # il comportamento C++ del "jump over enemy" boost, ma applicato a ogni
 # salto, non solo quando si salta sopra un nemico.
-# FIX (stamina): il salto è consentito solo con stamina sufficiente (>= 1/2
-# di barra) e se il player non è "stanco". Al 2° salto consecutivo la barra
-# si svuota e scatta il blocco fino a ricarica completa. Il tentativo a
-# vuoto produce un click secco (pulsante senza molla).
-# Ritorna true se il salto è partito, false altrimenti (già in salto oppure
-# senza stamina).
+# FIX (stamina): il salto è consentito solo con stamina sufficiente per
+# UN salto (barra_max / salti_massimi) e se il player non è "stanco".
+# All'ultimo salto della catena la barra si svuota e scatta il blocco fino
+# a ricarica completa. Il tentativo a vuoto produce un click secco
+# (pulsante senza molla).
+# Ritorna true se il salto è partito, false altrimenti (già in salto e
+# quota aerea esaurita, oppure senza stamina).
 func activate_jump() -> bool:
         # FUOCO AMICO (Task 18): il player morto-in-attesa-anima non salta.
         if soul_pending:
@@ -2223,22 +2259,22 @@ func activate_jump() -> bool:
         if held_by_trap or held_by_wall:
                 input_mash_count += 1
                 return false
+        # Costo dinamico: barra_max / salti massimi della catena (fix bug
+        # "col 2° salto aggiuntivo la stamina finiva al primo salto").
+        var jump_cost: float = get_stamina_jump_cost()
         if jump_timer > 0:
-                # TASK 99 (Salto Aggiuntivo): con l'abilità sbloccata si può
-                # saltare ANCHE a mezz'aria, consumando uno dei salti extra;
-                # il costo di stamina resta il gate fisico (per questo il
-                # perk richiede Resistenza 4: serve barra oltre il secondo
-                # salto per pagarselo).
+                # TASK 99 (Salto Aggiuntivo): si può saltare ANCHE a mezz'aria
+                # (il primo è base: doppio salto), consumando la quota aerea.
                 if _air_jumps_left > 0 and not stamina_exhausted \
-                                and stamina >= STAMINA_JUMP_COST - 0.0001:
+                                and stamina >= jump_cost - 0.0001:
                         _air_jumps_left -= 1
                 else:
                         return false  # già in salto, nessun salto extra
         else:
                 # Salto da terra: ricarica la quota di salti a mezz'aria.
                 _air_jumps_left = get_extra_air_jumps()
-        # Gate di stamina: ci vuole almeno 1/2 barra per un salto.
-        if stamina_exhausted or stamina < STAMINA_JUMP_COST - 0.0001:
+        # Gate di stamina: serve almeno il costo di un salto.
+        if stamina_exhausted or stamina < jump_cost - 0.0001:
                 # Click "a vuoto": tenendo premuto il tasto di salto il
                 # suono non si mitraglia (cooldown interno + debounce SFX).
                 if _stamina_click_cd_ms <= 0.0:
@@ -2246,7 +2282,7 @@ func activate_jump() -> bool:
                         if AudioManager:
                                 AudioManager.play_sound(AudioManager.SoundType.STAMINA_CLICK)
                 return false
-        stamina = maxf(0.0, stamina - STAMINA_JUMP_COST)
+        stamina = maxf(0.0, stamina - jump_cost)
         _stamina_since_jump_ms = 0.0
         if stamina <= 0.0001:
                 # barra vuota → player "stanco" (fino a ricarica completa).

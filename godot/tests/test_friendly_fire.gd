@@ -11,6 +11,7 @@
 ##   F. BOSS ROOM: stessa meccanica durante lo scontro col boss.
 extends Node
 
+const C = preload("res://scripts/core/GameConstants.gd")
 const MainGameScene = preload("res://scenes/MainGame.tscn")
 const BossRoomScene = preload("res://scenes/BossRoom.tscn")
 const SoulFx = preload("res://scripts/entities/SoulTransferEffect.gd")
@@ -151,7 +152,7 @@ func _physics_process(delta: float) -> void:
                                 var p2b: CharacterBody2D = main.player2
                                 if p2b.energy != 4:
                                         _fail("A: energia P2 dopo colpo non fatale = " + str(p2b.energy) + ", attesa 4")
-                                elif p2b.lives != 3:
+                                elif p2b.lives != C.STARTING_LIVES:
                                         _fail("A: P2 ha perso vite su colpo non fatale! lives = " + str(p2b.lives))
                                 elif p2b.soul_pending:
                                         _fail("A: P2 in soul_pending su colpo non fatale?!")
@@ -174,8 +175,8 @@ func _physics_process(delta: float) -> void:
                                 return
                         if phase_t > 0.35:
                                 var p2c: CharacterBody2D = main.player2
-                                if p2c.lives != 2:
-                                        _fail("B1: P2 non ha perso la vita (lives = " + str(p2c.lives) + ", attese 2)")
+                                if p2c.lives != C.STARTING_LIVES - 1:
+                                        _fail("B1: P2 non ha perso la vita (lives = " + str(p2c.lives) + ", attese " + str(C.STARTING_LIVES - 1) + ")")
                                 elif not p2c.soul_pending:
                                         _fail("B1: P2 non congelata in soul_pending dopo morte da fuoco amico")
                                 elif p2c.sprite != null and p2c.sprite.visible:
@@ -201,7 +202,7 @@ func _physics_process(delta: float) -> void:
                         var p2d: CharacterBody2D = main.player2
                         if p1c.energy != p1c.max_energy:
                                 _fail("B2: P1 non ricaricato al massimo (energy = " + str(p1c.energy) + ")")
-                        elif p2d.lives != 2:
+                        elif p2d.lives != C.STARTING_LIVES - 1:
                                 _fail("B2: vite P2 cambiate dal transfer (lives = " + str(p2d.lives) + ")")
                         elif p2d.sprite != null and not p2d.sprite.visible:
                                 _fail("B2: sprite di P2 non ripristinato al respawn")
@@ -230,7 +231,7 @@ func _physics_process(delta: float) -> void:
                                 var p1e: CharacterBody2D = main.player
                                 if p1e.energy != 3:
                                         _fail("C1: energia P1 dopo colpo P2 = " + str(p1e.energy) + ", attesa 3")
-                                elif p1e.lives != 3:
+                                elif p1e.lives != C.STARTING_LIVES:
                                         _fail("C1: P1 ha perso vite su colpo non fatale P2")
                                 else:
                                         print("[TEST] OK C1: fuoco amico bidirezionale (P2 -> P1, -1 energia)")
@@ -252,7 +253,7 @@ func _physics_process(delta: float) -> void:
                                 return
                         if phase_t > 0.35:
                                 var p1g: CharacterBody2D = main.player
-                                if p1g.lives != 2:
+                                if p1g.lives != C.STARTING_LIVES - 1:
                                         _fail("C2: P1 non ha perso la vita (lives = " + str(p1g.lives) + ")")
                                 elif not p1g.soul_pending:
                                         _fail("C2: P1 non congelato in soul_pending dopo morte da fuoco amico")
@@ -275,7 +276,7 @@ func _physics_process(delta: float) -> void:
                         var p1h: CharacterBody2D = main.player
                         if p2f.energy != p2f.max_energy:
                                 _fail("C2b: P2 non ricaricato al massimo (energy = " + str(p2f.energy) + ")")
-                        elif p1h.lives != 2:
+                        elif p1h.lives != C.STARTING_LIVES - 1:
                                 _fail("C2b: vite P1 sbagliate dopo transfer (lives = " + str(p1h.lives) + ")")
                         elif p1h.get_pixel_pos().distance_to(RESPAWN_POS) > 1.0:
                                 _fail("C2b: P1 non respawnato: " + str(p1h.get_pixel_pos()))
@@ -326,7 +327,7 @@ func _physics_process(delta: float) -> void:
                                         _fail("E: P2 colpita nonostante invulnerabilita' (energy = " + str(p2j.energy) + ")")
                                 elif p2j.soul_pending:
                                         _fail("E: transfer anima partito su bersaglio invulnerabile?!")
-                                elif p2j.lives != 2:
+                                elif p2j.lives != C.STARTING_LIVES - 1:
                                         _fail("E: vite P2 cambiate (lives = " + str(p2j.lives) + ")")
                                 else:
                                         print("[TEST] OK E: colpo a bersaglio invulnerabile: passa attraverso")
@@ -360,7 +361,7 @@ func _physics_process(delta: float) -> void:
                                 brp2.damage_timer = 0
                                 _fake_shot(brp1, brp2)
                                 boss_room._check_friendly_fire_projectiles()
-                                if brp2.lives != 2:
+                                if brp2.lives != C.STARTING_LIVES - 1:
                                         _fail("F1: P2 non ha perso la vita in boss room (lives = " + str(brp2.lives) + ")")
                                 elif not brp2.soul_pending:
                                         _fail("F1: P2 non congelata in boss room dopo morte da fuoco amico")

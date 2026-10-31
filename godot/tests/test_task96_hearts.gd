@@ -25,6 +25,7 @@
 extends Node
 
 const HUD_SCRIPT := "res://scripts/ui/HUD.gd"
+const C = preload("res://scripts/core/GameConstants.gd")
 const HUDClass = preload("res://scripts/ui/HUD.gd")
 
 var fails: int = 0
@@ -155,7 +156,7 @@ func _test_asset() -> void:
 
 # --- E: drive diretto HUD (snapshot con colpo/vita persa) ---
 func _test_drive() -> void:
-        hud.set_player_state({"lives": 3, "energy": 5.0, "max_energy": 5.0,
+        hud.set_player_state({"lives": C.STARTING_LIVES, "energy": 5.0, "max_energy": 5.0,
                         "stamina": 1.0, "stamina_exhausted": false})
         await get_tree().process_frame
         if hud._heart_fx_p1 > 0.0:

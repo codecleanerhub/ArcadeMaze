@@ -16,9 +16,12 @@
 ## Input: SU/GIÙ navigazione, DESTRA/SINISTRA +/− della riga selezionata,
 ## fuoco tenuto = OK. In 2P ogni giocatore usa i SUOI tasti (p2_*) e le
 ## modali si aprono in sequenza (prima P1 poi P2, guidate dal controller).
-## Il Salto Aggiuntivo è l'unica riga con requisito: si sblocca a
-## Resistenza 4 (il requisito valuta anche le assegnazioni di QUESTA
-## sessione: si può comprare Resistenza fino a 4 e poi il salto).
+## Il Salto Aggiuntivo è l'unica riga con requisito PER LIVELLO: il 1° si
+## sblocca a Resistenza 10, il 2° a Resistenza 40 (cap), il 3° NON è
+## sbloccabile e la sua opzione resta VISIBILE ma DISATTIVATA (richiesta
+## utente: "si vedrà disattivata l'opzione"). Il requisito valuta anche
+## le assegnazioni di QUESTA sessione (si può comprare Resistenza fino
+## alla soglia e poi il salto).
 extends CanvasLayer
 
 ## Emitted when the player confirms (OK held). The host controller frees
@@ -269,29 +272,42 @@ func _try_alloc(dir: int) -> void:
                         return
                 _alloc[id] = cur - 1
                 _bank += 1
-                # Se tolgo Resistenza sotto 4, il Salto assegnato oltre il
-                # requisito torna indisponibile: le sue assegnazioni in
+                # Se tolgo Resistenza sotto la soglia, il Salto assegnato
+                # oltre il requisito torna indisponibile: le assegnazioni in
                 # eccesso vengono rimesse nel banco (mai stato illegale).
                 _clamp_jump_alloc()
                 if AudioManager:
                         AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
 
 
-## Coerenza requisito Salto: se Resistenza (visual) < 4, le assegnazioni
-## del Salto oltre il livello permesso tornano al banco.
+## Coerenza requisito Salto: con la Resistenza (visual) corrente si può
+## comprare il salto solo fino al livello la cui soglia è soddisfatta
+## (1° >= 10, 2° >= 40, 3° mai): le assegnazioni della sessione oltre il
+## livello permesso tornano al banco.
 func _clamp_jump_alloc() -> void:
         var vis: Dictionary = _visual_levels()
         var stamina_lvl: int = int(vis.get("stamina", 0))
-        if stamina_lvl >= C.SKILL_JUMP_REQUIRES_STAMINA:
+        # Livello di salto raggiungibile con questa Resistenza (sequenziale:
+        # per comprare il 2° serve la soglia del 2°; il 3° non è mai in vendita).
+        var allowed_total: int = int(_base_levels.get("jump", 0))
+        var jump_cap: int = int(C.get_skill_def("jump").get("cap", 3))
+        while allowed_total < jump_cap:
+                var req: int = C.skill_jump_required_stamina(allowed_total + 1)
+                if req >= 0 and stamina_lvl >= req:
+                        allowed_total += 1
+                else:
+                        break
+        var jump_visual: int = int(vis.get("jump", 0))
+        if jump_visual <= allowed_total:
                 return
-        # Il salto comprabile senza Resistenza 4 è 0: tutte le assegnazioni
-        # della sessione (o confermate, gestite dal controller di partenza)
-        # tornano nel banco.
-        var jump_alloc: int = int(_alloc.get("jump", 0))
+        # Le assegnazioni di SESSIONE in eccesso tornano nel banco (le
+        # confermate restano: sono state comprate con la soglia soddisfatta).
         var jump_base: int = int(_base_levels.get("jump", 0))
-        if jump_alloc > 0 and jump_base + jump_alloc > 0 and jump_base == 0:
-                _bank += jump_alloc
-                _alloc["jump"] = 0
+        var excess: int = mini(int(_alloc.get("jump", 0)),
+                        jump_visual - maxi(allowed_total, jump_base))
+        if excess > 0:
+                _bank += excess
+                _alloc["jump"] = int(_alloc.get("jump", 0)) - excess
 
 
 ## OK: rende definitive le scelte e chiude. I punti non assegnati restano
@@ -493,13 +509,31 @@ func _draw_skill_row(p: Control, font: Font, id: String, row_idx: int,
         _draw_button(p, font, "+", Rect2(plus_x, by, 52.0, 36.0),
                         plus_on, selected)
 
-        # badge requisito / cap
-        if not allowed and lvl < cap:
-                var req: String = I18n.t("levelup.locked")
+        # badge requisito / cap / mai-sbloccabile
+        if id == "jump":
+                # Salto Aggiuntivo: badge DEDICATO per livello. Il 3° salto ha
+                # requisito -1 (MAI acquistabile) e la sua opzione appare
+                # DISATTIVATA in grigio scuro (richiesta utente: "si vedrà
+                # disattivata l'opzione"); il 1°/2° mostrano la Resistenza
+                # richiesta (10 / 40).
+                var next_req: int = C.skill_jump_required_stamina(lvl + 1)
+                if next_req < 0 and lvl < cap:
+                        p.draw_string(font, Vector2(rect.position.x + rect.size.x - 240.0,
+                                        rect.position.y + 60.0),
+                                        I18n.t("levelup.never"),
+                                        HORIZONTAL_ALIGNMENT_LEFT, 220.0, 13,
+                                        Color(0.38, 0.36, 0.33))
+                elif not allowed and lvl < cap:
+                        p.draw_string(font, Vector2(rect.position.x + rect.size.x - 240.0,
+                                        rect.position.y + 60.0),
+                                        I18n.t("levelup.locked") % next_req,
+                                        HORIZONTAL_ALIGNMENT_LEFT, 220.0, 13, COL_LOCKED)
+        elif not allowed and lvl < cap:
                 p.draw_string(font, Vector2(rect.position.x + rect.size.x - 240.0,
-                                rect.position.y + 60.0), req,
+                                rect.position.y + 60.0),
+                                I18n.t("levelup.locked") % 0,
                                 HORIZONTAL_ALIGNMENT_LEFT, 220.0, 13, COL_LOCKED)
-        elif lvl >= cap:
+        if lvl >= cap:
                         p.draw_string(font, Vector2(rect.position.x + rect.size.x - 240.0,
                             rect.position.y + 60.0), I18n.t("levelup.max"),
                             HORIZONTAL_ALIGNMENT_LEFT, 220.0, 13, COL_LOCKED)

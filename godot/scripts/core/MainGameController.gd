@@ -3498,9 +3498,9 @@ func _open_continue_overlay(pnum: int, credits: int) -> void:
 
 
 # TASK 23: scelta sulla schermata continue del player `pnum`.
-# YES: consuma 1 credito del SUO contatore e riprende (3 vite, energia
-# piena, respawn, invulnerabilità breve). NO/timeout: eliminato; se non
-# resta nessun player → LOSE (game over).
+# YES: consuma 1 credito del SUO contatore e riparte (C.STARTING_LIVES vite,
+# energia piena, respawn, invulnerabilità breve). NO/timeout: eliminato; se
+# non resta nessun player → LOSE (game over).
 func _on_continue_chosen(pnum: int, yes: bool) -> void:
         _continue_pending_player = 0
         if GameManager:
@@ -3512,7 +3512,7 @@ func _on_continue_chosen(pnum: int, yes: bool) -> void:
         if yes and p != null and is_instance_valid(p):
                 if GameManager:
                         GameManager.use_continue_for(pnum)
-                p.lives = 3
+                p.lives = C.STARTING_LIVES
                 p.energy = p.max_energy
                 p.reset_position()
                 p.damage_timer = CONTINUE_RESPAWN_INVULN_MS
@@ -3526,7 +3526,8 @@ func _on_continue_chosen(pnum: int, yes: bool) -> void:
                 if AudioManager and AudioManager.music_enabled \
                                 and not AudioManager._epic_playing:
                         AudioManager.play_level_music(current_level, false)
-                print("[Continue] PLAYER ", pnum, " riprende con 3 vite (crediti suoi residui: ",
+                print("[Continue] PLAYER ", pnum, " riparte con ", C.STARTING_LIVES,
+                                " vite (crediti suoi residui: ",
                                 GameManager.continues_for(pnum) if GameManager else 0, ")")
         else:
                 _eliminate_player(p)
@@ -4627,6 +4628,10 @@ func _build_session_snapshot() -> Dictionary:
                         "row": int((mini_boss.position.y - C.UI_HEIGHT) / C.TILE_SIZE),
                 }
         snap["mini_boss"] = mb_snap
+        # TASK (mini-boss dal portale): pending = trigger scattato ma il
+        # portale non ha ancora completato l'apertura (il mini-boss non è
+        # uscito). Il restore lo riarma per non perderlo al continue.
+        snap["mini_boss_pending"] = spawner.mini_boss_pending
         # --- Item a terra (solo quelli ancora raccoglibili) ---
         var items: Dictionary = {}
         if mine_item != null and is_instance_valid(mine_item) and mine_item.active:
@@ -4844,6 +4849,12 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 if mini_boss != null and is_instance_valid(mini_boss):
                         mini_boss.position = mb_snap.get("pos", mini_boss.position)
                         mini_boss.health = int(mb_snap.get("health", mini_boss.health))
+        # --- Mini-boss dal portale ANCORA IN ATTESA (portale in apertura al
+        # momento dello snapshot): riarma la callable così emerge appena
+        # il portale finisce di aprirsi (update_portal, fase 0 -> 1).
+        if bool(snap.get("mini_boss_pending", false)) and not mini_boss_spawned:
+                spawner.mini_boss_pending = true
+                spawner.arm_mini_boss_from_portal(_spawn_mini_boss)
         # --- Porta di uscita (se era gia' aperta) ---
         var door_snap: Dictionary = snap.get("exit_door", {})
         if bool(door_snap.get("active", false)):
@@ -4959,6 +4970,9 @@ func _update_hud_snapshot() -> void:
                 "weapon_max": player.current_weapon.get("max_ammo", 15),
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # Salti acquistabili con la stamina corrente (colore HUD).
+                "stamina_jumps_left": player.get_stamina_jumps_left(),
+                "stamina_jumps_max": player.get_max_consecutive_jumps(),
                 # TASK 99 (LEVEL UP): livello/punti anche al restore.
                 "level": player.level,
                 "skill_points": player.skill_points,
@@ -4980,6 +4994,8 @@ func _update_hud_snapshot() -> void:
                         "weapon_max": player2.current_weapon.get("max_ammo", 15),
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        "stamina_jumps_left": player2.get_stamina_jumps_left(),
+                        "stamina_jumps_max": player2.get_max_consecutive_jumps(),
                         # TASK 99 (LEVEL UP): livello/punti anche al restore (P2).
                         "level": player2.level,
                         "skill_points": player2.skill_points,
@@ -5904,7 +5920,10 @@ func _find_empty_cell_near_center() -> Vector2i:
 
 
 # ============================================================================
-# MiniBoss spawn (called by EnemySpawner.trigger_portal_if_needed)
+# MiniBoss spawn (chiamata da EnemySpawner quando il portale completa
+# l'APERTURA: il mini-boss emerge dalla CELLA del portale — richiesta
+# utente "il mid-boss deve uscire dal portale" — vedi _emit_mini_boss_
+# from_portal in EnemySpawner; anche dal restore della sessione).
 # ============================================================================
 const MiniBossClass = preload("res://scripts/bosses/MiniBoss.gd")
 
@@ -6503,6 +6522,10 @@ func _update_thrown_dynamite(delta_ms: int) -> void:
 # Esplosione dinamite
 # thrown=true: candelotto lanciato, uccide nemici in raggio
 # thrown=false: dinamite in mano al player, uccide il player PROPRIETARIO
+# In OGNI caso l'esplosione rompe i muri INTERNI attorno al punto di scoppio
+# (richiesta utente: "se esplode accanto ad un muro o su un muro deve rompere
+# il muro, comportamento simile al martello di Thor" — i muri di BORDO restano
+# indistruttibili come per il martello).
 func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
         # FIX (2P): la miccia scaduta colpisce CHI ha raccolto la dinamite
         # (prima era sempre P1, anche se l'aveva presa P2).
@@ -6519,6 +6542,13 @@ func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
         if AudioManager:
                 AudioManager.play_sound(AudioManager.SoundType.ENEMY_EXPLODE)
         screen_flash_timer_ms = 120
+        # Dinamite scava (come il martello di Thor): rompe i muri INTERNI
+        # nella croce di celle attorno allo scoppio (la cella dello scoppio +
+        # le 4 adiacenti ortogonali, i cui centri stanno dentro il raggio
+        # dell'esplosione di 80px = 1,25 celle; le diagonali a ~90px restano
+        # fuori). Così la dinamite che esplode SU un muro o ACCANTO apre una
+        # scorciatoia a croce, più larga del singolo varco del martello.
+        _break_walls_around_blast(pos)
         if not thrown:
                 # Dinamite in mano: uccide il player proprietario
                 dyn_victim.take_damage()
@@ -6544,6 +6574,32 @@ func _explode_dynamite(thrown: bool, at_pos: Vector2 = Vector2.ZERO) -> void:
         dynamite_fuse_timer_ms = 0
         dynamite_alert_played = false
         dynamite_explode_timer_ms = 0
+
+
+## Rompe i muri INTERNI attorno al punto di esplosione della dinamite:
+## cella dello scoppio + 4 ortogonali (centri entro ~80px). I muri di BORDO
+## restano indistruttibili (stessa regola del martello: niente buchi
+## aggiuntivi sull'orlo Pac-Man del labirinto). Riusa _break_internal_wall
+## (sgretolamento, suono WALL_CRUMBLE, screen shake).
+func _break_walls_around_blast(pos: Vector2) -> void:
+        if maze == null or not is_instance_valid(maze):
+                return
+        var center_cell: Vector2i = Vector2i(
+                        int(pos.x / C.TILE_SIZE),
+                        int((pos.y - C.UI_HEIGHT) / C.TILE_SIZE))
+        # Croce: centro + su/giù/sinistra/destra (le diagonali stanno fuori
+        # dal raggio dei 80px dell'esplosione).
+        for offset in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(-1, 0),
+                        Vector2i(0, 1), Vector2i(0, -1)]:
+                var cell: Vector2i = center_cell + offset
+                if cell.x <= 0 or cell.x >= C.MAZE_COLS - 1:
+                        continue  # muro di bordo: indistruttibile
+                if cell.y <= 0 or cell.y >= C.MAZE_ROWS - 1:
+                        continue  # muro di bordo: indistruttibile
+                if maze.is_wall(cell.x, cell.y):
+                        _break_internal_wall(cell, pos)
+                        print("[Dynamite] Muro interno spezzato alla cella (",
+                                        cell.x, ",", cell.y, ")")
 
 
 # ============================================================================
@@ -7170,6 +7226,9 @@ func _update_hud() -> void:
                 # FIX (stamina salti): barra verde sotto quella della vita.
                 "stamina": player.get_stamina_ratio(),
                 "stamina_exhausted": player.is_stamina_exhausted(),
+                # Salti acquistabili con la stamina corrente (colore HUD).
+                "stamina_jumps_left": player.get_stamina_jumps_left(),
+                "stamina_jumps_max": player.get_max_consecutive_jumps(),
                 # TASK 99 (LEVEL UP): livello e punti da spendere in HUD.
                 "level": player.level,
                 "skill_points": player.skill_points,
@@ -7193,6 +7252,8 @@ func _update_hud() -> void:
                         # FIX (stamina salti): barra verde sotto quella della vita (P2).
                         "stamina": player2.get_stamina_ratio(),
                         "stamina_exhausted": player2.is_stamina_exhausted(),
+                        "stamina_jumps_left": player2.get_stamina_jumps_left(),
+                        "stamina_jumps_max": player2.get_max_consecutive_jumps(),
                         # TASK 99 (LEVEL UP): livello e punti da spendere (P2).
                         "level": player2.level,
                         "skill_points": player2.skill_points,
@@ -7221,11 +7282,11 @@ func _update_hud() -> void:
 func on_continue_used() -> void:
         # Player used a continue credit: reset positions, keep score
         player.reset_position()
-        player.lives = 3
+        player.lives = C.STARTING_LIVES
         player.energy = player.max_energy
         if GameManager and GameManager.num_players == 2:
                 player2.reset_position()
-                player2.lives = 3
+                player2.lives = C.STARTING_LIVES
                 player2.energy = player2.max_energy
 
 

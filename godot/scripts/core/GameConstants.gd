@@ -1147,6 +1147,12 @@ const TREASURE_CELL_POINTS: int = 150
 const CHALICE_PICKUP_POINTS: int = 300
 const EXTRA_LIFE_EVERY_POINTS: int = 50000
 
+## TASK (bug utente): "Il player deve partire con 5 vite non 3". Vite con
+## cui un player NASCE (nuova run, NG+, credito continue usato per
+## ripartire). Unica fonte per tutti i reset: Player.reset(), i continue
+## dei due controller e il carry/NG+ del GameManager.
+const STARTING_LIVES: int = 5
+
 # ============================================================================
 # TASK 106 — SALVA PARTITA (slot) + continue a credito unico + demo
 # ============================================================================
@@ -1232,26 +1238,27 @@ static func hidden_heart_spawns_at(level: int) -> bool:
 # TASK 99 (LEVEL UP) — il punteggio È esperienza
 # ============================================================================
 # Curva: soglia cumulata di punteggio per RAGGIUNGERE il livello n
-# (n >= 2) = 1.000 x n^1.75, arrotondata a 50 punti (identica alla
-# tabella del report Task 98, scaricata dall'utente). Esami della curva:
-#   * L2  =   3.350 (entro il primo labirinto)
-#   * L10 =  56.250 (metà run)
-#   * L20 = 189.150 (tetto pratico: sotto il massimo cumulabile ~201k)
-#   * L21 = 206.050 (fuori dalla portata di una run perfetta: il sistema
-#                     si auto-limita dove finisce l'economia del gioco,
-#                     senza cap artificiali)
+# (n >= 2) = 350 x n^1.75, arrotondata a 50 punti (ricalibrata: era
+# 1000 x n^1.75 con cap 20 — vedi TASK salti aggiuntivi qui sotto).
+#   * L2  =   1.200 (entro il primo labirinto)
+#   * L10 =  19.700 (primi ~10 livelli di gioco)
+#   * L20 =  66.200 (circa metà run: la vecchia L20 era a fine run)
+#   * L40 = 222.700 (fine run perfetta: qui matura il 2° Salto Aggiuntivo
+#                    per chi ha investito TUTTO in Resistenza)
+#   * L45 = 273.650 (tetto pratico: raggiungibile tra NG+ e NG++, dove i
+#                    nemici hanno più HP e fruttano più punti)
 # Ogni soglia superata = +1 punto abilità BANCABILE (se alla modale non
 # si sceglie nulla e si preme OK, il punto resta e si somma al prossimo
 # level up). Il livello si azzera a nuova partita e sopravvive alle
 # continue (insieme al punteggio), come le reliquie.
-const LEVELUP_MAX_LEVEL: int = 20
-const LEVELUP_THRESHOLD_BASE: float = 1000.0
+const LEVELUP_MAX_LEVEL: int = 45
+const LEVELUP_THRESHOLD_BASE: float = 350.0
 const LEVELUP_THRESHOLD_EXP: float = 1.75
 const LEVELUP_THRESHOLD_STEP: float = 50.0
 
 
 ## Soglia cumulata di punteggio per raggiungere il livello `level`
-## (2..21). Ritorna 0 per level <= 1 (si nasce a livello 1).
+## (2..46). Ritorna 0 per level <= 1 (si nasce a livello 1).
 static func levelup_threshold(level: int) -> int:
         if level <= 1:
                 return 0
@@ -1271,15 +1278,19 @@ static func levelup_level_for_score(score: int) -> int:
 # ============================================================================
 # TASK 99 (LEVEL UP) FASE 2 — LE OTTO ABILITÀ (report Task 98, Tabella 4)
 # ============================================================================
-# 58 livelli spendibili contro i 19 punti della run perfetta: si può
-# completare al massimo un terzo dell'albero, ogni scelta esclude
-# qualcos'altro. Incrementi piccoli e PERMANENTI (irreversibili una volta
-# confermati con OK). I nomi sono bilingue PER DESIGN (la modale mostra
-# "italiano / inglese" insieme, come le card reliquia del report).
+# RICHIESTA UTENTE (bug "troppo facile"): il Salto Aggiuntivo non si può
+# più comprare a raffica con punti avanzati. Requisiti per LIVELLO:
+#   * 1° salto aggiuntivo -> Resistenza 10
+#   * 2° salto aggiuntivo -> Resistenza 40 (cap: tutta la barra investita)
+#   * 3° salto aggiuntivo -> MAI sbloccabile (riga visibile ma DISATTIVATA)
+# Per renderlo raggiungibile la Resistenza sale a cap 40 (stessi TOTALI
+# del vecchio cap 10: +70% barra / -50% attesa) e la curva XP arriva a
+# livello 45: 44 punti totali = 40 Resistenza + 2 salti + 2 residui.
 #
 #   energy     +5%/liv (cap 10) = unità di energia massima extra
-#   stamina    +7% max / -5% attesa per liv (cap 10)
-#   jump       +1 salto a mezz'aria (cap 2), RICHIEDE stamina 4
+#   stamina    +1.75% max / -1.25% attesa per liv (cap 40, stessi totali)
+#   jump       +1 salto a mezz'aria (cap 3: 1° a Resistenza 10, 2° a 40,
+#              3° NON sbloccabile — opzione disattivata)
 #   firepower  +5% danno per colpo (cap 10)
 #   magazine   +1 colpo per caricatore (cap 8)
 #   swiftness  +4% velocità di movimento (cap 8)
@@ -1289,7 +1300,15 @@ const SKILL_IDS: PackedStringArray = [
         "energy", "stamina", "jump", "firepower",
         "magazine", "swiftness", "luck", "regen",
 ]
-const SKILL_JUMP_REQUIRES_STAMINA: int = 4
+## Resistenza richiesta per comprare l'N-esimo Salto Aggiuntivo
+## (chiave = livello di salto che si sta ACQUISTANDO, 1..3).
+## -1 = MAI acquistabile (3° salto: opzione disattivata su richiesta
+## utente, "non sarà possibile sbloccare il terzo").
+const SKILL_JUMP_REQ_STAMINA_BY_LEVEL: Dictionary = {
+        1: 10,
+        2: 40,
+        3: -1,
+}
 const SKILL_REGEN_STEP_MS: float = 5000.0
 
 const SKILL_DEFS: Dictionary = {
@@ -1303,14 +1322,14 @@ const SKILL_DEFS: Dictionary = {
                 "name_it": "Resistenza", "name_en": "Stamina",
                 "desc_it": "Stamina massima maggiore e ricarica più rapida",
                 "desc_en": "Bigger stamina pool and faster recharge",
-                "per": "+7% max, -5% attesa", "cap": 10,
+                "per": "+1.75% max, -1.25% attesa", "cap": 40,
                 "color": Color(0.30, 0.85, 0.40),
         },
         "jump": {
                 "name_it": "Salto Aggiuntivo", "name_en": "Extra Jump",
-                "desc_it": "Un salto in più a mezz'aria (richiede Resistenza 4)",
-                "desc_en": "One more mid-air jump (requires Stamina 4)",
-                "per": "+1 salto", "cap": 2, "color": Color(0.40, 0.85, 0.95),
+                "desc_it": "Più salti a mezz'aria: 1° a Resistenza 10, 2° a 40, il 3° è bloccato",
+                "desc_en": "More mid-air jumps: 1st at Stamina 10, 2nd at 40, 3rd locked",
+                "per": "+1 salto", "cap": 3, "color": Color(0.40, 0.85, 0.95),
         },
         "firepower": {
                 "name_it": "Potenza di Fuoco", "name_en": "Firepower",
@@ -1352,9 +1371,11 @@ static func get_skill_def(skill_id: String) -> Dictionary:
 
 ## True se l'abilità `skill_id` può essere alzata di un livello partendo da
 ## `current_levels` (dict id->livello attuale VISUAL, confermato + alloc):
-## cap rispettato e requisito di sblocco soddisfatto (il Salto Aggiuntivo
-## si sblocca a Resistenza 4: il requisito valuta il livello VISUALE, così
-## nella stessa sessione si può comprare Resistenza fino a 4 e poi il salto).
+## cap rispettato e requisito di sblocco soddisfatto. Il Salto Aggiuntivo
+## ha un requisito PER LIVELLO (SKILL_JUMP_REQ_STAMINA_BY_LEVEL): il 1° a
+## Resistenza 10, il 2° a Resistenza 40 (cap), il 3° MAI (opzione
+## disattivata). Il requisito valuta il livello VISUALE, così nella stessa
+## sessione si può comprare Resistenza fino alla soglia e poi il salto.
 static func skill_upgrade_allowed(skill_id: String,
                 current_levels: Dictionary) -> bool:
         var def: Dictionary = SKILL_DEFS.get(skill_id, {})
@@ -1364,10 +1385,17 @@ static func skill_upgrade_allowed(skill_id: String,
         if lvl >= int(def.get("cap", 0)):
                 return false
         if skill_id == "jump":
-                var stamina_lvl: int = int(current_levels.get("stamina", 0))
-                if stamina_lvl < SKILL_JUMP_REQUIRES_STAMINA:
-                        return false
+                return skill_jump_required_stamina(lvl + 1) >= 0 \
+                                and int(current_levels.get("stamina", 0)) \
+                                                >= skill_jump_required_stamina(lvl + 1)
         return true
+
+
+## Resistenza richiesta per acquistare il livello `jump_level` del Salto
+## Aggiuntivo (1 = primo salto, 2 = secondo, 3 = terzo). -1 = livello
+## MAI acquistabile (il terzo salto, su richiesta utente).
+static func skill_jump_required_stamina(jump_level: int) -> int:
+        return int(SKILL_JUMP_REQ_STAMINA_BY_LEVEL.get(jump_level, -1))
 
 ## Distanza minima (Chebyshev, in celle) dallo spawn del player (1,1).
 const HAZARD_MIN_SPAWN_DIST: int = 3

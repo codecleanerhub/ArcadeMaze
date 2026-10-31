@@ -90,40 +90,40 @@ func _read(path: String) -> String:
 # --- A: soglie note della curva ---
 func _test_thresholds() -> void:
         var known: Array = [
-                [2, 3350], [3, 6850], [4, 11300], [5, 16700],
-                [10, 56250], [15, 114350], [20, 189150],
+                [2, 1200], [3, 2400], [4, 3950], [5, 5850],
+                [10, 19700], [15, 40000], [20, 66200], [40, 222700],
         ]
         for kv in known:
                 var got: int = C.levelup_threshold(int(kv[0]))
                 if got != int(kv[1]):
                         _fail("A: soglia L%d = %d, attesa %d" % [kv[0], got, kv[1]])
                         return
-        _ok("A1: soglie note identiche al report Task 98 (L2=3350...L20=189150)")
+        _ok("A1: soglie note della curva ricalibrata (L2=1200...L40=222700)")
         if C.levelup_threshold(1) != 0:
                 _fail("A: soglia L1 deve essere 0 (si nasce a livello 1)")
         else:
                 _ok("A2: levelup_threshold(1) = 0")
         var prev: int = 0
-        for n in range(2, 22):
+        for n in range(2, 47):
                 var t: int = C.levelup_threshold(n)
                 if t <= prev:
                         _fail("A: curva non monotona alla L%d" % n)
                         return
                 prev = t
-        _ok("A3: curva monotona crescente L2..L21")
-        if C.LEVELUP_MAX_LEVEL != 20:
-                _fail("A: LEVELUP_MAX_LEVEL = %d, atteso 20" % C.LEVELUP_MAX_LEVEL)
+        _ok("A3: curva monotona crescente L2..L46")
+        if C.LEVELUP_MAX_LEVEL != 45:
+                _fail("A: LEVELUP_MAX_LEVEL = %d, atteso 45" % C.LEVELUP_MAX_LEVEL)
         else:
-                _ok("A4: cap livello 20 (L21 fuori economia: %d > ~201k)"
-                                % C.levelup_threshold(21))
+                _ok("A4: cap livello 45 (TASK salti: 44 punti = Resistenza 40 + 2 salti + 2 residui; L45=%d)"
+                                % C.levelup_threshold(45))
 
 
 # --- B: livello per punteggio ---
 func _test_level_for_score() -> void:
         var cases: Array = [
-                [0, 1], [3349, 1], [3350, 2], [6849, 2], [6850, 3],
-                [56250, 10], [189149, 19], [189150, 20],
-                [200000, 20], [999999, 20],
+                [0, 1], [1199, 1], [1200, 2], [2399, 2], [2400, 3],
+                [19700, 10], [66199, 19], [66200, 20], [222700, 40],
+                [273650, 45], [999999, 45],
         ]
         for kv in cases:
                 var got: int = C.levelup_level_for_score(int(kv[0]))
@@ -137,18 +137,18 @@ func _test_level_for_score() -> void:
 func _test_add_score() -> void:
         var p := PlayerClass.new()
         p.score = 0
-        p.add_score(3349)
+        p.add_score(1199)
         if p.level != 1 or p.skill_points != 0 or p.pending_levelup_fx != 0:
-                _fail("C: 3.349 punti NON devono dare level up (L%d, pt %d, pend %d)"
+                _fail("C: 1.199 punti NON devono dare level up (L%d, pt %d, pend %d)"
                                 % [p.level, p.skill_points, p.pending_levelup_fx])
                 return
         p.add_score(1)
         if p.level != 2 or p.skill_points != 1 or p.pending_levelup_fx != 1:
-                _fail("C: 3.350 punti -> L%d pt %d pend %d (attesi 2/1/1)"
+                _fail("C: 1.200 punti -> L%d pt %d pend %d (attesi 2/1/1)"
                                 % [p.level, p.skill_points, p.pending_levelup_fx])
                 return
-        _ok("C1: soglia esatta: 3.349 = niente, +1 = L2 con 1 punto bancabile")
-        p.add_score(3500)  # 6850 totale -> L3 (il pending di L2 era ancora in coda)
+        _ok("C1: soglia esatta: 1.199 = niente, +1 = L2 con 1 punto bancabile")
+        p.add_score(1200)  # 2400 totale -> L3 (il pending di L2 era ancora in coda)
         var gained: int = p.consume_pending_levelup_fx()
         if p.level != 3 or gained != 2 or p.pending_levelup_fx != 0:
                 _fail("C: passo L3: gained %d, pend residuo %d" % [gained, p.pending_levelup_fx])
@@ -157,7 +157,7 @@ func _test_add_score() -> void:
         # salto di più soglie in un colpo (premio boss)
         var p2 := PlayerClass.new()
         p2.score = 0
-        p2.add_score(11300)  # -> L4 in un colpo
+        p2.add_score(3950)  # -> L4 in un colpo
         if p2.level != 4 or p2.skill_points != 3 or p2.pending_levelup_fx != 3:
                 _fail("C: salto 3 soglie -> L%d pt %d pend %d (attesi 4/3/3)"
                                 % [p2.level, p2.skill_points, p2.pending_levelup_fx])
@@ -166,12 +166,12 @@ func _test_add_score() -> void:
         # cap
         var p3 := PlayerClass.new()
         p3.score = 0
-        p3.add_score(400000)
-        if p3.level != 20 or p3.skill_points != 19:
-                _fail("C: cap oltre 200k -> L%d pt %d (attesi 20/19)"
+        p3.add_score(4000000)
+        if p3.level != 45 or p3.skill_points != 44:
+                _fail("C: cap oltre ogni economia -> L%d pt %d (attesi 45/44)"
                                 % [p3.level, p3.skill_points])
                 return
-        _ok("C4: cap livello 20 anche con score assurdo")
+        _ok("C4: cap livello 45 anche con score assurdo (44 punti)")
         p.queue_free()
         p2.queue_free()
         p3.queue_free()
@@ -324,7 +324,7 @@ func _test_skill_defs() -> void:
                 _fail("I: SKILL_IDS = %d (attese 8)" % C.SKILL_IDS.size())
                 return
         var expect_caps := {
-                "energy": 10, "stamina": 10, "jump": 2, "firepower": 10,
+                "energy": 10, "stamina": 40, "jump": 3, "firepower": 10,
                 "magazine": 8, "swiftness": 8, "luck": 6, "regen": 4,
         }
         for id in C.SKILL_IDS:
@@ -337,15 +337,25 @@ func _test_skill_defs() -> void:
                                         % [id, def.get("cap"), expect_caps[id]])
                         return
         _ok("I1: 8 abilità bilingue con cap corretti (totale %d livelli)"
-                        % [10 + 10 + 2 + 10 + 8 + 8 + 6 + 4])
-        # requisito salto
-        if C.skill_upgrade_allowed("jump", {"stamina": 3, "jump": 0}):
-                _fail("I: salto acquistabile con Resistenza 3")
+                        % [10 + 40 + 3 + 10 + 8 + 8 + 6 + 4])
+        # requisito salto PER LIVELLO (TASK: 1° a Resistenza 10, 2° a 40,
+        # 3° MAI acquistabile — opzione disattivata)
+        if C.skill_upgrade_allowed("jump", {"stamina": 9, "jump": 0}):
+                _fail("I: 1° salto acquistabile con Resistenza 9 (serve 10)")
                 return
-        if not C.skill_upgrade_allowed("jump", {"stamina": 4, "jump": 0}):
-                _fail("I: salto NON acquistabile con Resistenza 4")
+        if not C.skill_upgrade_allowed("jump", {"stamina": 10, "jump": 0}):
+                _fail("I: 1° salto NON acquistabile con Resistenza 10")
                 return
-        _ok("I2: Salto sbloccato solo a Resistenza 4 (domanda aperta n.4)")
+        if C.skill_upgrade_allowed("jump", {"stamina": 39, "jump": 1}):
+                _fail("I: 2° salto acquistabile con Resistenza 39 (serve 40)")
+                return
+        if not C.skill_upgrade_allowed("jump", {"stamina": 40, "jump": 1}):
+                _fail("I: 2° salto NON acquistabile con Resistenza 40")
+                return
+        if C.skill_upgrade_allowed("jump", {"stamina": 40, "jump": 2}):
+                _fail("I: 3° salto acquistabile (deve restare MAI sbloccabile)")
+                return
+        _ok("I2: Salti Aggiuntivi: 1° a Resistenza 10, 2° a 40, 3° MAI (disattivato)")
         if C.skill_upgrade_allowed("energy", {"energy": 10}):
                 _fail("I: energy supera il cap")
                 return
@@ -366,12 +376,18 @@ func _test_skill_effects() -> void:
                 _fail("J: energy 10 -> max %d (atteso 8 = 5+3)" % p.max_energy)
                 return
         _ok("J1: Energia: +1 al primo acquisto, cap +3 unità (5->8)")
-        p.confirm_skills({"stamina": 4})
+        p.confirm_skills({"stamina": 16})
         if absf(p.get_stamina_max() - 1.28) > 0.001 \
                         or absf(p.get_stamina_recharge_mult() - 1.2) > 0.001:
-                _fail("J: stamina 4 -> max %.3f ricarica %.3f" % [p.get_stamina_max(), p.get_stamina_recharge_mult()])
+                _fail("J: stamina 16 -> max %.3f ricarica %.3f" % [p.get_stamina_max(), p.get_stamina_recharge_mult()])
                 return
-        _ok("J2: Resistenza 4: barra 1.28x e ricarica 1.2x")
+        # cap 40 = stessi TOTALI del vecchio cap 10: +70% barra / +50% ricarica
+        p.confirm_skills({"stamina": 40})
+        if absf(p.get_stamina_max() - 1.7) > 0.001 \
+                        or absf(p.get_stamina_recharge_mult() - 1.5) > 0.001:
+                _fail("J: stamina 40 (cap) -> max %.3f ricarica %.3f" % [p.get_stamina_max(), p.get_stamina_recharge_mult()])
+                return
+        _ok("J2: Resistenza 16: barra 1.28x ricarica 1.2x; cap 40: 1.7x/1.5x (totali invariati)")
         p.confirm_skills({"swiftness": 8})
         if absf(p.get_speed_mult() - 1.32) > 0.001:
                 _fail("J: swiftness 8 -> %.3f" % p.get_speed_mult())
@@ -400,7 +416,7 @@ func _test_skill_effects() -> void:
         p.queue_free()
 
 
-# --- K: salto aggiuntivo a mezz'aria ---
+# --- K: catene di salti (doppio salto BASE + Salti Aggiuntivi) ---
 func _test_air_jump() -> void:
         var p := PlayerClass.new()
         p.stamina = 1.0
@@ -408,26 +424,58 @@ func _test_air_jump() -> void:
         if p.activate_jump() != true:
                 _fail("K: primo salto da terra non parte")
                 return
-        # in aria SENZA perk: nessun secondo salto
+        # TASK (fix bug utente): il DOPPIO SALTO è BASE (2 salti consecutivi,
+        # TASK 23): senza perk si salta una volta a mezz'aria, poi stop.
+        if p.activate_jump() != true:
+                _fail("K: doppio salto base non disponibile (regressione!)")
+                return
         if p.activate_jump() != false:
-                _fail("K: doppio salto senza perk (regressione!)")
+                _fail("K: terzo salto concesso senza perk (quota base 1)")
                 return
         p.jump_timer = 0
-        p.confirm_skills({"stamina": 4, "jump": 1})
-        p.stamina = p.get_stamina_max()
         p.stamina_exhausted = false
+        # 1° Salto Aggiuntivo (Resistenza 10): catena di 3 salti TOTALI.
+        p.confirm_skills({"stamina": 10, "jump": 1})
+        p.stamina = p.get_stamina_max()
         if p.activate_jump() != true:
-                _fail("K: salto da terra con perk non parte")
+                _fail("K: salto da terra con 1° perk non parte")
                 return
-        # in aria CON perk jump 1 (e barra 1.28): secondo salto pagato
         if p.activate_jump() != true:
-                _fail("K: salto a mezz'aria non disponibile con perk")
+                _fail("K: 2° salto della catena (perk 1) non disponibile")
                 return
-        # terzo salto: quota air jump esaurita
+        if p.activate_jump() != true:
+                _fail("K: 3° salto della catena (perk 1) non disponibile")
+                return
         if p.activate_jump() != false:
-                _fail("K: terzo salto conceduto oltre la quota perk")
+                _fail("K: 4° salto concesso oltre la quota perk 1 (3 attese)")
                 return
-        _ok("K: Salto Aggiuntivo: 1 salto extra in aria, poi stop (quota 1)")
+        if not p.stamina_exhausted:
+                _fail("K: barra non svuotata dopo la catena completa (perk 1)")
+                return
+        p.jump_timer = 0
+        p.stamina_exhausted = false
+        # FIX BUG UTENTE ("saltava una sola volta invece che quattro volte"):
+        # col 2° Salto Aggiuntivo la catena è di 4 salti TOTALI e il costo
+        # stamina scala (barra_max / salti_massimi): la barra basta per TUTTA
+        # la catena, non si svuota al primo salto.
+        p.confirm_skills({"stamina": 40, "jump": 2})
+        p.stamina = p.get_stamina_max()
+        if p.get_max_consecutive_jumps() != 4:
+                _fail("K: 2° Salto Aggiuntivo -> %d salti massimi (attesi 4)"
+                                % p.get_max_consecutive_jumps())
+                return
+        var chain: int = 0
+        while p.activate_jump():
+                chain += 1
+                if chain > 6:
+                        break
+        if chain != 4:
+                _fail("K: catena con 2° perk = %d salti (attesi 4)" % chain)
+                return
+        if not p.stamina_exhausted:
+                _fail("K: dopo 4 salti la barra deve essere svuotata (stanco)")
+                return
+        _ok("K: base 2 salti; perk 1 = 3; perk 2 = 4 salti (costo stamina scalato)")
         p.queue_free()
 
 
@@ -465,7 +513,7 @@ func _test_damage_mult() -> void:
 # --- N: ratio stamina con barra estesa ---
 func _test_stamina_ratio() -> void:
         var p := PlayerClass.new()
-        p.confirm_skills({"stamina": 4})
+        p.confirm_skills({"stamina": 16})
         p.stamina = 1.0
         if absf(p.get_stamina_ratio() - 1.0 / 1.28) > 0.001:
                 _fail("N: ratio a barra 1.0/1.28 = %.3f" % p.get_stamina_ratio())
@@ -502,7 +550,7 @@ func _test_modal() -> void:
         if modal._bank != 1 or int(modal._alloc.get("stamina", 0)) != 1:
                 _fail("O: alloc stamina -> banco %d alloc %d" % [modal._bank, modal._alloc.get("stamina", 0)])
                 return
-        # riga 2 = Salto: bloccato (Resistenza visual 1 < 4)
+        # riga 2 = Salto: bloccato (Resistenza visual 1 < 10)
         modal._row = 2
         modal._try_alloc(1)
         if int(modal._alloc.get("jump", 0)) != 0:
@@ -540,16 +588,16 @@ func _test_modal() -> void:
 func _test_carry_skills() -> void:
         var p := PlayerClass.new()
         p.skill_points = 1
-        p.confirm_skills({"stamina": 5, "firepower": 2})
+        p.confirm_skills({"stamina": 20, "firepower": 2})
         var snap: Dictionary = GameManager.make_player_carry(p)
         var carried: Dictionary = snap.get("skill_levels", {})
-        if int(carried.get("stamina", -1)) != 5 or int(carried.get("firepower", -1)) != 2:
+        if int(carried.get("stamina", -1)) != 20 or int(carried.get("firepower", -1)) != 2:
                 _fail("P: carry skill_levels %s" % [carried])
                 return
         var p2 := PlayerClass.new()
         p2.reset()
         GameManager._apply_carry(p2, snap)
-        if p2.get_skill_level("stamina") != 5 or p2.get_skill_level("firepower") != 2:
+        if p2.get_skill_level("stamina") != 20 or p2.get_skill_level("firepower") != 2:
                 _fail("P: _apply_carry non ripristina (stam %d fire %d)"
                                 % [p2.get_skill_level("stamina"), p2.get_skill_level("firepower")])
                 return

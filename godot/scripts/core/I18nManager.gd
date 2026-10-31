@@ -156,8 +156,11 @@ const TEXTS: Dictionary = {
                 "en": "Not spending is fine: unspent points stay banked for the next level up",
                 "it": "Puoi anche non spendere: i punti non spesi restano bancati per il prossimo level up",
         },
-        "levelup.locked": {"en": "REQUIRES STAMINA 4", "it": "RICHIEDE RESISTENZA 4"},
+        "levelup.locked": {"en": "REQUIRES STAMINA %d", "it": "RICHIEDE RESISTENZA %d"},
         "levelup.max": {"en": "MAX", "it": "MAX"},
+        ## 3° Salto Aggiuntivo: opzione visibile ma mai acquistabile
+        ## (richiesta utente: "si vedrà disattivata l'opzione").
+        "levelup.never": {"en": "NOT UNLOCKABLE", "it": "NON SBLOCCABILE"},
         # ---------------- TASK 105: New Game Plus (card post-credits) --------
         "ngp.title": {"en": "NEW GAME PLUS", "it": "NEW GAME PLUS"},
         "ngp.title2": {"en": "NEW GAME PLUS PLUS", "it": "NEW GAME PLUS PLUS"},

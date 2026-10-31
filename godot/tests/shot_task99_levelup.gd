@@ -2,6 +2,7 @@
 ## (annuncio fulmine + scritta, e la modale delle abilità con assegnazioni).
 extends Node
 
+const C = preload("res://scripts/core/GameConstants.gd")
 const MainGameScene = preload("res://scenes/MainGame.tscn")
 
 var main: Node2D = null
@@ -23,8 +24,8 @@ func _process(delta: float) -> void:
 	match stage:
 		0:
 			if main != null and main.is_node_ready() and t > 1.2:
-				# soglia L2: 3.350 punti -> level up con 1 punto
-				main.player.add_score(3350)
+				# soglia L2 (curva attuale) -> level up con 1 punto
+				main.player.add_score(C.levelup_threshold(2))
 				print("[SHOT] punti assegnati: level ",
 						main.player.level,
 						" pending ", main.player.pending_levelup_fx)

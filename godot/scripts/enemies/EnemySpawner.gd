@@ -101,6 +101,16 @@ var progressive_respawn: bool = false
 ## Nemici ancora da far uscire dal portale (respawn progressivo).
 var respawn_budget: int = 0
 
+## TASK (bug utente "il mid-boss non esce dal portale"): callable del
+## mini-boss (MainGameController._spawn_mini_boss) ARMATA al trigger del
+## portale e CONSUMATA quando il portale completa l'apertura, così il
+## mini-boss emerge DALLA CELLA DEL PORTALE (prima spuntava subito in una
+## cella a raggio 4-8, percepita dal player come "appare accanto a me").
+var _mini_boss_spawner_cb: Callable = Callable()
+## True dal trigger del portale finché il mini-boss non è uscito (entra
+## nello snapshot di sessione per il restore dopo un continue).
+var mini_boss_pending: bool = false
+
 ## TASK 23: true se il respawn progressivo ha ancora nemici in sospeso
 ## (il MainGameController lo usa per non far scattare HURRY UP finché il
 ## portale non ha finito di "sfornare").
@@ -255,7 +265,7 @@ var _portal_cell_check: Callable = Callable()
 #
 # Returns true if the portal was opened THIS call.
 # ===========================================================================
-func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
+func trigger_portal_if_needed(maze: Object, _player_pos: Vector2,
                                                           mini_boss_spawner: Callable = Callable(),
                                                           is_cell_free: Callable = Callable()) -> bool:
         if portal_used or initial_count <= 0:
@@ -341,79 +351,18 @@ func trigger_portal_if_needed(maze: Object, player_pos: Vector2,
 
         portal_used = true
 
-        # --- Spawn the mini-boss next to the portal ---
-        # Game.cpp line 2013-2093: search a free cell at radius 1..4 from the
-        # portal; if none, fall back to the cell FARTHEST from the player.
+        # --- Mini-boss: ESCE DAL PORTALE (richiesta utente) ---
+        # Prima veniva spawnato SUBITO in una cella a raggio 4-8 dal portale
+        # (_find_mini_boss_cell, rimossa): il mini-boss "appariva accanto al
+        # player" e non dal portale. Ora la callable viene solo ARMATA qui;
+        # il mini-boss emerge dalla CELLA DEL PORTALE quando l'apertura è
+        # completata (update_portal, fase 0 -> 1), come i fantasmi di
+        # Hurry Up. Poi il ciclo prosegue col respawn dei nemici.
         if mini_boss_spawner.is_valid():
-                var mb_pos := _find_mini_boss_cell(maze, magic_portal.pos, player_pos)
-                if mb_pos.x >= 0:
-                        mini_boss_spawner.call(mb_pos.x, mb_pos.y)
-                        # FIX (portale scompare subito): prima il portale veniva
-                        # forzato a fase 2 (closing) con timer 200ms quando
-                        # spawnava il mini-boss → il portale scompariva in 200ms
-                        # e non respawnava i nemici. Ora il portale resta aperto
-                        # per il ciclo completo (open 1s + spawn N×4s + close
-                        # 2.8s) e respawn i nemici come previsto.
-                        # Il "pallino accanto al miniboss" visivo era causato dal
-                        # portale che restava fisso mentre il miniboss si
-                        # muoveva — ora il portale chiude naturalmente dopo
-                        # aver spawnato i nemici.
+                _mini_boss_spawner_cb = mini_boss_spawner
+                mini_boss_pending = true
 
         return true
-
-
-# _find_mini_boss_cell(maze, portal_pos, player_pos): locate an empty cell
-# near the portal (radius 1..4) for the mini-boss to appear. Falls back to
-# the cell farthest from the player (>=6 manhattan distance) if none nearby.
-# Returns Vector2i(col, row) or Vector2i(-1, -1) if nothing suitable exists.
-# Mirrors Game.cpp line 2014-2057.
-func _find_mini_boss_cell(maze: Object, portal_pos: Vector2,
-                                                  player_pos: Vector2) -> Vector2i:
-        var portal_c := int(portal_pos.x / TILE_SIZE)
-        var portal_r := int((portal_pos.y - UI_HEIGHT) / TILE_SIZE)
-        # FIX (pallino procedurale accanto al miniboss, 2° tentativo): spawn
-        # radius aumentato da 1-4 a 4-8 (256-512px dal centro portal). Così
-        # il miniboss appare sufficientemente lontano dal nucleo del portal
-        # da non essere percepito come "pallino accanto al miniboss". Anche
-        # se il disco lavanda del portal rimane visibile, la distanza fa sì
-        # che venga percepito come portale separato e non come pallino attaccato.
-        for radius in range(4, 9):
-                for dc in range(-radius, radius + 1):
-                        for dr in range(-radius, radius + 1):
-                                var nc: int = portal_c + dc
-                                var nr: int = portal_r + dr
-                                if nc <= 0 or nc >= MAZE_COLS - 1:
-                                        continue
-                                if nr <= 0 or nr >= MAZE_ROWS - 1:
-                                        continue
-                                if maze.is_wall(nc, nr):
-                                        continue
-                                if maze.get_cell_type(nc, nr) != CELL_EMPTY:
-                                        continue
-                                # FIX (sprite uno sopra l'altro): il mini-boss
-                                # non spunta sopra un collectible.
-                                if _portal_cell_check.is_valid() \
-                                                and not _portal_cell_check.call(nc, nr):
-                                        continue
-                                if nc == portal_c and nr == portal_r:
-                                        continue  # don't sit on top of the portal
-                                return Vector2i(nc, nr)
-
-        # Fallback: farthest empty cell from the player (>=6 manhattan dist).
-        var pc := int(player_pos.x / TILE_SIZE)
-        var pr := int((player_pos.y - UI_HEIGHT) / TILE_SIZE)
-        var fallback_best_dist: int = -1
-        var fb_c: int = -1
-        var fb_r: int = -1
-        for c in range(1, MAZE_COLS - 1):
-                for r in range(1, MAZE_ROWS - 1):
-                        if maze.get_cell_type(c, r) == CELL_EMPTY and not maze.is_wall(c, r):
-                                var dist: int = abs(c - pc) + abs(r - pr)
-                                if dist >= 6 and dist > fallback_best_dist:
-                                        fallback_best_dist = dist
-                                        fb_c = c
-                                        fb_r = r
-        return Vector2i(fb_c, fb_r)
 
 
 # ===========================================================================
@@ -468,6 +417,26 @@ func _reopen_progressive_portal(_maze: Object) -> void:
         magic_portal.dead_indices.clear()
 
 
+## Mini-boss dal portale: chiama la callable ARMATA dal trigger sulla cella
+## del portale (una volta sola). Idempotente: dopo il primo uso la callable
+## è consumata e il flag si spegne (mini-boss uscito o ciclo saltito).
+func _emit_mini_boss_from_portal() -> void:
+        if mini_boss_pending and _mini_boss_spawner_cb.is_valid():
+                var pc := int(magic_portal.pos.x / TILE_SIZE)
+                var pr := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
+                _mini_boss_spawner_cb.call(pc, pr)
+        mini_boss_pending = false
+        _mini_boss_spawner_cb = Callable()
+
+
+## TASK (restore sessione): riarma la callable del mini-boss dopo un
+## continue/restore, quando lo snapshot dice che il portale era ancora in
+## APERTURA e il mini-boss non era ancora uscito.
+func arm_mini_boss_from_portal(cb: Callable) -> void:
+        if mini_boss_pending:
+                _mini_boss_spawner_cb = cb
+
+
 # ===========================================================================
 # update_portal(maze, dt_ms): tick the portal state machine.
 # dt_ms is simulated ms (call with 16 each _physics_process frame).
@@ -496,6 +465,10 @@ func update_portal(maze: Object, dt_ms: int) -> bool:
                         # Opening complete -> start spawning.
                         magic_portal.phase = 1
                         magic_portal.spawn_timer = PORTAL_FIRST_SPAWN_MS
+                        # Mini-boss: emerge dalla CELLA del portale appena
+                        # l'apertura è completata, PRIMA del primo nemico
+                        # (richiesta utente: "deve uscire dal portale").
+                        _emit_mini_boss_from_portal()
                         _spawn_enemy_from_portal(maze)
                 elif magic_portal.phase == 2:
                         # Closing complete -> deactivate.
@@ -551,8 +524,12 @@ func _spawn_new_portal_enemy(maze: Object) -> void:
         var new_type: int = randi() % pool_size
         var pc_new := int(magic_portal.pos.x / TILE_SIZE)
         var pr_new := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
-        # Cerca cella vuota vicino al portale
-        for radius in range(1, PORTAL_PLACE_MAX_RADIUS + 1):
+        # TASK (bug utente): i nemici respawnati ESCONO DAL PORTALE — la
+        # ricerca parte dalla CELLA DEL PORTALE (raggio 0) e poi sale di
+        # anello SOLO se quella cella è occupata (prima partiva da raggio
+        # 1-5: i nemici spuntavano in punti del labirinto lontani dal
+        # portale, non "dal portale").
+        for radius in range(0, PORTAL_PLACE_MAX_RADIUS + 1):
                 for dc in range(-radius, radius + 1):
                         for dr in range(-radius, radius + 1):
                                 var nc: int = pc_new + dc
@@ -621,9 +598,12 @@ func _spawn_enemy_from_portal(maze: Object) -> void:
         var pc := int(magic_portal.pos.x / TILE_SIZE)
         var pr := int((magic_portal.pos.y - UI_HEIGHT) / TILE_SIZE)
 
-        # Expanding-ring search for an empty cell near the portal.
+        # TASK (bug utente): il nemico respawnato ESCE DAL PORTALE — la
+        # ricerca parte dalla CELLA DEL PORTALE (raggio 0) e sale di anello
+        # solo se quella cella è occupata (collectible/nemico vivo).
+        # Expanding-ring search for an empty cell at/next to the portal.
         var placed: bool = false
-        for radius in range(1, PORTAL_PLACE_MAX_RADIUS + 1):
+        for radius in range(0, PORTAL_PLACE_MAX_RADIUS + 1):
                 if placed:
                         break
                 for dc in range(-radius, radius + 1):

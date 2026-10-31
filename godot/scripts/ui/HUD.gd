@@ -88,13 +88,16 @@ var _heart_burst_p2: bool = false
 # --- HUD state (set externally before _draw) ------------------------------
 # 1P snapshot
 var _p1: Dictionary = {
-        "score": 0, "lives": 3, "energy": 5.0, "max_energy": 5.0,
+        "score": 0, "lives": C.STARTING_LIVES, "energy": 5.0, "max_energy": 5.0,
         # TASK 79b: default localizzato (PISTOL/PISTOLA) invece di "PISTOL"
         # fisso: copre il frame iniziale prima del primo set_player_state.
         "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL), "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
-        # FIX (stamina salti): barra sotto quella della vita (rosa/arancione/rosso).
+        # FIX (stamina salti): barra sotto quella della vita (verde/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
+        # Salti acquistabili con la stamina corrente (colore della barra:
+        # VERDE = tutta la catena, ARANCIONE = almeno 1, ROSSO = 0).
+        "stamina_jumps_left": 2, "stamina_jumps_max": 2,
         # TASK 99 (LEVEL UP): livello e punti abilità da spendere.
         "level": 1, "skill_points": 0,
         # RELIC (Task 21): stato armatura reliquia (nessuna = stringa vuota).
@@ -103,11 +106,12 @@ var _p1: Dictionary = {
 }
 # 2P snapshot (only used when _num_players == 2)
 var _p2: Dictionary = {
-        "score": 0, "lives": 3, "energy": 5.0, "max_energy": 5.0,
+        "score": 0, "lives": C.STARTING_LIVES, "energy": 5.0, "max_energy": 5.0,
         "weapon_name": C.get_weapon_name(C.WeaponType.PISTOL), "weapon_color": Color(0.784, 0.784, 0.196),
         "weapon_ammo": 15, "weapon_max": 15,
-        # FIX (stamina salti): barra sotto quella della vita, P2 (rosa/arancione/rosso).
+        # FIX (stamina salti): barra sotto quella della vita, P2 (verde/arancione/rosso).
         "stamina": 1.0, "stamina_exhausted": false,
+        "stamina_jumps_left": 2, "stamina_jumps_max": 2,
         # TASK 99 (LEVEL UP): livello e punti abilità (P2).
         "level": 1, "skill_points": 0,
         # RELIC (Task 21): stato armatura reliquia (per P2).
@@ -370,11 +374,14 @@ func _draw_1p() -> void:
         # TASK 96: barra ENERGIA RIMOSSA — lo stato di salute si legge dal
         # cuore corrente che si sgretola (vedi _draw_lives_row). Lo slot
         # x=280 resta alla sola barra STAMINA (libera spazio in alto).
-        # STAMINA (Task 37/96): VERDE piena (2 salti disponibili),
-        # ARANCIONE dopo il 1° salto, ROSSA dopo il 2° (lampeggia finché
-        # la ricarica non è completa).
+        # STAMINA (Task 37/96): VERDE piena (tutti i salti disponibili),
+        # ARANCIONE finché resta almeno 1 salto, ROSSA a zero (lampeggia
+        # finché la ricarica non è completa). Con più Salti Aggiuntivi la
+        # soglia colore segue i salti (non più fissa a metà barra).
         _draw_stamina_bar(280, 52, 100, 10,
-                _p1.stamina, _p1.stamina_exhausted)
+                _p1.stamina, _p1.stamina_exhausted,
+                int(_p1.get("stamina_jumps_left", -1)),
+                int(_p1.get("stamina_jumps_max", 2)))
         # WPN — TASK 26: le armi speciali (reliquie) NON mostrano il nome
         # (sovrapposizione coi cuori); resta l'header WPN + il contatore AMMO.
         _draw_label(I18n.t("hud.wpn"), 420, 10)
@@ -411,7 +418,9 @@ func _draw_2p() -> void:
         # TASK 96: barra ENERGIA RIMOSSA (cuore corrente sgretolabile);
         # STAMINA P1 al suo posto (verde/arancione/rosso).
         _draw_stamina_bar(180, 50, 60, 8,
-                _p1.stamina, _p1.stamina_exhausted)
+                _p1.stamina, _p1.stamina_exhausted,
+                int(_p1.get("stamina_jumps_left", -1)),
+                int(_p1.get("stamina_jumps_max", 2)))
         if not str(_p1.weapon_name).is_empty():
                 _draw_label_colored(_p1.weapon_name, 250, 10, _p1.weapon_color)
         _draw_label_int(_p1.weapon_ammo, 250, 30, color_score)
@@ -436,7 +445,9 @@ func _draw_2p() -> void:
         # TASK 96: barra ENERGIA RIMOSSA (cuore corrente sgretolabile);
         # STAMINA P2 al suo posto (verde/arancione/rosso).
         _draw_stamina_bar(1730, 50, 60, 8,
-                _p2.stamina, _p2.stamina_exhausted)
+                _p2.stamina, _p2.stamina_exhausted,
+                int(_p2.get("stamina_jumps_left", -1)),
+                int(_p2.get("stamina_jumps_max", 2)))
         if not str(_p2.weapon_name).is_empty():
                 _draw_label_colored(_p2.weapon_name, 1800, 10, _p2.weapon_color)
         _draw_label_int(_p2.weapon_ammo, 1800, 30, color_score)
@@ -704,7 +715,9 @@ func _draw_label_int(value: int, x: float, y: float, color: Color) -> void:
 # si è ricaricata completamente: in quel momento torna ROSA e il player può
 # di nuovo saltare.
 func _draw_stamina_bar(x: float, y: float, w: float, h: float,
-                                           ratio: float, exhausted: bool) -> void:
+                                           ratio: float, exhausted: bool,
+                                           jumps_left: int = -1,
+                                           jumps_max: int = 2) -> void:
         # Sfondo scuro + bordo (stesso stile delle altre barre)
         draw_rect(Rect2(x, y, w, h), color_energy_bg, true)
         draw_rect(Rect2(x, y, w, h), color_energy_border, false, 1.5)
@@ -716,8 +729,16 @@ func _draw_stamina_bar(x: float, y: float, w: float, h: float,
                 fill_w = w * 0.12
         if fill_w <= 0.0:
                 return
-        var fill: Color = _stamina_fill_color(r)
-        # Quando il player è esausto (2° salto consecutivo) la barra
+        # Colore per numero di salti DISPONIBILI: con più Salti Aggiuntivi
+        # il costo a salto scende (barra_max / salti_massimi), quindi la
+        # soglia colore segue i SALTI (VERDE = catena completa, ARANCIONE =
+        # almeno uno, ROSSO = zero), non più la metà fissa della barra.
+        var fill: Color
+        if jumps_left >= 0:
+                fill = _stamina_fill_color_jumps(jumps_left, maxi(1, jumps_max))
+        else:
+                fill = _stamina_fill_color(r)
+        # Quando il player è esausto (ultimo salto della catena) la barra
         # LAMPEGGIA in rosso chiaro/scuro finché la ricarica non è completa.
         if exhausted:
                 var blink_on: bool = fmod(Time.get_ticks_msec() / 1000.0, 0.36) < 0.18
@@ -741,6 +762,20 @@ func _stamina_fill_color(ratio: float) -> Color:
         if ratio >= 0.999:
                 return Color(0.22, 0.85, 0.35)   # VERDE (TASK 96, era rosa)
         if ratio >= 0.5:
+                return Color(1.00, 0.55, 0.10)   # ARANCIONE (invariato)
+        return Color(0.92, 0.16, 0.16)           # ROSSO (invariato)
+
+
+## Colore del riempimento per numero di SALTI disponibili (nuova semantica
+## coi Salti Aggiuntivi: il costo a salto è barra_max/salti_massimi, la
+## metà della barra non è più la soglia giusta):
+##   * jumps_left >= jumps_max → VERDE     (catena completa di salti)
+##   * jumps_left >= 1          → ARANCIONE (almeno un salto ancora)
+##   * jumps_left <= 0          → ROSSO     (zero salti)
+func _stamina_fill_color_jumps(jumps_left: int, jumps_max: int) -> Color:
+        if jumps_left >= maxi(1, jumps_max):
+                return Color(0.22, 0.85, 0.35)   # VERDE (TASK 96)
+        if jumps_left >= 1:
                 return Color(1.00, 0.55, 0.10)   # ARANCIONE (invariato)
         return Color(0.92, 0.16, 0.16)           # ROSSO (invariato)
 

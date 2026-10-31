@@ -227,13 +227,14 @@ func _apply_saved_run(slot: int, data: Dictionary) -> void:
         hof_from_win = false
 
 ## TASK 105: progressione Level Up da CONSERVARE nel NG+ (il resto è una
-## run nuova: score/vite/reliquie/armi ripartono da zero — "Ricomincerai
+## run nuova: score/reliquie/armi ripartono da zero — "Ricomincerai
 ## dal primo livello di gioco senza perdere i tuoi upgrade accumulati").
+## TASK (bug utente): le VITE ripartono da C.STARTING_LIVES (5, non 3).
 static func _ngp_kept_progression(snap: Dictionary) -> Dictionary:
         var skills: Dictionary = snap.get("skill_levels", {})
         return {
                         "score": 0,
-                        "lives": 3,
+                        "lives": C.STARTING_LIVES,
                         "next_life_threshold": C.EXTRA_LIFE_EVERY_POINTS,
                         "level": int(snap.get("level", 1)),
                         "skill_points": int(snap.get("skill_points", 0)),
@@ -444,7 +445,7 @@ func restore_player_carry(p1: Node, p2: Node = null) -> bool:
 
 func _apply_carry(p: Node, snap: Dictionary) -> void:
         p.score = int(snap.get("score", 0))
-        p.lives = int(snap.get("lives", 3))
+        p.lives = int(snap.get("lives", C.STARTING_LIVES))
         p.next_life_threshold = int(snap.get("next_life_threshold", 100000))
         p.permanent_speed_boost = bool(snap.get("permanent_speed_boost", false))
         # TASK 99 (LEVEL UP): ripristina la progressione nella scena appena

@@ -127,8 +127,9 @@ func _test_gamemanager_kept_progression() -> void:
                         or (kept.get("skill_levels", {}) as Dictionary).get("firepower", 0) != 4:
                 _fail("B: progressione Level Up non conservata (%s)" % str(kept))
                 return
-        if int(kept.get("score", -1)) != 0 or int(kept.get("lives", -1)) != 3:
-                _fail("B: NG+ deve azzerare score/vite (nuova run)")
+        if int(kept.get("score", -1)) != 0 or int(kept.get("lives", -1)) != C.STARTING_LIVES:
+                _fail("B: NG+ deve azzerare lo score e ripartire da %d vite (nuova run)"
+                                % C.STARTING_LIVES)
                 return
         if kept.has("relic_weapon") or kept.has("relic_armor") \
                         or kept.has("permanent_speed_boost"):
@@ -368,7 +369,7 @@ func _test_maingame_carry_restore() -> void:
         GameManager.newgameplus_tier = 1
         GameManager.newgameplus_carry_pending = true
         GameManager.carry_p1 = {
-                        "score": 0, "lives": 3,
+                        "score": 0, "lives": C.STARTING_LIVES,
                         "next_life_threshold": C.EXTRA_LIFE_EVERY_POINTS,
                         "level": 12, "skill_points": 3, "pending_levelup_fx": 0,
                         "skill_levels": {"firepower": 4, "stamina": 2},
@@ -387,8 +388,9 @@ func _test_maingame_carry_restore() -> void:
                         _fail("G1: punti abilità non conservati (%d)" % p.skill_points)
                 elif int(p.skill_levels.get("firepower", 0)) != 4:
                         _fail("G1: abilità non conservate (%s)" % str(p.skill_levels))
-                elif p.score != 0 or p.lives != 3:
-                        _fail("G1: NG+ deve ripartire da score 0 / 3 vite (%d/%d)" % [p.score, p.lives])
+                elif p.score != 0 or p.lives != C.STARTING_LIVES:
+                        _fail("G1: NG+ deve ripartire da score 0 / %d vite (%d/%d)"
+                                        % [C.STARTING_LIVES, p.score, p.lives])
                 elif GameManager.newgameplus_carry_pending:
                         _fail("G1: flag carry_pending non consumato dal controller")
                 elif GameManager.newgameplus_tier != 1:

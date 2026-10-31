@@ -861,8 +861,9 @@ func _open_continue_overlay(pnum: int, credits: int) -> void:
                         " (crediti suoi: ", credits, ")")
 
 
-# TASK 23: scelta continue del player `pnum` (YES = riprende con 3 vite e
-# invulnerabilità breve, il boss CONSERVA gli HP; NO = eliminato).
+# TASK 23: scelta continue del player `pnum` (YES = riparte con
+# C.STARTING_LIVES vite e invulnerabilità breve, il boss CONSERVA gli HP;
+# NO = eliminato).
 func _on_continue_chosen(pnum: int, yes: bool) -> void:
         _continue_pending_player = 0
         if GameManager:
@@ -874,7 +875,7 @@ func _on_continue_chosen(pnum: int, yes: bool) -> void:
         if yes and p != null and is_instance_valid(p):
                 if GameManager:
                         GameManager.use_continue_for(pnum)
-                p.lives = 3
+                p.lives = C.STARTING_LIVES
                 p.energy = p.max_energy
                 p.reset_position()
                 p.damage_timer = CONTINUE_RESPAWN_INVULN_MS
