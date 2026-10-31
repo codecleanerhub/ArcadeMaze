@@ -5,10 +5,14 @@
 ## che appare DOPO i titoli dei credits, sullo schermo "THANK YOU FOR
 ## PLAYING!", quando la campagna e' finita e resta almeno un tier NG+.
 ##
-## Domanda (testo utente, localizzato):
-##   "Vuoi continuare a giocare (new game plus)? Ricomincerai dal primo
-##    livello di gioco senza perdere i tuoi upgrade accumulati ad una
-##    difficoltà maggiore."
+## Domanda (testo utente, localizzato) — su due livelli:
+##   "Vuoi continuare a giocare (new game plus)?"
+##   "Ricomincerai dal primo livello di gioco senza perdere i tuoi
+##    upgrade accumulati ad una difficoltà maggiore."
+## rev.2 (feedback utente): layout semplificato — niente teschio/emblema
+##   sotto il titolo, niente chip DANNO/RESISTENZA nemici, niente riga
+##   "LIVELLO n CONSERVATO": le percentuali restano meccanica di gioco
+##   (visibile solo negli effetti), il livello conservato non si mostra.
 ## Opzioni:
 ##   * SÌ  -> GameManager.begin_newgameplus() (tier 1 = NG+ / 2 = NG++,
 ##            progressione Level Up conservata, nemici +danno/+resistenza)
@@ -43,7 +47,8 @@ const COL_ACCENT_BY_TIER: Dictionary = {
 }
 
 ## Tier che si sta PROPONENDO (1 = NG+, 2 = NG++) e progressione che
-## verrebbe conservata (per la riga "LIVELLO n CONSERVATO").
+## verrebbe conservata. rev.2: il livello NON è più mostrato in card;
+## resta qui per i test (check G2) e per il restore del carry.
 var _next_tier: int = 1
 var _kept_level: int = 1
 
@@ -158,8 +163,9 @@ func _draw_panel(ci: Control) -> void:
         # velo scuro sui credits
         ci.draw_rect(Rect2(Vector2.ZERO, vp), COL_VEIL, true)
 
-        # card centrata (min tra 780x640 e il 92% della viewport)
-        var card_size := Vector2(minf(780.0, vp.x * 0.92), minf(640.0, vp.y * 0.94))
+        # card centrata (min tra 780x520 e il 92% della viewport) —
+        # rev.2: più bassa, senza emblema/chip/riga livello
+        var card_size := Vector2(minf(780.0, vp.x * 0.92), minf(520.0, vp.y * 0.94))
         var card_pos := (vp - card_size) * 0.5
         var accent: Color = COL_ACCENT_BY_TIER.get(_next_tier, COL_GOLD)
 
@@ -203,42 +209,34 @@ func _draw_panel(ci: Control) -> void:
         ci.draw_circle(Vector2(ul_x - 8, card_pos.y + 92.0), 4.0, COL_GOLD)
         ci.draw_circle(Vector2(ul_x + ul_w + 8, card_pos.y + 92.0), 4.0, COL_GOLD)
 
-        # --- emblema centrale: teschio d'oro su medaglione + spade incrociate ---
-        var emblem_c := card_pos + Vector2(card_size.x * 0.5, 172.0)
-        _draw_emblem(ci, emblem_c, accent)
+        # rev.2: NIENTE emblema/teschio sotto il titolo (feedback utente).
 
-        # --- domanda (testo utente, wrap su più righe, centrato) ---
-        var question: String = I18n.t("ngp.question") if _next_tier == 1 \
+        # --- domanda, riga 1: "Vuoi continuare a giocare...?" in evidenza ---
+        var head: String = I18n.t("ngp.question") if _next_tier == 1 \
                         else I18n.t("ngp.question2")
+        _draw_outlined_string(ci, font, Vector2(card_pos.x, card_pos.y + 128.0),
+                        head, 24, COL_TEXT, card_size.x)
+
+        # --- riga 2: "Ricomincerai dal primo livello..." SOTTO la domanda ---
+        var sub: String = I18n.t("ngp.question_sub") if _next_tier == 1 \
+                        else I18n.t("ngp.question2_sub")
         var text_w := card_size.x - 120.0
-        var lines := _wrap_text(font, question, text_w, 19)
-        var ly := card_pos.y + 236.0
+        var lines := _wrap_text(font, sub, text_w, 19)
+        var ly := card_pos.y + 190.0
         for ln in lines:
                 ci.draw_string(font, Vector2(card_pos.x + 60.0, ly), ln,
                                 HORIZONTAL_ALIGNMENT_CENTER, text_w, 19, COL_TEXT)
                 ly += 26.0
 
-        # --- chip DANNO / RESISTENZA del tier proposto ---
-        var dmg_pct: int = int(round((C.NEWGAMEPLUS_DAMAGE_MULTS[_next_tier] - 1.0) * 100.0))
-        var res_pct: int = int(round((C.NEWGAMEPLUS_RESIST_MULTS[_next_tier] - 1.0) * 100.0))
-        var chip_w := 330.0
-        var chip_y := card_pos.y + 340.0
-        _draw_chip(ci, Rect2(card_pos.x + 40.0, chip_y, chip_w, 32.0),
-                        I18n.t("ngp.chip_damage") % dmg_pct)
-        _draw_chip(ci, Rect2(card_pos.x + card_size.x - 40.0 - chip_w, chip_y,
-                        chip_w, 32.0), I18n.t("ngp.chip_resist") % res_pct)
-
-        # --- riga del livello conservato (l'upgrade che NON si perde) ---
-        _draw_outlined_string(ci, font, Vector2(card_pos.x, card_pos.y + 402.0),
-                        I18n.t("ngp.chip_kept") % _kept_level, 20, accent,
-                        card_size.x)
+        # rev.2: niente chip DANNO/RESISTENZA né riga "LIVELLO n" — le
+        # percentuali del tier restano meccanica di gioco, non mostrate.
 
         # --- opzioni SÌ / NO ---
         var opt_w := 560.0
         var opt_x := card_pos.x + (card_size.x - opt_w) * 0.5
-        _draw_option(ci, Rect2(opt_x, card_pos.y + 436.0, opt_w, 54.0),
+        _draw_option(ci, Rect2(opt_x, card_pos.y + 312.0, opt_w, 54.0),
                         I18n.t("ngp.yes"), "", 0)
-        _draw_option(ci, Rect2(opt_x, card_pos.y + 500.0, opt_w, 54.0),
+        _draw_option(ci, Rect2(opt_x, card_pos.y + 376.0, opt_w, 54.0),
                         I18n.t("ngp.no"), I18n.t("ngp.no_hint"), 1)
 
         # --- footer: hint comandi ---
@@ -276,67 +274,9 @@ func _draw_option(ci: Control, r: Rect2, text: String, sub: String, idx: int) ->
                 _draw_diamond(ci, r.position + Vector2(r.size.x - 26.0, r.size.y * 0.5), 8.0, col)
 
 
-## Emblema della card: medaglione scuro con anelli oro, SPADE INCROCIATE
-## dietro un TESCHIO dorato (fantasy/horror arcade, coerente col bestiario).
-## Procedurale al 100% (niente asset da rigenerare).
-func _draw_emblem(ci: Control, c: Vector2, accent: Color) -> void:
-        # medaglione
-        ci.draw_circle(c, 58.0, Color(0.08, 0.06, 0.04, 0.95))
-        ci.draw_arc(c, 58.0, 0.0, TAU, 40, COL_GOLD_DARK, 2.0, true)
-        ci.draw_arc(c, 52.0, _t * 1.2, _t * 1.2 + PI * 1.2, 24,
-                        Color(COL_GOLD.r, COL_GOLD.g, COL_GOLD.b, 0.5), 3.0, true)
-        # spade incrociate (dietro il teschio): due lame diagonali con
-        # guardia e pomo d'elsa
-        for s in [-1, 1]:
-                var dir := Vector2(s, -1.0).normalized()
-                var tip := c + dir * 52.0
-                var hilt := c - dir * 34.0
-                ci.draw_line(hilt, tip, Color(0.72, 0.66, 0.50), 4.0)
-                ci.draw_circle(tip, 2.6, Color(0.85, 0.80, 0.62))
-                # guardia perpendicolare alla lama
-                var perp := Vector2(-dir.y, dir.x)
-                ci.draw_line(hilt - perp * 10.0, hilt + perp * 10.0, COL_GOLD_DARK, 3.0)
-                ci.draw_circle(hilt, 3.4, COL_GOLD_DARK)
-        # teschio: cranio (cerchio) + mandibola (rettangolo smussato)
-        var bone: Color = Color(0.88, 0.84, 0.70)
-        var bone_dim: Color = Color(0.70, 0.65, 0.52)
-        var skull_c := c + Vector2(0.0, -4.0)
-        ci.draw_circle(skull_c, 22.0, bone)
-        ci.draw_rect(Rect2(skull_c + Vector2(-13.0, 12.0), Vector2(26.0, 12.0)), bone, true)
-        # orbite
-        var eye_off := Vector2(8.5, -2.0)
-        ci.draw_circle(skull_c - eye_off, 5.2, Color(0.07, 0.05, 0.03))
-        ci.draw_circle(skull_c + Vector2(eye_off.x, eye_off.y), 5.2, Color(0.07, 0.05, 0.03))
-        # pupille accese del colore del tier (teschio "posseduto")
-        var glow: float = 0.6 + 0.4 * sin(_t * 5.0)
-        ci.draw_circle(skull_c - eye_off, 2.0, Color(accent.r, accent.g, accent.b, glow))
-        ci.draw_circle(skull_c + Vector2(eye_off.x, eye_off.y), 2.0,
-                        Color(accent.r, accent.g, accent.b, glow))
-        # naso a triangolo
-        ci.draw_colored_polygon(PackedVector2Array([
-                        skull_c + Vector2(0.0, 6.0),
-                        skull_c + Vector2(-3.0, 11.0),
-                        skull_c + Vector2(3.0, 11.0)]), Color(0.07, 0.05, 0.03))
-        # denti (linee verticali sulla mandibola)
-        for i in 4:
-                var tx: float = skull_c.x - 9.0 + float(i) * 6.0
-                ci.draw_line(Vector2(tx, skull_c.y + 14.0),
-                                Vector2(tx, skull_c.y + 22.0), bone_dim, 1.5)
-        # crepa sul cranio (segno dei molti cycle di gioco)
-        ci.draw_line(skull_c + Vector2(-14.0, -14.0), skull_c + Vector2(-6.0, -4.0),
-                        bone_dim, 1.5)
-
-
 # ---------------------------------------------------------------------------
 # Helper (mirror BonusCardOverlay / CreditsScreen)
 # ---------------------------------------------------------------------------
-func _draw_chip(ci: Control, r: Rect2, text: String) -> void:
-        ci.draw_rect(r, Color(0.1, 0.07, 0.04, 0.95), true)
-        ci.draw_rect(r, COL_GOLD_DARK, false, 1.5)
-        ci.draw_string(ThemeDB.fallback_font, r.position + Vector2(12, 22),
-                        text, HORIZONTAL_ALIGNMENT_CENTER, r.size.x - 24.0, 16, COL_TEXT)
-
-
 func _wrap_text(font: Font, text: String, max_w: float, size: int) -> Array:
         var words := text.split(" ")
         var lines: Array = []

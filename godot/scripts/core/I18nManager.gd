@@ -161,17 +161,25 @@ const TEXTS: Dictionary = {
         # ---------------- TASK 105: New Game Plus (card post-credits) --------
         "ngp.title": {"en": "NEW GAME PLUS", "it": "NEW GAME PLUS"},
         "ngp.title2": {"en": "NEW GAME PLUS PLUS", "it": "NEW GAME PLUS PLUS"},
+        # rev.2: domanda split su due livelli — la frase "Ricomincerai..."
+        # viene mostrata SOTTO la domanda; niente chip danno/resistenza
+        # né livello in card (richiesta utente).
         "ngp.question": {
-                "en": "Do you want to keep playing (new game plus)? You will restart from the first level of the game without losing your accumulated upgrades, at a higher difficulty.",
-                "it": "Vuoi continuare a giocare (new game plus)? Ricomincerai dal primo livello di gioco senza perdere i tuoi upgrade accumulati ad una difficoltà maggiore.",
+                "en": "Do you want to keep playing (new game plus)?",
+                "it": "Vuoi continuare a giocare (new game plus)?",
+        },
+        "ngp.question_sub": {
+                "en": "You will restart from the first level of the game without losing your accumulated upgrades, at a higher difficulty.",
+                "it": "Ricomincerai dal primo livello di gioco senza perdere i tuoi upgrade accumulati ad una difficoltà maggiore.",
         },
         "ngp.question2": {
-                "en": "Do you want to keep playing (new game plus plus)? You will restart from the first level of the game without losing your accumulated upgrades, at an even higher difficulty.",
-                "it": "Vuoi continuare a giocare (new game plus plus)? Ricomincerai dal primo livello di gioco senza perdere i tuoi upgrade accumulati ad una difficoltà ancora maggiore.",
+                "en": "Do you want to keep playing (new game plus plus)?",
+                "it": "Vuoi continuare a giocare (new game plus plus)?",
         },
-        "ngp.chip_damage": {"en": "ENEMY DAMAGE: +%d%%", "it": "DANNO NEMICI: +%d%%"},
-        "ngp.chip_resist": {"en": "ENEMY RESISTANCE: +%d%%", "it": "RESISTENZA NEMICI: +%d%%"},
-        "ngp.chip_kept": {"en": "LEVEL %d KEPT", "it": "LIVELLO %d CONSERVATO"},
+        "ngp.question2_sub": {
+                "en": "You will restart from the first level of the game without losing your accumulated upgrades, at an even higher difficulty.",
+                "it": "Ricomincerai dal primo livello di gioco senza perdere i tuoi upgrade accumulati ad una difficoltà ancora maggiore.",
+        },
         "ngp.yes": {"en": "YES", "it": "SÌ"},
         "ngp.no": {"en": "NO", "it": "NO"},
         "ngp.no_hint": {
