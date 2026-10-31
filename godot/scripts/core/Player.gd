@@ -120,6 +120,12 @@ const SPRITE_DEFAULT_FACES_RIGHT := {
 @export var score: int = 0
 @export var speed: int = 2  # base speed (px/frame @ 60 FPS)
 
+# TASK 107 (RISCATTO CUORE): cuori gia' riscattati a punti in questa run
+# (per player). Alimenta l'escalation del costo (base * k) nella
+# schermata bonus post-boss; attraversa le scene nel carry e sopravvive
+# alle continue (session snapshot) ma NON al NG+ (run nuova = 0).
+var hearts_redeemed: int = 0
+
 # --- Public state -----------------------------------------------------------
 # Direction:
 #   dx,dy          = current movement direction (applied this frame)
@@ -374,14 +380,16 @@ func equip_relic_armor(def: Dictionary) -> void:
 
 
 ## Ripristina un'armatura dal carry tra scene (maze <-> boss room):
-## stesse cariche salvate, +2 energia max, energia piena (comportamento
-## standard dei player a inizio scena).
+## stesse cariche salvate, +2 energia max. TASK 107: l'energia NON si
+## ricarica piu' al ripristino (niente refill gratuito a ogni cambio
+## scena): resta quella del momento, solo clampata al nuovo massimo —
+## il carry del GameManager applica subito dopo l'energia trasportata.
 func restore_relic_armor(saved: Dictionary) -> void:
         if saved.is_empty():
                 return
         armor_relic = saved.duplicate()
         max_energy = 5 + _perk_energy_bonus_units() + ARMOR_ENERGY_BONUS
-        energy = max_energy
+        energy = mini(energy, max_energy)
         _armor_regen_timer_ms = 0.0
         _armor_aura_timer_ms = 0.0
         # TASK 51 (P8): il carry tra scene ricarica lo sprite corazzato.
@@ -718,6 +726,8 @@ func reset() -> void:
         skill_points = 0
         pending_levelup_fx = 0
         skill_levels.clear()
+        # TASK 107 (RISCATTO CUORE): run nuova = escalation del costo a zero.
+        hearts_redeemed = 0
         _skill_regen_timer_ms = 0.0
         _skill_regen_acc = 0.0
         _air_jumps_left = 0
@@ -1907,9 +1917,19 @@ func add_score(points: int) -> void:
                 energy = max_energy
 
 
-# add_life(): bonus life (reward after defeating a boss).
+# add_life(): bonus life (reward after defeating a boss; TASK 107: anche
+# pickup del cuore nascosto nel labirinto).
 func add_life() -> void:
         lives += 1
+
+
+## TASK 107 (RISCATTO CUORE): sottrae `points` dal punteggio (riscatto dei
+## cuori nella schermata bonus post-boss). Il livello e' un HIGH WATERMARK:
+## non scende mai (le abilita' gia' confermate restano), ma i level up
+## futuri ritardano perche' le soglie si ri-raggiungono dal punteggio
+## attuale, e la Hall of Fame registra il punteggio finale scontato.
+func spend_score(points: int) -> void:
+        score = maxi(0, score - points)
 
 
 # ===========================================================================

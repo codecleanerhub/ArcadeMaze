@@ -402,6 +402,12 @@ static func make_player_carry(p: Node) -> Dictionary:
                 "skill_points": int(p.get("skill_points")),
                 "pending_levelup_fx": int(p.get("pending_levelup_fx")),
                 "skill_levels": (p.get("skill_levels") as Dictionary).duplicate(),
+                # TASK 107 (CUORI): l'ENERGIA del cuore corrente attraversa le
+                # scene (niente piu' refill gratuito a ogni cambio scena) e
+                # con lei il contatore dei cuori riscattati a punti (alimenta
+                # l'escalation del costo nella schermata bonus).
+                "energy": int(p.get("energy")),
+                "hearts_redeemed": int(p.get("hearts_redeemed")),
         }
         # Arma reliquia (le armi base NON si portano: comportamento storico
         # invariato — la boss room dà già la sua arma potenziata d'ingresso).
@@ -458,6 +464,18 @@ func _apply_carry(p: Node, snap: Dictionary) -> void:
         var ra: Dictionary = snap.get("relic_armor", {})
         if not ra.is_empty() and p.has_method("restore_relic_armor"):
                 p.restore_relic_armor(ra)
+        # TASK 107 (CUORI): per ULTIMO, dopo abilita'/armatura (che ricalcolano
+        # max_energy): il contatore cuori-riscattati e l'ENERGIA trasportata,
+        # clampata al massimo corrente. Chiave assente (salvataggi vecchi,
+        # NG+, run nuova) = il player resta com'e' (energia piena dal reset).
+        # NB: "prop in obj" (non obj.has()) perche' i Node non hanno .has().
+        if "hearts_redeemed" in p:
+                p.set("hearts_redeemed", int(snap.get("hearts_redeemed", 0)))
+        if snap.has("energy") and "energy" in p:
+                var carried_energy: int = int(snap.get("energy", 5))
+                if "max_energy" in p:
+                        carried_energy = clampi(carried_energy, 0, int(p.get("max_energy")))
+                p.set("energy", carried_energy)
 
 
 # ============================================================================

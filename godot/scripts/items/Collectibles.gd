@@ -63,6 +63,10 @@ enum Kind {
                          # labirinto, fermo, dentro un blocco di ghiaccio
                          # trasparente che lascia vedere il mostro. Stesse
                          # meccaniche di apparizione delle altre pergamene.
+        HEART,            # TASK 107 (CUORE NASCOSTO): cuore pieno nascosto nel
+                         # labirinto (1 ogni HIDDEN_HEART_EVERY_LEVELS labirinti,
+                         # in un vicolo cieco lontano dallo spawn). Al pickup
+                         # chi lo trova recupera +1 VITA (cuore perso). Zero punti.
 }
 
 @export var kind: int = Kind.TREASURE:
@@ -201,6 +205,9 @@ func _apply_kind_defaults() -> void:
                         bob_offset = 0.0
                         # NB: come le altre pergamene, scroll_lifetime_ms e'
                         # impostato dal controller PRIMA dell'add_child.
+                Kind.HEART:
+                        pulse = 0.0
+                        bob_offset = 0.0
 
 
 # =========================================================
@@ -237,6 +244,8 @@ func update_step(delta_ms: int, player_pos: Vector2, player_id: int = 1) -> void
                         pass  # only anim
                 Kind.HAMMER:
                         pass  # only anim (bob + aura elettrica nel _draw)
+                Kind.HEART:
+                        pass  # only anim (bob + doppio alone nel _draw)
                 Kind.QUAKE_SCROLL:
                         _update_scroll_lifetime(delta_ms)
                 Kind.CHASM_SCROLL:
@@ -371,6 +380,7 @@ func _draw() -> void:
                 Kind.KNIGHT_STATUE: _draw_knight_statue()
                 Kind.DYNAMITE:     _draw_dynamite()
                 Kind.POTION:       _draw_potion()
+                Kind.HEART:        _draw_heart()
                 Kind.HAMMER:       _draw_hammer()
                 Kind.QUAKE_SCROLL: _draw_parchment(
                                 "res://assets/sprites/parchment/quake_scroll.png",
@@ -924,6 +934,15 @@ static func make_medikit(at: Vector2) -> Collectibles:
         return c
 
 
+## TASK 107 (CUORE NASCOSTO): factory del cuore pieno a pos.
+static func make_heart(at: Vector2) -> Collectibles:
+        var c := Collectibles.new()
+        c.kind = Kind.HEART
+        c.pos = at
+        c.active = true
+        return c
+
+
 ## Factory: create a knight statue at pos.
 static func make_knight_statue(at: Vector2) -> Collectibles:
         var c := Collectibles.new()
@@ -994,6 +1013,41 @@ func _draw_medikit() -> void:
                 Color(0.85, 0.15, 0.15, 1.0), true)
         draw_rect(Rect2(-s / 2.0 + 4.0, -3.0 + y_off, s - 8.0, 6.0),
                 Color(0.85, 0.15, 0.15, 1.0), true)
+
+
+## TASK 107 (CUORE NASCOSTO): disegna il cuore pieno. RIUSA lo sprite PNG
+## ui_heart.png della HUD (coerenza visiva: stesso cuore dei cuori-vita in
+## alto) con doppio alone rosso pulsante + ombra a terra + bob (pattern
+## medikit). Fallback procedurale se il PNG manca: due cerchi + spigolo.
+func _draw_heart() -> void:
+        var y_off := -bob_offset
+        var tex := _load_png_cached("res://assets/sprites/ui_heart.png")
+        if tex != null:
+                var size: float = 48.0
+                # Ombra ellittica a terra (ancora l'item alla cella).
+                draw_set_transform(Vector2(1.5, 14.0), 0.0, Vector2(1.0, 0.42))
+                draw_circle(Vector2.ZERO, 15.0, Color(0.0, 0.0, 0.0, 0.32))
+                draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+                # Doppio alone rosso pulsante: caldo esterno + acceso interno.
+                var glow_a: float = 0.22 + pulse * 0.14
+                draw_circle(Vector2.ZERO, 26.0, Color(1.0, 0.20, 0.25, glow_a * 0.55))
+                draw_circle(Vector2.ZERO, 18.0, Color(1.0, 0.25, 0.30, glow_a))
+                draw_texture_rect(tex, Rect2(-size / 2.0, -size / 2.0 + y_off, size, size), false)
+                return
+        # Fallback procedurale: cuore pieno rosso
+        var r: float = 9.0
+        var beat: float = 1.0 + pulse * 0.08
+        draw_circle(Vector2(-r * 0.8, y_off - r * 0.5) * beat, r * beat,
+                Color(0.86, 0.08, 0.08, 1.0))
+        draw_circle(Vector2(r * 0.8, y_off - r * 0.5) * beat, r * beat,
+                Color(0.86, 0.08, 0.08, 1.0))
+        draw_colored_polygon(PackedVector2Array([
+                Vector2(-r * 1.55, y_off - r * 0.35) * beat,
+                Vector2(r * 1.55, y_off - r * 0.35) * beat,
+                Vector2(0.0, y_off + r * 1.35) * beat,
+        ]), Color(0.86, 0.08, 0.08, 1.0))
+        # Scintilla
+        draw_circle(Vector2(-r * 0.5, y_off - r * 0.9), 2.0, Color(1.0, 0.85, 0.85, 0.9))
 
 
 # FIX (nuova meccanica): disegna la statua del cavaliere alleato.

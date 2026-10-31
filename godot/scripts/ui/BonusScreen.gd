@@ -41,6 +41,21 @@ var selection: int = 0                  # carta selezionata (0..2)
 var completed: bool = false
 var level_of_bonus: int = 4
 
+# TASK 107 (RISCATTO CUORE): riga selezionabile SOTTO i riquadri delle
+# reliquie. Il chooser scende con GIU', sceglie quanti cuori riscattare
+# con SINISTRA/DESTRA (lo score di previewsce scende/sale in diretta) e
+# conferma tenendo premuto il FUOCO: cuori +N, punteggio -costo. Il
+# punteggio speso resta il punteggio finale (Hall of Fame piu' bassa e
+# level up futuri ritardati: il livello non scende mai).
+var _redeem_focus: bool = false      # true = focus sulla riga riscatto
+var _redeem_count: int = 0           # cuori scelti adesso (0.._redeem_max)
+var _redeem_max: int = 0             # cuori riscattabili ORA dal chooser
+var _redeem_feedback: String = ""    # "PLAYER 1 HA RISCATTATO 2 CUORI..."
+var _redeem_feedback_ms: float = 0.0 # durata residua del feedback
+
+# Icona cuore della riga (stesso PNG dei cuori-vita della HUD).
+var _heart_tex: Texture2D = null
+
 # Flusso: dopo una conferma aspetta un attimo prima del prossimo chooser
 # (evita che lo stesso tasto confermi due volte).
 const POST_CHOICE_DELAY_MS: float = 700.0
@@ -78,6 +93,12 @@ func setup(level: int, players: Array) -> void:
         choosers = players.duplicate()
         chooser_idx = 0
         selection = 0
+        # TASK 107: riga riscatto parte ferma, a zero cuori.
+        _redeem_focus = false
+        _redeem_count = 0
+        _redeem_feedback = ""
+        _redeem_feedback_ms = 0.0
+        _refresh_redeem_max()
         completed = choosers.is_empty()
         if completed:
                 # Nessuno può scegliere (caso limite): completa al primo tick.
@@ -93,11 +114,21 @@ func _ready() -> void:
         _panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
         _panel.draw.connect(_draw_screen.bind(_panel))
         add_child(_panel)
+        # TASK 107: icona cuore della riga riscatto (pattern HUD.load_heart_sprite:
+        # Image.load diretto, bypass import system).
+        var heart_path: String = ProjectSettings.globalize_path(
+                        "res://assets/sprites/ui_heart.png")
+        if FileAccess.file_exists(heart_path):
+                var img := Image.new()
+                if img.load(heart_path) == OK:
+                        _heart_tex = ImageTexture.create_from_image(img)
 
 
 func _physics_process(delta: float) -> void:
         _t += delta
         _panel.queue_redraw()
+        if _redeem_feedback_ms > 0.0:
+                _redeem_feedback_ms = maxf(0.0, _redeem_feedback_ms - delta * 1000.0)
         if completed:
                 return
         if _wait_ms > 0.0:
@@ -120,37 +151,89 @@ func _poll_current_chooser(delta_ms: float) -> void:
                 _hold_chooser = chooser_idx
                 _hold_ms = 0.0
                 _hold_frac = 0.0
+                # TASK 107: la riga riscatto si ricalcola sul nuovo chooser
+                # (score/escalation sono SUOI) e riparte da 0 cuori.
+                _redeem_focus = false
+                _redeem_count = 0
+                _refresh_redeem_max()
         var is_p1: bool = (chooser_idx == 0)
         var moved: int = 0
         var confirmed: bool = false
 
-        # --- Navigazione ---
+        # --- Navigazione (TASK 107: left/right muove i cuori quando il focus
+        # e' sulla riga riscatto, le card altrimenti; GIU'/SU' spostano il
+        # focus fra card e riga) ---
+        var vmove: int = 0
         if is_p1:
                 if Input.is_action_just_pressed("move_left"):
                         moved = -1
                 elif Input.is_action_just_pressed("move_right"):
                         moved = 1
+                if Input.is_action_just_pressed("move_down"):
+                        vmove = 1
+                elif Input.is_action_just_pressed("move_up"):
+                        vmove = -1
                 # Joystick P1: D-pad (device configurato o primo pad).
                 var p1_joy: int = _resolve_p1_joy()
-                if moved == 0 and p1_joy >= 0:
-                        if _joy_edge(p1_joy, JOY_BUTTON_DPAD_LEFT):
-                                moved = -1
-                        elif _joy_edge(p1_joy, JOY_BUTTON_DPAD_RIGHT):
-                                moved = 1
+                if p1_joy >= 0:
+                        if moved == 0:
+                                if _joy_edge(p1_joy, JOY_BUTTON_DPAD_LEFT):
+                                        moved = -1
+                                elif _joy_edge(p1_joy, JOY_BUTTON_DPAD_RIGHT):
+                                        moved = 1
+                        if vmove == 0:
+                                if _joy_edge(p1_joy, JOY_BUTTON_DPAD_DOWN):
+                                        vmove = 1
+                                elif _joy_edge(p1_joy, JOY_BUTTON_DPAD_UP):
+                                        vmove = -1
         else:
                 if Input.is_action_just_pressed("p2_left"):
                         moved = -1
                 elif Input.is_action_just_pressed("p2_right"):
                         moved = 1
+                if Input.is_action_just_pressed("p2_down"):
+                        vmove = 1
+                elif Input.is_action_just_pressed("p2_up"):
+                        vmove = -1
                 # Joystick P2: D-pad del pad configurato (o secondo pad).
                 var p2_joy: int = _resolve_p2_joy()
-                if moved == 0 and p2_joy >= 0:
-                        if _joy_edge(p2_joy, JOY_BUTTON_DPAD_LEFT):
-                                moved = -1
-                        elif _joy_edge(p2_joy, JOY_BUTTON_DPAD_RIGHT):
-                                moved = 1
+                if p2_joy >= 0:
+                        if moved == 0:
+                                if _joy_edge(p2_joy, JOY_BUTTON_DPAD_LEFT):
+                                        moved = -1
+                                elif _joy_edge(p2_joy, JOY_BUTTON_DPAD_RIGHT):
+                                        moved = 1
+                        if vmove == 0:
+                                if _joy_edge(p2_joy, JOY_BUTTON_DPAD_DOWN):
+                                        vmove = 1
+                                elif _joy_edge(p2_joy, JOY_BUTTON_DPAD_UP):
+                                        vmove = -1
+        # TASK 107: GIU' dalla riga delle card -> riga riscatto (solo se ci
+        # sono cuori riscattabili); SU' dalla riga -> torna alle card.
+        if vmove != 0 and not offerings.is_empty():
+                if vmove == 1 and not _redeem_focus and _redeem_max > 0:
+                        _redeem_focus = true
+                        _redeem_count = 0
+                        _hold_ms = 0.0
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
+                elif vmove == -1 and _redeem_focus:
+                        _redeem_focus = false
+                        _redeem_count = 0
+                        _hold_ms = 0.0
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.MENU_SELECT)
         if moved != 0 and not offerings.is_empty():
-                selection = int(fposmod(float(selection + moved), float(offerings.size())))
+                if _redeem_focus:
+                        # TASK 107: sulla riga riscatto left/right = cuori.
+                        var new_count: int = clampi(_redeem_count + moved, 0, _redeem_max)
+                        if new_count != _redeem_count:
+                                _redeem_count = new_count
+                                if AudioManager:
+                                        AudioManager.play_sound(
+                                                        AudioManager.SoundType.MENU_SELECT)
+                else:
+                        selection = int(fposmod(float(selection + moved), float(offerings.size())))
 
         # --- Conferma TASK 51 (P1): TENENDO PREMUTO il fuoco ---
         # Il tap singolo non conferma: il tasto va tenuto per
@@ -186,7 +269,14 @@ func _poll_current_chooser(delta_ms: float) -> void:
                 confirmed = true
 
         if confirmed:
-                _apply_choice(offerings[selection])
+                # TASK 107: sulla riga riscatto il FUOCO tenuto conferma il
+                # RISCATTO (cuori scelti); il chooser NON avanza — la
+                # reliquia va ancora scelta. Su 0 cuori la conferma e' muta.
+                if _redeem_focus:
+                        if _redeem_count > 0:
+                                _apply_redeem()
+                else:
+                        _apply_choice(offerings[selection])
 
 
 func _resolve_p1_joy() -> int:
@@ -251,6 +341,51 @@ func _advance_chooser() -> void:
         else:
                 selection = 0
                 _wait_ms = POST_CHOICE_DELAY_MS
+
+
+# ============================================================================
+# TASK 107 (RISCATTO CUORE) — cuori a punti sotto i riquadri delle reliquie
+# ============================================================================
+## Ricalcola quanti cuori puo' riscattare ORA il chooser corrente (walk
+## dell'escalation C.heart_redeem_max_count sul SUO punteggio e sul SUO
+## contatore di cuori gia' riscattati in questa run).
+func _refresh_redeem_max() -> void:
+        _redeem_max = 0
+        _redeem_count = 0
+        var chooser: CharacterBody2D = choosers[chooser_idx] \
+                        if chooser_idx < choosers.size() else null
+        if chooser != null and is_instance_valid(chooser):
+                _redeem_max = C.heart_redeem_max_count(
+                                int(chooser.score), int(chooser.get("hearts_redeemed")))
+
+
+## Applica il riscatto al chooser corrente: +N vite, -costo dal punteggio
+## (spend_score: il livello e' un high watermark, NON scende), contatore
+## escalation += N. Non avanza il chooser: la reliquia resta da scegliere.
+func _apply_redeem() -> void:
+        var chooser: CharacterBody2D = choosers[chooser_idx] \
+                        if chooser_idx < choosers.size() else null
+        if chooser == null or not is_instance_valid(chooser) or _redeem_count <= 0:
+                return
+        var already: int = int(chooser.get("hearts_redeemed"))
+        var count: int = _redeem_count
+        var cost: int = C.heart_redeem_total_cost(count, already)
+        chooser.spend_score(cost)
+        chooser.set("hearts_redeemed", already + count)
+        for i in count:
+                chooser.add_life()
+        _redeem_feedback = I18n.t("bonus.redeem_done") % [
+                        int(chooser.player_num), count, cost]
+        _redeem_feedback_ms = 2600.0
+        if AudioManager:
+                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+                AudioManager.play_sound(AudioManager.SoundType.MENU_CONFIRM)
+        _redeem_count = 0
+        _hold_ms = 0.0
+        _hold_frac = 0.0
+        _refresh_redeem_max()
+        print("[Bonus] Player ", int(chooser.player_num), " riscatta ",
+                        count, " cuori per ", cost, " punti")
 
 
 func _finish() -> void:
@@ -336,16 +471,146 @@ func _draw_screen(p: Control) -> void:
         for i in offerings.size():
                 _draw_relic_card(p, font, offerings[i],
                         Rect2(x0 + float(i) * (card_w + gap), card_y, card_w, card_h),
-                        i == selection, i)
+                        i == selection and not _redeem_focus, i)
 
-        # --- Istruzioni comandi (TASK 44: localizzate) ---
+        # --- Istruzioni comandi (TASK 44: localizzate; TASK 107: hint della
+        # riga riscatto quando il focus e' lì) ---
         var hint: String
-        if pnum == 1:
+        if _redeem_focus:
+                hint = I18n.t("bonus.redeem_hint")
+        elif pnum == 1:
                 hint = I18n.t("bonus.hint_1p")
         else:
                 hint = I18n.t("bonus.hint_2p")
         _draw_text_centered(p, font, hint,
                 Vector2(cx, card_y + card_h + 46.0), 18, Color(0.75, 0.75, 0.8))
+
+        # --- TASK 107: riga RISCATTA CUORE sotto i riquadri delle reliquie ---
+        _draw_redeem_row(p, font, cx, card_y + card_h + 74.0, chooser)
+
+
+## TASK 107 (RISCATTO CUORE): la sezione sotto i riquadri delle reliquie.
+## Icona cuore + titolo; cuori riscattabili ora; contatore < N > guidato
+## dal chooser; costo del prossimo cuore; SCORE attuale -> dopo il riscatto
+## (scende/sale in diretta col numero di cuori scelto). Se il punteggio non
+## basta per NESSUN cuore la riga resta visibile ma spenta e non selezionabile.
+func _draw_redeem_row(p: Control, font: Font, cx: float, top: float,
+                chooser: CharacterBody2D) -> void:
+        var red: Color = Color(0.98, 0.28, 0.34)
+        var gold: Color = Color(1.0, 0.84, 0.25)
+        var row_w: float = 780.0
+        var row_h: float = 100.0
+        var rect: Rect2 = Rect2(cx - row_w * 0.5, top, row_w, row_h)
+        var pulse: float = 0.5 + 0.5 * sin(_t * 4.0)
+        var affordable: bool = _redeem_max > 0
+        # Pannello spento se non c'e' nulla da riscattare.
+        p.draw_rect(rect, Color(0.05, 0.03, 0.06, 0.90 if affordable else 0.55), true)
+        if _redeem_focus:
+                p.draw_rect(rect, Color(red.r, red.g, red.b, 0.55 + 0.45 * pulse), false, 4.0)
+                p.draw_rect(rect.grow(-8.0), Color(red.r, red.g, red.b, 0.25), false, 1.5)
+        else:
+                p.draw_rect(rect, Color(0.40, 0.25, 0.28, 0.9 if affordable else 0.45),
+                                false, 2.0)
+        # Dati del chooser (null-safe: riga disegnata anche senza chooser).
+        var chooser_score: int = 0
+        var chooser_already: int = 0
+        if chooser != null and is_instance_valid(chooser):
+                chooser_score = int(chooser.score)
+                chooser_already = int(chooser.get("hearts_redeemed"))
+        # --- Icona cuore a sinistra (PNG della HUD; fallback procedurale) ---
+        var icon_c: Vector2 = Vector2(rect.position.x + 60.0, top + row_h * 0.5 - 2.0)
+        var beat: float = 1.0 + pulse * 0.10 if _redeem_focus else 1.0
+        p.draw_circle(icon_c, 34.0, Color(red.r, red.g, red.b, 0.10 + 0.10 * pulse))
+        if _heart_tex != null:
+                var hs: float = 46.0 * beat
+                p.draw_texture_rect(_heart_tex,
+                        Rect2(icon_c - Vector2(hs, hs) * 0.5, Vector2(hs, hs)), false)
+        else:
+                p.draw_circle(icon_c + Vector2(-8, -6) * beat, 11.0 * beat, red)
+                p.draw_circle(icon_c + Vector2(8, -6) * beat, 11.0 * beat, red)
+                p.draw_colored_polygon(PackedVector2Array([
+                        icon_c + Vector2(-18, -2) * beat,
+                        icon_c + Vector2(18, -2) * beat,
+                        icon_c + Vector2(0, 17) * beat]), red)
+        # --- Blocco sinistro: titolo / riscattabili / costo ---
+        var text_x: float = rect.position.x + 106.0
+        var text_w: float = 300.0
+        var title_col: Color = gold if affordable else Color(0.55, 0.45, 0.40)
+        _draw_left_shadowed(p, font, I18n.t("bonus.redeem_title"),
+                Vector2(text_x, top + 36.0), text_w, 22, title_col)
+        if not affordable:
+                _draw_left_shadowed(p, font,
+                        I18n.t("bonus.redeem_insufficient") % C.heart_redeem_cost(
+                                        chooser_already + 1),
+                        Vector2(text_x, top + 64.0), text_w, 16, Color(0.62, 0.50, 0.48))
+                # il feedback dell'eventuale riscatto appena fatto resta visibile
+                if _redeem_feedback != "" and _redeem_feedback_ms > 0.0:
+                        var fb_a: float = clampf(_redeem_feedback_ms / 2600.0, 0.0, 1.0)
+                        _draw_text_centered(p, font, _redeem_feedback,
+                                Vector2(cx, top + row_h + 24.0), 16,
+                                Color(0.9, 0.6, 0.55, fb_a))
+                return  # riga spenta: niente contatore ne' score live
+        _draw_left_shadowed(p, font, I18n.t("bonus.redeem_avail") % _redeem_max,
+                Vector2(text_x, top + 64.0), text_w, 16, Color(0.85, 0.70, 0.55))
+        _draw_left_shadowed(p, font, I18n.t("bonus.redeem_cost") % C.heart_redeem_cost(
+                        chooser_already + _redeem_count + 1),
+                Vector2(text_x, top + 88.0), text_w, 15, Color(0.72, 0.72, 0.78))
+        # --- Contatore cuori < N > (centro-destra) ---
+        var count_c: float = rect.position.x + 470.0
+        var blink: float = 0.55 + 0.45 * sin(_t * 5.0)
+        var arrow_col: Color = Color(0.9, 0.85, 0.75, 0.9 if _redeem_focus else 0.45)
+        if _redeem_count > 0:
+                p.draw_string(font, Vector2(count_c - 72.0, top + 54.0), "<",
+                        HORIZONTAL_ALIGNMENT_RIGHT, 36.0, 28,
+                        Color(arrow_col.r, arrow_col.g, arrow_col.b, blink))
+        if _redeem_count < _redeem_max:
+                p.draw_string(font, Vector2(count_c + 36.0, top + 54.0), ">",
+                        HORIZONTAL_ALIGNMENT_LEFT, 36.0, 28,
+                        Color(arrow_col.r, arrow_col.g, arrow_col.b, blink))
+        var count_s: String = "%d" % _redeem_count
+        p.draw_string(font, Vector2(count_c - 36.0, top + 58.0), count_s,
+                HORIZONTAL_ALIGNMENT_CENTER, 72.0, 36, Color(0, 0, 0, 0.9))
+        p.draw_string(font, Vector2(count_c - 36.0, top + 56.0), count_s,
+                HORIZONTAL_ALIGNMENT_CENTER, 72.0, 36,
+                red if _redeem_count > 0 else Color(0.75, 0.62, 0.55))
+        # --- SCORE live: attuale -> dopo il riscatto (destra) ---
+        var after: int = chooser_score - C.heart_redeem_total_cost(
+                        _redeem_count, chooser_already)
+        var score_line: String = I18n.t("bonus.redeem_score") % [chooser_score, after]
+        var score_col: Color = Color(0.92, 0.9, 0.75) if _redeem_count == 0                         else Color(1.0, 0.62, 0.4)
+        _draw_left_shadowed(p, font, score_line,
+                Vector2(rect.position.x + 548.0, top + 56.0), 224.0, 18, score_col)
+        # --- Feedback del riscatto appena applicato (sotto la riga, sfuma) ---
+        if _redeem_feedback != "" and _redeem_feedback_ms > 0.0:
+                var fb_alpha: float = clampf(_redeem_feedback_ms / 2600.0, 0.0, 1.0)
+                _draw_text_centered(p, font, _redeem_feedback,
+                        Vector2(cx, top + row_h + 24.0), 16,
+                        Color(0.9, 0.6, 0.55, fb_alpha))
+        # --- Barra di conferma "tieni premuto il fuoco" (pattern TASK 51) ---
+        if _redeem_focus and _hold_frac > 0.005 and _redeem_count > 0:
+                var bar_w: float = 320.0
+                var bar_rect: Rect2 = Rect2(cx - bar_w * 0.5,
+                                top + row_h - 10.0, bar_w, 8.0)
+                p.draw_rect(bar_rect, Color(0.10, 0.05, 0.05, 0.85), true)
+                p.draw_rect(bar_rect, Color(0.45, 0.30, 0.20, 0.9), false, 1.0)
+                p.draw_rect(Rect2(bar_rect.position,
+                                Vector2(bar_w * _hold_frac, bar_rect.size.y)),
+                        Color(red.r, red.g, red.b, 0.55 + 0.45 * _hold_frac), true)
+                p.draw_circle(Vector2(bar_rect.position.x + bar_w * _hold_frac,
+                                bar_rect.position.y + 4.0), 5.0,
+                        Color(1.0, 0.95, 0.8, 0.5 * _hold_frac))
+
+
+## TASK 107: testo allineato a sinistra con ombra (stile del resto della
+## schermata): una passata nera sfalsata +2px e una a colore.
+func _draw_left_shadowed(p: Control, font: Font, text: String, at: Vector2,
+                width: float, size: int, col: Color) -> void:
+        if text == "":
+                return
+        p.draw_string(font, at + Vector2(0.0, 2.0), text,
+                HORIZONTAL_ALIGNMENT_LEFT, width, size, Color(0, 0, 0, 0.85))
+        p.draw_string(font, at, text,
+                HORIZONTAL_ALIGNMENT_LEFT, width, size, col)
 
 
 func _draw_relic_card(p: Control, font: Font, def: Dictionary,

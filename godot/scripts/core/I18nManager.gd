@@ -330,6 +330,36 @@ const TEXTS: Dictionary = {
                 "en": "A / D: select    ENTER or P2 FIRE button: confirm",
                 "it": "A / D: seleziona    INVIO o tasto FUOCO P2: conferma",
         },
+        # ---------------- TASK 107: riscatto cuore a punti (riga sotto le card) --
+        "bonus.redeem_title": {"en": "REDEEM HEART", "it": "RISCATTA CUORE"},
+        "bonus.redeem_avail": {
+                "en": "available now: %d",
+                "it": "riscattabili ora: %d",
+        },
+        "bonus.redeem_count": {
+                "en": "hearts to redeem:  %s",
+                "it": "cuori da riscattare:  %s",
+        },
+        "bonus.redeem_cost": {
+                "en": "next heart: %d pts",
+                "it": "prossimo cuore: %d punti",
+        },
+        "bonus.redeem_score": {
+                "en": "SCORE  %d  ->  %d",
+                "it": "PUNTI  %d  ->  %d",
+        },
+        "bonus.redeem_insufficient": {
+                "en": "NOT ENOUGH POINTS — next heart: %d pts",
+                "it": "PUNTI INSUFFICIENTI — prossimo cuore: %d punti",
+        },
+        "bonus.redeem_done": {
+                "en": "PLAYER %d REDEEMED %d HEART(S) FOR %d PTS",
+                "it": "IL GIOCATORE %d HA RISCATTATO %d CUORE/I PER %d PUNTI",
+        },
+        "bonus.redeem_hint": {
+                "en": "DOWN: redeem row    LEFT/RIGHT: hearts    HOLD FIRE: redeem",
+                "it": "GIU': riga riscatto    SINISTRA/DESTRA: cuori    TIENI FUOCO: riscatta",
+        },
         # ---------------- Demo mode ----------------
         "demo.mode": {"en": "DEMO MODE", "it": "DEMO MODE"},
         "demo.exit": {"en": "PRESS ANY KEY TO EXIT", "it": "PREMI UN TASTO PER USCIRE"},

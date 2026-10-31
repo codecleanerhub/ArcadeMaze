@@ -252,6 +252,9 @@ var _ghost_was_active: bool = false
 # ============================================================================
 const HammerClass = preload("res://scripts/items/Hammer.gd")
 var hammer_item: Node2D = null          # item a terra (Collectibles.Kind.HAMMER)
+# TASK 107 (CUORE NASCOSTO): item a terra (Collectibles.Kind.HEART) — nasce
+# solo sui livelli dove C.hidden_heart_spawns_at() è true.
+var hidden_heart_item: Node2D = null
 var hammer_player: int = 0              # 0 = nessuno, 1 = P1, 2 = P2
 var hammer_uses_left: int = 0           # lanci rimasti (max HAMMER_MAX_USES)
 var hammer_thrown: Node2D = null        # Hammer in volo (scripts/items/Hammer.gd)
@@ -4207,6 +4210,23 @@ func _on_collectible_picked_up(item: Node2D, p: CharacterBody2D, player_id: int)
                                         Color(0.5, 0.8, 1.0))
                                 collectibles_node.add_child(burst_h)
                         print("[Hammer] Player ", player_id, " ha raccolto Mjolnir (2 lanci)")
+                CollectiblesClass.Kind.HEART:
+                        # TASK 107 (CUORE NASCOSTO): chi lo trova recupera +1 VITA
+                        # (un cuore perso torna). Zero punti: non gonfia né
+                        # l'economia XP né la classifica — solo sopravvivenza.
+                        p.add_life()
+                        item.active = false
+                        item.queue_free()
+                        hidden_heart_item = null
+                        if AudioManager:
+                                AudioManager.play_sound(AudioManager.SoundType.RELIC_PICKUP)
+                        # Particelle rosso cuore
+                        if EffectsManager:
+                                var burst_hr := EffectsManager.spawn_pickup_burst(
+                                                p.get_pixel_pos(), Color(1.0, 0.25, 0.3))
+                                collectibles_node.add_child(burst_hr)
+                        print("[Heart] Player ", player_id,
+                                        " ha trovato il cuore nascosto (+1 vita)")
                 CollectiblesClass.Kind.QUAKE_SCROLL:
                         _maybe_show_bonus_card(CollectiblesClass.Kind.QUAKE_SCROLL, player_id)
                         # TASK 35 (pergamene evento): si attiva IMMEDIATAMENTE
@@ -4578,6 +4598,9 @@ func _build_session_snapshot() -> Dictionary:
                 items["potion"] = {"pos": potion_item.pos}
         if hammer_item != null and is_instance_valid(hammer_item) and hammer_item.active:
                 items["hammer"] = {"pos": hammer_item.pos}
+        if hidden_heart_item != null and is_instance_valid(hidden_heart_item) \
+                        and hidden_heart_item.active:
+                items["hiddenheart"] = {"pos": hidden_heart_item.pos}
         snap["items"] = items
         # --- Porta di uscita ---
         snap["exit_door"] = {
@@ -4618,6 +4641,9 @@ func _build_session_snapshot() -> Dictionary:
                 "skill_points": player.skill_points,
                 "pending_levelup_fx": player.pending_levelup_fx,
                 "skill_levels": player.skill_levels.duplicate(),
+                # TASK 107 (RISCATTO CUORE): il continue conserva anche
+                # l'escalation dei cuori riscattati (il costo non si azzera).
+                "hearts_redeemed": player.hearts_redeemed,
         }
         snap["p1"] = p1_snap
         if GameManager and GameManager.num_players == 2 and player2.visible:
@@ -4631,6 +4657,8 @@ func _build_session_snapshot() -> Dictionary:
                         "skill_points": player2.skill_points,
                         "pending_levelup_fx": player2.pending_levelup_fx,
                         "skill_levels": player2.skill_levels.duplicate(),
+                        # TASK 107 (RISCATTO CUORE): idem P1.
+                        "hearts_redeemed": player2.hearts_redeemed,
                 }
         return snap
 
@@ -4686,6 +4714,7 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 "dynamite": CollectiblesClass.Kind.DYNAMITE,
                 "potion": CollectiblesClass.Kind.POTION,
                 "hammer": CollectiblesClass.Kind.HAMMER,
+                "hiddenheart": CollectiblesClass.Kind.HEART,
         }
         for key in items.keys():
                 var it: Dictionary = items.get(key, {})
@@ -4713,6 +4742,7 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                         "dynamite": dynamite_item = node
                         "potion": potion_item = node
                         "hammer": hammer_item = node
+                        "hiddenheart": hidden_heart_item = node
         medikit_used = not items.has("medikit")
         # --- Spawner: portale e soglia del 50% ---
         spawner.initial_count = int(snap.get("initial_count", spawner.enemies.size()))
@@ -4814,6 +4844,8 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 var skills1: Dictionary = p1_snap.get("skill_levels", {})
                 if not skills1.is_empty():
                         player.restore_skills(skills1)
+                # TASK 107 (RISCATTO CUORE): il continue conserva l'escalation.
+                player.hearts_redeemed = int(p1_snap.get("hearts_redeemed", 0))
         var p2_snap: Dictionary = snap.get("p2", {})
         if not p2_snap.is_empty() and GameManager and GameManager.num_players == 2:
                 player2.visible = true
@@ -4830,6 +4862,8 @@ func _restore_session_from_snapshot(snap: Dictionary) -> void:
                 var skills2: Dictionary = p2_snap.get("skill_levels", {})
                 if not skills2.is_empty():
                         player2.restore_skills(skills2)
+                # TASK 107 (RISCATTO CUORE): idem P1.
+                player2.hearts_redeemed = int(p2_snap.get("hearts_redeemed", 0))
         # --- HUD: aggiorna subito con lo stato ripristinato ---
         _update_hud_snapshot()
         print("[Continue] Sessione maze ripristinata: livello ", current_level,
@@ -5153,6 +5187,9 @@ func _spawn_collectibles() -> void:
         if hammer_thrown != null and is_instance_valid(hammer_thrown):
                 hammer_thrown.queue_free()
         hammer_thrown = null
+        # TASK 107 (CUORE NASCOSTO): reset a inizio livello (rinasce solo sui
+        # livelli che lo prevedono; al restore da snapshot viene ricreato).
+        hidden_heart_item = null
         if player != null:
                 player.set_hammer_equipped(false)
         if player2 != null:
@@ -5270,6 +5307,65 @@ func _spawn_collectibles() -> void:
                 var hammer_pos := _cell_to_pixel(cell)
                 hammer_item = _create_collectible(CollectiblesClass.Kind.HAMMER, hammer_pos)
                 collectibles_node.add_child(hammer_item)
+
+        # TASK 107 (CUORE NASCOSTO): 1 ogni HIDDEN_HEART_EVERY_LEVELS labirinti,
+        # in un VICOL0 CIECO fra i più lontani dallo spawn ("dietro una
+        # deviazione": premia l'esplorazione). +1 vita al pickup, zero punti.
+        if C.hidden_heart_spawns_at(current_level):
+                var heart_cell := _pop_hidden_heart_cell(empty_cells, used_cells)
+                if heart_cell.x >= 0:
+                        hidden_heart_item = _create_collectible(
+                                        CollectiblesClass.Kind.HEART,
+                                        _cell_to_pixel(heart_cell))
+                        collectibles_node.add_child(hidden_heart_item)
+
+
+## TASK 107 (CUORE NASCOSTO): sceglie la cella del cuore nascosto tra le
+## celle libere residue: preferisce i VICOLI CIECHI (3+ muri fra i 4 vicini)
+## nel QUARTILE SUPERIORE della distanza Manhattan dallo spawn (1,1), con
+## distanza minima dagli altri item come gli altri spawn. La cella scelta
+## viene rimossa da `cells` e aggiunta a `used` (pattern
+## _pop_cell_far_enough). Ritorna (-1,-1) se non c'è nulla di valido.
+func _pop_hidden_heart_cell(cells: Array, used: Array) -> Vector2i:
+        const MIN_DIST_ITEM: int = 3  # come MIN_DIST_BETWEEN_ITEMS dello spawn
+        var max_dist: int = 0
+        for cc in cells:
+                max_dist = maxi(max_dist, absi(cc.x - 1) + absi(cc.y - 1))
+        # niente celle lontane (labirinto minuscolo): fallback qualunque
+        var far_threshold: int = int(float(max_dist) * 0.75)
+        var best: Vector2i = Vector2i(-1, -1)
+        var best_score: float = -1.0
+        for i in cells.size():
+                var candidate: Vector2i = cells[i]
+                var ok: bool = true
+                for u in used:
+                        if abs(u.x - candidate.x) + abs(u.y - candidate.y) < MIN_DIST_ITEM:
+                                ok = false
+                                break
+                if not ok:
+                        continue
+                var dist: int = absi(candidate.x - 1) + absi(candidate.y - 1)
+                if dist < far_threshold:
+                        continue
+                # vicolo cieco? conta i muri fra i 4 vicini
+                var walls: int = 0
+                if maze.is_wall(candidate.x, candidate.y - 1):
+                        walls += 1
+                if maze.is_wall(candidate.x + 1, candidate.y):
+                        walls += 1
+                if maze.is_wall(candidate.x, candidate.y + 1):
+                        walls += 1
+                if maze.is_wall(candidate.x - 1, candidate.y):
+                        walls += 1
+                # i vicoli ciechi dominano; a parità vince il più lontano
+                var score: float = float(walls) * 1000.0 + float(dist) + randf() * 0.5
+                if score > best_score:
+                        best_score = score
+                        best = candidate
+        if best.x >= 0:
+                cells.erase(best)
+                used.append(best)
+        return best
 
 
 # FIX (oggetti troppo vicini): estrae una cella dalla lista `cells` che sia
